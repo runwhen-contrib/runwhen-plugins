@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Per-backend health from the GKE ingress.kubernetes.io/backends annotation",
+  "type": "object",
+  "properties": {
+    "annotation": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "backends": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "health": {
+                "type": "string"
+              },
+              "healthy": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "health",
+              "healthy"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "notHealthy": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "annotation",
+    "present",
+    "backends",
+    "notHealthy"
+  ],
+  "additionalProperties": false
+}

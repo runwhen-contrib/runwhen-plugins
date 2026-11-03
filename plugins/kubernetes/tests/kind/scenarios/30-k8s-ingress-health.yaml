@@ -1,0 +1,53 @@
+# k8s-ingress-health scenarios in rw-broken. `crashloop` (20-broken.yaml) never
+# becomes Ready, so a Service selecting it has endpoints but none ready.
+apiVersion: v1
+kind: Service
+metadata:
+  name: crashloop
+  namespace: rw-broken
+spec:
+  selector: {app: crashloop}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+# Backend names a Service that exists, with a port the Service does not have.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wrong-port
+  namespace: rw-broken
+spec:
+  rules:
+    - host: wrong-port.rw-broken.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: crashloop
+                port: {number: 8080}
+---
+# Service and port exist; the Service has no ready endpoints. Port by name, TLS
+# Secret that does not exist (the skill lists it without reading Secrets).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: no-endpoints
+  namespace: rw-broken
+spec:
+  tls:
+    - hosts: [no-endpoints.rw-broken.local]
+      secretName: no-such-secret
+  rules:
+    - host: no-endpoints.rw-broken.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: crashloop
+                port: {name: http}

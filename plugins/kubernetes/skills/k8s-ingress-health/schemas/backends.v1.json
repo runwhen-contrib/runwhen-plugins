@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Each backend the Ingress routes to and what its Service and endpoints look like",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "enum": [
+          "rule",
+          "default"
+        ]
+      },
+      "host": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "pathType": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "enum": [
+          "service",
+          "resource"
+        ]
+      },
+      "service": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "portNumber": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "portName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "portNumber",
+              "portName"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "resource": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "apiGroup": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "apiGroup",
+              "kind",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "serviceExists": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "serviceType": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "portExists": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "targetPort": {
+        "type": [
+          "string",
+          "integer",
+          "null"
+        ]
+      },
+      "protocol": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "endpoints": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ready": {
+                "type": "integer"
+              },
+              "notReady": {
+                "type": "integer"
+              },
+              "slices": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "ready",
+              "notReady",
+              "slices"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "required": [
+      "source",
+      "host",
+      "path",
+      "pathType",
+      "kind",
+      "service",
+      "resource",
+      "serviceExists",
+      "serviceType",
+      "portExists",
+      "targetPort",
+      "protocol",
+      "endpoints"
+    ],
+    "additionalProperties": false
+  }
+}
