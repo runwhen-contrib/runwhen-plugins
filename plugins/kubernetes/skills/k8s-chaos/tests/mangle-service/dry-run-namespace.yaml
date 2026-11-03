@@ -7,10 +7,11 @@ resource: kubernetes/clusters/kind/namespaces/rw-chaos
 inputs:
   service: nolimit
 dryRun: true
-now: '2026-11-03T21:30:30.622Z'
+now: '2026-11-03T22:02:26.642Z'
 calls:
 - argv:
   - kubectl
+  - --request-timeout=30s
   - get
   - namespaces
   - rw-chaos
@@ -25,13 +26,13 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-chaos\"}}\n"
             },
-            "creationTimestamp": "2026-11-03T21:18:56Z",
+            "creationTimestamp": "2026-11-03T21:35:51Z",
             "labels": {
                 "kubernetes.io/metadata.name": "rw-chaos"
             },
             "name": "rw-chaos",
-            "resourceVersion": "29147",
-            "uid": "80efd8ca-cf0f-4c12-9ac5-d9ae3b8f0cf3"
+            "resourceVersion": "32432",
+            "uid": "3087a7c8-5163-4c19-8cce-6374fadea261"
         },
         "spec": {
             "finalizers": [
@@ -45,6 +46,7 @@ calls:
   stderr: ''
 - argv:
   - kubectl
+  - --request-timeout=30s
   - -n
   - rw-chaos
   - get
@@ -61,16 +63,16 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"nolimit\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}}\n"
             },
-            "creationTimestamp": "2026-11-03T21:18:56Z",
+            "creationTimestamp": "2026-11-03T21:35:51Z",
             "name": "nolimit",
             "namespace": "rw-chaos",
-            "resourceVersion": "29188",
-            "uid": "f46ff3b6-c14f-4455-8f27-3caab2dc8cc4"
+            "resourceVersion": "32481",
+            "uid": "b3c1f4e1-21b1-4980-90bb-e9d05b84da22"
         },
         "spec": {
-            "clusterIP": "10.96.89.166",
+            "clusterIP": "10.96.37.109",
             "clusterIPs": [
-                "10.96.89.166"
+                "10.96.37.109"
             ],
             "internalTrafficPolicy": "Cluster",
             "ipFamilies": [
@@ -98,6 +100,7 @@ calls:
   stderr: ''
 - argv:
   - kubectl
+  - --request-timeout=30s
   - -n
   - rw-chaos
   - get
@@ -117,7 +120,7 @@ calls:
                 "endpoints": [
                     {
                         "addresses": [
-                            "10.244.0.7"
+                            "10.244.0.78"
                         ],
                         "conditions": {
                             "ready": true,
@@ -127,25 +130,25 @@ calls:
                         "nodeName": "rw-plugins-control-plane",
                         "targetRef": {
                             "kind": "Pod",
-                            "name": "nolimit-694d6f9bf9-n96l2",
+                            "name": "nolimit-694d6f9bf9-xb2p8",
                             "namespace": "rw-chaos",
-                            "uid": "b4730b66-32ef-4281-bf6d-bc669b8cdc00"
+                            "uid": "1e37333b-406e-41c1-8031-799123dfff61"
                         }
                     }
                 ],
                 "kind": "EndpointSlice",
                 "metadata": {
                     "annotations": {
-                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T21:18:57Z"
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T21:47:39Z"
                     },
-                    "creationTimestamp": "2026-11-03T21:18:56Z",
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
                     "generateName": "nolimit-",
-                    "generation": 2,
+                    "generation": 4,
                     "labels": {
                         "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
                         "kubernetes.io/service-name": "nolimit"
                     },
-                    "name": "nolimit-hkcdm",
+                    "name": "nolimit-4m8lz",
                     "namespace": "rw-chaos",
                     "ownerReferences": [
                         {
@@ -154,11 +157,11 @@ calls:
                             "controller": true,
                             "kind": "Service",
                             "name": "nolimit",
-                            "uid": "f46ff3b6-c14f-4455-8f27-3caab2dc8cc4"
+                            "uid": "b3c1f4e1-21b1-4980-90bb-e9d05b84da22"
                         }
                     ],
-                    "resourceVersion": "29253",
-                    "uid": "e5848f3e-ab56-428a-a3ab-68574c152fed"
+                    "resourceVersion": "34392",
+                    "uid": "7a88d788-2e11-4d53-8a54-ef20af0f8900"
                 },
                 "ports": [
                     {
@@ -177,6 +180,7 @@ calls:
   stderr: ''
 - argv:
   - kubectl
+  - --request-timeout=30s
   - -n
   - rw-chaos
   - patch
@@ -184,7 +188,7 @@ calls:
   - nolimit
   - --type=merge
   - -p
-  - '{"metadata":{"annotations":{"runwhen.com/chaos-original-spec":"{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}"}},"spec":{"selector":{"app":"rw-chaos-none"}}}'
+  - '{"metadata":{"annotations":{"runwhen.com/chaos-original-spec":"{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}"},"resourceVersion":"32481"},"spec":{"selector":{"app":"rw-chaos-none"}}}'
   - -o
   - name
   - --dry-run=server
