@@ -70,8 +70,25 @@ kubernetes:
   - { bundle: k8s-fluxcd-kustomization-health, skills: [k8s-flux-health], status: planned }
   - { bundle: k8s-fluxcd-reconcile,            skills: [k8s-flux-health], status: planned }
   - { bundle: k8s-chaos-flux,                  skills: [k8s-chaos], status: planned, note: "suspend/resume become flux write tasks; arbitrary CHAOS_COMMAND exec dropped" }
-  - { bundle: k8s-argocd-application-health,   skills: [k8s-argocd-health], status: planned }
-  - { bundle: k8s-argocd-helm-health,          skills: [k8s-argocd-health], status: planned }
+  - bundle: k8s-argocd-application-health
+    skills: [k8s-argocd-health]
+    status: ported
+    ported: [k8s-argocd-health]
+    note: "start/finish labels of the last sync were swapped in the classic bundle; OutOfSync resources and resources without health are now listed"
+    tasks:
+      "Fetch ArgoCD Application Sync Status & Health": k8s-argocd-health/sync-status
+      "Fetch ArgoCD Application Last Sync Operation Details": k8s-argocd-health/sync-status
+      "Fetch Unhealthy ArgoCD Application Resources": k8s-argocd-health/unhealthy-resources
+      "Scan For Errors in Pod Logs Related to ArgoCD Application": "dropped: reads pods in the destination namespace by a guessed instance label (D47); the agent runs k8s-workload-logs/error-patterns on the workloads unhealthy-resources names"
+      "Fully Describe ArgoCD Application": "dropped: report-only describe dump; the Application's status is returned as data by sync-status, helm-source and unhealthy-resources"
+  - bundle: k8s-argocd-helm-health
+    skills: [k8s-argocd-health]
+    status: ported
+    ported: [k8s-argocd-health]
+    note: "both classic tasks listed every Application in a namespace (needs list, kubectl|jq without pipefail); the skill is per Application and also covers multi-source"
+    tasks:
+      "Fetch all available ArgoCD Helm releases": "k8s-argocd-health/helm-source (the target Application only; listing Applications is discovery, not a health task)"
+      "Fetch Installed ArgoCD Helm release versions": k8s-argocd-health/helm-source
   - { bundle: k8s-gitops-gh-remediate,         skills: [], status: dropped,
       note: "D72: needs a GitHub credential on a kubernetes target; re-home as github plugin skills later" }
 

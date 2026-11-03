@@ -1,0 +1,65 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (worst or most relevant first)
+tasks:
+  - name: sync-status
+    title: Application sync status
+    description: >-
+      Where the Argo CD Application stands: sync status and the revision it was
+      compared to, health status and message, its conditions (ComparisonError,
+      SyncError, InvalidSpecError and the like), the last sync operation (phase,
+      message, start and finish, retry count, the resources that failed to
+      apply), the automated sync policy (prune, selfHeal), the destination and
+      the source repositories with the revision each tracks (multi-source
+      aware). Reads only the Application object.
+    script: scripts/sync_status.py
+    tags: [sync, health, conditions, operation]
+    readOnly: true
+    permissions:
+      - { apiGroups: [argoproj.io], resources: [applications], verbs: [get] }
+    outputs:
+      application: { schema: ./schemas/application.v1.json, description: "Name, project, destination, sync policy, operation in progress" }
+      sync: { schema: ./schemas/sync.v1.json, description: "Sync status and the revision(s) compared" }
+      health: { schema: ./schemas/health.v1.json, description: "Health status and message" }
+      conditions: { schema: ./schemas/conditions.v1.json, description: "Application conditions, with the total before the maxItems cut" }
+      operation: { schema: ./schemas/operation.v1.json, description: "The last sync operation; null when none ever ran" }
+      sources: { schema: ./schemas/sources.v1.json, description: "Repository, path or chart, tracked revision and detected source type of each source" }
+
+  - name: unhealthy-resources
+    title: Unhealthy or out-of-sync resources
+    description: >-
+      The resources Argo CD tracks for the Application (status.resources) whose
+      health is not Healthy or that are OutOfSync: group, kind, namespace, name,
+      sync status, health and health message, worst health first, capped by the
+      maxItems setting, with the counts before the cap.
+    script: scripts/unhealthy_resources.py
+    tags: [resources, drift, health]
+    readOnly: true
+    permissions:
+      - { apiGroups: [argoproj.io], resources: [applications], verbs: [get] }
+    outputs:
+      resources: { schema: ./schemas/resources.v1.json, description: "Counts and the unhealthy or OutOfSync resources, with truncated when cut at maxItems" }
+
+  - name: helm-source
+    title: Helm source
+    description: >-
+      For the Application's Helm sources: chart or path, tracked revision,
+      release name, the names of value files and parameters (never their
+      values; inline values are reported only as present), and the last
+      deployed revision from status.history (which keeps only the newest
+      revisionHistoryLimit entries, default 10).
+    script: scripts/helm_source.py
+    tags: [helm, revision, history]
+    readOnly: true
+    permissions:
+      - { apiGroups: [argoproj.io], resources: [applications], verbs: [get] }
+    outputs:
+      helm: { schema: ./schemas/helm.v1.json, description: "Whether the Application uses Helm and each Helm source" }
+      lastDeployed: { schema: ./schemas/last-deployed.v1.json, description: "The latest status.history entry and how many entries are kept (Argo CD keeps only revisionHistoryLimit, default 10)" }
