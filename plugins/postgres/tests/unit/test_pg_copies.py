@@ -20,6 +20,16 @@ SKILLS = PLUGIN / "skills"
 SHARED = ("errors.py", "pg.py")
 
 
+# every postgres skill that runs psql carries the shared files; a skill missing here is untested
+SKILLS_WITH_COPIES = {
+    "pg-base",
+    "pg-connections",
+    "pg-long-running-queries",
+    "pg-locks",
+    "pg-replication-lag",
+}
+
+
 def copies(name):
     return sorted(SKILLS.glob(f"*/lib/*/{name}"))
 
@@ -51,15 +61,27 @@ def task(name, skill="pg-base"):
     return next(t for t in settings_doc(skill)["tasks"] if t["name"] == name)
 
 
-def test_every_postgres_skill_with_a_copy_is_one_this_test_knows():
-    assert {p.parts[-4] for p in copies("pg.py")} == {
-        "pg-base",
-        "pg-connections",
-        "pg-long-running-queries",
-    }
+@pytest.mark.parametrize("name", SHARED)
+def test_each_skill_that_runs_psql_has_a_copy_and_none_is_unregistered(name):
+    assert {p.parents[2].name for p in copies(name)} == SKILLS_WITH_COPIES
 
 
 SESSION_TASKS = (("pg-connections", "connections"), ("pg-long-running-queries", "long-running"))
+HEALTH_SKILLS = (
+    "pg-connections",
+    "pg-long-running-queries",
+    "pg-locks",
+    "pg-replication-lag",
+)
+
+
+@pytest.mark.parametrize("skill", HEALTH_SKILLS)
+def test_declared_permissions_of_the_health_skills_are_valid_postgres_permissions(skill):
+    schema = json.loads((PLUGIN / "integration" / "schemas" / "pg-permission.json").read_text())
+    for t in settings_doc(skill)["tasks"]:
+        for permission in t["permissions"]:
+            jsonschema.validate(permission, schema)
+            assert ax.parse_rule(permission)[0] is not None
 
 
 def test_every_declared_permission_is_a_valid_postgres_permission():

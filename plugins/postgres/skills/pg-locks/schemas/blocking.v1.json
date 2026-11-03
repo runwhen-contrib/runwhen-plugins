@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Lock waits and their root blockers",
+  "type": "object",
+  "properties": {
+    "visibility": {
+      "enum": [
+        "full",
+        "partial"
+      ],
+      "description": "partial when the role lacks pg_read_all_stats (pg_monitor): pg_stat_activity hides state and xact_start of other roles' sessions; an empty list is then not proof that nothing is blocked or idle in transaction"
+    },
+    "database": {
+      "type": "string",
+      "description": "The database the connection is in; relation names are resolved in it only"
+    },
+    "maxDepth": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Deepest chain, null when nothing waits"
+    },
+    "waiters": {
+      "type": "object",
+      "description": "Every backend waiting for a lock that something blocks, longest wait first",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pid": {
+                "type": "integer",
+                "description": "Backend pid of the waiting session"
+              },
+              "datname": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Database the waiter is connected to"
+              },
+              "usename": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Role the waiter runs as"
+              },
+              "applicationName": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "application_name of the waiter"
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "pg_stat_activity.state of the waiter (null where pg_stat_activity hides it from this role: visibility partial)"
+              },
+              "waitMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Milliseconds the waiter has waited for the lock (pg_locks.waitstart); null if the wait started and ended while reading"
+              },
+              "lockType": {
+                "type": "string",
+                "description": "pg_locks.locktype of the lock waited for: relation, transactionid, tuple, virtualxid..."
+              },
+              "lockMode": {
+                "type": "string",
+                "description": "pg_locks.mode wanted, e.g. AccessExclusiveLock"
+              },
+              "lockDatabase": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Name of the database the lock is in; null for a shared object"
+              },
+              "relationOid": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "OID of the locked relation; null for locks that are not on a relation"
+              },
+              "relation": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "schema.name of the locked relation; null when the lock is not on a relation, or the relation is in a database other than the connected one (see lockDatabase and relationOid)"
+              },
+              "depth": {
+                "type": "integer",
+                "description": "Hops to a root blocker: 1 when every blocker is a root blocker, else 1 + the deepest waiting blocker"
+              },
+              "blockedBy": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "pg_blocking_pids of the waiter: sessions holding or queued ahead for a conflicting lock (at most 50)"
+              },
+              "rootBlockerPids": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "Root blockers its chain reaches (at most 50)"
+              }
+            },
+            "required": [
+              "pid",
+              "datname",
+              "usename",
+              "applicationName",
+              "state",
+              "waitMs",
+              "lockType",
+              "lockMode",
+              "lockDatabase",
+              "relationOid",
+              "relation",
+              "depth",
+              "blockedBy",
+              "rootBlockerPids"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "description": "Entries found before the maxItems cap"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Entries left out of items by maxItems"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "true when items was cut at maxItems"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "rootBlockers": {
+      "type": "object",
+      "description": "Sessions that block others and are not waiting themselves, most waiters first",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pid": {
+                "type": "integer",
+                "description": "Backend pid of the root blocker"
+              },
+              "datname": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Database it is connected to"
+              },
+              "usename": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Role it runs as"
+              },
+              "applicationName": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "application_name"
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "pg_stat_activity.state; `idle in transaction` is the classic holder (null where pg_stat_activity hides it from this role: visibility partial)"
+              },
+              "xactAgeMs": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Milliseconds since its transaction started (xact_start) (null where pg_stat_activity hides it from this role: visibility partial)"
+              },
+              "blockedWaiters": {
+                "type": "integer",
+                "description": "Waiting sessions whose chain reaches this root blocker"
+              }
+            },
+            "required": [
+              "pid",
+              "datname",
+              "usename",
+              "applicationName",
+              "state",
+              "xactAgeMs",
+              "blockedWaiters"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "description": "Entries found before the maxItems cap"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Entries left out of items by maxItems"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "true when items was cut at maxItems"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted",
+        "truncated"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "visibility",
+    "database",
+    "maxDepth",
+    "waiters",
+    "rootBlockers"
+  ],
+  "additionalProperties": false
+}
