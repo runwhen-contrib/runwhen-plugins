@@ -1,0 +1,455 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "One entry per pod of the Redis workload",
+  "description": "A pod that is not ready is listed with queried false. latencyMs is the wall time of the kubectl exec running redis-cli PING, so it includes the exec round trip. A null field in info is one this Redis version does not report.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "pod": {
+        "type": "string",
+        "maxLength": 1024
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "container": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1024
+      },
+      "queried": {
+        "type": "boolean"
+      },
+      "ping": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "response": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "latencyMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ok",
+          "response",
+          "truncated",
+          "latencyMs"
+        ],
+        "additionalProperties": false
+      },
+      "info": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "server": {
+            "type": "object",
+            "properties": {
+              "redisVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "redisMode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "uptimeSeconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "tcpPort": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "redisVersion",
+              "redisMode",
+              "uptimeSeconds",
+              "tcpPort"
+            ],
+            "additionalProperties": false
+          },
+          "replication": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "connectedReplicas": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "replicas": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "ip": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 1024
+                    },
+                    "port": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "state": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 1024
+                    },
+                    "offset": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "lagSeconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ip",
+                    "port",
+                    "state",
+                    "offset",
+                    "lagSeconds"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "replicasTruncated": {
+                "type": "boolean"
+              },
+              "masterHost": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "masterPort": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "masterLinkStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "masterLinkDownSinceSeconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "masterLastIoSecondsAgo": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "masterSyncInProgress": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "masterReplOffset": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "role",
+              "connectedReplicas",
+              "replicas",
+              "replicasTruncated",
+              "masterHost",
+              "masterPort",
+              "masterLinkStatus",
+              "masterLinkDownSinceSeconds",
+              "masterLastIoSecondsAgo",
+              "masterSyncInProgress",
+              "masterReplOffset"
+            ],
+            "additionalProperties": false
+          },
+          "memory": {
+            "type": "object",
+            "properties": {
+              "usedBytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "maxBytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "usedPercent": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "overThreshold": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "maxmemoryPolicy": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              }
+            },
+            "required": [
+              "usedBytes",
+              "maxBytes",
+              "usedPercent",
+              "overThreshold",
+              "maxmemoryPolicy"
+            ],
+            "additionalProperties": false
+          },
+          "clients": {
+            "type": "object",
+            "properties": {
+              "connected": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "blocked": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "connected",
+              "blocked"
+            ],
+            "additionalProperties": false
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "evictedKeys": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "rejectedConnections": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "evictedKeys",
+              "rejectedConnections"
+            ],
+            "additionalProperties": false
+          },
+          "persistence": {
+            "type": "object",
+            "properties": {
+              "loading": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rdb": {
+                "type": "object",
+                "properties": {
+                  "lastBgsaveStatus": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1024
+                  },
+                  "lastSaveTime": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1024
+                  },
+                  "changesSinceLastSave": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "bgsaveInProgress": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "lastBgsaveStatus",
+                  "lastSaveTime",
+                  "changesSinceLastSave",
+                  "bgsaveInProgress"
+                ],
+                "additionalProperties": false
+              },
+              "aof": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "lastRewriteStatus": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1024
+                  },
+                  "lastWriteStatus": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "lastRewriteStatus",
+                  "lastWriteStatus"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "loading",
+              "rdb",
+              "aof"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "server",
+          "replication",
+          "memory",
+          "clients",
+          "stats",
+          "persistence"
+        ],
+        "additionalProperties": false
+      },
+      "error": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "mode": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1024
+      }
+    },
+    "required": [
+      "pod",
+      "ready",
+      "container",
+      "queried",
+      "ping",
+      "info",
+      "error",
+      "mode"
+    ],
+    "additionalProperties": false
+  }
+}

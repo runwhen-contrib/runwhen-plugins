@@ -1,0 +1,404 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-vault
+now: '2026-11-03T23:13:01.237Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-vault
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-vault\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T23:08:55Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-vault"
+            },
+            "name": "rw-vault",
+            "resourceVersion": "48554",
+            "uid": "0f5856a9-ce24-40d5-bf07-49f62aae7475"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - daemonsets.apps
+  - -l
+  - app.kubernetes.io/name=vault-csi-provider
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:metadata.generation="}{.metadata.generation}{"\n"}{"j:spec.updateStrategy="}{.spec.updateStrategy}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:status="}{.status}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=vault-csi-provider
+    s:metadata.namespace=rw-vault
+    s:metadata.uid=d578b460-443f-4cc1-92b5-40902a3a079e
+    j:metadata.generation=1
+    j:spec.updateStrategy={"rollingUpdate":{"maxSurge":0,"maxUnavailable":1},"type":"RollingUpdate"}
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/instance":"ok","app.kubernetes.io/name":"vault-csi-provider"}}
+    j:status={"currentNumberScheduled":1,"desiredNumberScheduled":1,"numberAvailable":1,"numberMisscheduled":0,"numberReady":1,"observedGeneration":1,"updatedNumberScheduled":1}
+    @
+    s:metadata.name=vault-csi-provider-broken
+    s:metadata.namespace=rw-vault
+    s:metadata.uid=540c2545-3f33-4fcd-9278-c3e6b2753e58
+    j:metadata.generation=1
+    j:spec.updateStrategy={"rollingUpdate":{"maxSurge":0,"maxUnavailable":1},"type":"RollingUpdate"}
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/instance":"broken","app.kubernetes.io/name":"vault-csi-provider"}}
+    j:status={"currentNumberScheduled":1,"desiredNumberScheduled":1,"numberMisscheduled":0,"numberReady":0,"numberUnavailable":1,"observedGeneration":1,"updatedNumberScheduled":1}
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=ok,app.kubernetes.io/name=vault-csi-provider
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:spec.nodeName="}{.spec.nodeName}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{"j:status="}{.status}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=vault-csi-provider-qb97m
+    s:metadata.uid=e5b389a0-cfc0-4b8e-b4cb-ef114b211bd2
+    s:metadata.deletionTimestamp=
+    s:spec.nodeName=rw-plugins-control-plane
+    j:metadata.labels={"app.kubernetes.io/instance":"ok","app.kubernetes.io/name":"vault-csi-provider","controller-revision-hash":"94d96769b","pod-template-generation":"1"}
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"DaemonSet","name":"vault-csi-provider","uid":"d578b460-443f-4cc1-92b5-40902a3a079e"}]
+    j:status={"allocatedResources":{"cpu":"1m","memory":"2Mi"},"conditions":[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:56Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:55Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:56Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:56Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:55Z","observedGeneration":1,"status":"True","type":"PodScheduled"}],"containerStatuses":[{"allocatedResources":{"cpu":"1m","memory":"2Mi"},"containerID":"containerd://99bd329035849468882975e806399cc09e49329f5e263e85b8092c350749177f","image":"docker.io/library/busybox:1.36","imageID":"docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662","lastState":{},"name":"provider","ready":true,"resources":{"limits":{"memory":"16Mi"},"requests":{"cpu":"1m","memory":"2Mi"}},"restartCount":0,"started":true,"state":{"running":{"startedAt":"2026-11-03T23:08:56Z"}},"user":{"linux":{"gid":0,"supplementalGroups":[0,10],"uid":0}},"volumeMounts":[{"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount","name":"kube-api-access-8ltv4","readOnly":true,"recursiveReadOnly":"Disabled"}]}],"hostIP":"172.19.0.2","hostIPs":[{"ip":"172.19.0.2"}],"observedGeneration":1,"phase":"Running","podIP":"10.244.0.118","podIPs":[{"ip":"10.244.0.118"}],"qosClass":"Burstable","resources":{"limits":{"memory":"16Mi"},"requests":{"memory":"2Mi"}},"startTime":"2026-11-03T23:08:55Z"}
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=broken,app.kubernetes.io/name=vault-csi-provider
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:spec.nodeName="}{.spec.nodeName}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{"j:status="}{.status}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=vault-csi-provider-broken-tnvtk
+    s:metadata.uid=a1af95a6-3545-412d-8680-01145c292fd9
+    s:metadata.deletionTimestamp=
+    s:spec.nodeName=rw-plugins-control-plane
+    j:metadata.labels={"app.kubernetes.io/instance":"broken","app.kubernetes.io/name":"vault-csi-provider","controller-revision-hash":"57c8488bbb","pod-template-generation":"1"}
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"DaemonSet","name":"vault-csi-provider-broken","uid":"540c2545-3f33-4fcd-9278-c3e6b2753e58"}]
+    j:status={"allocatedResources":{"cpu":"1m","memory":"2Mi"},"conditions":[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:56Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:55Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:55Z","message":"containers with unready status: [provider]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:55Z","message":"containers with unready status: [provider]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:08:55Z","observedGeneration":1,"status":"True","type":"PodScheduled"}],"containerStatuses":[{"allocatedResources":{"cpu":"1m","memory":"2Mi"},"containerID":"containerd://a478692b983cfeecd56d22349f317623c96c4bfff815cea7524ace7efd4104fe","image":"docker.io/library/busybox:1.36","imageID":"docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662","lastState":{"terminated":{"containerID":"containerd://0bb1964e8dc05f352327919c6bcbce70ea413f6110b4cc266cff4ee03f04053d","exitCode":137,"finishedAt":"2026-11-03T23:11:51Z","reason":"Error","startedAt":"2026-11-03T23:11:16Z"}},"name":"provider","ready":false,"resources":{"limits":{"memory":"16Mi"},"requests":{"cpu":"1m","memory":"2Mi"}},"restartCount":5,"started":true,"state":{"running":{"startedAt":"2026-11-03T23:12:35Z"}},"user":{"linux":{"gid":0,"supplementalGroups":[0,10],"uid":0}},"volumeMounts":[{"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount","name":"kube-api-access-slrjf","readOnly":true,"recursiveReadOnly":"Disabled"}]}],"hostIP":"172.19.0.2","hostIPs":[{"ip":"172.19.0.2"}],"observedGeneration":1,"phase":"Running","podIP":"10.244.0.119","podIPs":[{"ip":"10.244.0.119"}],"qosClass":"Burstable","resources":{"limits":{"memory":"16Mi"},"requests":{"memory":"2Mi"}},"startTime":"2026-11-03T23:08:55Z"}
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - events
+  - --field-selector
+  - type=Warning
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:08:56Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{vault}",
+                    "kind": "Pod",
+                    "name": "vault-0",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48564",
+                    "uid": "65b9eb43-fc77-4640-b019-41fa6daef723"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:08:56Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.116:8200/v1/sys/health\": dial tcp 10.244.0.116:8200: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:08:56Z",
+                    "name": "vault-0.18e4abb2e4f40f0e",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48604",
+                    "uid": "23c96b89-c943-475c-bc12-d1db4d3560b3"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 20,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:08:56Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{provider}",
+                    "kind": "Pod",
+                    "name": "vault-csi-provider-broken-tnvtk",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48589",
+                    "uid": "a1af95a6-3545-412d-8680-01145c292fd9"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:10:16Z",
+                "message": "Readiness probe failed: ",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:08:56Z",
+                    "name": "vault-csi-provider-broken-tnvtk.18e4abb2e9cadae4",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "49047",
+                    "uid": "03fd015e-1e56-484b-bc3c-c7f6aeb7cb17"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 3,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:09:01Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{provider}",
+                    "kind": "Pod",
+                    "name": "vault-csi-provider-broken-tnvtk",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48589",
+                    "uid": "a1af95a6-3545-412d-8680-01145c292fd9"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:10:11Z",
+                "message": "Liveness probe failed: ",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:09:01Z",
+                    "name": "vault-csi-provider-broken-tnvtk.18e4abb406410a11",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "49029",
+                    "uid": "c5a57c96-e192-44eb-99e6-0b3c5e3b95a9"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:09:31Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{provider}",
+                    "kind": "Pod",
+                    "name": "vault-csi-provider-broken-tnvtk",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48589",
+                    "uid": "a1af95a6-3545-412d-8680-01145c292fd9"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:09:31Z",
+                "message": "Readiness probe errored and resulted in unknown state: rpc error: code = Unknown desc = failed to exec in container: failed to create exec \"b01e887532682a324db52ba10147eb67a2f021e1f9defc65b5f8e37570df3523\": cannot exec in a stopped state",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:09:31Z",
+                    "name": "vault-csi-provider-broken-tnvtk.18e4abbb0394781d",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48890",
+                    "uid": "fdfa0ed4-9218-4b55-a2b0-16c1791d47dc"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:10:06Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{provider}",
+                    "kind": "Pod",
+                    "name": "vault-csi-provider-broken-tnvtk",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48589",
+                    "uid": "a1af95a6-3545-412d-8680-01145c292fd9"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:10:06Z",
+                "message": "Readiness probe errored and resulted in unknown state: rpc error: code = Unknown desc = failed to exec in container: failed to create exec \"3e1ff647f235e05f836875e2d8b092e9cc7f603b6053242be1addb3985641b5e\": ttrpc: closed",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:10:06Z",
+                    "name": "vault-csi-provider-broken-tnvtk.18e4abc329a81611",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "49013",
+                    "uid": "ca634d2b-6066-496e-a0fb-aa0b88de5454"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:08:56Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{vault}",
+                    "kind": "Pod",
+                    "name": "vault-sealed-0",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48574",
+                    "uid": "c79e8ca5-fa9e-4c48-9874-6cc6da5d9823"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:09:13Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.117:8200/v1/sys/health\": dial tcp 10.244.0.117:8200: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:08:56Z",
+                    "name": "vault-sealed-0.18e4abb2e6eac9a0",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48803",
+                    "uid": "78b17fae-ff61-4431-8242-9c11e283c229"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 4,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:08:56Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{vault}",
+                    "kind": "Pod",
+                    "name": "vault-sealed-0",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48574",
+                    "uid": "c79e8ca5-fa9e-4c48-9874-6cc6da5d9823"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:09:11Z",
+                "message": "Readiness probe failed: HTTP probe failed with statuscode: 501",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:08:56Z",
+                    "name": "vault-sealed-0.18e4abb2fc5a7a42",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48790",
+                    "uid": "2c51fdf1-abe7-4a2a-b177-129c8faf1d16"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 19,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T23:09:14Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{vault}",
+                    "kind": "Pod",
+                    "name": "vault-sealed-0",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "48574",
+                    "uid": "c79e8ca5-fa9e-4c48-9874-6cc6da5d9823"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T23:10:41Z",
+                "message": "Readiness probe failed: HTTP probe failed with statuscode: 503",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:09:14Z",
+                    "name": "vault-sealed-0.18e4abb72f932f08",
+                    "namespace": "rw-vault",
+                    "resourceVersion": "49094",
+                    "uid": "aeabb9f4-c56d-4bda-bf69-31dba1deb7e0"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    daemonsets: {"$containsWhere": {"name": "vault-csi-provider-broken", "ready": 0}}

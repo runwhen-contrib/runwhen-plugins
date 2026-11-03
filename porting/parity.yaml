@@ -252,8 +252,29 @@ kubernetes:
       "Perform PostgreSQL Cluster Failover Operation": k8s-postgres-operator-ops/switchover
       "Restart PostgreSQL Cluster with Rolling Update": k8s-postgres-operator-ops/rolling-restart
       "Verify Cluster Recovery and Generate Summary": k8s-postgres-operator-health/patroni-status
-  - { bundle: k8s-redis-healthcheck,     skills: [k8s-redis-health], status: planned, note: "SET/INCR test is a write: separate write task" }
-  - { bundle: k8s-vault-healthcheck,     skills: [k8s-vault-health], status: planned }
+  - bundle: k8s-redis-healthcheck
+    skills: [k8s-redis-health]
+    status: ported
+    ported: [k8s-redis-health]
+    note: "SET/INCR test is a write: separate write task (read-write-check, readOnly false, dryRun). Classic Redis auth was unsupported (NOAUTH read as a PING failure); re-derived: redis-cli runs inside the container with the container's own password (REDIS_PASSWORD, REDIS_PASSWORD_FILE, VALKEY_PASSWORD, VALKEY_PASSWORD_FILE, in that order) as REDISCLI_AUTH (no Secret read, nothing on argv), and a refused or missing password is permission_denied. Cluster and Sentinel are not supported (cluster is invalid_input unsupported_mode, a sentinel is not a Redis server); the port is an input. Classic exec'd deployment/NAME, which on several replicas picked one pod (a replica fails SET with READONLY); every ready pod is now asked, and the write goes to ONE primary (the first by pod name; any other role:master pod is reported as otherPrimaries). A run that proves nothing fails (no ready pod: unreachable; no primary: not_found) instead of reporting ok. StatefulSet-based Redis, the common shape, is a target. The healthcheck key is deleted (it was left behind) and carries an expiry. Classic compared only the final GET and ignored SET/INCR codes; each step is checked. INCR is not ported: SET, GET and DEL prove the write path"
+    tasks:
+      "Ping Redis Workload": "k8s-redis-health/ping (also reports role, replica link, memory, evictions, clients and persistence status from INFO)"
+      "Verify Redis Read Write Operation": "k8s-redis-health/read-write-check (SET NX EX 60, GET, DEL on one primary; the classic SET 0 / INCR / GET sequence is replaced)"
+  - bundle: k8s-vault-healthcheck
+    skills: [k8s-vault-health]
+    status: ported
+    ported: [k8s-vault-health]
+    note: "classic hard-coded the object names (vault, vault-csi-provider), curled a customer-supplied VAULT_URL from the runner, substituted the response into a Python string literal (quote injection), ignored standby and performance standby, and compared replicas with status.replicas (a scaled-down StatefulSet raised 'No desired replicas'). Re-derived by target (decision): server-status takes the Vault StatefulSet or a namespace (StatefulSets labelled app.kubernetes.io/name=vault) and asks each Running pod /v1/sys/health through the API server pod proxy (pods/proxy get; no VAULT_URL, no egress, no port-forward, no exec, no token), all health codes overridden to 200 so 429/472/473/501/503/530 arrive as facts (state, healthCode; 530 is state removed); the kubectl fetches are narrowed with -o jsonpath so no env value is ever recorded; csi-provider-status takes the CSI DaemonSet or a namespace (DaemonSets labelled app.kubernetes.io/name=vault-csi-provider). The two manifest dumps, the log fetches and the unfiltered events grep assert nothing and are routed to existing skills"
+    tasks:
+      "Fetch Vault CSI Driver Logs": "dropped: report-only log tail; k8s-workload-logs/recent-logs and error-patterns on the CSI provider DaemonSet"
+      "Get Vault CSI Driver Warning Events": "k8s-vault-health/csi-provider-status (events: Warning events about the DaemonSet and its pods, matched by uid, within since)"
+      "Check Vault CSI Driver Replicas": "k8s-vault-health/csi-provider-status (daemonsets: desired, current, ready, updated, available, unavailable, misscheduled against maxUnavailable, with each pod's container restarts)"
+      "Fetch Vault Pod Workload Logs": "dropped: report-only log tail; k8s-workload-logs/recent-logs and error-patterns on the Vault StatefulSet"
+      "Get Related Vault Events": "dropped: a substring grep of every Warning event in the namespace; k8s-workload-health/warning-events on the Vault StatefulSet, or k8s-namespace-health/warning-events"
+      "Fetch Vault StatefulSet Manifest Details": "dropped: report-only manifest dump (asserts nothing); k8s-workload-health/rollout-status, config-changes and probe-config on the StatefulSet"
+      "Fetch Vault DaemonSet Manifest Details": "dropped: report-only manifest dump (asserts nothing; the classic title says StatefulSet for a DaemonSet); k8s-workload-health on the DaemonSet"
+      "Verify Vault Availability": "k8s-vault-health/server-status (pods[].health: initialized, sealed, standby, performanceStandby, version, clusterName, replication modes; per pod instead of one URL)"
+      "Check Vault StatefulSet Replicas": "k8s-vault-health/server-status (statefulsets: desired, current, ready, updated, available against spec.replicas)"
   - bundle: k8s-prometheus-healthcheck
     skills: [k8s-prometheus-health]
     status: ported

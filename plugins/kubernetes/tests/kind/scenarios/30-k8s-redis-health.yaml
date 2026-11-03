@@ -1,0 +1,240 @@
+# k8s-redis-health scenarios (namespace rw-redis). Every container is limited to 64Mi.
+#   sts/redis          2 pods: redis-0 primary, redis-1 replica of redis-0. Password from the
+#                      Secret redis-auth through the env var REDIS_PASSWORD (--requirepass);
+#                      maxmemory 48mb so used vs max is a real ratio.
+#   sts/redis-orphan   1 pod that is a replica of a master that does not exist: role slave,
+#                      master_link_status down (the broken replica link).
+#   deploy/redis-open  no password at all (REDIS_PASSWORD unset): the "no auth" path.
+#   deploy/redis-locked  --requirepass from the env var LOCK_PW, no REDIS_PASSWORD env in the
+#                      container: the password-missing case (NOAUTH for the check).
+#   deploy/redis-idle  replicas 0: a Redis with no pod at all (no ready pod for the check).
+#   deploy/redis-sentinel  a Sentinel, not a Redis data node (port 26379): INFO has no role.
+#   deploy/redis-cluster   a Redis started with cluster-enabled yes: redis_mode cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-redis
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-auth
+  namespace: rw-redis
+type: Opaque
+stringData:
+  password: rw-redis-test-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: rw-redis
+spec:
+  clusterIP: None
+  selector: {app: redis}
+  ports:
+    - {name: redis, port: 6379}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: rw-redis
+spec:
+  replicas: 2
+  serviceName: redis
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: {app: redis}
+  template:
+    metadata:
+      labels: {app: redis}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              if [ "${HOSTNAME##*-}" = 0 ]; then
+                exec redis-server --requirepass "$REDIS_PASSWORD" --maxmemory 48mb --maxmemory-policy allkeys-lru --save ""
+              fi
+              exec redis-server --replicaof redis-0.redis.rw-redis.svc 6379 --masterauth "$REDIS_PASSWORD" --requirepass "$REDIS_PASSWORD" --maxmemory 48mb --maxmemory-policy allkeys-lru --save ""
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: redis-auth, key: password}
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: [sh, -c, 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-orphan
+  namespace: rw-redis
+spec:
+  replicas: 1
+  serviceName: redis-orphan
+  selector:
+    matchLabels: {app: redis-orphan}
+  template:
+    metadata:
+      labels: {app: redis-orphan}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: [redis-server, --replicaof, redis-gone.rw-redis.svc, "6379", --save, ""]
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: [redis-cli, ping]
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-open
+  namespace: rw-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redis-open}
+  template:
+    metadata:
+      labels: {app: redis-open}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: [redis-server, --save, ""]
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: [redis-cli, ping]
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-locked
+  namespace: rw-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redis-locked}
+  template:
+    metadata:
+      labels: {app: redis-locked}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: [sh, -c, 'exec redis-server --requirepass "$LOCK_PW" --save ""']
+          env:
+            - name: LOCK_PW
+              valueFrom:
+                secretKeyRef: {name: redis-auth, key: password}
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            tcpSocket: {port: 6379}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-idle
+  namespace: rw-redis
+spec:
+  replicas: 0
+  selector:
+    matchLabels: {app: redis-idle}
+  template:
+    metadata:
+      labels: {app: redis-idle}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: [redis-server, --save, ""]
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-sentinel
+  namespace: rw-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redis-sentinel}
+  template:
+    metadata:
+      labels: {app: redis-sentinel}
+    spec:
+      containers:
+        - name: sentinel
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              echo "sentinel monitor mymaster 127.0.0.1 6379 1" > /tmp/sentinel.conf
+              exec redis-sentinel /tmp/sentinel.conf
+          ports:
+            - {name: sentinel, containerPort: 26379}
+          readinessProbe:
+            tcpSocket: {port: 26379}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cluster
+  namespace: rw-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redis-cluster}
+  template:
+    metadata:
+      labels: {app: redis-cluster}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: [redis-server, --cluster-enabled, "yes", --save, ""]
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: [redis-cli, ping]
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}

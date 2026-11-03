@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "One entry per pod of the Vault StatefulSet(s)",
+  "description": "Sealed, uninitialized and removed pods first, then pods that are not ready. state and healthCode say what /v1/sys/health reported: healthCode is the HTTP status Vault returns for that state with default settings (429 standby, 472 DR secondary, 473 performance standby, 501 uninitialized, 503 sealed, 530 removed from the raft cluster); the task overrides the codes so the body always arrives, and none of them is an error. A pod that is not Running or has no address is listed with queried false. state removed is a Vault that was taken out of its raft cluster; initialized and sealed are null when Vault answered 530 and the proxy dropped the body.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "statefulset": {
+        "type": "string",
+        "maxLength": 1024
+      },
+      "pod": {
+        "type": "string",
+        "maxLength": 1024
+      },
+      "phase": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1024
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "containerRestarts": {
+        "type": "integer"
+      },
+      "queried": {
+        "type": "boolean"
+      },
+      "health": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "uninitialized",
+              "sealed",
+              "removed",
+              "dr_secondary",
+              "performance_standby",
+              "standby",
+              "active"
+            ]
+          },
+          "healthCode": {
+            "enum": [
+              200,
+              429,
+              472,
+              473,
+              501,
+              503,
+              530
+            ]
+          },
+          "initialized": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "sealed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "standby": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "performanceStandby": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "clusterName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "clusterId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "replicationPerformanceMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "replicationDrMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "enterprise": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "healthCode",
+          "initialized",
+          "sealed",
+          "standby",
+          "performanceStandby",
+          "version",
+          "clusterName",
+          "clusterId",
+          "replicationPerformanceMode",
+          "replicationDrMode",
+          "enterprise"
+        ],
+        "additionalProperties": false
+      },
+      "error": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "statefulset",
+      "pod",
+      "phase",
+      "ready",
+      "containerRestarts",
+      "queried",
+      "health",
+      "error"
+    ],
+    "additionalProperties": false
+  }
+}
