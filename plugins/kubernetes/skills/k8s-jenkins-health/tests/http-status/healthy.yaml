@@ -1,0 +1,89 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins
+now: '2026-11-03T23:50:00.751Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - statefulsets.apps
+  - jenkins
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=StatefulSet
+    s:metadata.name=jenkins
+    s:metadata.namespace=rw-jenkins
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/instance":"jenkins","app.kubernetes.io/name":"jenkins"}}
+    j:spec.template.metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins","app.kubernetes.io/name":"jenkins"}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=jenkins,app.kubernetes.io/name=jenkins
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=jenkins-0
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-685df57fb4","statefulset.kubernetes.io/pod-name":"jenkins-0"}
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:29Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:29Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-0:8080/proxy/login
+  - --request-timeout=30s
+  - -v=8
+  rc: 0
+  stdout: <html><head><title>Sign in [Jenkins]</title></head></html>
+  stderr: "I1104 05:20:01.601981   95019 loader.go:407] Config loaded from file:  /home/user/.kube/config\nI1104 05:20:01.602096   95019 envvar.go:195] \"Feature gate default state\" feature=\"ClientsAllowCBOR\"\
+    \ enabled=false\nI1104 05:20:01.602101   95019 envvar.go:195] \"Feature gate default state\" feature=\"ClientsAllowTLSCacheGC\" enabled=true\nI1104 05:20:01.602103   95019 envvar.go:195] \"Feature gate\
+    \ default state\" feature=\"InOrderInformersBatchProcess\" enabled=true\nI1104 05:20:01.602104   95019 envvar.go:195] \"Feature gate default state\" feature=\"UnlockWhileProcessingFIFO\" enabled=true\n\
+    I1104 05:20:01.602106   95019 envvar.go:195] \"Feature gate default state\" feature=\"WatchListClient\" enabled=true\nI1104 05:20:01.602107   95019 envvar.go:195] \"Feature gate default state\" feature=\"\
+    ClientsAllowCARotation\" enabled=true\nI1104 05:20:01.602108   95019 envvar.go:195] \"Feature gate default state\" feature=\"ClientsPreferCBOR\" enabled=false\nI1104 05:20:01.602109   95019 envvar.go:195]\
+    \ \"Feature gate default state\" feature=\"InformerResourceVersion\" enabled=true\nI1104 05:20:01.602111   95019 envvar.go:195] \"Feature gate default state\" feature=\"InOrderInformers\" enabled=true\n\
+    I1104 05:20:01.602112   95019 envvar.go:195] \"Feature gate default state\" feature=\"AtomicFIFO\" enabled=true\nI1104 05:20:01.602407   95019 raw.go:84] \"Request Body\" body=\"\"\nI1104 05:20:01.602675\
+    \   95019 round_trippers.go:527] \"Request\" verb=\"GET\" url=\"https://127.0.0.1:6443/api/v1/namespaces/rw-jenkins/pods/http:jenkins-0:8080/proxy/login?timeout=30s\" headers=<\n\tAccept: application/json,\
+    \ */*\n\tUser-Agent: kubectl/v1.36.1 (darwin/arm64) kubernetes/7569396\n >\nI1104 05:20:01.607438   95019 round_trippers.go:632] \"Response\" status=\"200 OK\" headers=<\n\tAudit-Id: 66699339-babd-444f-97af-a6f1c8388369\n\
+    \tCache-Control: no-cache, private\n\tContent-Length: 58\n\tContent-Type: text/html;charset=utf-8\n\tDate: Tue, 03 Nov 2026 23:50:01 GMT\n\tServer: BaseHTTP/0.6 Python/3.12.16\n\tX-Jenkins: 2.462.3\n\
+    \ > milliseconds=4\n"
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    login:
+      workload:
+        kind: StatefulSet
+        name: jenkins
+        replicas: 1
+        readyReplicas: 1
+      okCount: 1
+      notOkCount: 0
+      pods:
+        $containsWhere:
+          name: jenkins-0
+          queried: true
+          httpStatus: 200
+          ok: true
+          version: 2.462.3
+          headersExposed: true

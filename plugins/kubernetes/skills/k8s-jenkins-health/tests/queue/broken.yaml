@@ -1,0 +1,96 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-stuck
+now: '2026-11-03T23:50:09.089Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - statefulsets.apps
+  - jenkins-stuck
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=StatefulSet
+    s:metadata.name=jenkins-stuck
+    s:metadata.namespace=rw-jenkins
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/instance":"jenkins-stuck","app.kubernetes.io/name":"jenkins"}}
+    j:spec.template.metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-stuck","app.kubernetes.io/name":"jenkins"}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=jenkins-stuck,app.kubernetes.io/name=jenkins
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=jenkins-stuck-0
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-stuck","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-stuck-7bf4c4ffd8","statefulset.kubernetes.io/pod-name":"jenkins-stuck-0"}
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:29Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:29Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-stuck-0:8080/proxy/queue/api/json?tree=items[id,blocked,buildable,stuck,inQueueSince,why,task[name]]
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"_class": "hudson.model.Queue", "discoverableItems": [], "items": [{"_class": "hudson.model.Queue$BuildableItem",
+    "blocked": false, "buildable": true, "id": 41, "inQueueSince": 1793490609707, "stuck": true, "pending":
+    false, "task": {"_class": "hudson.model.FreeStyleProject", "name": "nightly-build", "url": "http://jenkins:8080/job/nightly-build/"},
+    "url": "queue/item/41/", "why": "There are no nodes with the label ''arm64''"}, {"_class": "hudson.model.Queue$BlockedItem",
+    "blocked": true, "buildable": false, "id": 42, "inQueueSince": 1793749749707, "stuck": false, "pending":
+    false, "task": {"_class": "hudson.model.FreeStyleProject", "name": "deploy", "url": "http://jenkins:8080/job/deploy/"},
+    "url": "queue/item/42/", "why": "Build #17 is already in progress (ETA: 2 min 0 sec)"}]}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-stuck-0:8080/proxy/computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,numExecutors,offlineCauseReason]
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"_class": "hudson.model.ComputerSet", "busyExecutors": 0, "computer": [{"_class": "hudson.model.Hudson$MasterComputer",
+    "displayName": "Built-In Node", "idle": true, "offline": false, "temporarilyOffline": false, "numExecutors":
+    2, "offlineCauseReason": ""}, {"_class": "hudson.slaves.SlaveComputer", "displayName": "agent-arm64-1",
+    "idle": true, "offline": true, "temporarilyOffline": true, "numExecutors": 1, "offlineCauseReason":
+    "Disconnected by admin: node maintenance"}], "displayName": "Nodes", "totalExecutors": 3}'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    queue:
+      stuckAfterCount: 1
+      offlineCount: 1
+      pods:
+        $containsWhere:
+          name: jenkins-stuck-0
+          queue:
+            itemCount: 2
+            flaggedStuckCount: 1
+            flaggedBlockedCount: 1
+            stuckAfterItems:
+              $containsWhere: {id: 41, task: nightly-build, stuck: true, why: "There are no nodes with the label 'arm64'"}
+          computers:
+            offline:
+              $containsWhere: {name: agent-arm64-1, temporarilyOffline: true, cause: "Disconnected by admin: node maintenance"}
