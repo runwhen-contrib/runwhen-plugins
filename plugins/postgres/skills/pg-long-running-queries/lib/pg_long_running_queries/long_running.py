@@ -4,14 +4,16 @@ One statement reads pg_stat_activity; every duration is computed on the server (
 query_start, state_change or xact_start), so the argv a recording replays does not depend on the
 clock. The task's own backend (pg_backend_pid()) and walsenders (a replication connection is
 "active" for as long as it lives) are left out. Query text is returned only when the
-includeQueryText setting is on, and only after `sqltext.safe_query_text`."""
+includeQueryText setting is on. The text is normalized IN the statement (`sqlnorm`: literals and
+comments replaced by `?`, then cut to 1024 characters), so raw query text never leaves the
+database; `sqltext.safe_query_text` is a second pass over what comes back."""
 
 from .errors import RwError
 from .pg import parse_duration, psql_json
+from .sqlnorm import QUERY_CHARS, RAW_QUERY_CHARS, normalized_query_expr
 from .sqltext import MAX_QUERY_BYTES, safe_query_text
 
 SCOPE = "pg_stat_activity"
-RAW_QUERY_CHARS = 8192  # characters of query text fetched; the rest is never read
 
 # `full_view` and `hidden` as in pg-connections: a role without pg_read_all_stats sees no state
 # for other roles' sessions, so they cannot match the filters below.
@@ -60,8 +62,20 @@ SELECT json_build_object(
       'queryId', query_id,
       'blockedBy', pg_blocking_pids(pid){query_field}
     ) ORDER BY dur DESC, pid), '[]'::json)
-    FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT {limit}) h)
+    FROM {items_from})
 )"""
+
+PLAIN_ITEMS_FROM = "(SELECT * FROM hits ORDER BY dur DESC, pid LIMIT {limit}) h"
+# the expression runs on the capped rows only, once per row
+NORMALIZED_ITEMS_FROM = (
+    "(SELECT t.*, " + normalized_query_expr("t.query") + " AS query_norm\n"
+    "      FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT {limit}) t) h"
+)
+# query_norm is cut here, after the expression; the flag also covers the raw cut at RAW_QUERY_CHARS
+QUERY_FIELD = (
+    ",\n      'query', left(query_norm, {chars}),"
+    "\n      'queryTruncated', (char_length(query_norm) > {chars} OR char_length(query) >= {raw})"
+).format(chars=QUERY_CHARS, raw=RAW_QUERY_CHARS)
 
 
 def long_running_sql(min_ms, limit, include_query_text):
@@ -71,7 +85,8 @@ def long_running_sql(min_ms, limit, include_query_text):
             "{query_column}",
             f",\n         left(a.query, {RAW_QUERY_CHARS}) AS query" if include_query_text else "",
         )
-        .replace("{query_field}", ",\n      'query', query" if include_query_text else "")
+        .replace("{query_field}", QUERY_FIELD if include_query_text else "")
+        .replace("{items_from}", NORMALIZED_ITEMS_FROM if include_query_text else PLAIN_ITEMS_FROM)
         .replace("{min_ms}", str(int(min_ms)))
         .replace("{limit}", str(int(limit)))
     )
@@ -100,7 +115,9 @@ def shape_item(item, include_query_text):
         "blockedBy": item["blockedBy"],
     }
     if include_query_text:
-        entry["query"], entry["queryTruncated"] = safe_query_text(item.get("query"))
+        # a second pass over text the statement already normalized and cut
+        entry["query"], clipped = safe_query_text(item.get("query"))
+        entry["queryTruncated"] = bool(item.get("queryTruncated")) or clipped
     return entry
 
 

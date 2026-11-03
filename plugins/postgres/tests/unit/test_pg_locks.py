@@ -154,7 +154,7 @@ def test_blocking_script_reads_no_query_text_and_stays_read_only(run_script, fak
     fake_psql.on("pg_blocking_pids", stdout=json.dumps(CHAIN))
     run_script("blocking")
     call = fake_psql.calls[0]
-    assert "default_transaction_read_only = on" in " ".join(call["argv"])
+    assert call["script"].startswith("BEGIN READ ONLY; SET LOCAL statement_timeout = ")
     assert "query" not in call["sql"].replace("pg_stat_activity", "")
     assert "pg_backend_pid()" in call["sql"]
 

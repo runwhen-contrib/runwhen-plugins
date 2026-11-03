@@ -151,8 +151,8 @@ def test_the_statement_leaves_out_the_tasks_own_backend_and_reads_only(run_scrip
     assert "a.pid <> pg_backend_pid()" in call["sql"]
     assert call["argv"][:7] == ["psql", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1"]
     clauses = [call["argv"][i + 1] for i, a in enumerate(call["argv"]) if a == "-c"]
-    assert "default_transaction_read_only = on" in clauses[0]
-    assert "statement_timeout = 30000" in clauses[0]
+    assert clauses[0].startswith("BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; ")
+    assert clauses[0].endswith("; COMMIT;")
     assert "{limit}" not in call["sql"] and "LIMIT 200" in call["sql"]
 
 

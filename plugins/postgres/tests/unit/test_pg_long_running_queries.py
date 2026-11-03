@@ -119,6 +119,34 @@ def test_query_text_is_not_even_selected_by_default(run_script, fake_psql):
     assert "'query'" not in sql_of(fake_psql)
 
 
+def test_query_text_is_normalized_inside_the_statement_so_raw_text_never_leaves_the_database(
+    run_script, fake_psql
+):
+    answer(fake_psql, [item(1, 600000, query="select ?", queryTruncated=False)])
+    run_long(run_script, settings={"includeQueryText": True})
+    sql = sql_of(fake_psql)
+    assert sql.count("regexp_replace(") == 7  # dollar, literals, unclosed, numbers + 3 clean-ups
+    assert "'query', left(query_norm, 1024)" in sql
+    assert "'query', query\n" not in sql and "'query', query," not in sql
+    # the regexes run on the capped rows only, after the filter
+    assert sql.index("regexp_replace(") > sql.index("hits AS")
+    # off by default: no normalization, no text
+    fake_psql.calls.clear()
+    run_long(run_script)
+    assert "regexp_replace(" not in sql_of(fake_psql)
+
+
+def test_a_cut_made_by_the_statement_is_reported_as_truncated(run_script, fake_psql):
+    answer(
+        fake_psql,
+        [item(1, 900000, query="select ?", queryTruncated=True), item(2, 800000, query="select ?")],
+    )
+    out = run_long(run_script, settings={"includeQueryText": True}).envelope["outputs"]
+    a, b = out["longRunning"]["items"]
+    assert (a["query"], a["queryTruncated"]) == ("select ?", True)
+    assert (b["query"], b["queryTruncated"]) == ("select ?", False)
+
+
 def test_query_text_is_normalized_and_cut_when_the_setting_is_on(run_script, fake_psql):
     raw = "select * from users where email = 'bob@example.com' and id = 42"
     long_raw = "select " + ", ".join(f"col_{i} = 'secret{i}'" for i in range(300))
@@ -137,6 +165,7 @@ def test_query_text_is_normalized_and_cut_when_the_setting_is_on(run_script, fak
     assert "secret" not in b["query"]
     assert (c["query"], c["queryTruncated"]) == (None, False)
     assert "left(a.query, 8192) AS query" in sql_of(fake_psql)
+    # the Python pass is the second barrier: this is text a (hypothetical) server did not normalize
     # nothing the server sent as raw text is in the result
     assert "bob@example.com" not in json.dumps(run.envelope)
 

@@ -13,8 +13,11 @@ in its own `lib/<skill_snake>/`; they import only `.errors`, so the copy needs n
 
 The connection is libpq's own environment (PGHOST, PGPORT, PGUSER, PGDATABASE, PGSSLMODE...),
 which the runner materializes from the connection's `postgres/libpq` credential; this module
-never reads or prints PGPASSWORD. The session is read-only and bounded by the task's settings
-`connectTimeout` and `statementTimeout` (durations, default 10s and 30s).
+never reads or prints PGPASSWORD. The statement runs in one `BEGIN READ ONLY` transaction with a
+`SET LOCAL statement_timeout`, bounded by the task's settings `connectTimeout` and
+`statementTimeout` (durations, default 10s and 30s). Nothing is set on the session itself, so a
+pooler that shares server connections (pgbouncer in transaction mode) never carries a setting
+over to another client, and the statement cannot write.
 """
 
 import json
@@ -35,6 +38,7 @@ DEFAULT_CONNECT_TIMEOUT = "10s"
 DEFAULT_STATEMENT_TIMEOUT = "30s"
 MESSAGE_LIMIT = 1024
 _SLACK = 5.0  # seconds a run may take beyond connect + statement timeouts
+MAX_MS = 2147483647  # statement_timeout is an int4 of milliseconds; 0 would mean "no limit"
 
 _DURATION = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m|h|d)")
 _UNITS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
@@ -61,9 +65,30 @@ def timeouts(settings):
     return parse_duration(connect, "connectTimeout"), parse_duration(statement, "statementTimeout")
 
 
+def statement_ms(seconds):
+    """statement_timeout in milliseconds, clamped to 1..2147483647 (never 0, which disables it,
+    and never above what the server's int4 accepts)."""
+    return min(max(int(seconds * 1000), 1), MAX_MS)
+
+
+def connect_seconds(seconds):
+    """PGCONNECT_TIMEOUT in whole seconds, at least 1 (0 means wait forever) and at most
+    2147483 (2147483647 ms)."""
+    return min(max(round(seconds), 1), MAX_MS // 1000)
+
+
+def session_sql(sql, statement):
+    """The one script psql runs: a read-only transaction, the statement timeout local to it, then
+    `sql`. `-A -t -q` print only the value the query returns."""
+    return (
+        f"BEGIN READ ONLY; SET LOCAL statement_timeout = {statement_ms(statement)}; {sql}; COMMIT;"
+    )
+
+
 # stderr patterns, tried in this order. Timeouts first: a connect timeout is worded
 # "connection to server ... failed: timeout expired", which the unreachable pattern would also
-# match. Authentication and authorization next, for the same reason ("... failed: FATAL: ...").
+# match. Then rate limits and every permission_denied wording, all of which precede the
+# "connection to server .* failed" catch-all of unreachable ("... failed: FATAL: ..." too).
 _RULES = (
     (
         "timeout",
@@ -74,15 +99,27 @@ _RULES = (
         ),
     ),
     (
+        "rate_limited",
+        re.compile(
+            r"too many clients already|remaining connection slots are reserved"
+            r"|too many connections for role|too many connections for database",
+            re.I,
+        ),
+    ),
+    (
         "permission_denied",
         re.compile(
             r"password authentication failed|permission denied|no pg_hba\.conf entry"
+            r"|pg_hba\.conf rejects connection|is not permitted to log in"
             r"|role \"[^\"]*\" does not exist|authentication failed|no password supplied"
             r"|must be (?:superuser|owner|member)|insufficient privilege",
             re.I,
         ),
     ),
-    ("not_found", re.compile(r"database \"[^\"]*\" does not exist", re.I)),
+    # pgbouncer words a missing database as "no such database"; postgres as "does not exist"
+    ("not_found", re.compile(r"database \"[^\"]*\" does not exist|no such database", re.I)),
+    # `unsupported startup parameter` is pgbouncer refusing a libpq option it does not pass on
+    ("dependency", re.compile(r"unsupported startup parameter", re.I)),
     (
         "unreachable",
         re.compile(
@@ -90,7 +127,11 @@ _RULES = (
             r"|name or service not known|no route to host|network is unreachable"
             r"|ssl error|ssl syscall|sslmode|server does not support ssl|certificate verify failed"
             r"|server closed the connection unexpectedly|connection to server .* failed"
-            r"|the database system is (?:starting up|shutting down)",
+            r"|the database system is (?:starting up|shutting down|in recovery mode)"
+            r"|conflict with recovery|terminating connection due to administrator command"
+            r"|terminating connection due to conflict with recovery"
+            r"|connection to server was lost|ssl connection has been closed unexpectedly"
+            r"|pgbouncer cannot connect to server",
             re.I,
         ),
     ),
@@ -152,23 +193,25 @@ def psql_json(ctx, sql, *, database=None):
 
     `database` connects to that database instead of PGDATABASE. A non-zero psql exit raises
     RwError with the D64 code classified from stderr: permission_denied (authentication, no
-    pg_hba.conf entry, missing role, permission denied), not_found (database does not exist),
-    unreachable (cannot connect, DNS, SSL), timeout (connect or statement timeout), dependency
-    (no psql in the runtime) or internal. The session is read-only and statement_timeout is set
-    from the task's `statementTimeout` setting."""
+    pg_hba.conf entry or rejection, role not permitted to log in, missing role, permission
+    denied), rate_limited (too many connections), not_found (database does not exist),
+    unreachable (cannot connect, DNS, SSL, a connection cut by recovery or an administrator),
+    timeout (connect or statement timeout), dependency (no psql in the runtime, or a pooler
+    that refuses a startup parameter) or internal. `sql` runs in one `BEGIN READ ONLY`
+    transaction whose `statement_timeout` comes from the task's `statementTimeout` setting;
+    it must be the task's own fixed text, never user input: a statement that runs
+    `SET TRANSACTION READ WRITE` would lift the read-only mode.
+    """
     connect, statement = timeouts(ctx.settings)
-    session = (
-        f"SET statement_timeout = {int(statement * 1000)}; SET default_transaction_read_only = on"
-    )
     argv = ["psql", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1"]
     if database is not None:
         argv += ["-d", dbname_arg(database)]
-    argv += ["-c", session, "-c", sql]
+    argv += ["-c", session_sql(sql, statement)]
     try:
         result = ctx.run(
             argv,
             timeout=connect + statement + _SLACK,
-            env={"PGCONNECT_TIMEOUT": str(max(1, round(connect)))},
+            env={"PGCONNECT_TIMEOUT": str(connect_seconds(connect))},
             check=False,
         )
     except subprocess.TimeoutExpired:

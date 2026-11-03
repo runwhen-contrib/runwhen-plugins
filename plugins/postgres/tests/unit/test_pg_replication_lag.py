@@ -231,7 +231,7 @@ def test_every_query_is_read_only_and_times_are_computed_on_the_server(run_scrip
     answer(fake_psql, True)
     run_script("replication_status")
     for call in fake_psql.calls:
-        assert "default_transaction_read_only = on" in " ".join(call["argv"])
+        assert call["script"].startswith("BEGIN READ ONLY; SET LOCAL statement_timeout = ")
     assert "clock_timestamp()" in rp.STANDBY_SQL and "now()" not in rp.STANDBY_SQL
     assert "clock_timestamp()" not in rp.PRIMARY_SQL  # the lag intervals come as columns
 

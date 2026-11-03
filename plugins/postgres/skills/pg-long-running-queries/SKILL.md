@@ -41,8 +41,11 @@ connection's own libpq environment. It never cancels or terminates a session.
   pg_stat_statements) on PostgreSQL 14 or later; it matches the id in pg_stat_statements.
 - `query` and `queryTruncated` appear only when the `includeQueryText` setting is on. The text is
   normalized: string and numeric literals become `?`, comments are dropped, whitespace is
-  collapsed, and it is cut to 1024 bytes. It is never the raw statement. A literal that the
-  server's own cut (`track_activity_query_size`) left open is replaced to the end of the text.
+  collapsed, and it is cut to 1024 bytes. It is never the raw statement: the database does the
+  replacing (regular expressions in the query itself), so raw text never leaves it, and the
+  task runs a second pass over what comes back. A comment shows as `?` after the database's
+  pass. A literal that the server's own cut (`track_activity_query_size`) left open is replaced
+  to the end of the text.
 
 ## How to read the result
 
