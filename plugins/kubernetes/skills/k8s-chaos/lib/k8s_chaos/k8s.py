@@ -2,10 +2,16 @@
 
 import json
 import re
+import subprocess
 
 from k8s_chaos.errors import RwError
 
 MESSAGE_LIMIT = 1024
+# every kubectl call gives up on the API server after this long, so no call can hang a restore
+REQUEST_TIMEOUT = "--request-timeout=30s"
+# hard cap on one kubectl process (ctx.run raises subprocess.TimeoutExpired past it; kubectl exec
+# passes its own, longer, timeout)
+RUN_SECONDS = 60
 
 # (code, substrings of lower-cased stderr); first match wins.
 _CLASSES = (
@@ -57,13 +63,40 @@ def failure(argv, result):
     )
 
 
+def kubectl_argv(*args):
+    """argv of `kubectl <args>` with the request timeout every call of this skill carries."""
+    return ["kubectl", REQUEST_TIMEOUT, *args]
+
+
+def _words(argv):
+    """The non-flag words of argv (verb, kind, names) for a message; never a flag value or a patch body."""
+    out, it = [], iter(argv[1:])
+    for a in it:
+        if a in ("-n", "-o", "-c", "-l", "-p", "--type"):
+            next(it, None)
+        elif a == "--":
+            break
+        elif not a.startswith("-") and len(out) < 4:
+            out.append(a)
+    return " ".join(out)
+
+
 def run_unchecked(ctx, argv, **run_kwargs):
     """`ctx.run(argv)` that returns the finished process whatever its exit code.
 
     The v13 runner raises on a non-zero exit by default; `check=False` keeps
-    the return-code path, which this skill classifies itself.
+    the return-code path, which this skill classifies itself. ctx.run raises
+    subprocess.TimeoutExpired when the process outlives its timeout (it does not
+    return rc 124); that is the `timeout` error code here, everywhere.
     """
-    return ctx.run(argv, check=False, **run_kwargs)
+    run_kwargs.setdefault("timeout", RUN_SECONDS)
+    try:
+        return ctx.run(argv, check=False, **run_kwargs)
+    except subprocess.TimeoutExpired:
+        raise RwError(
+            "timeout",
+            f"{argv[0]} {_words(argv)} did not finish within {run_kwargs['timeout']}s",
+        ) from None
 
 
 def run_checked(ctx, argv, **run_kwargs):
@@ -80,7 +113,7 @@ def kubectl_json(ctx, *args):
     A failed call (forbidden, not found, unreachable) raises RwError and never
     turns into data here; output that is not JSON is an `internal` error.
     """
-    result = run_checked(ctx, ["kubectl", *args, "-o", "json"])
+    result = run_checked(ctx, kubectl_argv(*args, "-o", "json"))
     try:
         return json.loads(result.stdout)
     except ValueError as exc:
@@ -121,7 +154,7 @@ def kubectl_text(ctx, *args, **run_kwargs):
 
     For the mutating calls, whose output is a sentence rather than a document.
     """
-    return run_checked(ctx, ["kubectl", *args], **run_kwargs).stdout or ""
+    return run_checked(ctx, kubectl_argv(*args), **run_kwargs).stdout or ""
 
 
 # kubectl exec: the command inside the container ran and exited N -> kubectl prints this and exits N

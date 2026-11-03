@@ -10,8 +10,8 @@ settings:
     description: Most entries any list output returns
   maxMemoryLimitMi:
     type: integer
-    default: 4096
-    description: oomkill-pod refuses a container whose memory limit is above this many MiB, because the task allocates more than the limit
+    default: 1536
+    description: oomkill-pod refuses a container whose memory limit is above this many MiB (invalid_input), because the task allocates more than the limit in one dd block, which cannot reach 2GiB; at the default the allocation is at most 1920MiB
 tasks:
   - name: delete-pods
     title: Delete random pods
@@ -20,9 +20,10 @@ tasks:
       running pods and reports which. For a workload target the pods are only that
       workload's (found by its selector and confirmed through ownerReferences); for a
       namespace target they are any running pods in the namespace. The choice is a
-      hash of the seed (the seed input, else the run's start time) and the pod name,
-      so the same seed picks the same pods and a dry run with a seed shows what a real
-      run with that seed deletes. For a workload target it then waits up to timeout for
+      hash of the seed (the seed input, else the target's path plus the UTC date, so a dry run
+      and the real run approved from it on the same day pick the same pods) and the pod name.
+      A namespace target picks only pods a controller recreates, never mirror pods, DaemonSet
+      pods or the task's own pod; includeUncontrolled adds pods nothing owns. For a workload target it then waits up to timeout for
       the ready replicas to return to the desired count (none of them a deleted pod) and
       reports whether that happened and how long it took in milliseconds. A workload that
       does not recover in time is reported as recovered false, not as a failure. A dry run
@@ -37,7 +38,8 @@ tasks:
     effects:
       - "Deletes the chosen pods; their containers are stopped after the termination grace period, and any pod-local state (emptyDir, container filesystems) is lost."
       - "A pod that is the only ready one, or all of them when count is at least the number of ready pods, takes the workload (or, for a namespace target, whatever the pod serves) down until replacements start. A PodDisruptionBudget is not consulted for a delete."
-      - "A namespace target can pick any running pod in the namespace, including pods that are not controlled by anything; those are not recreated."
+      - "A namespace target picks any running pod a controller owns (not mirror pods, DaemonSet pods or the task's own pod); with includeUncontrolled it can pick pods nothing owns, which are not recreated."
+      - "The kube-system, kube-public and kube-node-lease namespaces are refused."
     permissions:
       - { apiGroups: [""], resources: [namespaces], verbs: [get] }
       - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
@@ -47,7 +49,8 @@ tasks:
       count: { type: integer, default: 1, min: 1, max: 10, description: "How many pods to delete (1 to 10); fewer when fewer are running" }
       waitForRecovery: { type: boolean, default: true, description: "Workload target only: wait for the ready replicas to return to the desired count" }
       timeout: { type: duration, default: 120s, description: "How long to wait for recovery (1s to 300s). Running out of time is reported as recovered false" }
-      seed: { type: string, required: false, description: "Seed for the random choice; the run's start time when omitted. The result echoes the seed used" }
+      seed: { type: string, required: false, description: "Seed for the random choice; the target's path plus the UTC date when omitted. Pass it explicitly when a dry run and a real run on different days must pick the same pods. The result echoes the seed used" }
+      includeUncontrolled: { type: boolean, default: false, description: "Namespace target only: also pick pods no controller owns (nothing recreates them)" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The namespace or workload acted on, its desired and ready replicas, and whether Flux or Argo CD manages it" }
       deletion: { schema: ./schemas/deletion.v1.json, description: "The pods picked and deleted, and whether and how fast the workload recovered" }
@@ -61,8 +64,10 @@ tasks:
       exceeding its limit. A target where no running pod has a memory limit is refused as
       invalid_input, and a container without sh or dd is a dependency error; neither
       reports success. Then watches the pod for up to timeout and reports whether the
-      container's lastState shows OOMKilled and how much its restart count rose. A dry run
-      shows the pod, container and allocation and runs nothing.
+      container's lastState shows OOMKilled and how much its restart count rose; execKilled is
+      true when only the dd process was killed (exit 137) and the container was not. A dry run
+      shows the pod, container and allocation, runs nothing, and checks with kubectl auth can-i
+      that the identity may exec (permission_denied when not).
     script: scripts/oomkill_pod.py
     tags: [chaos, oomkill, memory, pods]
     readOnly: false
@@ -74,6 +79,9 @@ tasks:
       - "Runs a process inside the picked container (kubectl exec) that allocates more memory than the container's limit; the kernel kills the container, which is restarted (restartCount rises, lastState shows OOMKilled)."
       - "The pod stops serving until the container is back; repeated kills put it in CrashLoopBackOff backoff. Under a memory-hungry node the kill can reach other containers on the node."
       - "Container-local state outside volumes is lost."
+      - "The kube-system, kube-public and kube-node-lease namespaces are refused."
+    # The dry run's `kubectl auth can-i create pods/exec` is a SelfSubjectAccessReview, which
+    # every authenticated user may create (system:basic-user): it needs no permission here.
     permissions:
       - { apiGroups: [""], resources: [namespaces], verbs: [get] }
       - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
@@ -83,7 +91,8 @@ tasks:
     inputs:
       container: { type: string, required: false, description: "Container to kill; the first container that has a memory limit when omitted" }
       timeout: { type: duration, default: 30s, description: "How long to watch the pod for the kill (1s to 120s)" }
-      seed: { type: string, required: false, description: "Seed for the random pod choice; the run's start time when omitted" }
+      seed: { type: string, required: false, description: "Seed for the random pod choice; the target's path plus the UTC date when omitted" }
+      includeUncontrolled: { type: boolean, default: false, description: "Namespace target only: also pick pods no controller owns" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The namespace or workload acted on" }
       oomkill: { schema: ./schemas/oomkill.v1.json, description: "The pod and container, the allocation, and the restart count and lastState afterwards" }
@@ -91,37 +100,49 @@ tasks:
   - name: mangle-service
     title: Mangle a Service, then restore it
     description: >-
-      Breaks a Service for revertAfter (default 60s, at most 10m) and puts it back. In mode
-      selector the value of the first selector key is replaced so the Service selects no pod;
-      in mode port ports[0].port is replaced by a free number from 9999 down (targetPort is
-      kept). A workload target mangles the Services whose selector matches the workload's pod
-      template labels (at most 5; the service input narrows it to one); a namespace target
-      requires the service input. The original selector and ports are recorded on the Service
-      in an annotation before the change, restored in a finally path and read back to verify.
-      A Service that is not back as it was fails the task as internal, with the original spec in
-      the message. Reports the ready endpoints of its EndpointSlices before, during and after.
-      A dry run sends the identical patch as a server-side dry run.
+      Breaks a Service for revertAfter (default 60s, at most 10m) and puts it back. Mode selector
+      replaces the first selector key's value so no pod is selected; mode port replaces ports[0].port
+      by a free number from 9999 down. A workload target mangles the Services that select its pods
+      (at most 5; service narrows to one); a namespace target requires service. The original spec is
+      kept in an annotation, restored in a finally path (retried after 1, 3, 6s, only fields still
+      holding the mangled value) and read back; a Service not back fails the task as internal with
+      the spec in details. Refused as invalid_input: a Service also selecting other workloads' pods
+      (sharedWith, unless allowShared), one still annotated by a dead run (recover: true restores
+      it from the annotation and mangles nothing), the system namespaces and Service kubernetes. A
+      dry run sends the identical patch server-side.
     script: scripts/mangle_service.py
     tags: [chaos, service, selector, port, networking]
     readOnly: false
     destructive: true
     idempotent: false
     dryRun: true
-    timeout: 900s
+    # Budget (seconds): hold at most 600 (the waits for the endpoints during the hold, at most
+    # 5 x 20, happen inside it) + waits for the endpoints after the restore at most 5 x 20 + restores
+    # at most 5 x 180 (no new try starts 90s after the first; a try is three kubectl calls of
+    # at most 30s) = 1600; reads before the patch are a few seconds. 1800s leaves margin. A
+    # task killed before its restore leaves the Service mangled, so this is not set tight.
+    timeout: 1800s
     effects:
       - "Patches the Service: its selector (no pod is selected, so its endpoints drop to zero and traffic to it fails) or its first port number (clients using the old port fail). The annotation runwhen.com/chaos-original-spec is added to the Service for the duration."
       - "Everything that reaches the pods through the Service is disrupted for up to revertAfter."
-      - "The original spec is restored when the wait ends, and the annotation removed. If the task process is killed before that, the Service stays mangled and the annotation holds the original spec to restore by hand; a new run refuses a Service that still has the annotation."
+      - "The original spec is restored when the wait ends, and the annotation removed. If the task process is killed before that, the Service stays mangled and the annotation holds the original spec; a new run refuses that Service and says to rerun with recover: true, which restores it from the annotation."
+      - "A Service shared with pods of other workloads is refused unless allowShared is set; with it, those workloads lose the Service too."
+      - "The kube-system, kube-public and kube-node-lease namespaces and the Service kubernetes in default are refused."
+      - "The patch carries the Service's resourceVersion: a change by another writer since it was read aborts the task as internal (concurrent change) before anything is mangled. The restore changes only fields still holding the mangled value and is retried after 1, 3 and 6 seconds."
       - "A GitOps controller (Flux, Argo CD) managing the Service may revert the change sooner."
     permissions:
       - { apiGroups: [""], resources: [namespaces], verbs: [get] }
       - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
       - { apiGroups: [""], resources: [services], verbs: [get, list, patch] }
       - { apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [list] }
     inputs:
       mode: { type: enum, enum: [selector, port], default: selector, description: "selector: the Service selects no pod; port: its first port number is replaced" }
       revertAfter: { type: duration, default: 60s, description: "How long the Service stays mangled before it is restored (1s to 10m)" }
       service: { type: string, required: false, description: "The Service to mangle. Required for a namespace target; for a workload target it narrows the matching Services to this one" }
+      recover: { type: boolean, default: false, description: "Mangle nothing: restore every target Service that still carries the annotation of an earlier run that died, from that annotation, then verify and remove it" }
+      allowShared: { type: boolean, default: false, description: "Mangle a Service even when it also selects pods the target workload does not own (their workloads lose it too)" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The namespace or workload acted on" }
       mangle: { schema: ./schemas/mangle.v1.json, description: "Per Service: the change, ready endpoints before, during and after, and whether the restore was verified" }
@@ -134,19 +155,28 @@ tasks:
       then deletes the file in a finally path and checks it is gone. Reports the bytes written,
       whether the pod was evicted or its container restarted, and whether the cleanup
       succeeded. A container without sh, dd, wc or rm is a dependency error; a /tmp that
-      cannot be written is invalid_input. A dry run shows the pod and file and runs nothing.
+      cannot be written is invalid_input. When the container restarted or is restarting the
+      removal is retried for up to 30s; if it never gets in the cleanup reason is
+      container_restarting, with a cleanup error naming the file. A dry run shows the pod and
+      file, runs nothing, and checks with kubectl auth can-i that the identity may exec
+      (permission_denied when not).
     script: scripts/fill_tmp.py
     tags: [chaos, disk, tmp, ephemeral-storage, pods]
     readOnly: false
     destructive: true
     idempotent: false
     dryRun: true
-    timeout: 420s
+    # Budget: write exec up to 120s + observe up to 120s + cleanup (retry window 30s, then one exec
+    # up to 60s) + the reads between them, 330s plus a few 30s-capped calls; 480s leaves margin.
+    timeout: 480s
     effects:
       - "Writes a file of sizeMi MiB (up to 1024) into /tmp of the picked container, using the container's writable layer or its /tmp volume until the file is removed."
       - "A pod with an ephemeral-storage limit that this exceeds is evicted by the kubelet; a node low on disk can evict other pods or become DiskPressure. An evicted pod is not restored by this task."
       - "The file's page cache is charged to the container's memory, so a container with a low memory limit can be OOM-killed and restarted by the write (restarted true in the result); the file goes with the container's filesystem."
       - "The file is removed afterwards (rm, then checked); if that fails the result says so and the file stays until it is removed by hand."
+      - "The kube-system, kube-public and kube-node-lease namespaces are refused."
+    # The dry run's `kubectl auth can-i create pods/exec` is a SelfSubjectAccessReview, which
+    # every authenticated user may create (system:basic-user): it needs no permission here.
     permissions:
       - { apiGroups: [""], resources: [namespaces], verbs: [get] }
       - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
@@ -157,7 +187,8 @@ tasks:
       sizeMi: { type: integer, default: 100, min: 1, max: 1024, description: "MiB of zeros to write (1 to 1024)" }
       container: { type: string, required: false, description: "Container to write in; the first container when omitted" }
       observe: { type: duration, default: 10s, description: "How long to hold the file and watch the pod for an eviction or restart (0s to 120s)" }
-      seed: { type: string, required: false, description: "Seed for the random pod choice; the run's start time when omitted" }
+      seed: { type: string, required: false, description: "Seed for the random pod choice; the target's path plus the UTC date when omitted" }
+      includeUncontrolled: { type: boolean, default: false, description: "Namespace target only: also pick pods no controller owns" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The namespace or workload acted on" }
       filltmp: { schema: ./schemas/fill-tmp.v1.json, description: "The pod, bytes written, eviction and restart facts, and the cleanup result" }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Chaos /tmp fill",
-  "description": "One file of bytesRequested was written with dd to path in the picked container's /tmp, held for the observe time, then removed. bytesWritten is the size of the file after dd (wc -c), null when it could not be read; writeExitCode the exit code of dd; writeError dd's stderr (at most 1024 characters). evicted is true when the pod ended up Failed/Evicted, restarted when the container's restartCount rose. cleanup.succeeded is true only when rm ran and the file was confirmed gone; reason says why it was not attempted or failed (pod_evicted, pod_gone, still_present, or an error code). All observed fields are null and cleanup.attempted false on a dry run (applied false).",
+  "description": "One file of bytesRequested was written with dd to path in the picked container's /tmp, held for the observe time, then removed. bytesWritten is the size of the file after dd (wc -c), null when it could not be read; writeExitCode the exit code of dd; writeError dd's stderr (at most 1024 characters). evicted is true when the pod ended up Failed/Evicted, restarted when the container's restartCount rose. cleanup.succeeded is true only when rm ran and the file was confirmed gone; reason says why it was not attempted or failed (pod_evicted; pod_terminating; pod_gone, a read of the pod said not_found; container_restarting, the container restarted or was restarting and the removal never got in within 30s; still_present; or an error code). All observed fields are null and cleanup.attempted false on a dry run (applied false). seed.value is the seed the pods were picked with: the seed input (source input), else the target's path and the UTC date of the run (source derived), so a dry run and the real run approved from it on the same day pick the same pods.",
   "type": "object",
   "properties": {
     "applied": {
@@ -16,7 +16,7 @@
         "source": {
           "enum": [
             "input",
-            "now"
+            "derived"
           ]
         }
       },

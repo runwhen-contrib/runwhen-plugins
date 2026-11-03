@@ -8,6 +8,7 @@ actions.py fetch, call these, run the mutating command and observe.
 import hashlib
 import math
 import re
+from datetime import UTC
 from decimal import Decimal, InvalidOperation
 
 from k8s_chaos.errors import RwError
@@ -28,6 +29,8 @@ _BY_TYPE = {
 }
 _BY_PLURAL = {"namespaces": NAMESPACE, "deployments": DEPLOYMENT, "statefulsets": STATEFULSET}
 RESOURCE = {DEPLOYMENT: "deployments.apps", STATEFULSET: "statefulsets.apps"}
+# the cluster's own namespaces: no task acts there, whatever the inputs
+SYSTEM_NAMESPACES = ("kube-system", "kube-public", "kube-node-lease")
 
 
 def limit_text(value, limit=TEXT_LIMIT):
@@ -66,8 +69,20 @@ def resolve_target(resource_type, resource_path, namespace, name):
             f"k8s-chaos applies to a namespace, deployment or statefulset, not {resource_type or resource_path!r}",
         )
     if kind == NAMESPACE:
-        return {"scope": "namespace", "kind": kind, "namespace": name, "name": name}
-    return {"scope": "workload", "kind": kind, "namespace": namespace, "name": name}
+        target = {"scope": "namespace", "kind": kind, "namespace": name, "name": name}
+    else:
+        target = {"scope": "workload", "kind": kind, "namespace": namespace, "name": name}
+    if target["namespace"] in SYSTEM_NAMESPACES:
+        raise RwError(
+            "invalid_input",
+            f"k8s-chaos never acts in the cluster's own namespaces ({', '.join(SYSTEM_NAMESPACES)}); "
+            f"{target['namespace']} was refused and nothing was changed",
+            details={
+                "namespace": target["namespace"],
+                "refusedNamespaces": list(SYSTEM_NAMESPACES),
+            },
+        )
+    return target
 
 
 _GITOPS_PREFIXES = (
@@ -221,6 +236,37 @@ def container_status(pod, container):
     return None
 
 
+def _owner_refs(pod):
+    return pod.get("metadata", {}).get("ownerReferences") or []
+
+
+def has_controller(pod):
+    return any(ref.get("controller") for ref in _owner_refs(pod))
+
+
+def is_mirror_pod(pod):
+    """A static pod's mirror in the API: the kubelet owns it, deleting it changes nothing."""
+    return "kubernetes.io/config.mirror" in (pod.get("metadata", {}).get("annotations") or {})
+
+
+def is_daemonset_pod(pod):
+    return any(ref.get("kind") == "DaemonSet" for ref in _owner_refs(pod))
+
+
+def eligible_pods(pods, include_uncontrolled=False, own_pod=None):
+    """The pods a namespace target may act on: those a controller recreates, minus mirror
+    pods, DaemonSet pods and the task's own pod. `include_uncontrolled` adds the pods no
+    controller owns (nothing recreates those)."""
+    return [
+        p
+        for p in pods
+        if not is_mirror_pod(p)
+        and not is_daemonset_pod(p)
+        and p["metadata"]["name"] != own_pod
+        and (include_uncontrolled or has_controller(p))
+    ]
+
+
 def restart_count(pod, container):
     status = container_status(pod, container)
     return int(status.get("restartCount") or 0) if status else 0
@@ -229,12 +275,15 @@ def restart_count(pod, container):
 # ------------------------------------------------------------ selection ----
 
 
-def seed_of(seed_input, now):
-    """(seed, source): the caller's `seed` input, else the run's reference time
-    (ctx.now()), as text. The same seed picks the same pods from the same candidates."""
+def seed_of(seed_input, target_path, now):
+    """(seed, source): the caller's `seed` input, else the target's path plus the UTC date of
+    the run's reference time (ctx.now()), as text. A dry run and the real run approved from
+    it on the same day get the same seed, so they pick the same pods from the same
+    candidates; pass a seed explicitly when that must hold across days."""
     if seed_input is not None and str(seed_input).strip() != "":
         return str(seed_input).strip(), "input"
-    return now.isoformat(timespec="milliseconds").replace("+00:00", "Z"), "now"
+    moment = now if now.tzinfo else now.replace(tzinfo=UTC)
+    return f"{target_path}@{moment.astimezone(UTC).date().isoformat()}", "derived"
 
 
 def pick(names, count, seed):

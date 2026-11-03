@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Chaos pod deletion",
-  "description": "The pods picked (by a hash of seed and pod name, so the same seed and candidates pick the same pods), the pods deleted, and for a workload target whether its ready replicas returned to the desired count. On a dry run applied is false, deleted is empty and wouldDelete lists the pods the server confirmed it would delete. recovery is null for a namespace target, a dry run or waitForRecovery false; recovered is null when the workload could not be read while waiting (an error on the result says why); recoveryMs is milliseconds from the delete until the desired ready replicas (none of them a deleted pod) were seen, null when not recovered within the timeout. Lists stop at maxItems; counts are not capped.",
+  "description": "The pods picked (by a hash of seed and pod name, so the same seed and candidates pick the same pods), the pods deleted, and for a workload target whether its ready replicas returned to the desired count. On a dry run applied is false, deleted is empty and wouldDelete lists the pods the server confirmed it would delete. recovery is null for a namespace target, a dry run or waitForRecovery false; recovered is null when the workload could not be read while waiting (an error on the result says why); recoveryMs is milliseconds from the delete until the desired ready replicas (none of them a deleted pod) were seen, null when not recovered within the timeout. Lists stop at maxItems; counts are not capped. seed.value is the seed the pods were picked with: the seed input (source input), else the target's path and the UTC date of the run (source derived), so a dry run and the real run approved from it on the same day pick the same pods.",
   "type": "object",
   "properties": {
     "applied": {
@@ -16,7 +16,7 @@
         "source": {
           "enum": [
             "input",
-            "now"
+            "derived"
           ]
         }
       },

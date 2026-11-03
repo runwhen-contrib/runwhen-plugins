@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Chaos Service mangle",
-  "description": "Each Service was changed (selector: the first selector key's value replaced; port: ports[0].port replaced, targetPort kept), watched, held for revertAfter and restored from the original spec; restore.verified is true when a read afterwards found the original selector and ports back. A Service that could not be restored fails the task with an internal error carrying the original spec. Ready endpoints are counted from the Service's EndpointSlices before, during and after restore; endpointsDropped is whether the count fell (a port change does not remove endpoints). On a dry run applied is false, nothing was changed and the during/after fields are null.",
+  "description": "Each Service was changed (selector: the first selector key's value replaced; port: ports[0].port replaced, targetPort kept), watched, held for revertAfter and restored from the original spec; restore.verified is true when a read afterwards found the original selector and ports back. A Service that could not be restored fails the task with an internal error carrying the original spec. Ready endpoints are counted from the Service's EndpointSlices before, during and after restore; endpointsDropped is whether the count fell (a port change does not remove endpoints). On a dry run applied is false, nothing was changed and the during/after fields are null. With recover (mode and revertAfterMs null) nothing was mangled: each Service that still carried the annotation of an earlier run that died was restored from it, change is what the restore changed, and endpoints are counted before and after. restore.concurrentChange is true when a field the task mangled had since been changed by someone else: it was left alone, the annotation kept and the task failed as internal. sharedWith names the pods the Service selects that the target workload does not own (empty unless allowShared was set).",
   "type": "object",
   "properties": {
     "applied": {
@@ -10,11 +10,15 @@
     "mode": {
       "enum": [
         "selector",
-        "port"
+        "port",
+        null
       ]
     },
     "revertAfterMs": {
-      "type": "integer"
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "serviceCount": {
       "type": "integer"
@@ -108,20 +112,32 @@
                   "string",
                   "null"
                 ]
+              },
+              "concurrentChange": {
+                "type": "boolean"
               }
             },
             "required": [
               "attempted",
               "restored",
               "verified",
-              "reason"
+              "reason",
+              "concurrentChange"
             ],
             "additionalProperties": false
+          },
+          "sharedWith": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "name",
           "change",
+          "sharedWith",
           "readyEndpointsBefore",
           "readyEndpointsDuring",
           "readyEndpointsAfterRestore",
@@ -131,10 +147,14 @@
         ],
         "additionalProperties": false
       }
+    },
+    "recover": {
+      "type": "boolean"
     }
   },
   "required": [
     "applied",
+    "recover",
     "mode",
     "revertAfterMs",
     "serviceCount",

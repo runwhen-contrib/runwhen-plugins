@@ -38,3 +38,20 @@ def list_pods(ctx, target, workload):
 
 def get_pod(ctx, ns, name):
     return kubectl_json(ctx, "-n", ns, "get", "pods", name)
+
+
+def list_replicasets(ctx, target, workload):
+    """The ReplicaSets that can own the workload's pods (a Deployment's); [] for other kinds."""
+    if target["kind"] != DEPLOYMENT:
+        return []
+    selector = selector_string(workload["spec"]["selector"])
+    return kubectl_json(ctx, "-n", target["namespace"], "get", "replicasets.apps", "-l", selector)[
+        "items"
+    ]
+
+
+def pods_selected_by(ctx, ns, selector):
+    """Every pod a Service selector (a plain label map) matches, whatever its state."""
+    return kubectl_json(
+        ctx, "-n", ns, "get", "pods", "-l", selector_string({"matchLabels": selector})
+    )["items"]

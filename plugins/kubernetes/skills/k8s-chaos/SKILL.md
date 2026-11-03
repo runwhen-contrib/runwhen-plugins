@@ -27,8 +27,10 @@ heal the damage) use `kubernetes:k8s-flux-health/suspend`.
 Every task writes (`readOnly: false`, `destructive: true`) and needs approval. Run it as a
 dry run first: the result names the pods or Services that would be hit and changes nothing.
 A workload target acts on that workload's pods only (found by its selector and confirmed
-through ownerReferences). A namespace target picks from every running pod in the namespace,
-including pods nothing recreates. Reading the Namespace object (`namespaces get`) is
+through ownerReferences). A namespace target picks from the running pods a controller owns,
+never mirror pods, DaemonSet pods or the pod the task runs in; `includeUncontrolled: true` adds
+pods nothing recreates. The namespaces kube-system, kube-public and kube-node-lease are always
+refused (`invalid_input`, no override), and so is the Service `kubernetes` in `default`. Reading the Namespace object (`namespaces get`) is
 cluster-scoped; if it is forbidden the result is partial with a `permission_denied` error
 scoped `namespaces` and the task goes on with namespace-scoped reads.
 
@@ -37,9 +39,12 @@ scoped `namespaces` and the task goes on with namespace-scoped reads.
 Every task returns `target`: scope, kind, name, namespace, the workload's `desiredReplicas`
 and `readyReplicas` now, and `gitopsTool` when Flux or Argo CD manages it.
 
-Pods are picked at random but recorded: `seed` (the `seed` input, else the run's start time)
-and a hash of seed and pod name decide. The same seed and the same pods pick the same pods,
-so pass the seed of a dry run to a real run to hit exactly what the dry run showed.
+Pods are picked at random but recorded: `seed` (the `seed` input, else the target's path plus
+the UTC date) and a hash of seed and pod name decide, and every result reports the seed used.
+A dry run and the real run approved from it on the same day therefore pick the same pods; pass
+the dry run's `seed` explicitly when the real run may happen on another day, or when it matters.
+`oomkill-pod` and `fill-tmp` dry runs also check with `kubectl auth can-i` that exec is allowed
+(`permission_denied` when not), since a dry run runs no exec.
 
 - `delete-pods`: `count` (1 to 10) pods deleted. `deleted` names them (`wouldDelete` on a dry
   run), `candidateCount` is how many were running, `deletesAllReady` says the ready pods were all
@@ -51,7 +56,10 @@ so pass the seed of a dry run to a real run to hit exactly what the dry run show
   container. Reports `exitCode` of that process (137 = killed), `restartDelta`, `lastState`
   (reason, exit code, finishedAt) and `oomKilled` (restart count rose AND lastState is
   OOMKilled from a newer termination). `oomKilled: false` after a run means the limit did not
-  hold or the kill was not seen within `timeout`. No memory limit anywhere is `invalid_input`;
+  hold or the kill was not seen within `timeout`. `execKilled: true` is dd exiting 137 with no
+  container OOM: the limit held, but the kernel killed only the process (cgroup v1, or no
+  `memory.oom.group`), so nothing restarted and the container is not proven to die on OOM. No
+  memory limit anywhere is `invalid_input`, and so is a limit above `maxMemoryLimitMi` (1536);
   no sh or dd in the image is `dependency`; neither reports a pass.
 - `mangle-service`: per Service, `change` (the field, old value, new value), ready endpoints
   `before`, `during` and `afterRestore`, `endpointsDropped`, `heldMs`, and `restore`
@@ -59,20 +67,30 @@ so pass the seed of a dry run to a real run to hit exactly what the dry run show
   makes the Service select no pod, so endpoints fall to 0. Mode `port` changes the Service port
   and keeps the pods: endpoints stay, clients on the old port fail (`endpointsDropped: false` is
   normal). A workload target mangles every Service that selects its pods (at most 5; the `service`
-  input narrows it); a namespace target needs `service`.
+  input narrows it); a namespace target needs `service`. A Service that also selects pods the
+  workload does not own is refused (`invalid_input`, `details.sharedWith`) unless `allowShared`;
+  then `sharedWith` names the other pods it cut off. `recover: true` mangles nothing: it restores
+  every target Service still carrying the annotation of a run that died, from that annotation,
+  and verifies and removes it (`serviceCount: 0` means nothing was stuck); in a dry run it sends
+  the restore patch server-side.
 - `fill-tmp`: `bytesWritten` (size of the file afterwards), `writeExitCode`/`writeError` from dd,
   `evicted`, `restarted` and `podPhase` after `observe` seconds, and `cleanup`
   (`succeeded` only when rm ran and the file was confirmed gone). An evicted pod's `/tmp` went with
-  it: `cleanup.reason` is `pod_evicted`. A low memory limit can make the write itself OOM-kill the
+  it: `cleanup.reason` is `pod_evicted`. A restarting container is retried for 30s; if rm never
+  got in the reason is `container_restarting` with a `cleanup` error and a hint to remove the file
+  by hand. `pod_gone` means reading the pod said not found; `pod_terminating` a pod being deleted. A low memory limit can make the write itself OOM-kill the
   container (page cache is charged to it): `restarted: true`, `writeExitCode` 137.
 
 ## How to read the result
 
 A dry run has `applied: false` and empty "done" fields. A failure (forbidden, target missing,
 no sh in the container) is an error on the result and never an empty success; a target with no
-running pod is `not_found`. A restore that failed is `internal` and its message carries the original
-Service spec (also kept in the annotation `runwhen.com/chaos-original-spec` while mangled): put
-it back by hand. A cleanup that failed adds an error scoped `cleanup` naming the file. Lists stop at
+running pod is `not_found`. A restore is tried again after 1, 3 and 6s and touches only fields that still hold the mangled
+value. One that failed is `internal`: the message names the Service and the annotation
+`runwhen.com/chaos-original-spec` (kept while mangled), `details.services[].originalSpec` holds
+the spec: rerun with `recover: true` or put it back by hand. `concurrentChange: true` means someone
+else changed a mangled field meanwhile: it was left alone and the annotation kept. A mangle patch
+that lost a race with another writer aborts as `internal` ("concurrent change") with nothing changed. A cleanup that failed adds an error scoped `cleanup` naming the file. Lists stop at
 `maxItems`; counts do not.
 
 Normal states that look like failure: a StatefulSet pod comes back with the same name (compare
@@ -81,7 +99,7 @@ a `recovered: false` on a one-replica workload usually means a slow start, not a
 `oomKilled` can lag the kill by the kubelet's sync.
 
 If the task process is killed (executor timeout, node loss) a mangled Service stays mangled: look
-for the annotation above. A new run refuses a Service that still has it.
+for the annotation above. A new run refuses it and says to rerun with `recover: true`.
 
 ## What to try next
 

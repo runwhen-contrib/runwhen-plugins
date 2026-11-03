@@ -93,7 +93,7 @@ kubernetes:
     skills: [k8s-chaos]
     status: ported
     ported: [k8s-chaos]
-    note: "classic ignored every exec/delete/patch exit code (the script ended in a kubectl get, so rc was always 0) and never restored a mangled Service; re-derived with typed errors, observed results and a verified restore. The 50% coin flip per pod and 3s pauses are replaced by a seeded pick of count pods"
+    note: "classic ignored every exec/delete/patch exit code (the script ended in a kubectl get, so rc was always 0) and never restored a mangled Service; re-derived with typed errors, observed results and a verified restore. The 50% coin flip per pod and 3s pauses are replaced by a seeded pick of count pods. The classic mangle tasks picked a random Service of the namespace; the port requires the `service` input (a namespace target names the Service to break), and the namespace pick skips pods no controller owns, mirror pods, DaemonSet pods and the task's own pod"
     tasks:
       "Kill Random Pods In Namespace": k8s-chaos/delete-pods
       "OOMKill Pods In Namespace": k8s-chaos/oomkill-pod
