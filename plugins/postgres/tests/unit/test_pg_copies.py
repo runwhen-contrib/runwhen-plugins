@@ -12,6 +12,8 @@ import pytest
 import yaml
 from pg_base import access as ax
 from pg_base import discovery as dc
+from pg_connections import connections as cn
+from pg_long_running_queries import long_running as lr
 
 PLUGIN = Path(__file__).parents[2]
 SKILLS = PLUGIN / "skills"
@@ -41,15 +43,29 @@ def test_shared_files_import_only_their_siblings_and_the_sdk(name):
             assert node.module in {"errors", None}
 
 
-def task(name):
-    doc = yaml.safe_load((SKILLS / "pg-base" / "tasks.yaml").read_text())
-    return next(t for t in doc["tasks"] if t["name"] == name)
+def settings_doc(skill):
+    return yaml.safe_load((SKILLS / skill / "tasks.yaml").read_text())
+
+
+def task(name, skill="pg-base"):
+    return next(t for t in settings_doc(skill)["tasks"] if t["name"] == name)
+
+
+def test_every_postgres_skill_with_a_copy_is_one_this_test_knows():
+    assert {p.parts[-4] for p in copies("pg.py")} == {
+        "pg-base",
+        "pg-connections",
+        "pg-long-running-queries",
+    }
+
+
+SESSION_TASKS = (("pg-connections", "connections"), ("pg-long-running-queries", "long-running"))
 
 
 def test_every_declared_permission_is_a_valid_postgres_permission():
     schema = json.loads((PLUGIN / "integration" / "schemas" / "pg-permission.json").read_text())
-    for name in ("discover", "check-permissions"):
-        for permission in task(name)["permissions"]:
+    for skill, name in (("pg-base", "discover"), ("pg-base", "check-permissions"), *SESSION_TASKS):
+        for permission in task(name, skill)["permissions"]:
             jsonschema.validate(permission, schema)
             assert ax.parse_rule(permission)[0] is not None
 
@@ -57,6 +73,8 @@ def test_every_declared_permission_is_a_valid_postgres_permission():
 # The functions whose EXECUTE a task depends on and an admin may revoke; each must be declared
 # exactly when the task's SQL calls it.
 TRACKED = (
+    "pg_backend_pid",
+    "pg_blocking_pids",
     "pg_control_system",
     "pg_database_size",
     "pg_has_role",
@@ -65,8 +83,10 @@ TRACKED = (
 )
 
 
-def declared_functions(name):
-    return {p["function"].split(".")[1] for p in task(name)["permissions"] if "function" in p}
+def declared_functions(name, skill="pg-base"):
+    return {
+        p["function"].split(".")[1] for p in task(name, skill)["permissions"] if "function" in p
+    }
 
 
 def tracked_in(sql):
@@ -109,3 +129,57 @@ def test_the_root_declares_the_key_discover_reports():
     assert types["instance"]["rootKey"] == ["host", "port"]
     assert types["database"]["parent"] == "instance"
     assert set(types) == {"instance", "database"}
+
+
+# --- the session skills -------------------------------------------------------------------------
+# pg_stat_activity shows other roles' sessions (state, query, wait event, times) only to a
+# superuser and to members of pg_read_all_stats, which pg_monitor includes.
+
+
+def test_the_session_tasks_declare_the_functions_their_sql_calls():
+    assert declared_functions("connections", "pg-connections") == tracked_in(cn.connections_sql(5))
+    for include_query_text in (False, True):
+        sql = lr.long_running_sql(1000, 5, include_query_text)
+        assert declared_functions("long-running", "pg-long-running-queries") == tracked_in(sql)
+
+
+@pytest.mark.parametrize("skill, name", SESSION_TASKS)
+def test_the_session_tasks_declare_the_role_that_unmasks_other_sessions(skill, name):
+    permissions = task(name, skill)["permissions"]
+    assert {"role": "pg_read_all_stats"} in permissions
+    # no database privilege is declared: the task reads the cluster-wide view from the
+    # connection's own database, and CONNECT on it is what the credential already needs
+    assert not [p for p in permissions if "database" in p]
+
+
+@pytest.mark.parametrize("skill, name", SESSION_TASKS)
+def test_the_session_tasks_are_read_only_and_declare_the_shared_settings(skill, name):
+    doc = settings_doc(skill)
+    assert task(name, skill)["readOnly"] is True
+    assert doc["runtime"] == "kubernetes@1" and doc["defaults"]["credentials"] == "postgres/libpq"
+    assert doc["settings"]["maxItems"]["default"] == 200
+    for key in ("connectTimeout", "statementTimeout"):
+        assert doc["settings"][key]["type"] == "duration"
+
+
+def test_include_query_text_is_a_setting_that_defaults_to_off():
+    setting = settings_doc("pg-long-running-queries")["settings"]["includeQueryText"]
+    assert (setting["type"], setting["default"]) == ("boolean", False)
+    assert "includeQueryText" not in settings_doc("pg-connections")["settings"]
+
+
+def test_min_duration_is_an_input_that_defaults_to_five_minutes():
+    inputs = task("long-running", "pg-long-running-queries")["inputs"]
+    assert inputs["minDuration"]["type"] == "duration" and inputs["minDuration"]["default"] == "5m"
+
+
+@pytest.mark.parametrize("skill", ["pg-connections", "pg-long-running-queries"])
+def test_each_session_skills_output_schema_is_valid_2020_12_and_names_no_verdict(skill):
+    doc = settings_doc(skill)
+    for t in doc["tasks"]:
+        for out_name, out in t["outputs"].items():
+            assert out_name not in {"status", "errors"}
+            schema = json.loads((SKILLS / skill / out["schema"]).read_text())
+            jsonschema.Draft202012Validator.check_schema(schema)
+            assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+            assert not {"severity", "title", "nextSteps"} & set(schema["properties"])

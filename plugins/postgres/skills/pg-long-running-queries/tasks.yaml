@@ -1,0 +1,32 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1          # ships psql; no other runtime is named for non-Kubernetes plugins (42a)
+defaults: { credentials: postgres/libpq, timeout: 60s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  connectTimeout: { type: duration, default: 10s, description: "How long psql waits for a connection (PGCONNECT_TIMEOUT)" }
+  statementTimeout: { type: duration, default: 30s, description: "statement_timeout of the session; a statement that runs longer is cancelled (timeout)" }
+  includeQueryText: { type: boolean, default: false, description: "Return each session's query text, with string and numeric literals replaced by ? and cut to 1024 bytes. Off by default: statements can carry personal data" }
+tasks:
+  - name: long-running
+    title: Long-running queries and idle-in-transaction sessions
+    description: >-
+      Lists active queries that have been running longer than minDuration and sessions that have
+      been idle in transaction longer than minDuration, longest first, cut to maxItems. Each has
+      its pid, database, role, application_name, client address, state, duration, transaction
+      age, wait event, backend type, query_id (when compute_query_id is on) and the pids blocking
+      it. Query text only when the includeQueryText setting is on, with literals replaced by ?.
+      A role without pg_read_all_stats cannot see other roles' sessions: the result is partial
+      and says visibility is partial. The task's own connection and walsenders are left out.
+      Read-only.
+    script: scripts/long_running.py
+    tags: [queries, sessions, locks]
+    readOnly: true
+    permissions:
+      - { role: pg_read_all_stats }                                    # state, query and times of other roles' sessions (pg_monitor includes it)
+      - { function: pg_catalog.pg_backend_pid, privilege: EXECUTE }    # leaves the task's own session out
+      - { function: pg_catalog.pg_blocking_pids, privilege: EXECUTE }  # the pids a session waits for
+      - { function: pg_catalog.pg_has_role, privilege: EXECUTE }       # decides whether other roles' sessions are visible
+    inputs:
+      minDuration: { type: duration, default: 5m, description: "Report active queries running, and sessions idle in transaction, for longer than this" }
+    outputs:
+      longRunning: { schema: ./schemas/long-running.v1.json, description: "Sessions longer than minDuration, longest first, cut to maxItems with total, omitted and truncated; visibility" }

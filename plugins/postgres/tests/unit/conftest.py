@@ -16,7 +16,12 @@ PLUGIN = Path(__file__).parents[2]
 SKILL = PLUGIN / "skills" / "pg-base"
 DATA = Path(__file__).parent / "data" / "pg_base"
 
-SETTINGS = {"maxItems": 200, "connectTimeout": "10s", "statementTimeout": "30s"}
+SETTINGS = {
+    "maxItems": 200,
+    "connectTimeout": "10s",
+    "statementTimeout": "30s",
+    "includeQueryText": False,  # declared by pg-long-running-queries only; harmless elsewhere
+}
 INSTANCE = {
     "path": "postgres/instances/orders-db",
     "type": "postgres/instance",
@@ -24,9 +29,9 @@ INSTANCE = {
 }
 
 
-def load_script(name):
+def load_script(name, skill="pg-base"):
     spec = importlib.util.spec_from_file_location(
-        f"pg_base_{name}", SKILL / "scripts" / f"{name}.py"
+        f"{skill.replace('-', '_')}_{name}", PLUGIN / "skills" / skill / "scripts" / f"{name}.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -100,11 +105,11 @@ def data():
 @pytest.fixture
 def run_script(fake_psql):
     """run_script("discover", **inputs): the script's main under the real v13 context, psql
-    answered by `fake_psql`. Returns the result envelope, the errors and the files written
-    under $RW_OUT."""
+    answered by `fake_psql`. `skill=` picks another postgres skill (default pg-base). Returns the
+    result envelope, the errors and the files written under $RW_OUT."""
 
-    def run(script, *, resource=INSTANCE, settings=None, **inputs):
-        main = load_script(script).main
+    def run(script, *, skill="pg-base", resource=INSTANCE, settings=None, **inputs):
+        main = load_script(script, skill).main
         with make_context(resource=resource, settings={**SETTINGS, **(settings or {})}) as tc:
             tc.ctx.run = fake_psql
             envelope = run_main(main, tc, **inputs)
