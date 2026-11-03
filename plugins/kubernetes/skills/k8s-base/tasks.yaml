@@ -1,0 +1,21 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults: { credentials: kubernetes/kubeconfig, timeout: 60s }
+tasks:
+  - name: kubectl
+    title: kubectl (read-only)
+    description: Run a read-only kubectl command against this cluster. Secrets are never readable through it.
+    script: scripts/kubectl.py
+    tags: [cli]
+    readOnly: true
+    permissions: [{ apiGroups: ["*"], resources: ["*"], verbs: [get, list, watch] }]   # secrets are still excluded by deniedResources
+    settings:
+      allowedVerbs: { type: "string[]", default: [get, describe, logs, top, events, explain, api-resources] }
+      deniedResources: { type: "string[]", default: [secrets], description: "Resource kinds the task refuses, whatever the verbs and flags allow; configmaps are not denied" }
+      allowedFlags: { type: "string[]", default: [n, A, l, o, since, tail, previous, container, show-labels, sort-by] }
+      maxOutputLines: { type: integer, default: 2000 }
+    inputs:
+      command: { type: string, description: "kubectl arguments, e.g. get pods -o wide" }
+    outputs:
+      output: { schema: ./schemas/output.v1.json, description: "kubectl's standard output, cut to maxOutputLines lines" }
+      run: { schema: ./schemas/run.v1.json, description: "The normalised command that ran, how many lines it printed, whether output was cut, and its stderr" }

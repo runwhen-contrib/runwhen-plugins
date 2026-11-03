@@ -1,0 +1,39 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+inputs:
+  command: logs deploy/web -n rw-healthy --tail=5
+calls:
+- argv:
+  - kubectl
+  - logs
+  - deploy/web
+  - --namespace=rw-healthy
+  - --tail=5
+  - --limit-bytes=1048576
+  rc: 0
+  stdout: |
+    10.244.0.1 - - [03/Nov/2026:19:51:20 +0000] "GET / HTTP/1.1" 200 896 "-" "kube-probe/1.37" "-"
+    10.244.0.1 - - [03/Nov/2026:19:51:24 +0000] "GET / HTTP/1.1" 200 896 "-" "kube-probe/1.37" "-"
+    10.244.0.1 - - [03/Nov/2026:19:51:25 +0000] "GET / HTTP/1.1" 200 896 "-" "kube-probe/1.37" "-"
+    10.244.0.1 - - [03/Nov/2026:19:51:30 +0000] "GET / HTTP/1.1" 200 896 "-" "kube-probe/1.37" "-"
+    10.244.0.1 - - [03/Nov/2026:19:51:34 +0000] "GET / HTTP/1.1" 200 896 "-" "kube-probe/1.37" "-"
+  stderr: |
+    Found 2 pods, using pod/web-868f7b7477-xvk94
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    run:
+      argv:
+      - kubectl
+      - logs
+      - deploy/web
+      - --namespace=rw-healthy
+      - --tail=5
+      - --limit-bytes=1048576
+      lines: 5
+      truncated: false
+      stderr: 'Found 2 pods, using pod/web-868f7b7477-xvk94'
+      stderrTruncated: false

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "What ran: the validated command and how much of its output came back",
+  "type": "object",
+  "properties": {
+    "argv": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The normalised command that ran (flags rewritten as --name=value; logs get a default --tail and --limit-bytes)"
+    },
+    "lines": { "type": "integer", "description": "Lines kubectl printed on stdout" },
+    "truncated": { "type": "boolean", "description": "output was cut to maxOutputLines lines (or 1 MiB)" },
+    "stderr": { "type": "string", "description": "What kubectl printed on stderr of a successful run (for example 'No resources found in x namespace.')" },
+    "stderrTruncated": { "type": "boolean" }
+  },
+  "required": ["argv", "lines", "truncated", "stderr", "stderrTruncated"],
+  "additionalProperties": false
+}
