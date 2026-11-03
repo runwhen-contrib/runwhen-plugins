@@ -9,14 +9,14 @@
 
 kubernetes:
   # --- pilot (CNT-3) -----------------------------------------------------------------------------------------
-  - { bundle: k8s-deployment-healthcheck,  skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true }
-  - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true,
+  - { bundle: k8s-deployment-healthcheck,  skills: [k8s-workload-health, k8s-workload-logs], status: ported, ported: [k8s-workload-health, k8s-workload-logs], pilot: true }
+  - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: ported, ported: [k8s-workload-health, k8s-workload-logs], pilot: true,
       note: "classic restarts/log-pattern/anomaly/PVC tasks never produce output on main (json.loads on text, undefined var, list vs string, comma-less jq); re-derived, not fixed" }
-  - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true }
+  - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: ported, ported: [k8s-workload-health, k8s-workload-logs], pilot: true }
   - { bundle: k8s-namespace-healthcheck,   skills: [k8s-namespace-health], status: ported, ported: [k8s-namespace-health], pilot: true,
       note: "'Get Listing Of Resources' (report-only dump needing */* list incl. secrets) and 'Check Event Anomalies' (non-Warning event rate, no assertion) dropped" }
-  - { bundle: k8s-tail-logs-dynamic,       skills: [k8s-workload-logs], status: planned, pilot: true }
-  - { bundle: k8s-app-troubleshoot,        skills: [k8s-workload-logs], status: planned, pilot: true,
+  - { bundle: k8s-tail-logs-dynamic,       skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs], pilot: true }
+  - { bundle: k8s-app-troubleshoot,        skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs], pilot: true,
       note: "'misconfigured environment' grep task dropped: asserts nothing (report-only grep for 'env')" }
   - { bundle: k8s-pvc-healthcheck,         skills: [k8s-pvc-health], status: ported, ported: [k8s-pvc-health], pilot: true,
       note: "'Pods with attached volumes' report-only dump dropped; 'PVs in Terminating' re-derived from deletionTimestamp" }
@@ -28,7 +28,7 @@ kubernetes:
   # --- workloads ---------------------------------------------------------------------------------------------
   - { bundle: k8s-statefulset-ops,         skills: [k8s-workload-ops], status: planned }
   - { bundle: k8s-restart-resource,        skills: [k8s-workload-ops], status: planned, note: "label-selected restart becomes rollout-restart on the target workload" }
-  - { bundle: k8s-stacktrace-health,       skills: [k8s-workload-logs], status: planned }
+  - { bundle: k8s-stacktrace-health,       skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs] }
   - { bundle: k8s-labeledpods-healthcheck, skills: [k8s-workload-health], status: ported, ported: [k8s-workload-health], note: "running-pod count is part of rollout-status" }
   - { bundle: k8s-cluster-resource-health, skills: [k8s-node-health], status: planned,
       note: "classic task 2 reads files nothing creates; task 1 misreads whole-core CPU as millicores" }
