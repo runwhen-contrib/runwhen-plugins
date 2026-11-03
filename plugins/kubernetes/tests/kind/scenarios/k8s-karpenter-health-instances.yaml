@@ -1,0 +1,122 @@
+# Instances of the synthetic Karpenter CRDs; applied by 30-k8s-karpenter-health.sh.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  amiFamily: AL2023
+  role: rw-karpenter-node
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: broken
+spec:
+  amiFamily: AL2023
+  role: rw-karpenter-node
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: healthy-pool
+spec:
+  weight: 10
+  template:
+    spec:
+      nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: default}
+      expireAfter: 720h
+      requirements:
+        - {key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}
+  limits: {cpu: "1000", memory: 1000Gi}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets: [{nodes: "10%"}]
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: full-pool
+spec:
+  weight: 5
+  template:
+    spec:
+      nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: default}
+      expireAfter: 720h
+      requirements:
+        - {key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}
+  limits: {cpu: "100", nodes: "3"}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets: [{nodes: "0", reasons: [Underutilized]}, {nodes: "20%"}]
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: broken-pool
+spec:
+  weight: 1
+  template:
+    spec:
+      nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: broken}
+      expireAfter: 720h
+      requirements:
+        - {key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}
+  limits: {cpu: "50"}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets: [{nodes: "10%"}]
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: orphan-pool
+spec:
+  weight: 1
+  template:
+    spec:
+      nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: gone}
+      expireAfter: 720h
+      requirements:
+        - {key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}
+  limits: {}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets: []
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: external-pool
+spec:
+  weight: 1
+  template:
+    spec:
+      nodeClassRef: {group: karpenter.kwok.sh, kind: KWOKNodeClass, name: kwok}
+      expireAfter: 720h
+      requirements:
+        - {key: karpenter.sh/capacity-type, operator: In, values: [spot, on-demand]}
+  limits: {cpu: "10"}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets: [{nodes: "10%"}]
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: aks-pool
+spec:
+  weight: 1
+  template:
+    spec:
+      nodeClassRef: {group: karpenter.azure.com, kind: AKSNodeClass, name: default}
+      expireAfter: 720h
+  limits: {cpu: "10"}
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30s
+    budgets: [{nodes: "10%"}]

@@ -1,0 +1,1701 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/nodepools/healthy-pool
+now: '2026-11-03T20:56:11.638Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - healthy-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "karpenter.sh/v1",
+        "kind": "NodePool",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodePool\",\"metadata\":{\"annotations\":{},\"name\":\"healthy-pool\"},\"spec\":{\"disruption\":{\"budgets\":[{\"nodes\":\"10%\"}],\"consolidateAfter\":\"1m\",\"consolidationPolicy\":\"WhenEmptyOrUnderutilized\"},\"limits\":{\"cpu\":\"1000\",\"memory\":\"1000Gi\"},\"template\":{\"spec\":{\"expireAfter\":\"720h\",\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"default\"},\"requirements\":[{\"key\":\"karpenter.sh/capacity-type\",\"operator\":\"In\",\"values\":[\"spot\",\"on-demand\"]}]}},\"weight\":10}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:40:16Z",
+            "generation": 1,
+            "name": "healthy-pool",
+            "resourceVersion": "23212",
+            "uid": "27ee41cd-343b-4f17-bb3d-842f0b4e2484"
+        },
+        "spec": {
+            "disruption": {
+                "budgets": [
+                    {
+                        "nodes": "10%"
+                    }
+                ],
+                "consolidateAfter": "1m",
+                "consolidationPolicy": "WhenEmptyOrUnderutilized"
+            },
+            "limits": {
+                "cpu": "1000",
+                "memory": "1000Gi"
+            },
+            "template": {
+                "spec": {
+                    "expireAfter": "720h",
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "default"
+                    },
+                    "requirements": [
+                        {
+                            "key": "karpenter.sh/capacity-type",
+                            "operator": "In",
+                            "values": [
+                                "spot",
+                                "on-demand"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "weight": 10
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "Ready",
+                    "status": "True",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "ValidationSucceeded",
+                    "status": "True",
+                    "type": "ValidationSucceeded"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassReady",
+                    "status": "True",
+                    "type": "NodeClassReady"
+                }
+            ],
+            "resources": {
+                "cpu": "8",
+                "memory": "32Gi",
+                "nodes": "2",
+                "pods": "20"
+            }
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - pods
+  - -A
+  - --field-selector
+  - status.phase=Pending
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:03Z",
+                    "generateName": "bad-image-866577b69d-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "bad-image",
+                        "pod-template-hash": "866577b69d"
+                    },
+                    "name": "bad-image-866577b69d-llmzv",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "bad-image-866577b69d",
+                            "uid": "5631bc70-dd0a-4936-9163-f4416cd8a064"
+                        }
+                    ],
+                    "resourceVersion": "25625",
+                    "uid": "5d891088-2e53-4f61-82b5-766cc050b45d"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "nginx:does-not-exist-0.0.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-nwbxt",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-nwbxt",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "8Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:04Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:03Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:03Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:03Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:03Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "image": "nginx:does-not-exist-0.0.0",
+                            "imageID": "",
+                            "lastState": {},
+                            "name": "app",
+                            "ready": false,
+                            "restartCount": 0,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "Back-off pulling image \"nginx:does-not-exist-0.0.0\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/library/nginx:does-not-exist-0.0.0\": failed to resolve reference \"docker.io/library/nginx:does-not-exist-0.0.0\": docker.io/library/nginx:does-not-exist-0.0.0: not found",
+                                    "reason": "ImagePullBackOff"
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-nwbxt",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Pending",
+                    "podIP": "10.244.0.12",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.12"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "requests": {
+                            "cpu": "1m",
+                            "memory": "8Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T17:33:03Z"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": "2026-11-03T19:17:07Z"
+                    },
+                    "creationTimestamp": "2026-11-03T19:17:09Z",
+                    "generateName": "stuck-rollout-5cdb587744-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "stuck-rollout",
+                        "pod-template-hash": "5cdb587744"
+                    },
+                    "name": "stuck-rollout-5cdb587744-fdq2n",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "stuck-rollout-5cdb587744",
+                            "uid": "07d28c14-f7cc-455e-9304-9a8d348e0911"
+                        }
+                    ],
+                    "resourceVersion": "25728",
+                    "uid": "96d18bdd-7c21-4b7f-a849-352bac8c4c20"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "nginx:does-not-exist-0.0.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-xpqjh",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-xpqjh",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "8Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:17:11Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:17:11Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:17:11Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:17:11Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:17:10Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "image": "nginx:does-not-exist-0.0.0",
+                            "imageID": "",
+                            "lastState": {},
+                            "name": "app",
+                            "ready": false,
+                            "restartCount": 0,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "Back-off pulling image \"nginx:does-not-exist-0.0.0\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/library/nginx:does-not-exist-0.0.0\": failed to resolve reference \"docker.io/library/nginx:does-not-exist-0.0.0\": docker.io/library/nginx:does-not-exist-0.0.0: not found",
+                                    "reason": "ImagePullBackOff"
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-xpqjh",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Pending",
+                    "podIP": "10.244.0.49",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.49"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "requests": {
+                            "cpu": "1m",
+                            "memory": "8Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T19:17:11Z"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:41:27Z",
+                    "generateName": "istio-ingressgateway-54dc9677cd-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "istio-ingressgateway",
+                        "istio": "ingressgateway",
+                        "pod-template-hash": "54dc9677cd"
+                    },
+                    "name": "istio-ingressgateway-54dc9677cd-z8q5g",
+                    "namespace": "rw-istio",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "istio-ingressgateway-54dc9677cd",
+                            "uid": "fc640370-434f-49dc-81bf-e19818982d65"
+                        }
+                    ],
+                    "resourceVersion": "25322",
+                    "uid": "56b9a0a4-63e1-4b28-b2b4-05666149cc1a"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "busybox:does-not-exist-1.20.3",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "istio-proxy",
+                            "resources": {},
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-cqjgv",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-cqjgv",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:41:27Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:41:27Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:41:27Z",
+                            "message": "containers with unready status: [istio-proxy]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:41:27Z",
+                            "message": "containers with unready status: [istio-proxy]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:41:27Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "image": "busybox:does-not-exist-1.20.3",
+                            "imageID": "",
+                            "lastState": {},
+                            "name": "istio-proxy",
+                            "ready": false,
+                            "restartCount": 0,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "Back-off pulling image \"busybox:does-not-exist-1.20.3\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/library/busybox:does-not-exist-1.20.3\": failed to resolve reference \"docker.io/library/busybox:does-not-exist-1.20.3\": docker.io/library/busybox:does-not-exist-1.20.3: not found",
+                                    "reason": "ImagePullBackOff"
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-cqjgv",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Pending",
+                    "podIP": "10.244.0.172",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.172"
+                        }
+                    ],
+                    "qosClass": "BestEffort",
+                    "resources": {},
+                    "startTime": "2026-11-03T20:41:27Z"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"pending-any\"},\"name\":\"pending-any\",\"namespace\":\"rw-karpenter\"},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"512\",\"memory\":\"1Ti\"}}}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:40:14Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "pending-any"
+                    },
+                    "name": "pending-any",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23196",
+                    "uid": "d182a143-3765-47e9-98ee-5a6e5af95eb6"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.9",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "512",
+                                    "memory": "1Ti"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-z5nxz",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-z5nxz",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:40:14Z",
+                            "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                            "observedGeneration": 1,
+                            "reason": "Unschedulable",
+                            "status": "False",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "phase": "Pending",
+                    "qosClass": "Burstable"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"pending-broken\"},\"name\":\"pending-broken\",\"namespace\":\"rw-karpenter\"},\"spec\":{\"affinity\":{\"nodeAffinity\":{\"requiredDuringSchedulingIgnoredDuringExecution\":{\"nodeSelectorTerms\":[{\"matchExpressions\":[{\"key\":\"karpenter.sh/nodepool\",\"operator\":\"In\",\"values\":[\"broken-pool\",\"orphan-pool\"]}]}]}}},\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"250m\"}}}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:40:14Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "pending-broken"
+                    },
+                    "name": "pending-broken",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23192",
+                    "uid": "572a9247-11ba-4747-aec4-6dafa8202c1f"
+                },
+                "spec": {
+                    "affinity": {
+                        "nodeAffinity": {
+                            "requiredDuringSchedulingIgnoredDuringExecution": {
+                                "nodeSelectorTerms": [
+                                    {
+                                        "matchExpressions": [
+                                            {
+                                                "key": "karpenter.sh/nodepool",
+                                                "operator": "In",
+                                                "values": [
+                                                    "broken-pool",
+                                                    "orphan-pool"
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.9",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "250m"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-sxxps",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-sxxps",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:40:14Z",
+                            "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                            "observedGeneration": 1,
+                            "reason": "Unschedulable",
+                            "status": "False",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "phase": "Pending",
+                    "qosClass": "Burstable"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"pending-full\"},\"name\":\"pending-full\",\"namespace\":\"rw-karpenter\"},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"500m\",\"memory\":\"256Mi\"}}}],\"nodeSelector\":{\"karpenter.sh/nodepool\":\"full-pool\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:40:14Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "pending-full"
+                    },
+                    "name": "pending-full",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23190",
+                    "uid": "13ba8412-54cb-49b6-a5f6-f2fcb195df08"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.9",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "500m",
+                                    "memory": "256Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-fkjqp",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeSelector": {
+                        "karpenter.sh/nodepool": "full-pool"
+                    },
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-fkjqp",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:40:14Z",
+                            "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                            "observedGeneration": 1,
+                            "reason": "Unschedulable",
+                            "status": "False",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "phase": "Pending",
+                    "qosClass": "Burstable"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:08:46Z",
+                    "generateName": "bad-image-5f95784c79-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "bad-image",
+                        "pod-template-hash": "5f95784c79"
+                    },
+                    "name": "bad-image-5f95784c79-9df6q",
+                    "namespace": "rw-nsres",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "bad-image-5f95784c79",
+                            "uid": "0c0592d8-08ff-45ba-9791-8ae5f31fe3ff"
+                        }
+                    ],
+                    "resourceVersion": "25119",
+                    "uid": "66db5593-cf02-492e-b164-b311d33e88af"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "busybox:does-not-exist-0.0.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "limits": {
+                                    "cpu": "10m",
+                                    "memory": "8Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-bz5th",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-bz5th",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "1Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:08:49Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:08:46Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:08:46Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:08:46Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:08:46Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "image": "busybox:does-not-exist-0.0.0",
+                            "imageID": "",
+                            "lastState": {},
+                            "name": "app",
+                            "ready": false,
+                            "restartCount": 0,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "Back-off pulling image \"busybox:does-not-exist-0.0.0\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/library/busybox:does-not-exist-0.0.0\": failed to resolve reference \"docker.io/library/busybox:does-not-exist-0.0.0\": docker.io/library/busybox:does-not-exist-0.0.0: not found",
+                                    "reason": "ImagePullBackOff"
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-bz5th",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Pending",
+                    "podIP": "10.244.0.93",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.93"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "cpu": "10m",
+                            "memory": "8Mi"
+                        },
+                        "requests": {
+                            "cpu": "1m",
+                            "memory": "1Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T20:08:46Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - events
+  - -A
+  - --field-selector
+  - involvedObject.kind=Pod,reason=FailedScheduling
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:27:03.311076Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-any",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "20894",
+                    "uid": "ebf895b8-63fa-4f5a-9aca-eebd822114b3"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:47:04Z",
+                    "name": "pending-any.18e4a2dd61b5dac3",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "24510",
+                    "uid": "49ff3daa-c576-42f7-a16e-ad3b0aea5817"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "series": {
+                    "count": 29,
+                    "lastObservedTime": "2026-11-03T20:40:02.683063Z"
+                },
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:40:14.335571Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-any",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23194",
+                    "uid": "d182a143-3765-47e9-98ee-5a6e5af95eb6"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:40:14Z",
+                    "name": "pending-any.18e4a3958e71be31",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23195",
+                    "uid": "5ab600b7-98b8-4999-9aea-0459606da2af"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:40:47.695369Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-any",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23196",
+                    "uid": "d182a143-3765-47e9-98ee-5a6e5af95eb6"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:40:47Z",
+                    "name": "pending-any.18e4a39d52d7dbff",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23361",
+                    "uid": "6f70c54a-7b50-4a6b-833f-3ef79a941d27"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "series": {
+                    "count": 2,
+                    "lastObservedTime": "2026-11-03T20:41:01.808216Z"
+                },
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:31:35.366193Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-broken",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "20892",
+                    "uid": "70c42384-88b8-4404-bad4-17c32f5a6338"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:47:04Z",
+                    "name": "pending-broken.18e4a31cb97584eb",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "24512",
+                    "uid": "97e6503d-743b-4bce-b00b-7ac81c826096"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "series": {
+                    "count": 2,
+                    "lastObservedTime": "2026-11-03T20:37:05.376897Z"
+                },
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:40:14.330468Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-broken",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23191",
+                    "uid": "572a9247-11ba-4747-aec4-6dafa8202c1f"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:40:14Z",
+                    "name": "pending-broken.18e4a3958e23e116",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23193",
+                    "uid": "a26577f6-fee1-4396-af96-3e250d907726"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:45:35.386453Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-broken",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23192",
+                    "uid": "572a9247-11ba-4747-aec4-6dafa8202c1f"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:45:35Z",
+                    "name": "pending-broken.18e4a3e04e916dd3",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "25015",
+                    "uid": "e37dbe96-42e7-4ec1-94be-30039fcacc67"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "series": {
+                    "count": 2,
+                    "lastObservedTime": "2026-11-03T20:50:35.450257Z"
+                },
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:31:35.362409Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-full",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "20890",
+                    "uid": "2fab347b-4ce4-49a1-a2a2-2db07fc8c7b2"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:47:04Z",
+                    "name": "pending-full.18e4a31cb93c055b",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "24509",
+                    "uid": "036b1d3e-7124-4a99-b132-1691c4dbc071"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "series": {
+                    "count": 2,
+                    "lastObservedTime": "2026-11-03T20:36:35.365702Z"
+                },
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:40:14.324272Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-full",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23188",
+                    "uid": "13ba8412-54cb-49b6-a5f6-f2fcb195df08"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:40:14Z",
+                    "name": "pending-full.18e4a3958dc556c6",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23189",
+                    "uid": "83ff04e8-4db6-420b-9b16-162b31a4bbbb"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "source": {},
+                "type": "Warning"
+            },
+            {
+                "action": "Scheduling",
+                "apiVersion": "v1",
+                "eventTime": "2026-11-03T20:45:35.386045Z",
+                "firstTimestamp": null,
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": "pending-full",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "23190",
+                    "uid": "13ba8412-54cb-49b6-a5f6-f2fcb195df08"
+                },
+                "kind": "Event",
+                "lastTimestamp": null,
+                "message": "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:45:35Z",
+                    "name": "pending-full.18e4a3e04e8b6e2e",
+                    "namespace": "rw-karpenter",
+                    "resourceVersion": "25014",
+                    "uid": "539beb0b-b5ee-4023-9ccf-c48cffcb841c"
+                },
+                "reason": "FailedScheduling",
+                "reportingComponent": "default-scheduler",
+                "reportingInstance": "default-scheduler-rw-plugins-control-plane",
+                "series": {
+                    "count": 2,
+                    "lastObservedTime": "2026-11-03T20:50:35.444529Z"
+                },
+                "source": {},
+                "type": "Warning"
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - events
+  - -A
+  - --field-selector
+  - involvedObject.kind=Pod,reason=Nominated
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - events
+  - -A
+  - --field-selector
+  - involvedObject.kind=Pod,reason=FailedProvisioning
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    counts: {constrainedToPool: 0}
+    pods:
+      $containsWhere: {name: pending-any, constraint: none, requests: {cpuMillicores: 512000}}
+    events:
+      $containsWhere: {pod: pending-any, reason: FailedScheduling, reportingComponent: default-scheduler}

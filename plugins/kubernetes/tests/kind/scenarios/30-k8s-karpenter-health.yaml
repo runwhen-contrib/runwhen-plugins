@@ -1,0 +1,109 @@
+# k8s-karpenter-health scenarios, applied by up.sh. Synthetic karpenter.sh/v1 NodePool and
+# NodeClaim (cluster-scoped) and karpenter.k8s.aws/v1 EC2NodeClass CRDs: no Karpenter runs, so
+# the status a controller would have written is patched in by 30-k8s-karpenter-health.sh once
+# the CRDs are Established (a manifest cannot do that in one apply): it applies
+# k8s-karpenter-health-instances.yaml (pools, EC2NodeClasses), then the NodeClaims, which
+# are owned by their pool and so need its uid.
+#   healthy-pool   Ready, well under its limits, NodeClass `default` Ready, two Ready NodeClaims
+#   full-pool      Ready but at its cpu limit (100 of 100), a "0" disruption budget
+#   broken-pool    Not Ready: NodeClass `broken` not Ready; a NodeClaim that never registers
+#   orphan-pool    refers to an EC2NodeClass that does not exist
+#   external-pool  refers to a NodeClass of a group this skill does not check
+#   aks-pool       refers to an AKSNodeClass, a type that is not installed
+# The pods in rw-karpenter cannot schedule on kind: two select a pool through
+# karpenter.sh/nodepool, one asks for more cpu than the node has and selects none.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-karpenter
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodepools.karpenter.sh
+spec:
+  group: karpenter.sh
+  scope: Cluster
+  names: {kind: NodePool, listKind: NodePoolList, plural: nodepools, singular: nodepool}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodeclaims.karpenter.sh
+spec:
+  group: karpenter.sh
+  scope: Cluster
+  names: {kind: NodeClaim, listKind: NodeClaimList, plural: nodeclaims, singular: nodeclaim}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ec2nodeclasses.karpenter.k8s.aws
+spec:
+  group: karpenter.k8s.aws
+  scope: Cluster
+  names: {kind: EC2NodeClass, listKind: EC2NodeClassList, plural: ec2nodeclasses, singular: ec2nodeclass}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: pending-full, namespace: rw-karpenter, labels: {app: pending-full}}
+spec:
+  nodeSelector: {karpenter.sh/nodepool: full-pool}
+  containers:
+    - name: app
+      image: registry.k8s.io/pause:3.9
+      resources: {requests: {cpu: 500m, memory: 256Mi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: pending-broken, namespace: rw-karpenter, labels: {app: pending-broken}}
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [broken-pool, orphan-pool]}
+  containers:
+    - name: app
+      image: registry.k8s.io/pause:3.9
+      resources: {requests: {cpu: 250m}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: pending-any, namespace: rw-karpenter, labels: {app: pending-any}}
+spec:
+  containers:
+    - name: app
+      image: registry.k8s.io/pause:3.9
+      resources: {requests: {cpu: "512", memory: 1Ti}}

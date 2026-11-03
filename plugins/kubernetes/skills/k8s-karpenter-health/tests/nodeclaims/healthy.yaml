@@ -1,0 +1,315 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/nodepools/healthy-pool
+now: '2026-11-03T20:56:01.078Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - healthy-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "karpenter.sh/v1",
+        "kind": "NodePool",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodePool\",\"metadata\":{\"annotations\":{},\"name\":\"healthy-pool\"},\"spec\":{\"disruption\":{\"budgets\":[{\"nodes\":\"10%\"}],\"consolidateAfter\":\"1m\",\"consolidationPolicy\":\"WhenEmptyOrUnderutilized\"},\"limits\":{\"cpu\":\"1000\",\"memory\":\"1000Gi\"},\"template\":{\"spec\":{\"expireAfter\":\"720h\",\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"default\"},\"requirements\":[{\"key\":\"karpenter.sh/capacity-type\",\"operator\":\"In\",\"values\":[\"spot\",\"on-demand\"]}]}},\"weight\":10}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:40:16Z",
+            "generation": 1,
+            "name": "healthy-pool",
+            "resourceVersion": "23212",
+            "uid": "27ee41cd-343b-4f17-bb3d-842f0b4e2484"
+        },
+        "spec": {
+            "disruption": {
+                "budgets": [
+                    {
+                        "nodes": "10%"
+                    }
+                ],
+                "consolidateAfter": "1m",
+                "consolidationPolicy": "WhenEmptyOrUnderutilized"
+            },
+            "limits": {
+                "cpu": "1000",
+                "memory": "1000Gi"
+            },
+            "template": {
+                "spec": {
+                    "expireAfter": "720h",
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "default"
+                    },
+                    "requirements": [
+                        {
+                            "key": "karpenter.sh/capacity-type",
+                            "operator": "In",
+                            "values": [
+                                "spot",
+                                "on-demand"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "weight": 10
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "Ready",
+                    "status": "True",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "ValidationSucceeded",
+                    "status": "True",
+                    "type": "ValidationSucceeded"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassReady",
+                    "status": "True",
+                    "type": "NodeClassReady"
+                }
+            ],
+            "resources": {
+                "cpu": "8",
+                "memory": "32Gi",
+                "nodes": "2",
+                "pods": "20"
+            }
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - nodeclaims.karpenter.sh
+  - -l
+  - karpenter.sh/nodepool=healthy-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "karpenter.sh/v1",
+                "kind": "NodeClaim",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodeClaim\",\"metadata\":{\"annotations\":{},\"labels\":{\"karpenter.sh/capacity-type\":\"spot\",\"karpenter.sh/nodepool\":\"healthy-pool\",\"node.kubernetes.io/instance-type\":\"m5.large\",\"topology.kubernetes.io/zone\":\"us-east-1a\"},\"name\":\"healthy-pool-aaaaa\",\"ownerReferences\":[{\"apiVersion\":\"karpenter.sh/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"NodePool\",\"name\":\"healthy-pool\",\"uid\":\"27ee41cd-343b-4f17-bb3d-842f0b4e2484\"}]},\"spec\":{\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"default\"},\"requirements\":[{\"key\":\"node.kubernetes.io/instance-type\",\"operator\":\"In\",\"values\":[\"m5.large\"]}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:40:17Z",
+                    "generation": 1,
+                    "labels": {
+                        "karpenter.sh/capacity-type": "spot",
+                        "karpenter.sh/nodepool": "healthy-pool",
+                        "node.kubernetes.io/instance-type": "m5.large",
+                        "topology.kubernetes.io/zone": "us-east-1a"
+                    },
+                    "name": "healthy-pool-aaaaa",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "karpenter.sh/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "NodePool",
+                            "name": "healthy-pool",
+                            "uid": "27ee41cd-343b-4f17-bb3d-842f0b4e2484"
+                        }
+                    ],
+                    "resourceVersion": "23221",
+                    "uid": "270d1614-f7ac-402f-9d64-8c7cb9af5720"
+                },
+                "spec": {
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "default"
+                    },
+                    "requirements": [
+                        {
+                            "key": "node.kubernetes.io/instance-type",
+                            "operator": "In",
+                            "values": [
+                                "m5.large"
+                            ]
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Launched",
+                            "status": "True",
+                            "type": "Launched"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Registered",
+                            "status": "True",
+                            "type": "Registered"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Initialized",
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Ready",
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Consolidatable",
+                            "status": "True",
+                            "type": "Consolidatable"
+                        }
+                    ],
+                    "nodeName": "ip-10-0-1-10.ec2.internal",
+                    "providerID": "aws:///us-east-1a/i-0aaaa"
+                }
+            },
+            {
+                "apiVersion": "karpenter.sh/v1",
+                "kind": "NodeClaim",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodeClaim\",\"metadata\":{\"annotations\":{},\"labels\":{\"karpenter.sh/capacity-type\":\"on-demand\",\"karpenter.sh/nodepool\":\"healthy-pool\",\"node.kubernetes.io/instance-type\":\"c5.xlarge\",\"topology.kubernetes.io/zone\":\"us-east-1a\"},\"name\":\"healthy-pool-bbbbb\",\"ownerReferences\":[{\"apiVersion\":\"karpenter.sh/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"NodePool\",\"name\":\"healthy-pool\",\"uid\":\"27ee41cd-343b-4f17-bb3d-842f0b4e2484\"}]},\"spec\":{\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"default\"},\"requirements\":[{\"key\":\"node.kubernetes.io/instance-type\",\"operator\":\"In\",\"values\":[\"c5.xlarge\"]}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:40:18Z",
+                    "generation": 1,
+                    "labels": {
+                        "karpenter.sh/capacity-type": "on-demand",
+                        "karpenter.sh/nodepool": "healthy-pool",
+                        "node.kubernetes.io/instance-type": "c5.xlarge",
+                        "topology.kubernetes.io/zone": "us-east-1a"
+                    },
+                    "name": "healthy-pool-bbbbb",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "karpenter.sh/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "NodePool",
+                            "name": "healthy-pool",
+                            "uid": "27ee41cd-343b-4f17-bb3d-842f0b4e2484"
+                        }
+                    ],
+                    "resourceVersion": "23223",
+                    "uid": "39113fa6-7c8f-4dd8-a3e0-c95eda03b1ca"
+                },
+                "spec": {
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "default"
+                    },
+                    "requirements": [
+                        {
+                            "key": "node.kubernetes.io/instance-type",
+                            "operator": "In",
+                            "values": [
+                                "c5.xlarge"
+                            ]
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Launched",
+                            "status": "True",
+                            "type": "Launched"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Registered",
+                            "status": "True",
+                            "type": "Registered"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Initialized",
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:17Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Ready",
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:40:18Z",
+                            "message": "AMI drift detected",
+                            "observedGeneration": 1,
+                            "reason": "AMIDrift",
+                            "status": "True",
+                            "type": "Drifted"
+                        }
+                    ],
+                    "nodeName": "ip-10-0-1-11.ec2.internal",
+                    "providerID": "aws:///us-east-1a/i-0bbbb"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    counts: {total: 2, ready: 2, notReady: 0, stuck: 0, deleting: 0, drifted: 1}
+    nodeClaims:
+      $contains:
+        - {name: healthy-pool-aaaaa, phase: Ready, stuck: false, capacityType: spot, instanceType: m5.large, nodeName: ip-10-0-1-10.ec2.internal, consolidatable: true}
+        - {name: healthy-pool-bbbbb, phase: Ready, stuck: false, capacityType: on-demand, drifted: true}
