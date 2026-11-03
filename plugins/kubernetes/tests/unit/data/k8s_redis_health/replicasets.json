@@ -1,0 +1,227 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "metadata": {
+        "annotations": {
+          "deployment.kubernetes.io/desired-replicas": "1",
+          "deployment.kubernetes.io/max-replicas": "2",
+          "deployment.kubernetes.io/revision": "2"
+        },
+        "creationTimestamp": "2026-11-03T22:28:57Z",
+        "generation": 1,
+        "labels": {
+          "app": "redis-locked",
+          "pod-template-hash": "8444d567d6"
+        },
+        "name": "redis-locked-8444d567d6",
+        "namespace": "rw-redis",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "Deployment",
+            "name": "redis-locked",
+            "uid": "05c5dd82-fa5f-45fa-92d4-5ea7ab1cbf2f"
+          }
+        ],
+        "resourceVersion": "41265",
+        "uid": "8b23825b-d159-49a0-8d20-9c11a38fda9d"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app": "redis-locked",
+            "pod-template-hash": "8444d567d6"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "redis-locked",
+              "pod-template-hash": "8444d567d6"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "command": [
+                  "sh",
+                  "-c",
+                  "exec redis-server --requirepass \"$LOCK_PW\" --save \"\""
+                ],
+                "env": [
+                  {
+                    "name": "LOCK_PW",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "key": "password",
+                        "name": "redis-auth"
+                      }
+                    }
+                  }
+                ],
+                "image": "redis:7-alpine",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "redis",
+                "ports": [
+                  {
+                    "containerPort": 6379,
+                    "name": "redis",
+                    "protocol": "TCP"
+                  }
+                ],
+                "readinessProbe": {
+                  "failureThreshold": 3,
+                  "periodSeconds": 5,
+                  "successThreshold": 1,
+                  "tcpSocket": {
+                    "port": 6379
+                  },
+                  "timeoutSeconds": 1
+                },
+                "resources": {
+                  "limits": {
+                    "memory": "64Mi"
+                  },
+                  "requests": {
+                    "cpu": "5m",
+                    "memory": "8Mi"
+                  }
+                },
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File"
+              }
+            ],
+            "dnsPolicy": "ClusterFirst",
+            "restartPolicy": "Always",
+            "schedulerName": "default-scheduler",
+            "securityContext": {},
+            "terminationGracePeriodSeconds": 30
+          }
+        }
+      },
+      "status": {
+        "availableReplicas": 1,
+        "fullyLabeledReplicas": 1,
+        "observedGeneration": 1,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "ReplicaSet",
+      "metadata": {
+        "annotations": {
+          "deployment.kubernetes.io/desired-replicas": "1",
+          "deployment.kubernetes.io/max-replicas": "2",
+          "deployment.kubernetes.io/revision": "1"
+        },
+        "creationTimestamp": "2026-11-03T22:19:50Z",
+        "generation": 1,
+        "labels": {
+          "app": "redis-open",
+          "pod-template-hash": "5cfd5c66b6"
+        },
+        "name": "redis-open-5cfd5c66b6",
+        "namespace": "rw-redis",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "Deployment",
+            "name": "redis-open",
+            "uid": "53f8d254-97a3-4e1d-9273-14b4949082cf"
+          }
+        ],
+        "resourceVersion": "39864",
+        "uid": "f8a88678-9f79-49fa-80f6-0582e8fc30ac"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app": "redis-open",
+            "pod-template-hash": "5cfd5c66b6"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "redis-open",
+              "pod-template-hash": "5cfd5c66b6"
+            }
+          },
+          "spec": {
+            "containers": [
+              {
+                "command": [
+                  "redis-server",
+                  "--save",
+                  ""
+                ],
+                "image": "redis:7-alpine",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "redis",
+                "ports": [
+                  {
+                    "containerPort": 6379,
+                    "name": "redis",
+                    "protocol": "TCP"
+                  }
+                ],
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "redis-cli",
+                      "ping"
+                    ]
+                  },
+                  "failureThreshold": 3,
+                  "periodSeconds": 5,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 1
+                },
+                "resources": {
+                  "limits": {
+                    "memory": "64Mi"
+                  },
+                  "requests": {
+                    "cpu": "5m",
+                    "memory": "8Mi"
+                  }
+                },
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File"
+              }
+            ],
+            "dnsPolicy": "ClusterFirst",
+            "restartPolicy": "Always",
+            "schedulerName": "default-scheduler",
+            "securityContext": {},
+            "terminationGracePeriodSeconds": 30
+          }
+        }
+      },
+      "status": {
+        "availableReplicas": 1,
+        "fullyLabeledReplicas": 1,
+        "observedGeneration": 1,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

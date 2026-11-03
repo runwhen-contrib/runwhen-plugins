@@ -252,7 +252,14 @@ kubernetes:
       "Perform PostgreSQL Cluster Failover Operation": k8s-postgres-operator-ops/switchover
       "Restart PostgreSQL Cluster with Rolling Update": k8s-postgres-operator-ops/rolling-restart
       "Verify Cluster Recovery and Generate Summary": k8s-postgres-operator-health/patroni-status
-  - { bundle: k8s-redis-healthcheck,     skills: [k8s-redis-health], status: planned, note: "SET/INCR test is a write: separate write task" }
+  - bundle: k8s-redis-healthcheck
+    skills: [k8s-redis-health]
+    status: ported
+    ported: [k8s-redis-health]
+    note: "SET/INCR test is a write: separate write task (read-write-check, readOnly false, dryRun). Classic Redis auth was unsupported (NOAUTH read as a PING failure); re-derived: redis-cli runs inside the container with the container's own REDIS_PASSWORD as REDISCLI_AUTH (no Secret read, nothing on argv), and a refused or missing password is permission_denied. Classic exec'd deployment/NAME, which on several replicas picked one pod (a replica fails SET with READONLY); every ready pod is now asked, and the write goes to the primary only. StatefulSet-based Redis, the common shape, is a target. The healthcheck key is deleted (it was left behind) and carries an expiry. Classic compared only the final GET and ignored SET/INCR codes; each step is checked. INCR is not ported: SET, GET and DEL prove the write path"
+    tasks:
+      "Ping Redis Workload": "k8s-redis-health/ping (also reports role, replica link, memory, evictions, clients and persistence status from INFO)"
+      "Verify Redis Read Write Operation": "k8s-redis-health/read-write-check (SET with EX 60, GET, DEL on the primary; the classic SET 0 / INCR / GET sequence is replaced)"
   - { bundle: k8s-vault-healthcheck,     skills: [k8s-vault-health], status: planned }
   - bundle: k8s-prometheus-healthcheck
     skills: [k8s-prometheus-health]

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The role of each pod considered for the read-write check",
+  "description": "role is null for a pod that is not ready (not asked) or whose role could not be read (error says why).",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "pod": {
+        "type": "string"
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "container": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "role": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "error": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "pod",
+      "ready",
+      "container",
+      "role",
+      "error"
+    ],
+    "additionalProperties": false
+  }
+}

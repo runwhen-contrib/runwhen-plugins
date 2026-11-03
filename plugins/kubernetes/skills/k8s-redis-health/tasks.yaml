@@ -1,0 +1,70 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns
+  memoryPercentThreshold:
+    type: integer
+    default: 90
+    min: 1
+    max: 100
+    description: A Redis with maxmemory set and used memory at or above this percent has memory.overThreshold true in ping
+tasks:
+  - name: ping
+    title: PING and INFO per pod
+    description: >-
+      For every ready pod of the workload, runs redis-cli PING and INFO inside the Redis container
+      (the container's own REDIS_PASSWORD environment variable supplies a password; no Secret is
+      read and no password is passed or printed). Reports whether the reply was PONG and the round
+      trip in ms, and from INFO: role, connected replicas, the replica link (master_link_status),
+      used memory against maxmemory, evicted keys, rejected connections, connected clients and the
+      last RDB and AOF status. A pod that is not ready is listed and not asked. Authentication
+      refused or no password available is permission_denied.
+    script: scripts/ping.py
+    tags: [redis, ping, replication, memory]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+    inputs:
+      container: { type: string, required: false, description: "Container to run redis-cli in; the one named redis, else the one running a redis image, when omitted" }
+    outputs:
+      instances: { schema: ./schemas/instances.v1.json, description: "One entry per pod: PING result and latency, INFO facts" }
+      counts: { schema: ./schemas/counts.v1.json, description: "Pods, ready, queried and failed before the maxItems cap" }
+
+  - name: read-write-check
+    title: SET, GET and DEL a test key on the primary
+    description: >-
+      Finds the primary (INFO replication role:master) among the ready pods and, on it only, sets
+      a key rw:healthcheck:<time of the run> to a value with a 60 second expiry, reads it back,
+      and deletes it, reporting each step's success and round trip in ms. The key name is unique
+      to the run, so no other key is touched. A dry run finds the primary and reports the key and
+      steps without writing. A Redis with no primary (every pod a replica) is reported with
+      ran false and reason no_primary.
+    script: scripts/read_write_check.py
+    tags: [redis, write-check]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    effects:
+      - "Writes one key named rw:healthcheck:<time of the run> with a 60 second expiry on the primary, then deletes it; the key replicates to the replicas while it exists."
+      - "Counts as one SET, one GET and one DEL in the primary's command statistics; a persistence setting (AOF, a save point) may write the key to disk before it is deleted."
+      - "A primary that is out of memory with a noeviction policy refuses the SET (reported as a failed step), and one at the limit with an eviction policy may evict another key to make room."
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+    inputs:
+      container: { type: string, required: false, description: "Container to run redis-cli in; the one named redis, else the one running a redis image, when omitted" }
+    outputs:
+      candidates: { schema: ./schemas/candidates.v1.json, description: "Role of each pod considered" }
+      check: { schema: ./schemas/check.v1.json, description: "Key, steps and their latency on each primary" }
