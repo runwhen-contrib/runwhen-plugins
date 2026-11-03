@@ -20,7 +20,9 @@ preview before it applies (D23).
 
 ## Steps
 
-1. Set `version` in `plugins/<plugin>/plugin.yaml` and merge to `main`.
+1. Set `version` in `plugins/<plugin>/plugin.yaml` and merge to `main`. Work lands on `v13/plugins`
+   first and reaches `main` with the milestone PR; tags are cut from `main` only (the release
+   workflow refuses a tag whose commit is not on `main`).
 2. Tag the merge commit with an annotated tag:
 
    ```
