@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Access modes and the nodes active pods mount the claim from",
+  "title": "Access modes and the nodes live pods mount the claim from (null when the pods could not be listed)",
   "type": "object",
   "properties": {
     "accessModes": {
@@ -20,13 +20,44 @@
       ]
     },
     "nodes": {
-      "type": "array",
+      "type": [
+        "array",
+        "null"
+      ],
       "items": {
         "type": "string"
       },
       "maxItems": 50
     },
     "multiNodeConflict": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "nodeCount": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "truncated": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "terminatingNodes": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50
+    },
+    "readWriteOncePod": {
       "type": "boolean"
     }
   },
@@ -35,7 +66,11 @@
     "readWriteOnce",
     "volumeName",
     "nodes",
-    "multiNodeConflict"
+    "multiNodeConflict",
+    "nodeCount",
+    "truncated",
+    "terminatingNodes",
+    "readWriteOncePod"
   ],
   "additionalProperties": false
 }

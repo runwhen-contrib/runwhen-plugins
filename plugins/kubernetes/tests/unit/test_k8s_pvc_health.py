@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 from k8s_pvc_health import k8s
 from k8s_pvc_health.errors import RwError
 from k8s_pvc_health import pvc as p
@@ -329,7 +330,7 @@ def test_zero_size_filesystem_has_no_percent():
 # ----------------------------------------------------------- attachment ----
 
 
-def mounting_on(nodes, phase="Running"):
+def mounting_on(nodes, phase="Running", terminating=False):
     """Mounting-pod rows for a claim, one per node."""
     return [
         {
@@ -338,7 +339,7 @@ def mounting_on(nodes, phase="Running"):
             "ready": True,
             "node": n,
             "active": phase not in ("Succeeded", "Failed"),
-            "terminating": False,
+            "terminating": terminating,
             "mounts": [],
         }
         for i, n in enumerate(nodes)
@@ -831,3 +832,240 @@ def test_init_containers_are_reported_with_init_true():
         ("pause", False),
         ("prep", True),
     ]
+
+
+# ----------------------------------------------------- review fixes ----
+
+SCRIPT_FOR_TASK = {
+    t["name"]: t for t in yaml.safe_load((SKILL / "tasks.yaml").read_text())["tasks"]
+}
+
+# kubectl noun (singular, plural or plural.group) -> (apiGroup, plural). Extend it when you copy this.
+RESOURCES = {
+    **{
+        r: ("", r)
+        for r in (
+            "pods",
+            "events",
+            "persistentvolumeclaims",
+            "persistentvolumes",
+            "nodes",
+            "namespaces",
+        )
+    },
+    "pod": ("", "pods"),
+    "persistentvolume": ("", "persistentvolumes"),
+    "storageclass": ("storage.k8s.io", "storageclasses"),
+    "storageclasses": ("storage.k8s.io", "storageclasses"),
+    "volumeattachments.storage.k8s.io": ("storage.k8s.io", "volumeattachments"),
+}
+VALUE_FLAGS = {
+    "-n",
+    "--namespace",
+    "-o",
+    "-c",
+    "--container",
+    "--field-selector",
+    "-l",
+    "--selector",
+    "--context",
+}
+
+
+def rbac_needs(argv):
+    """The (apiGroup, resource, verb) triples one kubectl argv needs.
+
+    get <kind> <name> -> get; get <kind> (no name, or -l / --field-selector) -> list;
+    logs -> pods/log get; exec -> pods get + pods/exec create. Raises on anything else, so a
+    skill that issues a new verb has to extend this mapping.
+    """
+    flags, positional, it = {}, [], iter(argv[1:])
+    for a in it:
+        if a == "--":
+            break
+        if a in VALUE_FLAGS:
+            flags[a] = next(it)
+        elif not a.startswith("-"):
+            positional.append(a)
+    verb = positional[0]
+    if verb == "get":
+        group, plural = RESOURCES[positional[1]]
+        named_object = len(positional) > 2 and "-l" not in flags and "--selector" not in flags
+        return {(group, plural, "get" if named_object else "list")}
+    if verb == "logs":
+        return {("", "pods/log", "get")}
+    if verb == "exec":
+        return {("", "pods", "get"), ("", "pods/exec", "create")}
+    raise AssertionError(f"no RBAC mapping for kubectl {verb}: {argv}")
+
+
+def declared(task):
+    return {
+        (g, r, v)
+        for rule in task["permissions"]
+        for g in rule["apiGroups"]
+        for r in rule["resources"]
+        for v in rule["verbs"]
+    }
+
+
+@pytest.mark.parametrize(
+    "task,targets",
+    [
+        ("binding-status", [("rw-healthy", "data"), ("rw-broken", "pending")]),
+        ("terminating", [("rw-broken", "stuck"), ("rw-healthy", "data")]),
+        ("usage", [("rw-healthy", "data")]),
+        ("attachment", [("rw-healthy", "data"), ("rw-broken", "pending")]),
+    ],
+)
+def test_declared_permissions_cover_every_kubectl_call_the_script_makes(task, targets):
+    needed = set()
+    for ns, name in targets:
+        ctx = FakeCtx(ns, name)
+        if name == "pending":  # its StorageClass does not exist
+            ctx.fail = {
+                "storageclass": 'Error from server (NotFound): storageclass "does-not-exist" not found'
+            }
+        script(task.replace("-", "_"))(ctx)
+        for argv in ctx.calls:
+            needed |= rbac_needs(argv)
+    missing = needed - declared(SCRIPT_FOR_TASK[task])
+    assert not missing, f"{task} calls {sorted(missing)} but does not declare them"
+
+
+def test_usage_declares_pod_get_and_exec_create_and_get():
+    perms = declared(SCRIPT_FOR_TASK["usage"])
+    assert {("", "pods", "get"), ("", "pods/exec", "create"), ("", "pods/exec", "get")} <= perms
+
+
+def test_rbac_needs_maps_the_verbs():
+    assert rbac_needs(["kubectl", "-n", "x", "get", "pods", "-o", "json"]) == {("", "pods", "list")}
+    assert rbac_needs(["kubectl", "-n", "x", "get", "pods", "-l", "a=b", "-o", "json"]) == {
+        ("", "pods", "list")
+    }
+    assert rbac_needs(["kubectl", "get", "storageclass", "standard", "-o", "json"]) == {
+        ("storage.k8s.io", "storageclasses", "get")
+    }
+    assert rbac_needs(["kubectl", "-n", "x", "logs", "p", "-c", "c"]) == {("", "pods/log", "get")}
+    assert rbac_needs(["kubectl", "-n", "x", "exec", "p", "-c", "c", "--", "df"]) == {
+        ("", "pods", "get"),
+        ("", "pods/exec", "create"),
+    }
+
+
+def test_node_list_is_capped_but_the_conflict_uses_every_node():
+    data = claim("healthy", "data")
+    access = p.attachment_access(data, mounting_on([f"n{i:03d}" for i in range(80)]))
+    assert len(access["nodes"]) == 50 and access["nodeCount"] == 80 and access["truncated"] is True
+    assert access["multiNodeConflict"] is True
+    one = p.attachment_access(data, mounting_on(["n1"]))
+    assert one["nodeCount"] == 1 and one["truncated"] is False and one["terminatingNodes"] == []
+
+
+def test_terminating_pod_on_another_node_is_not_a_conflict_but_is_reported():
+    data = claim("healthy", "data")
+    access = p.attachment_access(data, mounting_on(["n1"]) + mounting_on(["n2"], terminating=True))
+    assert access["nodes"] == ["n1"] and access["terminatingNodes"] == ["n2"]
+    assert access["multiNodeConflict"] is False
+
+
+def test_read_write_once_pod_claim_conflicts_with_two_live_pods_on_any_nodes():
+    data = copy.deepcopy(claim("healthy", "data"))
+    data["spec"]["accessModes"] = ["ReadWriteOncePod"]
+    same_node = p.attachment_access(data, mounting_on(["n1", "n1"]))
+    assert same_node["readWriteOncePod"] is True and same_node["multiNodeConflict"] is True
+    assert p.attachment_access(data, mounting_on(["n1"]))["multiNodeConflict"] is False
+    assert (
+        p.attachment_access(data, mounting_on(["n1"]) + mounting_on(["n1"], terminating=True))[
+            "multiNodeConflict"
+        ]
+        is False
+    )
+    plain = p.attachment_access(claim("healthy", "data"), mounting_on(["n1"]))
+    assert plain["readWriteOncePod"] is False
+
+
+def test_unknown_pods_leave_the_node_facts_null():
+    access = p.attachment_access(claim("healthy", "data"), None)
+    assert (
+        access["nodes"] is None
+        and access["multiNodeConflict"] is None
+        and access["nodeCount"] is None
+    )
+    assert access["accessModes"] == ["ReadWriteOnce"] and access["readWriteOnce"] is True
+    rows = p.volume_attachments([va("a", "pv", "n1", True)], "pv", None)
+    assert rows[0]["nodeHasMountingPod"] is None
+
+
+def test_attachment_on_a_node_with_no_mounting_pod_is_reported():
+    rows = p.volume_attachments([va("a", "pv", "n9", True)], "pv", ["n1"])
+    assert rows[0]["attached"] is True and rows[0]["nodeHasMountingPod"] is False
+
+
+def test_forbidden_pods_list_keeps_the_claim_facts_in_terminating():
+    ctx = FakeCtx("rw-broken", "stuck", fail={"pods": FORBIDDEN % "pods"})
+    out = script("terminating")(ctx)
+    assert out["pods"] is None
+    assert (
+        out["termination"]["terminating"] is True
+        and "rw.test/hold" in out["termination"]["finalizers"]
+    )
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "pods")]
+
+
+def test_forbidden_pods_list_keeps_the_claim_facts_in_attachment():
+    ctx = FakeCtx("rw-healthy", "data", fail={"pods": FORBIDDEN % "pods"})
+    out = script("attachment")(ctx)
+    assert out["pods"] is None
+    assert out["access"]["nodes"] is None and out["access"]["multiNodeConflict"] is None
+    assert out["access"]["accessModes"] == ["ReadWriteOnce"] and out["access"]["volumeName"]
+    assert out["volumeAttachments"] == []
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "pods")]
+
+
+def test_forbidden_pods_list_fails_usage():
+    with pytest.raises(RwError) as exc:
+        script("usage")(FakeCtx("rw-healthy", "data", fail={"pods": FORBIDDEN % "pods"}))
+    assert exc.value.code == "permission_denied"
+
+
+def test_pod_vanishing_before_exec_is_internal_not_not_found():
+    gone = 'Error from server (NotFound): pods "data-user-x" not found'
+    with pytest.raises(RwError) as exc:
+        script("usage")(FakeCtx("rw-healthy", "data", fail={"exec": gone}))
+    assert exc.value.code == "internal"
+    assert "went away before exec" in exc.value.message
+
+
+BUSYBOX_DF = (DATA / "busybox_df.txt").read_text()
+
+
+def test_parse_df_on_real_busybox_output():
+    df = p.parse_df(BUSYBOX_DF)
+    assert df["mountedOn"] == "/data" and df["filesystem"].startswith("/dev/")
+    assert df["sizeBytes"] > df["usedBytes"] > 0 and df["availableBytes"] > 0
+
+
+def test_usage_success_path_on_the_busybox_pod():
+    ctx = FakeCtx("rw-healthy", "df-data", exec_out=BUSYBOX_DF)
+    out = script("usage")(ctx)["usage"]
+    assert out["pod"] == "df-user" and out["container"] == "busybox" and out["mountPath"] == "/data"
+    assert 0 < out["percent"] < 100 and out["atOrAbove"] is False and out["runningPods"] == 1
+
+
+def test_block_mode_claim_is_skipped_not_measured(monkeypatch):
+    ctx = FakeCtx("rw-healthy", "data")
+    real = ctx.run
+
+    def run(argv):
+        out = real(argv)
+        if "persistentvolumeclaims" in argv:
+            doc = json.loads(out.stdout)
+            doc["spec"]["volumeMode"] = "Block"
+            return SimpleNamespace(returncode=0, stdout=json.dumps(doc), stderr="")
+        return out
+
+    ctx.run = run
+    with pytest.raises(Skipped, match="block-mode"):
+        script("usage")(ctx)
+    assert not any("exec" in c for c in ctx.calls)

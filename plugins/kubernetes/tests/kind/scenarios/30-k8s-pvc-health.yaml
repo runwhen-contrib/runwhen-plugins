@@ -1,9 +1,10 @@
-# k8s-pvc-health: a claim stuck Terminating. The custom finalizer is never
-# removed by anything, so once the claim is deleted it keeps its
-# deletionTimestamp. up.sh does not apply this file and does not delete the
-# claim; do both once, by hand, before capturing:
+# k8s-pvc-health scenarios. up.sh does not apply this file and does not delete
+# the claim `stuck`; do both once, by hand, before capturing:
 #   kubectl --context kind-rw-plugins apply -f 30-k8s-pvc-health.yaml
 #   kubectl --context kind-rw-plugins -n rw-broken delete pvc stuck --wait=false
+#
+# rw-broken/stuck: a claim stuck Terminating. The custom finalizer is never
+# removed by anything, so once the claim is deleted it keeps its deletionTimestamp.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -15,3 +16,36 @@ spec:
   storageClassName: standard
   resources:
     requests: {storage: 100Mi}
+---
+# rw-healthy/df-user + df-data: a pod whose image has `df` (busybox), so the
+# `usage` task has a real success path. The pause image used by data-user has
+# no df.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: df-data
+  namespace: rw-healthy
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard
+  resources:
+    requests: {storage: 100Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: df-user
+  namespace: rw-healthy
+spec:
+  containers:
+    - name: busybox
+      image: busybox:1.36
+      command: [sh, -c, "dd if=/dev/zero of=/data/fill bs=1M count=10 && sleep 36000"]
+      volumeMounts:
+        - {name: data, mountPath: /data}
+      resources:
+        requests: {cpu: 1m, memory: 1Mi}
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: df-data

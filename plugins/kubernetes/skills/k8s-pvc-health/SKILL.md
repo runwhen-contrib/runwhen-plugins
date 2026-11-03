@@ -26,7 +26,7 @@ Every task needs `get` on the claim. Most of what they read is in the claim's ow
 namespace. Three reads are **cluster-scoped** and need a ClusterRole, not a
 Role: `storageclasses` and `persistentvolumes` (`binding-status`), and
 `volumeattachments` (`attachment`). A namespace-scoped identity still gets the
-claim, its events and its pods; the cluster-scoped part comes back empty with a
+claim, its events and its pods; the cluster-scoped part comes back `null` with a
 `permission_denied` error (see below). `usage` runs `df` through `pods/exec`
 (`create`) and is its own task so a forbidden exec fails only that task. No task
 reads Secrets or logs.
@@ -57,7 +57,9 @@ reads Secrets or logs.
   `df`, or an exec denied by RBAC, fails the task.
 - `attachment`: `access` has the access modes, the nodes that active pods mount
   the claim from, and `multiNodeConflict`, true when a ReadWriteOnce claim is
-  mounted from more than one node. `volumeAttachments` are the cluster's
+  mounted from more than one node (or a ReadWriteOncePod claim by more than one
+  pod). `nodes` is capped at 50 with the full `nodeCount`; `terminatingNodes`
+  are nodes of pods being deleted. `volumeAttachments` are the cluster's
   VolumeAttachment objects for the PV: node, `attached`, `attachError`,
   `detachError`. `volumeAttachments: []` means there are none, which is normal
   for volumes that are not attached through CSI (hostPath, local, kind's
@@ -73,6 +75,16 @@ Outputs are facts, not verdicts: nothing here says healthy or unhealthy.
   the claim. `volumeAttachments: []` means none exist for the PV: normal for
   volumes not attached through CSI (hostPath, local, kind's local-path) and for
   a claim that is not bound. None of these says the volume works.
+- **Stale attachments.** A VolumeAttachment that is `attached` on a node with
+  `nodeHasMountingPod: false` is not in use there; if a pod elsewhere waits in
+  `ContainerCreating` with a Multi-Attach event, this attachment is the likely
+  cause (it is detaching, or the old node is gone).
+- **Transient conflict.** `multiNodeConflict` counts only live pods. A pod being
+  deleted on another node is listed in `terminatingNodes` and is not a conflict:
+  the replacement may wait until it is gone.
+- **No class.** `storageClassName: null` means no class was requested and no
+  default class existed at creation; `""` means static binding only. Neither is
+  a missing class (`exists: false` is).
 - **`null` is unknown.** A part that could not be read is `null` (`exists: null`
   for a StorageClass or volume, `events: null`, `volumeAttachments: null`) with
   a `permission_denied` error scoped `storageclasses`, `persistentvolumes`,
@@ -88,7 +100,9 @@ Outputs are facts, not verdicts: nothing here says healthy or unhealthy.
   Normal `WaitForFirstConsumer` event, until a pod uses it. A claim held by
   `kubernetes.io/pvc-protection` is Terminating while a pod still mounts it. On
   kind and other node-local storage, `usage` shows the node's whole disk.
-  `usage` runs `df` only; a container without `df` fails the task.
+  `usage` runs `df` only; a container without `df` fails the task. A Block-mode
+  claim (`volumeMode: Block`, mounted through `volumeDevices`) has no filesystem,
+  so `usage` is skipped for it.
 
 ## What to try next
 

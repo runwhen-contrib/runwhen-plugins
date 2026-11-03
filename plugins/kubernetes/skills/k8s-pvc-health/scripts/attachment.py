@@ -1,10 +1,10 @@
-from k8s_pvc_health.fetch import load_mounting
+from k8s_pvc_health.fetch import load_mounting_optional
 from k8s_pvc_health.k8s import kubectl_json_scoped
-from k8s_pvc_health.pvc import attachment_access, cap, volume_attachments
+from k8s_pvc_health.pvc import attachment_access, cap, mounting_nodes, volume_attachments
 
 
 def main(ctx):
-    claim, _pods, mounting = load_mounting(ctx)
+    claim, mounting = load_mounting_optional(ctx)
     access = attachment_access(claim, mounting)
     attachments = None
     if access["volumeName"]:
@@ -13,14 +13,17 @@ def main(ctx):
             ctx, "volumeattachments", "get", "volumeattachments.storage.k8s.io"
         )
         if listed is not None:
+            nodes = (
+                None if mounting is None else [n for part in mounting_nodes(mounting) for n in part]
+            )
             attachments = cap(
-                volume_attachments(listed["items"], access["volumeName"], access["nodes"]),
+                volume_attachments(listed["items"], access["volumeName"], nodes),
                 ctx.settings.max_items,
             )
     else:
         attachments = []  # not bound: nothing to attach
     return {
         "access": access,
-        "pods": cap(mounting, ctx.settings.max_items),
+        "pods": None if mounting is None else cap(mounting, ctx.settings.max_items),
         "volumeAttachments": attachments,
     }

@@ -45,7 +45,8 @@ tasks:
       Whether the claim has a deletionTimestamp, how long it has been
       terminating, its finalizers, and the pods in the namespace that still mount
       it (a pod that is not finished keeps the kubernetes.io/pvc-protection
-      finalizer in place).
+      finalizer in place). When the pods list is forbidden, pods is null with a
+      permission_denied error and the claim facts are still returned.
     script: scripts/terminating.py
     tags: [terminating, finalizers]
     readOnly: true
@@ -69,8 +70,8 @@ tasks:
     readOnly: true
     permissions:
       - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get] }
-      - { apiGroups: [""], resources: [pods], verbs: [list] }
-      - { apiGroups: [""], resources: [pods/exec], verbs: [create] }
+      - { apiGroups: [""], resources: [pods], verbs: [list, get] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
     outputs:
       usage: { schema: ./schemas/usage.v1.json, description: "Usage of the volume as the chosen container sees it" }
 
@@ -80,9 +81,12 @@ tasks:
       For the claim's PersistentVolume: the nodes that pods currently mounting it
       run on, the VolumeAttachment objects with their attached state and
       attach/detach errors, and multiNodeConflict, true when a ReadWriteOnce
-      claim is mounted by active pods on more than one node. The VolumeAttachment
-      list is cluster-scoped: when forbidden the pods and access facts are still
-      returned, volumeAttachments is null and a permission_denied error says why.
+      claim is mounted by live pods on more than one node (or a ReadWriteOncePod
+      claim by more than one pod); pods being deleted are listed apart. The
+      VolumeAttachment list is cluster-scoped: when forbidden the pods and access
+      facts are still returned, volumeAttachments is null and a permission_denied
+      error says why. When the pods list is forbidden, pods and the node facts
+      are null.
     script: scripts/attachment.py
     tags: [attachment, readwriteonce, csi]
     readOnly: true
@@ -91,6 +95,6 @@ tasks:
       - { apiGroups: [""], resources: [pods], verbs: [list] }
       - { apiGroups: [storage.k8s.io], resources: [volumeattachments], verbs: [list] }
     outputs:
-      access: { schema: ./schemas/access.v1.json, description: "Access modes, mounting nodes and multiNodeConflict" }
+      access: { schema: ./schemas/access.v1.json, description: "Access modes, mounting nodes (capped, with nodeCount) and multiNodeConflict" }
       pods: { schema: ./schemas/pods.v1.json, description: "Pods mounting the claim and the node each runs on" }
       volumeAttachments: { schema: ./schemas/volume-attachments.v1.json, description: "VolumeAttachments for the PV; null when they could not be listed" }

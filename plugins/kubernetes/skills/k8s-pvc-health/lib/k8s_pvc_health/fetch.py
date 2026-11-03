@@ -1,7 +1,7 @@
 """Fetching the target claim and the pods that mount it (the only I/O besides k8s.py)."""
 
 from k8s_pvc_health.errors import RwError
-from k8s_pvc_health.k8s import kubectl_json
+from k8s_pvc_health.k8s import kubectl_json, kubectl_json_scoped
 from k8s_pvc_health.pvc import mounting_pods
 
 TYPE = "kubernetes/persistentvolumeclaim"
@@ -40,3 +40,17 @@ def load_mounting(ctx):
     claim = load_claim(ctx)
     pods = load_pods(ctx)
     return claim, pods, mounting_pods(pods, claim["metadata"]["name"])
+
+
+def load_mounting_optional(ctx):
+    """(claim, mounting) where mounting is None when the pods list is forbidden.
+
+    For tasks whose primary facts come from the claim: a forbidden pods list is
+    reported with ctx.error (permission_denied, scope pods) and the claim facts
+    are kept. Any other failure raises.
+    """
+    claim = load_claim(ctx)
+    pods, _state = kubectl_json_scoped(ctx, "pods", "-n", ctx.resource.namespace, "get", "pods")
+    if pods is None:
+        return claim, None
+    return claim, mounting_pods(pods["items"], claim["metadata"]["name"])

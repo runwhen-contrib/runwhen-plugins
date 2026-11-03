@@ -499,28 +499,64 @@ def usage_view(df, pod, container, mount_path, running_pods, threshold_percent):
 # ---------------------------------------------------------- attachment ----
 
 
+def mounting_nodes(pods):
+    """(live, terminating): sorted node names of active mounting pods, split by deletionTimestamp.
+
+    Succeeded and Failed pods hold nothing. A terminating pod still holds the
+    volume until it is gone, but it is on its way out, so it is kept apart.
+    """
+    live = {p["node"] for p in pods if p["active"] and not p["terminating"] and p["node"]}
+    going = {p["node"] for p in pods if p["active"] and p["terminating"] and p["node"]}
+    return sorted(live), sorted(going)
+
+
 def attachment_access(claim, pods):
-    """Access modes and the nodes active pods mount the claim from.
+    """Access modes and the nodes live pods mount the claim from; `pods` None means unknown.
 
     `multiNodeConflict` is true for a ReadWriteOnce claim (and not also
-    ReadWriteMany or ReadOnlyMany) that active pods mount from more than one
-    node: a ReadWriteOnce volume attaches to one node at a time, so the pod on
-    the other node cannot start or loses the volume.
+    ReadWriteMany or ReadOnlyMany) that live pods mount from more than one
+    node, and for a ReadWriteOncePod claim that more than one live pod mounts:
+    the second pod cannot start or loses the volume. Terminating pods are not
+    counted (the conflict is transient); their nodes are in `terminatingNodes`.
+    The conflict is computed from every node; `nodes` is capped, `nodeCount`
+    is the full count.
     """
-    modes = list((claim.get("spec") or {}).get("accessModes") or [])
-    rwo = "ReadWriteOnce" in modes and not ({"ReadWriteMany", "ReadOnlyMany"} & set(modes))
-    nodes = sorted({p["node"] for p in pods if p["active"] and p["node"]})
-    return {
+    spec = claim.get("spec") or {}
+    modes = list(spec.get("accessModes") or [])
+    shared = {"ReadWriteMany", "ReadOnlyMany"} & set(modes)
+    rwo = "ReadWriteOnce" in modes and not shared
+    rwop = "ReadWriteOncePod" in modes
+    out = {
         "accessModes": nested(modes),
         "readWriteOnce": rwo,
-        "volumeName": (claim.get("spec") or {}).get("volumeName") or None,
-        "nodes": nodes,
-        "multiNodeConflict": rwo and len(nodes) > 1,
+        "readWriteOncePod": rwop,
+        "volumeName": spec.get("volumeName") or None,
+        "nodes": None,
+        "nodeCount": None,
+        "truncated": None,
+        "terminatingNodes": None,
+        "multiNodeConflict": None,
     }
+    if pods is None:
+        return out
+    live, going = mounting_nodes(pods)
+    live_pods = sum(1 for p in pods if p["active"] and not p["terminating"])
+    out.update(
+        nodes=nested(live),
+        nodeCount=len(live),
+        truncated=len(live) > NESTED_LIMIT,
+        terminatingNodes=nested(going),
+        multiNodeConflict=(rwo and len(live) > 1) or (rwop and live_pods > 1),
+    )
+    return out
 
 
 def volume_attachments(items, pv_name, nodes):
-    """VolumeAttachments for the PV: node, attached state and attach/detach errors."""
+    """VolumeAttachments for the PV: node, attached state and attach/detach errors.
+
+    `nodes` is every node with an active mounting pod (live or terminating), or
+    None when the pods could not be listed (nodeHasMountingPod is then null).
+    """
     rows = []
     for va in items:
         spec = va.get("spec") or {}
@@ -542,7 +578,7 @@ def volume_attachments(items, pv_name, nodes):
                 "detachError": detach_msg,
                 "truncated": attach_cut or detach_cut,
                 "detachErrorTime": detach_err.get("time"),
-                "nodeHasMountingPod": spec.get("nodeName") in nodes,
+                "nodeHasMountingPod": None if nodes is None else spec.get("nodeName") in nodes,
                 "terminating": va["metadata"].get("deletionTimestamp") is not None,
             }
         )
