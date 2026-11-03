@@ -265,7 +265,14 @@ kubernetes:
       "Verify Prometheus RBAC Can Access ServiceMonitors": "k8s-prometheus-health/servicemonitor-coverage (serviceAccountAccess: SubjectAccessReviews for the Prometheus ServiceAccount on services, pods and endpoints in the target namespaces; impersonation was rejected as too broad)"
       "Inspect Prometheus Operator Logs for Scraping Errors": "k8s-prometheus-health/targets (each down target's lastError is the scrape error); the log grep is dropped, k8s-workload-logs/error-patterns on the Prometheus pods covers the rest"
       "Check Prometheus API Healthy": k8s-prometheus-health/server-status
-  - { bundle: k8s-loki-healthcheck,      skills: [k8s-loki-health], status: planned }
+  - bundle: k8s-loki-healthcheck
+    skills: [k8s-loki-health]
+    status: ported
+    ported: [k8s-loki-health]
+    note: "per-workload target (the matched StatefulSet or Deployment, using its own selector), every pod rather than the first pod of a hard-coded app.kubernetes.io/component=single-binary label (which never matched a simple-scalable or distributed install, so the ring task always passed there); HTTP through the API server's pod proxy instead of kubectl exec wget | jq (exec denial, an empty pod name, a wget failure or the HTML ring page all produced empty stdout that the ring task read as healthy); the ring is read as JSON with the distributor and compactor rings of Loki 3 and unserved rings recorded as facts; a /ready reply that is not the ready text is an error, never ready"
+    tasks:
+      "Check Loki Ring API for Unhealthy Shards": "k8s-loki-health/ring (members by state, token count and heartbeat age per ring; the classic 'state != ACTIVE' test is notActiveCount)"
+      "Check Loki API Ready": k8s-loki-health/ready
   - { bundle: k8s-seaweedfs-healthcheck, skills: [k8s-seaweedfs-health], status: planned, note: "S3 put/delete test is a write: separate write task" }
   - { bundle: k8s-artifactory-health,    skills: [k8s-artifactory-health], status: planned }
   - { bundle: k8s-jenkins-healthcheck,   skills: [k8s-jenkins-health], status: planned }
