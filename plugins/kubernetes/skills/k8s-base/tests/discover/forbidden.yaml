@@ -1,0 +1,574 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+now: '2026-11-03T21:40:48.159Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /version
+  rc: 0
+  stdout: |-
+    {
+      "major": "1",
+      "minor": "37",
+      "emulationMajor": "1",
+      "emulationMinor": "37",
+      "minCompatibilityMajor": "1",
+      "minCompatibilityMinor": "36",
+      "gitVersion": "v1.37.0",
+      "gitCommit": "f54c212e3a2f75d674b717a9b29052b20b60aefc",
+      "gitTreeState": "clean",
+      "buildDate": "2026-08-26T10:44:25Z",
+      "goVersion": "go1.26.6",
+      "compiler": "gc",
+      "platform": "linux/arm64"
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - config
+  - view
+  - --minify
+  - -o
+  - jsonpath={.clusters[0].cluster.server}
+  rc: 0
+  stdout: https://127.0.0.1:58167
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - kube-system
+  - -o
+  - jsonpath={.metadata.uid}
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces "kube-system" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "namespaces" in API group "" in the namespace "kube-system"
+- argv:
+  - kubectl
+  - api-resources
+  - --verbs=list
+  - -o
+  - wide
+  rc: 0
+  stdout: "NAME                                SHORTNAMES   APIVERSION                               \
+    \   NAMESPACED   KIND                               VERBS                                        \
+    \                CATEGORIES\ncomponentstatuses                   cs           v1                 \
+    \                         false        ComponentStatus                    get,list               \
+    \                                      \nconfigmaps                          cm           v1     \
+    \                                     true         ConfigMap                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nendpoints                           ep           v1                                        \
+    \  true         Endpoints                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nevents                              ev           v1                                        \
+    \  true         Event                              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nlimitranges                         limits       v1                                        \
+    \  true         LimitRange                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nnamespaces                          ns           v1                                        \
+    \  false        Namespace                          create,delete,get,list,patch,update,watch     \
+    \               \nnodes                               no           v1                            \
+    \              false        Node                               create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npersistentvolumeclaims              pvc          v1                                        \
+    \  true         PersistentVolumeClaim              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npersistentvolumes                   pv           v1                                        \
+    \  false        PersistentVolume                   create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npods                                po           v1                                        \
+    \  true         Pod                                create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\npodtemplates                                     v1                                     \
+    \     true         PodTemplate                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nreplicationcontrollers              rc           v1                                        \
+    \  true         ReplicationController              create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nresourcequotas                      quota        v1                                     \
+    \     true         ResourceQuota                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nsecrets                                          v1                                        \
+    \  true         Secret                             create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nserviceaccounts                     sa           v1                                        \
+    \  true         ServiceAccount                     create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nservices                            svc          v1                                        \
+    \  true         Service                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\npostgresqls                         pg           acid.zalan.do/v1                       \
+    \     true         postgresql                         delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nmutatingadmissionpolicies                        admissionregistration.k8s.io/v1           \
+    \  false        MutatingAdmissionPolicy            create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nmutatingadmissionpolicybindings                  admissionregistration.k8s.io/v1\
+    \             false        MutatingAdmissionPolicyBinding     create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nmutatingwebhookconfigurations                    admissionregistration.k8s.io/v1\
+    \             false        MutatingWebhookConfiguration       create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nvalidatingadmissionpolicies                      admissionregistration.k8s.io/v1\
+    \             false        ValidatingAdmissionPolicy          create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nvalidatingadmissionpolicybindings                admissionregistration.k8s.io/v1\
+    \             false        ValidatingAdmissionPolicyBinding   create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nvalidatingwebhookconfigurations                  admissionregistration.k8s.io/v1\
+    \             false        ValidatingWebhookConfiguration     create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\ncustomresourcedefinitions           crd,crds     apiextensions.k8s.io/v1     \
+    \                false        CustomResourceDefinition           create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\napiservices                                      apiregistration.k8s.io/v1   \
+    \                false        APIService                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\ncontrollerrevisions                              apps/v1                     \
+    \                true         ControllerRevision                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ndaemonsets                          ds           apps/v1                                   \
+    \  true         DaemonSet                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\ndeployments                         deploy       apps/v1                                \
+    \     true         Deployment                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nreplicasets                         rs           apps/v1                                \
+    \     true         ReplicaSet                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nstatefulsets                        sts          apps/v1                                \
+    \     true         StatefulSet                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\napplications                        app,apps     argoproj.io/v1alpha1                   \
+    \     true         Application                        delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nhorizontalpodautoscalers            hpa          autoscaling/v2                            \
+    \  true         HorizontalPodAutoscaler            create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nverticalpodautoscalers              vpa          autoscaling.k8s.io/v1                  \
+    \     true         VerticalPodAutoscaler              delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ncronjobs                            cj           batch/v1                                  \
+    \  true         CronJob                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\njobs                                             batch/v1                               \
+    \     true         Job                                create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\ncertificaterequests                              cert-manager.io/v1                     \
+    \     true         CertificateRequest                 delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ncertificates                                     cert-manager.io/v1                        \
+    \  true         Certificate                        delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nclusterissuers                                   cert-manager.io/v1                        \
+    \  false        ClusterIssuer                      delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nissuers                                          cert-manager.io/v1                        \
+    \  true         Issuer                             delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ncertificatesigningrequests          csr          certificates.k8s.io/v1                    \
+    \  false        CertificateSigningRequest          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nclustertrustbundles                              certificates.k8s.io/v1                    \
+    \  false        ClusterTrustBundle                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npodcertificaterequests                           certificates.k8s.io/v1                    \
+    \  true         PodCertificateRequest              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nleases                                           coordination.k8s.io/v1                    \
+    \  true         Lease                              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nendpointslices                                   discovery.k8s.io/v1                       \
+    \  true         EndpointSlice                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nevents                              ev           events.k8s.io/v1                          \
+    \  true         Event                              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nflowschemas                                      flowcontrol.apiserver.k8s.io/v1           \
+    \  false        FlowSchema                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nprioritylevelconfigurations                      flowcontrol.apiserver.k8s.io/v1           \
+    \  false        PriorityLevelConfiguration         create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nhelmreleases                        hr           helm.toolkit.fluxcd.io/v2                 \
+    \  true         HelmRelease                        delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nec2nodeclasses                                   karpenter.k8s.aws/v1                      \
+    \  false        EC2NodeClass                       delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nnodeclaims                                       karpenter.sh/v1                           \
+    \  false        NodeClaim                          delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nnodepools                                        karpenter.sh/v1                           \
+    \  false        NodePool                           delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nkustomizations                      ks           kustomize.toolkit.fluxcd.io/v1            \
+    \  true         Kustomization                      delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ningressclasses                                   networking.k8s.io/v1                      \
+    \  false        IngressClass                       create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ningresses                           ing          networking.k8s.io/v1                      \
+    \  true         Ingress                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nipaddresses                         ip           networking.k8s.io/v1                      \
+    \  false        IPAddress                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nnetworkpolicies                     netpol       networking.k8s.io/v1                      \
+    \  true         NetworkPolicy                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nservicecidrs                                     networking.k8s.io/v1                      \
+    \  false        ServiceCIDR                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nruntimeclasses                                   node.k8s.io/v1                            \
+    \  false        RuntimeClass                       create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npoddisruptionbudgets                pdb          policy/v1                                 \
+    \  true         PodDisruptionBudget                create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npostgresclusters                                 postgres-operator.crunchydata.com/v1beta1 \
+    \  true         PostgresCluster                    delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nclusterrolebindings                              rbac.authorization.k8s.io/v1              \
+    \  false        ClusterRoleBinding                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nclusterroles                                     rbac.authorization.k8s.io/v1              \
+    \  false        ClusterRole                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nrolebindings                                     rbac.authorization.k8s.io/v1              \
+    \  true         RoleBinding                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nroles                                            rbac.authorization.k8s.io/v1              \
+    \  true         Role                               create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ndeviceclasses                                    resource.k8s.io/v1                        \
+    \  false        DeviceClass                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ndevicetaintrules                                 resource.k8s.io/v1                        \
+    \  false        DeviceTaintRule                    create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nresourceclaims                                   resource.k8s.io/v1                        \
+    \  true         ResourceClaim                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nresourceclaimtemplates                           resource.k8s.io/v1                        \
+    \  true         ResourceClaimTemplate              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nresourceslices                                   resource.k8s.io/v1                        \
+    \  false        ResourceSlice                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npriorityclasses                     pc           scheduling.k8s.io/v1                      \
+    \  false        PriorityClass                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ncsidrivers                                       storage.k8s.io/v1                         \
+    \  false        CSIDriver                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ncsinodes                                         storage.k8s.io/v1                         \
+    \  false        CSINode                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ncsistoragecapacities                             storage.k8s.io/v1                         \
+    \  true         CSIStorageCapacity                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nstorageclasses                      sc           storage.k8s.io/v1                         \
+    \  false        StorageClass                       create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nvolumeattachments                                storage.k8s.io/v1                         \
+    \  false        VolumeAttachment                   create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nvolumeattributesclasses             vac          storage.k8s.io/v1                         \
+    \  false        VolumeAttributesClass              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nstorageversionmigrations                         storagemigration.k8s.io/v1                \
+    \  false        StorageVersionMigration            create,delete,deletecollection,get,list,patch,update,watch\
+    \   \n"
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): namespaces is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "namespaces" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - nodes
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodes is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodes" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - persistentvolumes
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): persistentvolumes is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "persistentvolumes" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - ingressclasses.networking.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): ingressclasses.networking.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "ingressclasses" in API group "networking.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - clusterroles.rbac.authorization.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): clusterroles.rbac.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "clusterroles" in API group "rbac.authorization.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - clusterrolebindings.rbac.authorization.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): clusterrolebindings.rbac.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "clusterrolebindings" in API group "rbac.authorization.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - storageclasses.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): storageclasses.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "storageclasses" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - volumeattachments.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): volumeattachments.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "volumeattachments" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - csidrivers.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): csidrivers.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "csidrivers" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - csinodes.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): csinodes.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "csinodes" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - priorityclasses.scheduling.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): priorityclasses.scheduling.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "priorityclasses" in API group "scheduling.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - validatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): validatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "validatingwebhookconfigurations" in API group "admissionregistration.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - mutatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): mutatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "mutatingwebhookconfigurations" in API group "admissionregistration.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - runtimeclasses.node.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): runtimeclasses.node.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "runtimeclasses" in API group "node.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - customresourcedefinitions.apiextensions.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): customresourcedefinitions.apiextensions.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "customresourcedefinitions" in API group "apiextensions.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - certificatesigningrequests.certificates.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): certificatesigningrequests.certificates.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "certificatesigningrequests" in API group "certificates.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - clusterissuers.cert-manager.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): clusterissuers.cert-manager.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "clusterissuers" in API group "cert-manager.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodepools.karpenter.sh is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodepools" in API group "karpenter.sh" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - nodeclaims.karpenter.sh
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodeclaims.karpenter.sh is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodeclaims" in API group "karpenter.sh" at the cluster scope
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    summary:
+      counts: {cluster: 1}
+      partitions: {complete: 0, forbidden: 19, excluded: 30}
+      errors:
+        $containsWhere: {code: permission_denied, scope: namespace}
+  artifacts:
+    sync:
+      contains:
+      - '"type":"deployment","status":"excluded"'
+      - 'set the namespaces setting'

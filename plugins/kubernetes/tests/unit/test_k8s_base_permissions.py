@@ -766,10 +766,10 @@ def test_integration_names_the_task_as_its_permission_check():
     assert doc["entryPoints"]["cli"] == {"task": "k8s-base/kubectl"}
 
 
-def test_skill_role_is_cli_and_permission_check():
+def test_skill_role_is_cli_permission_check_and_discovery():
     text = (SKILL / "SKILL.md").read_text()
     front = yaml.safe_load(text.split("---")[1])
-    assert front["runwhen"]["role"] == ["cli", "permission-check"]
+    assert front["runwhen"]["role"] == ["cli", "permission-check", "discovery"]
 
 
 def needs(argv, items):
