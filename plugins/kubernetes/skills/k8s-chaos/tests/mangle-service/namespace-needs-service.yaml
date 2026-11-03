@@ -1,0 +1,46 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-chaos
+now: '2026-11-03T21:30:34.989Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-chaos
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-chaos\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:18:56Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-chaos"
+            },
+            "name": "rw-chaos",
+            "resourceVersion": "29147",
+            "uid": "80efd8ca-cf0f-4c12-9ac5-d9ae3b8f0cf3"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+expect:
+  status: failed
+  errorCodes:
+  - invalid_input

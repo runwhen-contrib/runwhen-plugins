@@ -1,0 +1,492 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-chaos/deployments/nosh
+now: '2026-11-03T21:30:23.236Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - get
+  - deployments.apps
+  - nosh
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "1",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"nosh\",\"namespace\":\"rw-chaos\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"nosh\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"nosh\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.10\",\"name\":\"pause\",\"resources\":{\"limits\":{\"memory\":\"32Mi\"},\"requests\":{\"cpu\":\"1m\",\"memory\":\"1Mi\"}}}],\"terminationGracePeriodSeconds\":2}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:18:56Z",
+            "generation": 1,
+            "name": "nosh",
+            "namespace": "rw-chaos",
+            "resourceVersion": "29256",
+            "uid": "3a399fae-cd68-461b-9748-85a83eb4838d"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "nosh"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "nosh"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.10",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "pause",
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 2
+                }
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T21:18:57Z",
+                    "lastUpdateTime": "2026-11-03T21:18:57Z",
+                    "message": "Deployment has minimum availability.",
+                    "reason": "MinimumReplicasAvailable",
+                    "status": "True",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T21:18:56Z",
+                    "lastUpdateTime": "2026-11-03T21:18:57Z",
+                    "message": "ReplicaSet \"nosh-58ccbd7b98\" has successfully progressed.",
+                    "reason": "NewReplicaSetAvailable",
+                    "status": "True",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "terminatingReplicas": 0,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - get
+  - replicasets.apps
+  - -l
+  - app=nosh
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/desired-replicas": "1",
+                        "deployment.kubernetes.io/max-replicas": "2",
+                        "deployment.kubernetes.io/revision": "1"
+                    },
+                    "creationTimestamp": "2026-11-03T21:18:56Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "nosh",
+                        "pod-template-hash": "58ccbd7b98"
+                    },
+                    "name": "nosh-58ccbd7b98",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Deployment",
+                            "name": "nosh",
+                            "uid": "3a399fae-cd68-461b-9748-85a83eb4838d"
+                        }
+                    ],
+                    "resourceVersion": "29250",
+                    "uid": "805f073d-2b3d-441e-b082-fe3b64ccf414"
+                },
+                "spec": {
+                    "replicas": 1,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "nosh",
+                            "pod-template-hash": "58ccbd7b98"
+                        }
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "nosh",
+                                "pod-template-hash": "58ccbd7b98"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "registry.k8s.io/pause:3.10",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "pause",
+                                    "resources": {
+                                        "limits": {
+                                            "memory": "32Mi"
+                                        },
+                                        "requests": {
+                                            "cpu": "1m",
+                                            "memory": "1Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 2
+                        }
+                    }
+                },
+                "status": {
+                    "availableReplicas": 1,
+                    "fullyLabeledReplicas": 1,
+                    "observedGeneration": 1,
+                    "readyReplicas": 1,
+                    "replicas": 1,
+                    "terminatingReplicas": 0
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - get
+  - pods
+  - -l
+  - app=nosh
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T21:18:56Z",
+                    "generateName": "nosh-58ccbd7b98-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "nosh",
+                        "pod-template-hash": "58ccbd7b98"
+                    },
+                    "name": "nosh-58ccbd7b98-b5nzr",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "nosh-58ccbd7b98",
+                            "uid": "805f073d-2b3d-441e-b082-fe3b64ccf414"
+                        }
+                    ],
+                    "resourceVersion": "29594",
+                    "uid": "4dbeef5e-3490-4f8d-9396-ed6c916aa0a2"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.10",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "pause",
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-5nxxf",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 2,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-5nxxf",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "1Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:18:57Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:18:56Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:18:57Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:18:57Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:18:56Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "1m",
+                                "memory": "1Mi"
+                            },
+                            "containerID": "containerd://ee1ab317cb1d1f31586efd914d87d91fdc995c2ee4b8f21682c9eb4ed1ea2e07",
+                            "image": "registry.k8s.io/pause:3.10",
+                            "imageID": "sha256:afb61768ce381961ca0beff95337601f29dc70ff3ed14e5e4b3e5699057e6aa8",
+                            "lastState": {},
+                            "name": "pause",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T21:18:57Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0
+                                    ],
+                                    "uid": 65535
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-5nxxf",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.8",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.8"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "32Mi"
+                        },
+                        "requests": {
+                            "memory": "1Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T21:18:56Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - exec
+  - nosh-58ccbd7b98-b5nzr
+  - -c
+  - pause
+  - --
+  - sh
+  - -c
+  - dd if=/dev/zero of="$1" bs=1M count="$2"; rc=$?; wc -c < "$1"; exit $rc
+  - sh
+  - /tmp/rw-chaos-392f4e4266
+  - '100'
+  rc: 1
+  stdout: ''
+  stderr: |
+    error: Internal error occurred: Internal error occurred: error executing command in container: failed to exec in container: failed to start exec "58d43becab439c409f9b2aec0cc4abe94d28c899693c7e71d5ea9fc15daa9cd8": OCI runtime exec failed: exec failed: unable to start container process: exec: "sh": executable file not found in $PATH
+expect:
+  status: failed
+  errorCodes:
+  - dependency

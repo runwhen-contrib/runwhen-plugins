@@ -1,0 +1,200 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-chaos
+inputs:
+  service: nolimit
+dryRun: true
+now: '2026-11-03T21:30:30.622Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-chaos
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-chaos\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:18:56Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-chaos"
+            },
+            "name": "rw-chaos",
+            "resourceVersion": "29147",
+            "uid": "80efd8ca-cf0f-4c12-9ac5-d9ae3b8f0cf3"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - nolimit
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"nolimit\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:18:56Z",
+            "name": "nolimit",
+            "namespace": "rw-chaos",
+            "resourceVersion": "29188",
+            "uid": "f46ff3b6-c14f-4455-8f27-3caab2dc8cc4"
+        },
+        "spec": {
+            "clusterIP": "10.96.89.166",
+            "clusterIPs": [
+                "10.96.89.166"
+            ],
+            "internalTrafficPolicy": "Cluster",
+            "ipFamilies": [
+                "IPv4"
+            ],
+            "ipFamilyPolicy": "SingleStack",
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 80,
+                    "protocol": "TCP",
+                    "targetPort": 8080
+                }
+            ],
+            "selector": {
+                "app": "nolimit"
+            },
+            "sessionAffinity": "None",
+            "type": "ClusterIP"
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=nolimit
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.7"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "nolimit-694d6f9bf9-n96l2",
+                            "namespace": "rw-chaos",
+                            "uid": "b4730b66-32ef-4281-bf6d-bc669b8cdc00"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T21:18:57Z"
+                    },
+                    "creationTimestamp": "2026-11-03T21:18:56Z",
+                    "generateName": "nolimit-",
+                    "generation": 2,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "nolimit"
+                    },
+                    "name": "nolimit-hkcdm",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "nolimit",
+                            "uid": "f46ff3b6-c14f-4455-8f27-3caab2dc8cc4"
+                        }
+                    ],
+                    "resourceVersion": "29253",
+                    "uid": "e5848f3e-ab56-428a-a3ab-68574c152fed"
+                },
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": 8080,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-chaos
+  - patch
+  - service
+  - nolimit
+  - --type=merge
+  - -p
+  - '{"metadata":{"annotations":{"runwhen.com/chaos-original-spec":"{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}"}},"spec":{"selector":{"app":"rw-chaos-none"}}}'
+  - -o
+  - name
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    service/nolimit
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"scope": "namespace", "kind": "Namespace", "name": "rw-chaos", "desiredReplicas": null}
+    mangle: {"applied": false, "mode": "selector", "serviceCount": 1, "services": {"$containsWhere": {"name": "nolimit", "change": {"field": "spec.selector.app", "from": "nolimit", "to": "rw-chaos-none"}, "readyEndpointsBefore": 1, "endpointsDropped": null, "restore": {"attempted": false}}}}
