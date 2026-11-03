@@ -1,0 +1,80 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (unhealthy or most recent first where that applies)
+tasks:
+  - name: backends
+    title: Ingress backends
+    description: >-
+      For the default backend and every rule path: the backend Service name and
+      port (number or name), whether the Service exists, whether that port exists
+      on the Service (matched by number or name), and the ready and not-ready
+      endpoint counts (plus serving and terminating) from the EndpointSlices that
+      carry that Service port. Resource backends are reported as such. Also the TLS hosts and the Secret name each uses (the
+      Secret is not read) and, when present, the per-backend health in the GKE
+      ingress.kubernetes.io/backends annotation (with the Service and port parsed
+      out of NEG-style backend names) and the GCP load balancer object names the
+      controller recorded in the other ingress.kubernetes.io annotations. Service
+      and EndpointSlice reads that are forbidden leave those facts null with a permission_denied error;
+      the rest is still returned.
+    script: scripts/backends.py
+    tags: [backends, services, endpoints, tls, gke]
+    readOnly: true
+    permissions:
+      - { apiGroups: [networking.k8s.io], resources: [ingresses], verbs: [get] }
+      - { apiGroups: [""], resources: [services], verbs: [list] }
+      - { apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [list] }
+    outputs:
+      backends: { schema: ./schemas/backends.v1.json, description: "One entry per backend: Service, port, endpoints per port; cut at maxItems with total" }
+      tls: { schema: ./schemas/tls.v1.json, description: "TLS hosts and Secret names" }
+      gkeBackends: { schema: ./schemas/gke-backends.v1.json, description: "GKE backend health annotation, parsed" }
+      gkeLoadBalancer: { schema: ./schemas/gke-load-balancer.v1.json, description: "GCP load balancer object names from the Ingress annotations" }
+
+  - name: address
+    title: Ingress address
+    description: >-
+      The addresses in status.loadBalancer.ingress, the Ingress's
+      ingressClassName and whether that IngressClass exists (when no class is
+      named, the cluster's default IngressClass and whether there is more than
+      one), and for each backend
+      Service its type and, for a LoadBalancer Service, whether its address
+      differs from the Ingress's (the classic conflict check). The IngressClass
+      reads are cluster-scoped: when forbidden the address and Services are still
+      returned, exists is null and a permission_denied error says why.
+    script: scripts/address.py
+    tags: [address, ingressclass, loadbalancer]
+    readOnly: true
+    permissions:
+      - { apiGroups: [networking.k8s.io], resources: [ingresses], verbs: [get] }
+      - { apiGroups: [networking.k8s.io], resources: [ingressclasses], verbs: [get, list] }
+      - { apiGroups: [""], resources: [services], verbs: [list] }
+    outputs:
+      ingress: { schema: ./schemas/ingress.v1.json, description: "Assigned addresses, class name and class annotation" }
+      ingressClass: { schema: ./schemas/ingress-class.v1.json, description: "The class the Ingress names, or the cluster default when it names none" }
+      serviceAddresses: { schema: ./schemas/service-addresses.v1.json, description: "Backend Services, their type and LoadBalancer address" }
+
+  - name: warning-events
+    title: Warning events
+    description: >-
+      Warning events within the look-back window on the Ingress and on its
+      backend Services, matched by uid where the object is known and by name
+      otherwise, grouped by object and reason. A Service that cannot be read
+      (forbidden) is matched by name only, and inspected.servicesLookedUp says so.
+    script: scripts/warning_events.py
+    tags: [events, warnings]
+    readOnly: true
+    permissions:
+      - { apiGroups: [networking.k8s.io], resources: [ingresses], verbs: [get] }
+      - { apiGroups: [""], resources: [services], verbs: [list] }
+      - { apiGroups: [""], resources: [events], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window, applied to when the event was last seen" }
+    outputs:
+      events: { schema: ./schemas/events.v1.json, description: "Warning events grouped by object and reason, newest first" }
+      inspected: { schema: ./schemas/inspected.v1.json, description: "The Ingress and Services the events were matched against" }
