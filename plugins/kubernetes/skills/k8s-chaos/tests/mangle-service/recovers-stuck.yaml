@@ -1,0 +1,647 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-chaos/deployments/stuck
+inputs:
+  recover: true
+now: '2026-11-03T22:05:44.765Z'
+calls:
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - deployments.apps
+  - stuck
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "1",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"stuck\",\"namespace\":\"rw-chaos\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"stuck\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"stuck\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"exec sleep 360000\"],\"image\":\"busybox:1.36\",\"name\":\"main\"}],\"terminationGracePeriodSeconds\":2}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:58:36Z",
+            "generation": 1,
+            "name": "stuck",
+            "namespace": "rw-chaos",
+            "resourceVersion": "36311",
+            "uid": "78a282c7-072a-4a0d-9a9a-827a75f46248"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "stuck"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "stuck"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "exec sleep 360000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "main",
+                            "resources": {},
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 2
+                }
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T21:58:37Z",
+                    "lastUpdateTime": "2026-11-03T21:58:37Z",
+                    "message": "Deployment has minimum availability.",
+                    "reason": "MinimumReplicasAvailable",
+                    "status": "True",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T21:58:36Z",
+                    "lastUpdateTime": "2026-11-03T21:58:37Z",
+                    "message": "ReplicaSet \"stuck-5bb779d65\" has successfully progressed.",
+                    "reason": "NewReplicaSetAvailable",
+                    "status": "True",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "terminatingReplicas": 0,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-chaos\"},\"spec\":{\"clusterIP\":\"None\",\"ports\":[{\"name\":\"tcp\",\"port\":5432}],\"selector\":{\"app\":\"db\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "db",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "37059",
+                    "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+                },
+                "spec": {
+                    "clusterIP": "None",
+                    "clusterIPs": [
+                        "None"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "tcp",
+                            "port": 5432,
+                            "protocol": "TCP",
+                            "targetPort": 5432
+                        }
+                    ],
+                    "selector": {
+                        "app": "db"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"nolimit\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "nolimit",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "32481",
+                    "uid": "b3c1f4e1-21b1-4980-90bb-e9d05b84da22"
+                },
+                "spec": {
+                    "clusterIP": "10.96.37.109",
+                    "clusterIPs": [
+                        "10.96.37.109"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "nolimit"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"nosh\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"nosh\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "nosh",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "32496",
+                    "uid": "ac99b24b-0d1d-410d-b31a-05c2f6e4a3b0"
+                },
+                "spec": {
+                    "clusterIP": "10.96.141.174",
+                    "clusterIPs": [
+                        "10.96.141.174"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "nosh"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"shared\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"tier\":\"shared\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:58:36Z",
+                    "name": "shared",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "36250",
+                    "uid": "174f849c-8e0f-4d9f-b61a-9a6fafd5bf72"
+                },
+                "spec": {
+                    "clusterIP": "10.96.30.3",
+                    "clusterIPs": [
+                        "10.96.30.3"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "tier": "shared"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{\"runwhen.com/chaos-original-spec\":\"{\\\"ports\\\":[{\\\"name\\\":\\\"http\\\",\\\"port\\\":80,\\\"protocol\\\":\\\"TCP\\\",\\\"targetPort\\\":8080}],\\\"selector\\\":{\\\"app\\\":\\\"stuck\\\"}}\"},\"name\":\"stuck\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"rw-chaos-none\"}}}\n",
+                        "runwhen.com/chaos-original-spec": "{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"stuck\"}}"
+                    },
+                    "creationTimestamp": "2026-11-03T21:58:36Z",
+                    "name": "stuck",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "36274",
+                    "uid": "6e8b6716-752e-481e-be30-fd0a00fd6017"
+                },
+                "spec": {
+                    "clusterIP": "10.96.71.132",
+                    "clusterIPs": [
+                        "10.96.71.132"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "rw-chaos-none"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"web\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "web",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "37396",
+                    "uid": "126a5a2d-ebaf-480a-b1a0-238564d62b56"
+                },
+                "spec": {
+                    "clusterIP": "10.96.193.1",
+                    "clusterIPs": [
+                        "10.96.193.1"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "web"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=stuck
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": null,
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T21:58:36Z"
+                    },
+                    "creationTimestamp": "2026-11-03T21:58:36Z",
+                    "generateName": "stuck-",
+                    "generation": 1,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "stuck"
+                    },
+                    "name": "stuck-gdlcr",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "stuck",
+                            "uid": "6e8b6716-752e-481e-be30-fd0a00fd6017"
+                        }
+                    ],
+                    "resourceVersion": "36278",
+                    "uid": "1b1691aa-7875-444e-98b8-becbe21138fd"
+                },
+                "ports": null
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - stuck
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{\"runwhen.com/chaos-original-spec\":\"{\\\"ports\\\":[{\\\"name\\\":\\\"http\\\",\\\"port\\\":80,\\\"protocol\\\":\\\"TCP\\\",\\\"targetPort\\\":8080}],\\\"selector\\\":{\\\"app\\\":\\\"stuck\\\"}}\"},\"name\":\"stuck\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"rw-chaos-none\"}}}\n",
+                "runwhen.com/chaos-original-spec": "{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"stuck\"}}"
+            },
+            "creationTimestamp": "2026-11-03T21:58:36Z",
+            "name": "stuck",
+            "namespace": "rw-chaos",
+            "resourceVersion": "36274",
+            "uid": "6e8b6716-752e-481e-be30-fd0a00fd6017"
+        },
+        "spec": {
+            "clusterIP": "10.96.71.132",
+            "clusterIPs": [
+                "10.96.71.132"
+            ],
+            "internalTrafficPolicy": "Cluster",
+            "ipFamilies": [
+                "IPv4"
+            ],
+            "ipFamilyPolicy": "SingleStack",
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 80,
+                    "protocol": "TCP",
+                    "targetPort": 8080
+                }
+            ],
+            "selector": {
+                "app": "rw-chaos-none"
+            },
+            "sessionAffinity": "None",
+            "type": "ClusterIP"
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - patch
+  - service
+  - stuck
+  - --type=merge
+  - -p
+  - '{"metadata":{"resourceVersion":"36274","annotations":{"runwhen.com/chaos-original-spec":null}},"spec":{"selector":{"app":"stuck"}}}'
+  - -o
+  - name
+  rc: 0
+  stdout: |
+    service/stuck
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - stuck
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{\"runwhen.com/chaos-original-spec\":\"{\\\"ports\\\":[{\\\"name\\\":\\\"http\\\",\\\"port\\\":80,\\\"protocol\\\":\\\"TCP\\\",\\\"targetPort\\\":8080}],\\\"selector\\\":{\\\"app\\\":\\\"stuck\\\"}}\"},\"name\":\"stuck\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"rw-chaos-none\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:58:36Z",
+            "name": "stuck",
+            "namespace": "rw-chaos",
+            "resourceVersion": "37403",
+            "uid": "6e8b6716-752e-481e-be30-fd0a00fd6017"
+        },
+        "spec": {
+            "clusterIP": "10.96.71.132",
+            "clusterIPs": [
+                "10.96.71.132"
+            ],
+            "internalTrafficPolicy": "Cluster",
+            "ipFamilies": [
+                "IPv4"
+            ],
+            "ipFamilyPolicy": "SingleStack",
+            "ports": [
+                {
+                    "name": "http",
+                    "port": 80,
+                    "protocol": "TCP",
+                    "targetPort": 8080
+                }
+            ],
+            "selector": {
+                "app": "stuck"
+            },
+            "sessionAffinity": "None",
+            "type": "ClusterIP"
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=stuck
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.141"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "stuck-5bb779d65-8l5d2",
+                            "namespace": "rw-chaos",
+                            "uid": "29f9fe75-30ce-4364-ac32-a32a88552701"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T21:58:37Z"
+                    },
+                    "creationTimestamp": "2026-11-03T21:58:36Z",
+                    "generateName": "stuck-",
+                    "generation": 2,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "stuck"
+                    },
+                    "name": "stuck-gdlcr",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "stuck",
+                            "uid": "6e8b6716-752e-481e-be30-fd0a00fd6017"
+                        }
+                    ],
+                    "resourceVersion": "37405",
+                    "uid": "1b1691aa-7875-444e-98b8-becbe21138fd"
+                },
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": 8080,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"scope": "workload", "kind": "Deployment", "name": "stuck", "desiredReplicas": 1}
+    mangle: {"applied": true, "recover": true, "mode": null, "serviceCount": 1, "services": {"$containsWhere": {"name": "stuck", "change": {"field": "spec.selector.app", "from": "rw-chaos-none", "to": "stuck"}, "readyEndpointsBefore": 0, "readyEndpointsAfterRestore": 1, "restore": {"attempted": true, "restored": true, "verified": true, "concurrentChange": false}}}}
