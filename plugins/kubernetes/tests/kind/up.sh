@@ -84,6 +84,17 @@ fi
 "${K[@]}" apply -f "${HERE}/scenarios/20-broken.yaml"
 "${K[@]}" apply -f "${HERE}/rbac/forbidden.yaml"
 
+# Per-skill scenarios: every scenarios/30-*.yaml, then its optional 30-*.sh for
+# steps a manifest cannot express (run with K_CONTEXT set; must be idempotent).
+for f in "${HERE}"/scenarios/30-*.yaml; do
+  [ -e "$f" ] || continue
+  "${K[@]}" apply -f "$f"
+done
+for s in "${HERE}"/scenarios/30-*.sh; do
+  [ -e "$s" ] || continue
+  K_CONTEXT=kind-rw-plugins bash "$s"
+done
+
 # stuck-rollout: create with a good image, wait for it, then roll to a bad one.
 # Done once only; re-applying would revert the image and restart the clock.
 if ! "${K[@]}" -n rw-broken get deploy stuck-rollout >/dev/null 2>&1; then

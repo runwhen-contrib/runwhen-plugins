@@ -13,7 +13,8 @@ kubernetes:
   - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true,
       note: "classic restarts/log-pattern/anomaly/PVC tasks never produce output on main (json.loads on text, undefined var, list vs string, comma-less jq); re-derived, not fixed" }
   - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true }
-  - { bundle: k8s-namespace-healthcheck,   skills: [k8s-namespace-health], status: planned, pilot: true }
+  - { bundle: k8s-namespace-healthcheck,   skills: [k8s-namespace-health], status: ported, ported: [k8s-namespace-health], pilot: true,
+      note: "'Get Listing Of Resources' (report-only dump needing */* list incl. secrets) and 'Check Event Anomalies' (non-Warning event rate, no assertion) dropped" }
   - { bundle: k8s-tail-logs-dynamic,       skills: [k8s-workload-logs], status: planned, pilot: true }
   - { bundle: k8s-app-troubleshoot,        skills: [k8s-workload-logs], status: planned, pilot: true,
       note: "'misconfigured environment' grep task dropped: asserts nothing (report-only grep for 'env')" }
@@ -37,7 +38,7 @@ kubernetes:
   - { bundle: k8s-image-check,             skills: [k8s-namespace-resources], status: planned }
   - { bundle: k8s-serviceaccount-check,    skills: [k8s-namespace-resources], status: planned,
       note: "classic creates a pod; re-derived as a SubjectAccessReview (read-only)" }
-  - { bundle: k8s-job-namespace-health,    skills: [k8s-namespace-health, k8s-cronjob-health], status: planned }
+  - { bundle: k8s-job-namespace-health,    skills: [k8s-namespace-health, k8s-cronjob-health], status: partial, ported: [k8s-namespace-health] }
   - { bundle: k8s-chaos-namespace,         skills: [k8s-chaos], status: planned }
   - { bundle: k8s-chaos-workload,          skills: [k8s-chaos], status: planned }
 
