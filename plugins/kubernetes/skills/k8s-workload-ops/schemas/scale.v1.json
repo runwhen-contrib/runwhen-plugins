@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scale result",
+  "description": "hpas is the autoscalers targeting the workload; null when they could not be listed and overrideHpa was true.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "from": {
+      "type": "integer"
+    },
+    "to": {
+      "type": "integer"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "readyBefore": {
+      "type": "integer"
+    },
+    "overrodeHpa": {
+      "type": "boolean"
+    },
+    "hpas": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "minReplicas": {
+            "type": "integer"
+          },
+          "maxReplicas": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "currentReplicas": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "desiredReplicas": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "minReplicas",
+          "maxReplicas",
+          "currentReplicas",
+          "desiredReplicas"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "applied",
+    "from",
+    "to",
+    "changed",
+    "readyBefore",
+    "overrodeHpa",
+    "hpas"
+  ],
+  "additionalProperties": false
+}

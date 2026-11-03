@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Resource change result",
+  "description": "One entry per field, before and after. after is what the API server returned (on a dry run, what it would hold).",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "container": {
+      "type": "string"
+    },
+    "init": {
+      "type": "boolean"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "enum": [
+              "cpuRequest",
+              "cpuLimit",
+              "memoryRequest",
+              "memoryLimit"
+            ]
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field",
+          "before",
+          "after",
+          "requested",
+          "changed"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "applied",
+    "changed",
+    "container",
+    "init",
+    "fields"
+  ],
+  "additionalProperties": false
+}

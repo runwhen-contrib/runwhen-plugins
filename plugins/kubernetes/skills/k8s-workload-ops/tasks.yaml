@@ -1,0 +1,160 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns
+tasks:
+  - name: rollout-restart
+    title: Rolling restart
+    description: >-
+      Restarts every pod of the workload by changing its pod template
+      (kubectl rollout restart), then reports the revision before and after and
+      whether the rollout finished within the timeout input. A rollout that is
+      slow or stuck is reported as completed false with a reason, not as a task
+      failure. The reason input is recorded on the workload as the annotation
+      runwhen.com/restart-reason. A dry run sends the same template change as a
+      server-side dry run and does not wait.
+    script: scripts/rollout_restart.py
+    tags: [restart, rollout]
+    readOnly: false
+    destructive: false
+    idempotent: false
+    dryRun: true
+    timeout: 300s
+    effects:
+      - "Changes the pod template annotation kubectl.kubernetes.io/restartedAt, which makes the controller replace every pod of the workload (a rolling restart)."
+      - "Adds a new revision to the workload's history."
+      - "Sets the annotation runwhen.com/restart-reason on the workload when a reason is given."
+      - "A GitOps controller (Flux, Argo CD) managing the workload may report drift because the template differs from git."
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, list, watch, patch] }
+      - { apiGroups: [apps], resources: [controllerrevisions], verbs: [list] }
+    inputs:
+      timeout: { type: duration, default: 120s, description: "How long to wait for the rollout to finish (at most 240s). Running out of time is reported as completed false, not as a failure" }
+      reason: { type: string, required: false, description: "Why the restart is done (at most 256 characters); recorded as the annotation runwhen.com/restart-reason" }
+    outputs:
+      target: { schema: ./schemas/target.v1.json, description: "The workload acted on, including gitopsManaged" }
+      restart: { schema: ./schemas/restart.v1.json, description: "Revision before and after and the rollout outcome" }
+
+  - name: rollback
+    title: Roll back to a previous revision
+    description: >-
+      Rolls the workload back to its previous revision, or to the revision in
+      toRevision (kubectl rollout undo), for a Deployment (ReplicaSet history),
+      StatefulSet or DaemonSet (ControllerRevision history). Reports the
+      revision and images it moves from and to, and the revisions available.
+      Without toRevision, running it twice goes back and forth between the two
+      newest revisions. Does not wait for the rollout; use rollout-status in
+      kubernetes:k8s-workload-health afterwards.
+    script: scripts/rollback.py
+    tags: [rollback, rollout]
+    readOnly: false
+    destructive: false
+    idempotent: false
+    dryRun: true
+    effects:
+      - "Replaces the workload's pod template with the one from the chosen revision (images, env, resources), which makes the controller replace its pods."
+      - "The workload's current template becomes a past revision; the chosen revision becomes the newest one."
+      - "A GitOps controller (Flux, Argo CD) managing the workload will re-apply the template from git and undo the rollback."
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, patch] }
+      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+    inputs:
+      toRevision: { type: integer, required: false, min: 1, description: "Revision number to return to; the previous revision when omitted" }
+    outputs:
+      target: { schema: ./schemas/target.v1.json, description: "The workload acted on, including gitopsManaged" }
+      rollback: { schema: ./schemas/rollback.v1.json, description: "From and to revision with images, and the revisions available" }
+
+  - name: scale
+    title: Scale replicas
+    description: >-
+      Sets the replica count of a Deployment or StatefulSet (kubectl scale) and
+      reports the count before and after. A DaemonSet is refused. Scaling to 0
+      is refused unless the allowScaleToZero setting is true. A workload that a
+      HorizontalPodAutoscaler targets is refused unless overrideHpa is true,
+      because the autoscaler would put the count back.
+    script: scripts/scale.py
+    tags: [scale, replicas]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    effects:
+      - "Sets spec.replicas on the workload; pods are created or removed to match."
+      - "Scaling down removes pods that may be serving traffic; scaling to 0 stops the workload."
+      - "A HorizontalPodAutoscaler or GitOps controller (Flux, Argo CD) managing the workload may change the count back."
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [deployments/scale, statefulsets/scale], verbs: [patch] }
+      - { apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [list] }
+    settings:
+      allowScaleToZero: { type: boolean, default: false, description: "Allow replicas 0, which stops the workload" }
+    inputs:
+      replicas: { type: integer, min: 0, description: "The replica count to set (0 or more)" }
+      overrideHpa: { type: boolean, default: false, description: "Scale even though a HorizontalPodAutoscaler targets the workload" }
+    outputs:
+      target: { schema: ./schemas/target.v1.json, description: "The workload acted on, including gitopsManaged" }
+      scale: { schema: ./schemas/scale.v1.json, description: "Replica count before and after, and the autoscalers that target the workload" }
+
+  - name: delete-pods
+    title: Delete the workload's pods
+    description: >-
+      Deletes the pods the workload owns (found by its selector and confirmed
+      through ownerReferences), or only those named in podNames. A name that is
+      not one of the workload's pods fails the task and nothing is deleted.
+      Reports the pods deleted and whether that was every pod of the workload.
+      The controller creates replacements.
+    script: scripts/delete_pods.py
+    tags: [pods, delete]
+    readOnly: false
+    destructive: true
+    idempotent: false
+    dryRun: true
+    effects:
+      - "Deletes the named pods, or every pod the workload owns when podNames is omitted. Containers are stopped after their termination grace period."
+      - "Deleting every pod stops the workload until the controller has created and started replacements."
+      - "Pod-local state (emptyDir, container filesystems) is lost; a PodDisruptionBudget is not consulted for a delete."
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list, delete] }
+    inputs:
+      podNames: { type: "string[]", required: false, description: "Delete only these pods; every pod of the workload when omitted" }
+    outputs:
+      target: { schema: ./schemas/target.v1.json, description: "The workload acted on, including gitopsManaged" }
+      deletion: { schema: ./schemas/deletion.v1.json, description: "Pods deleted and whether that was all of them" }
+
+  - name: set-resources
+    title: Set container resources
+    description: >-
+      Sets CPU and memory requests and limits on one container of the pod
+      template (kubectl set resources) and reports before and after for each of
+      the four fields. Values are explicit quantities; nothing is guessed from
+      usage. At least one of the four is required, and a request above its
+      limit is refused. The container defaults to the only container.
+    script: scripts/set_resources.py
+    tags: [resources, requests, limits]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    effects:
+      - "Changes the pod template's resource requests and limits for one container, which makes the controller replace every pod of the workload."
+      - "Lower limits can throttle CPU or OOM-kill the container; higher requests can leave pods unschedulable."
+      - "A GitOps controller (Flux, Argo CD) managing the workload may revert the change."
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, patch] }
+    inputs:
+      container: { type: string, required: false, description: "Container to change; the only container when the pod template has one" }
+      cpuRequest: { type: string, required: false, description: "CPU request, e.g. 100m or 0.5" }
+      cpuLimit: { type: string, required: false, description: "CPU limit, e.g. 500m" }
+      memoryRequest: { type: string, required: false, description: "Memory request, e.g. 128Mi" }
+      memoryLimit: { type: string, required: false, description: "Memory limit, e.g. 256Mi" }
+    outputs:
+      target: { schema: ./schemas/target.v1.json, description: "The workload acted on, including gitopsManaged" }
+      resources: { schema: ./schemas/resources.v1.json, description: "Before and after per field" }

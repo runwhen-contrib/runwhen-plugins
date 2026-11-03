@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pod deletion result",
+  "description": "deleted lists the pods kubectl confirmed (on a dry run, the server confirmed it would delete them; applied is false). Lists stop at maxItems; the counts are not capped.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "ownedCount": {
+      "type": "integer"
+    },
+    "requestedCount": {
+      "type": "integer"
+    },
+    "deletedCount": {
+      "type": "integer"
+    },
+    "deletesAll": {
+      "type": "boolean"
+    },
+    "deleted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "node": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terminating": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "ready",
+          "node",
+          "terminating"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "applied",
+    "ownedCount",
+    "requestedCount",
+    "deletedCount",
+    "deletesAll",
+    "deleted",
+    "pods"
+  ],
+  "additionalProperties": false
+}

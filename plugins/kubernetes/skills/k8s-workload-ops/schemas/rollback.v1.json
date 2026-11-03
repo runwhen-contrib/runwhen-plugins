@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rollback result",
+  "description": "applied is false on a dry run or when nothing needed to change. skipped is true when kubectl found the template already matched the revision.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "skipped": {
+      "type": "boolean"
+    },
+    "from": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "images": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "container": {
+                "type": "string"
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "init": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "container",
+              "image",
+              "init"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "images"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer"
+        },
+        "images": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "container": {
+                "type": "string"
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "init": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "container",
+              "image",
+              "init"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "images"
+      ],
+      "additionalProperties": false
+    },
+    "revisionHistoryLimit": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "available": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "created": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "images": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "container": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "init": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "container",
+                "image",
+                "init"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "created",
+          "images",
+          "current"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "applied",
+    "changed",
+    "skipped",
+    "from",
+    "to",
+    "revisionHistoryLimit",
+    "available"
+  ],
+  "additionalProperties": false
+}
