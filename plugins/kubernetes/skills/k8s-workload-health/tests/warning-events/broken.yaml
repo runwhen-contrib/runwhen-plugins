@@ -1,0 +1,1148 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-broken/deployments/crashloop
+inputs:
+  since: 3650d
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - deployments.apps
+  - crashloop
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "1",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"crashloop\",\"namespace\":\"rw-broken\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"crashloop\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"crashloop\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo 'fatal: cannot load config' \\u003e\\u00262; exit 1\"],\"image\":\"busybox:1.36\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"2Mi\"}}}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:02Z",
+            "generation": 1,
+            "name": "crashloop",
+            "namespace": "rw-broken",
+            "resourceVersion": "10680",
+            "uid": "cfc9bed4-bbca-4712-9d63-9451f0f52343"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "crashloop"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "crashloop"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "echo 'fatal: cannot load config' \u003e\u00262; exit 1"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "2Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            }
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T17:33:02Z",
+                    "lastUpdateTime": "2026-11-03T17:33:19Z",
+                    "message": "ReplicaSet \"crashloop-77d67d4789\" has successfully progressed.",
+                    "reason": "NewReplicaSetAvailable",
+                    "status": "True",
+                    "type": "Progressing"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T19:06:32Z",
+                    "lastUpdateTime": "2026-11-03T19:06:32Z",
+                    "message": "Deployment does not have minimum availability.",
+                    "reason": "MinimumReplicasUnavailable",
+                    "status": "False",
+                    "type": "Available"
+                }
+            ],
+            "observedGeneration": 1,
+            "replicas": 1,
+            "terminatingReplicas": 0,
+            "unavailableReplicas": 1,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - replicasets.apps
+  - -l
+  - app=crashloop
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/desired-replicas": "1",
+                        "deployment.kubernetes.io/max-replicas": "2",
+                        "deployment.kubernetes.io/revision": "1"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:02Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "crashloop",
+                        "pod-template-hash": "77d67d4789"
+                    },
+                    "name": "crashloop-77d67d4789",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Deployment",
+                            "name": "crashloop",
+                            "uid": "cfc9bed4-bbca-4712-9d63-9451f0f52343"
+                        }
+                    ],
+                    "resourceVersion": "10679",
+                    "uid": "6092dcd8-ab06-4664-ad24-358c26317a4c"
+                },
+                "spec": {
+                    "replicas": 1,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "crashloop",
+                            "pod-template-hash": "77d67d4789"
+                        }
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "crashloop",
+                                "pod-template-hash": "77d67d4789"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo 'fatal: cannot load config' \u003e\u00262; exit 1"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "app",
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "1m",
+                                            "memory": "2Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "fullyLabeledReplicas": 1,
+                    "observedGeneration": 1,
+                    "replicas": 1,
+                    "terminatingReplicas": 0
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - pods
+  - -l
+  - app=crashloop
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:02Z",
+                    "generateName": "crashloop-77d67d4789-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "crashloop",
+                        "pod-template-hash": "77d67d4789"
+                    },
+                    "name": "crashloop-77d67d4789-f6rbl",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "crashloop-77d67d4789",
+                            "uid": "6092dcd8-ab06-4664-ad24-358c26317a4c"
+                        }
+                    ],
+                    "resourceVersion": "10782",
+                    "uid": "ac4e3e29-f5ee-425d-b3ef-15dffebe422a"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "echo 'fatal: cannot load config' \u003e\u00262; exit 1"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "2Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-zdj4x",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-zdj4x",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "2Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:04Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:03Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:06:32Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T19:06:32Z",
+                            "message": "containers with unready status: [app]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:02Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "1m",
+                                "memory": "2Mi"
+                            },
+                            "containerID": "containerd://8e3717a939be00565e99093bbf934075a0731c3cc81cad8384bb75598262ccf7",
+                            "image": "docker.io/library/busybox:1.36",
+                            "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+                            "lastState": {
+                                "terminated": {
+                                    "containerID": "containerd://8e3717a939be00565e99093bbf934075a0731c3cc81cad8384bb75598262ccf7",
+                                    "exitCode": 1,
+                                    "finishedAt": "2026-11-03T19:06:31Z",
+                                    "reason": "Error",
+                                    "startedAt": "2026-11-03T19:06:31Z"
+                                }
+                            },
+                            "name": "app",
+                            "ready": false,
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "2Mi"
+                                }
+                            },
+                            "restartCount": 23,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "back-off 5m0s restarting failed container=app pod=crashloop-77d67d4789-f6rbl_rw-broken(ac4e3e29-f5ee-425d-b3ef-15dffebe422a)",
+                                    "reason": "CrashLoopBackOff"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        10
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-zdj4x",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.10",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.10"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "requests": {
+                            "memory": "2Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T17:33:03Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - events
+  - --field-selector
+  - type=Warning
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "count": 383,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:33:21Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "bad-image-866577b69d-llmzv",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "613",
+                    "uid": "5d891088-2e53-4f61-82b5-766cc050b45d"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:03:25Z",
+                "message": "Error: ImagePullBackOff",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:21Z",
+                    "name": "bad-image-866577b69d-llmzv.18e49962c93ed511",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10404",
+                    "uid": "f45480bb-faf7-418a-9565-2ce247c07328"
+                },
+                "reason": "Failed",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1116,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:33:14Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "bad-probe-776cdc668b-l46vv",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "603",
+                    "uid": "93d9b959-c048-41b6-b185-efd20f42460d"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:03:18Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.11:9999/\": dial tcp 10.244.0.11:9999: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:14Z",
+                    "name": "bad-probe-776cdc668b-l46vv.18e4996157db7de3",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10394",
+                    "uid": "5d0d1a84-ed7f-47a0-a549-2081ff3c8a4d"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 188,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:49:18Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "bad-probe-7d4c55fd64-c9ms7",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "8966",
+                    "uid": "e553a2f5-359c-4e6e-a896-52747fb10bc0"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:04:22Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.45:9999/\": dial tcp 10.244.0.45:9999: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:49:18Z",
+                    "name": "bad-probe-7d4c55fd64-c9ms7.18e49d87cd4ac3e5",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10486",
+                    "uid": "55e598f7-e3c5-49e7-92f2-2fc380638aec"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 83,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:33:26Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "broken-sts-0",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "649",
+                    "uid": "3ca6588e-3834-4683-aac6-9beab6caf46e"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:04:21Z",
+                "message": "Back-off restarting failed container app in pod broken-sts-0_rw-broken(3ca6588e-3834-4683-aac6-9beab6caf46e)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:26Z",
+                    "name": "broken-sts-0.18e49963f562958d",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10483",
+                    "uid": "11182903-27ce-49f2-9716-0696f9f977e0"
+                },
+                "reason": "BackOff",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 82,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:33:21Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "crashloop-77d67d4789-f6rbl",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "590",
+                    "uid": "ac4e3e29-f5ee-425d-b3ef-15dffebe422a"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:03:55Z",
+                "message": "Back-off restarting failed container app in pod crashloop-77d67d4789-f6rbl_rw-broken(ac4e3e29-f5ee-425d-b3ef-15dffebe422a)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:21Z",
+                    "name": "crashloop-77d67d4789-f6rbl.18e49962c948a958",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10448",
+                    "uid": "6d700a6c-0d7e-4609-9b3d-45a730c8aaef"
+                },
+                "reason": "BackOff",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:02Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5775",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:02Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-fgfmd\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:03Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c34ecb6e554",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5810",
+                    "uid": "1cafbd99-78d4-4dc6-ac1f-1f2d3038b143"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:05Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5806",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:05Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-pvl48\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:05Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35912e5e97",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5817",
+                    "uid": "0f941ca6-dad2-4dd5-b1a5-dd1100c2e569"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:05Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:05Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-r9fjf\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:05Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35a3b627c5",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5821",
+                    "uid": "79a1b1c2-17ac-4b06-95b7-9a0b708aeed2"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:05Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:05Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-zzxf6\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:05Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35a689dcd0",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5823",
+                    "uid": "32c5cd12-ece0-43ee-bd44-b7941c45a863"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:05Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:05Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-n5bzf\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:05Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35a699d81f",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5824",
+                    "uid": "7768dc32-c193-4bea-be46-302088858671"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:05Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:05Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-fhgr9\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:05Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35a9291e49",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5825",
+                    "uid": "d23584cb-680a-49cb-8ffc-f90f9c54d04d"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:06Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:06Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-hhk7t\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:06Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35b4a41fb4",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5828",
+                    "uid": "d56121a5-27ef-4cb7-9b92-111960ccd826"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:06Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:06Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-qhcxh\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:06Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35c9c432fd",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5835",
+                    "uid": "08deb16e-77b8-48ed-be26-05cd5ac6f733"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:06Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:06Z",
+                "message": "Error creating: pods \"no-pdb-6b666bb7ff-mr5ck\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:06Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35ca3940a5",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5837",
+                    "uid": "245ab8ab-dc83-4fb4-8cf9-1c1c5deb4a3f"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "replicaset-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 4,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:07Z",
+                "involvedObject": {
+                    "apiVersion": "apps/v1",
+                    "kind": "ReplicaSet",
+                    "name": "no-pdb-6b666bb7ff",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5815",
+                    "uid": "c9668237-5203-4eb9-8e7e-84221b41e8dc"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:25:22Z",
+                "message": "(combined from similar events): Error creating: pods \"no-pdb-6b666bb7ff-hz2lj\" is forbidden: exceeded quota: tight, requested: requests.cpu=1m, used: requests.cpu=11m, limited: requests.cpu=11m",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:07Z",
+                    "name": "no-pdb-6b666bb7ff.18e49c35ef427c9c",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5874",
+                    "uid": "d65e94fd-5f0a-48a4-8591-0da7f8938b80"
+                },
+                "reason": "FailedCreate",
+                "reportingComponent": "",
+                "reportingInstance": "",
+                "source": {
+                    "component": "replicaset-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 81,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:33:23Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "oom-d84c6594b-fwg7x",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "624",
+                    "uid": "deb55bd9-7262-477a-8458-6611b12c49cd"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:04:22Z",
+                "message": "Back-off restarting failed container app in pod oom-d84c6594b-fwg7x_rw-broken(deb55bd9-7262-477a-8458-6611b12c49cd)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:23Z",
+                    "name": "oom-d84c6594b-fwg7x.18e4996340eab7b1",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10487",
+                    "uid": "322a5130-f370-4d56-a0b4-0d97b3f80062"
+                },
+                "reason": "BackOff",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 102,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:58:51Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": "pending",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "623",
+                    "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:23:56Z",
+                "message": "storageclass.storage.k8s.io \"does-not-exist\" not found",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:58:51Z",
+                    "name": "pending.18e49ac7211d5d00",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5680",
+                    "uid": "1d020107-66c2-4e74-a19e-61dbcc10cdbd"
+                },
+                "reason": "ProvisioningFailed",
+                "reportingComponent": "persistentvolume-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "persistentvolume-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 14,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:00Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": "pending",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "623",
+                    "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:28:01Z",
+                "message": "storageclass.storage.k8s.io \"does-not-exist\" not found",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:00Z",
+                    "name": "pending.18e49c345e06a346",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "6137",
+                    "uid": "90d00864-14e5-4b21-8958-aa8feab16881"
+                },
+                "reason": "ProvisioningFailed",
+                "reportingComponent": "persistentvolume-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "persistentvolume-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 142,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:29:41Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": "pending",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "623",
+                    "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:04:42Z",
+                "message": "storageclass.storage.k8s.io \"does-not-exist\" not found",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:29:42Z",
+                    "name": "pending.18e49c75e913882f",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10514",
+                    "uid": "197938a4-0a01-48c0-8f17-e7cc2241ab18"
+                },
+                "reason": "ProvisioningFailed",
+                "reportingComponent": "persistentvolume-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "persistentvolume-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 391,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:33:30Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{app}",
+                    "kind": "Pod",
+                    "name": "stuck-rollout-6587d4dd99-tbff4",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "883",
+                    "uid": "23880124-9880-4040-b0f4-55e9b016acd2"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:03:29Z",
+                "message": "Error: ImagePullBackOff",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:33:30Z",
+                    "name": "stuck-rollout-6587d4dd99-tbff4.18e49964e504be18",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "10413",
+                    "uid": "85d0fbe9-9d26-45fc-a226-86c637c54109"
+                },
+                "reason": "Failed",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    events:
+    - kind: Pod
+      name: crashloop-77d67d4789-f6rbl
+      reason: BackOff
+      count: 82
+      firstSeen: '2026-11-03T17:33:21Z'
+      lastSeen: '2026-11-03T19:03:55Z'
+      message: Back-off restarting failed container app in pod crashloop-77d67d4789-f6rbl_rw-broken(ac4e3e29-f5ee-425d-b3ef-15dffebe422a)
+      reportingComponent: kubelet
