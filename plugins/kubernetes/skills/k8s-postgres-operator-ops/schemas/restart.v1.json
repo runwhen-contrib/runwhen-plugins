@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rolling restart",
+  "description": "Crunchy: the restart annotation set on spec.metadata.annotations (method annotation); completed is true when as many instance pods as the spec asks for are Ready and were restarted at or after requestedAt. Zalando: patronictl restart (method patronictl); completed is true when every Patroni member is running or streaming afterwards. null means not waited or not observed.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "wouldRun": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "method": {
+      "enum": [
+        "annotation",
+        "patronictl"
+      ]
+    },
+    "requestedAt": {
+      "type": [
+        "string"
+      ]
+    },
+    "membersExpected": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "annotation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previousAnnotation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "const": "patronictl"
+            },
+            "subcommand": {
+              "type": [
+                "string"
+              ]
+            },
+            "cluster": {
+              "type": [
+                "string"
+              ]
+            },
+            "member": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "tool",
+            "subcommand",
+            "cluster",
+            "member"
+          ]
+        }
+      ]
+    },
+    "ranIn": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pod": {
+              "type": [
+                "string"
+              ]
+            },
+            "container": {
+              "type": [
+                "string"
+              ]
+            }
+          },
+          "required": [
+            "pod",
+            "container"
+          ]
+        }
+      ]
+    },
+    "output": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outputTruncated": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completionReason": {
+      "enum": [
+        "restarted",
+        "running",
+        "timeout",
+        "not_observed",
+        "not_waited",
+        null
+      ]
+    },
+    "waitedSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "membersFound": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "membersReady": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "membersRestarted": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "members": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phase": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ready": {
+                "type": [
+                  "boolean"
+                ]
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "startTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "restartAnnotation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeline": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "lagMb": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "required": [
+    "applied",
+    "wouldRun",
+    "method",
+    "requestedAt",
+    "membersExpected",
+    "annotation",
+    "previousAnnotation",
+    "command",
+    "ranIn",
+    "output",
+    "outputTruncated",
+    "completed",
+    "completionReason",
+    "waitedSeconds",
+    "membersFound",
+    "membersReady",
+    "membersRestarted",
+    "members"
+  ]
+}

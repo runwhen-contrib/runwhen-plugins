@@ -205,9 +205,32 @@ kubernetes:
       "Check Karpenter Service and Metrics Endpoints": "dropped: Service/Endpoints inventory of the controller namespace is not a NodePool fact; no sibling skill reads Services yet"
 
   # --- apps on kubernetes (labels-scoped) ------------------------------------------------------------------------
-  - { bundle: k8s-postgres-healthcheck,  skills: [k8s-postgres-operator-health], status: planned,
-      note: "pod/Patroni/backup-CR checks stay here; connection, config and query checks move to the postgres plugin (D53)" }
-  - { bundle: k8s-postgres-operations,   skills: [k8s-postgres-operator-ops], status: planned, note: "classic reports a failed restart as Completed" }
+  - bundle: k8s-postgres-healthcheck
+    skills: [k8s-postgres-operator-health]
+    status: partial
+    ported: [k8s-postgres-operator-health]
+    note: "D72: only the kubernetes connection, so database facts come from kubectl exec of the pod's own psql/patronictl on the local socket (no credential, no port-forward); SQL that needs a login (bloat, unused indexes, bgwriter, free-form queries) waits for the postgres plugin. Classic false passes not reproduced: patroni lag with no pod / empty output / unparsable lag was zero issues; a missing scheduledBackups status read as a backup made today (date -d ''); unreadable max_connections only added a report line; every sub-query ran with 2>/dev/null and empty meant 'OK'; SHOW ALL with no pod only echoed. Classic Core Metrics lost its bgwriter issue in a piped subshell and queried pg_stat_bgwriter.checkpoints_timed, removed in PG17"
+    tasks:
+      "List Resources Related to Postgres Cluster": "k8s-postgres-operator-health/cluster-status (the cluster object and its member pods; the `get all` + describe dump is dropped: report only)"
+      "Get Postgres Pod Logs & Events": "dropped: logs are kubernetes:k8s-workload-logs/recent-logs and events kubernetes:k8s-namespace-health/warning-events on the namespace; neither is postgres-specific"
+      "Get Postgres Pod Resource Utilization": "dropped: kubectl top asserts nothing; pod usage is kubernetes:k8s-namespace-resources/resource-usage (metrics API); members' ready and restarts are in cluster-status"
+      "Check PostgreSQL Connection Health": "k8s-postgres-operator-health/connections (partial: states against max_connections, longest query and idle-in-transaction age, waiting locks; the replica-first SELECT 1 preflight and the idle >30m count are not ported)"
+      "Check PostgreSQL Core Metrics": "dropped: filesystem usage is kubernetes:k8s-pvc-health/usage on the data claim (classic hard-coded /pgdata); dead tuples, unused indexes and bgwriter ratios need a database login: postgres plugin"
+      "Get Running Postgres Configuration": "k8s-postgres-operator-health/settings (partial: non-default pg_settings instead of SHOW ALL, secrets excluded; the max_connections < 100 opinion and the pgbouncer ConfigMap max_client_conn check are dropped)"
+      "Get Patroni Output and Add to Report": k8s-postgres-operator-health/patroni-status
+      "Fetch Patroni Database Lag": k8s-postgres-operator-health/patroni-status
+      "Check Database Backup Status": "k8s-postgres-operator-health/cluster-status (partial: Crunchy pgBackRest status only; the Zalando pg_stat_archiver / wal-g backup-list check is dropped: archiving is not a base backup and wal-g reads the pod environment)"
+      "Run DB Queries": "dropped: free-form SQL as the postgres superuser (QUERY interpolated into bash -c) is an agent-run query, not a health fact; bounded queries live in the typed tasks and anything needing a login moves to the postgres plugin (D53, D72)"
+  - bundle: k8s-postgres-operations
+    skills: [k8s-postgres-operator-ops]
+    status: ported
+    ported: [k8s-postgres-operator-ops]
+    note: "classic reported success whatever happened (set -e aborted before the issues JSON, the runbook looked for 'severity error', the success issue was its ELSE): a failed patronictl is a failed task now and every task reports what it read afterwards. Not reproduced: reinit of every member the script thought failed or lagging (the member is an explicit input and the leader is refused), the pod-deletion fallback, the sleep 30 verification, scale and the default 'overview' operation"
+    tasks:
+      "Reinitialize Failed PostgreSQL Cluster Members": "k8s-postgres-operator-ops/reinit-member (one explicit member; which members are failed or lagging is health/patroni-status)"
+      "Perform PostgreSQL Cluster Failover Operation": k8s-postgres-operator-ops/switchover
+      "Restart PostgreSQL Cluster with Rolling Update": k8s-postgres-operator-ops/rolling-restart
+      "Verify Cluster Recovery and Generate Summary": k8s-postgres-operator-health/patroni-status
   - { bundle: k8s-redis-healthcheck,     skills: [k8s-redis-health], status: planned, note: "SET/INCR test is a write: separate write task" }
   - { bundle: k8s-vault-healthcheck,     skills: [k8s-vault-health], status: planned }
   - { bundle: k8s-prometheus-healthcheck, skills: [k8s-prometheus-health], status: planned, note: "classic ServiceMonitor task always fires" }
