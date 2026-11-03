@@ -1,0 +1,225 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "cert-manager.io/v1",
+   "kind": "Certificate",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:49:12Z",
+    "generation": 1,
+    "name": "expiring-cert",
+    "namespace": "rw-certs",
+    "resourceVersion": "14834",
+    "uid": "74c93ff6-fe9e-4def-bd18-80bfc9f5b964"
+   },
+   "spec": {
+    "dnsNames": [
+     "expiring.rw.example"
+    ],
+    "duration": "2160h",
+    "issuerRef": {
+     "group": "cert-manager.io",
+     "kind": "ClusterIssuer",
+     "name": "rw-cluster-issuer"
+    },
+    "renewBefore": "360h",
+    "secretName": "expiring-cert-tls"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T19:49:12Z",
+      "message": "Certificate is up to date and has not expired",
+      "observedGeneration": 1,
+      "reason": "Ready",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "notAfter": "2026-11-08T19:49:13Z",
+    "notBefore": "2026-08-10T19:49:13Z",
+    "renewalTime": "2026-10-24T19:49:13Z",
+    "revision": 1
+   }
+  },
+  {
+   "apiVersion": "cert-manager.io/v1",
+   "kind": "Certificate",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T20:05:02Z",
+    "generation": 1,
+    "name": "external-cert",
+    "namespace": "rw-certs",
+    "resourceVersion": "17348",
+    "uid": "70d92cf3-0165-49ee-ae95-a10540d9aedd"
+   },
+   "spec": {
+    "dnsNames": [
+     "external.rw.example"
+    ],
+    "ipAddresses": [
+     "10.1.2.3"
+    ],
+    "issuerRef": {
+     "group": "awspca.cert-manager.aws.com",
+     "kind": "AWSPCAIssuer",
+     "name": "pca"
+    },
+    "secretName": "external-cert-tls"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:05:02Z",
+      "message": "Waiting for CertificateRequest to complete",
+      "observedGeneration": 1,
+      "reason": "Pending",
+      "status": "False",
+      "type": "Ready"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "cert-manager.io/v1",
+   "kind": "Certificate",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:49:12Z",
+    "generation": 1,
+    "name": "failed-cert",
+    "namespace": "rw-certs",
+    "resourceVersion": "14835",
+    "uid": "cbc99fda-bc9d-49f0-949e-af81639ab055"
+   },
+   "spec": {
+    "dnsNames": [
+     "failed.rw.example"
+    ],
+    "issuerRef": {
+     "name": "broken-issuer"
+    },
+    "secretName": "failed-cert-tls"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T19:49:12Z",
+      "message": "The certificate request has failed to complete and will be retried: Failed to wait for order resource",
+      "observedGeneration": 1,
+      "reason": "Failed",
+      "status": "False",
+      "type": "Ready"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T19:49:12Z",
+      "message": "The certificate request has failed to complete and will be retried",
+      "observedGeneration": 1,
+      "reason": "Failed",
+      "status": "True",
+      "type": "Issuing"
+     }
+    ],
+    "lastFailureTime": "2026-11-03T19:34:49Z",
+    "revision": 0
+   }
+  },
+  {
+   "apiVersion": "cert-manager.io/v1",
+   "kind": "Certificate",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:49:12Z",
+    "generation": 1,
+    "name": "new-cert",
+    "namespace": "rw-certs",
+    "resourceVersion": "14829",
+    "uid": "8a576710-d236-404b-b6d5-e4b4ba2b0b43"
+   },
+   "spec": {
+    "dnsNames": [
+     "new.rw.example"
+    ],
+    "issuerRef": {
+     "kind": "Issuer",
+     "name": "ca-ready"
+    },
+    "secretName": "new-cert-tls"
+   }
+  },
+  {
+   "apiVersion": "cert-manager.io/v1",
+   "kind": "Certificate",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:49:12Z",
+    "generation": 1,
+    "name": "orphan-cert",
+    "namespace": "rw-certs",
+    "resourceVersion": "14838",
+    "uid": "7cf4d66e-d755-4a9d-9bf4-4f3fb9d65bbc"
+   },
+   "spec": {
+    "dnsNames": [
+     "orphan.rw.example"
+    ],
+    "issuerRef": {
+     "kind": "Issuer",
+     "name": "missing-issuer"
+    },
+    "secretName": "orphan-cert-tls"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T19:49:12Z",
+      "message": "Referenced Issuer not found",
+      "observedGeneration": 1,
+      "reason": "Pending",
+      "status": "False",
+      "type": "Ready"
+     }
+    ]
+   }
+  },
+  {
+   "apiVersion": "cert-manager.io/v1",
+   "kind": "Certificate",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:49:12Z",
+    "generation": 1,
+    "name": "ready-cert",
+    "namespace": "rw-certs",
+    "resourceVersion": "14833",
+    "uid": "785bbdde-d675-470f-b599-1d81687fe1af"
+   },
+   "spec": {
+    "dnsNames": [
+     "ready.rw.example",
+     "www.ready.rw.example"
+    ],
+    "issuerRef": {
+     "group": "cert-manager.io",
+     "kind": "Issuer",
+     "name": "ca-ready"
+    },
+    "secretName": "ready-cert-tls"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T19:49:12Z",
+      "message": "Certificate is up to date and has not expired",
+      "observedGeneration": 1,
+      "reason": "Ready",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "notAfter": "2035-01-20T19:49:13Z",
+    "notBefore": "2026-10-04T19:49:13Z",
+    "renewalTime": "2034-10-12T19:49:13Z",
+    "revision": 1
+   }
+  }
+ ],
+ "kind": "List",
+ "metadata": {}
+}
