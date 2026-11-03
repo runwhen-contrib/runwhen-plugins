@@ -1,35 +1,71 @@
 """Running the validated kubectl command and classifying its failure."""
 
+import re
 import subprocess
 
 from k8s_base.errors import RwError
 
+try:  # pragma: no cover - present in every SDK that has ctx.run
+    from runwhen_capability.errors import OutputTooLargeError
+except ImportError:  # pragma: no cover
+
+    class OutputTooLargeError(ValueError):
+        pass
+
+
+RUN_TIMEOUT = 50  # seconds; the task's own timeout is 60s
+
+# `Error from server (Reason): message`: the reason is the API server's verdict; the message
+# repeats object names ("forbidden-app", "unable-to-connect") that must not be read as one.
+_SERVER_ERROR = re.compile(r"^Error from server \((\w+)\)", re.MULTILINE)
+_BY_REASON = {
+    "Forbidden": "permission_denied",
+    "Unauthorized": "permission_denied",
+    "NotFound": "not_found",
+    "TooManyRequests": "rate_limited",
+    "Timeout": "timeout",
+    "ServerTimeout": "timeout",
+    "ServiceUnavailable": "unreachable",
+    "BadRequest": "invalid_input",
+    "Invalid": "invalid_input",
+}
+_UNREACHABLE = (
+    "unable to connect",
+    "i/o timeout",
+    "connection refused",
+    "no such host",
+    "x509",
+    "tls",
+)
+
 
 def classify_error(stderr, returncode=1):
-    """D64 error code for a failed kubectl call, from its stderr and exit code."""
-    t = str(stderr).lower()
-    if returncode == 127 or "doesn't have a resource type" in t:
+    """D64 error code for a failed kubectl call, from its stderr and exit code.
+
+    Order matters: the server's own `Error from server (Reason)` line first, then kubectl's
+    client-side messages, and only then loose text; matching words anywhere in stderr would
+    read an object named `forbidden-app` as a permission error."""
+    text = str(stderr)
+    t = text.lower()
+    if returncode == 127:
         return "dependency"
-    if "forbidden" in t or any(
-        f"cannot {verb}" in t for verb in ("get", "list", "watch", "create")
-    ):
-        return "permission_denied"
-    if "notfound" in t or "not found" in t:
-        return "not_found"
-    if returncode == 124 or "deadline exceeded" in t:
+    if returncode == 124:
         return "timeout"
-    if "429" in t or "too many requests" in t:
+    if "doesn't have a resource type" in t or "metrics api not available" in t:
+        return "dependency"
+    match = _SERVER_ERROR.search(text)
+    if match:
+        return _BY_REASON.get(match.group(1), "internal")
+    if "you must be logged in" in t:
+        return "permission_denied"
+    if any(marker in t for marker in _UNREACHABLE):
+        return "unreachable"
+    if "deadline exceeded" in t:
+        return "timeout"
+    if "too many requests" in t:
         return "rate_limited"
-    for marker in (
-        "unable to connect",
-        "i/o timeout",
-        "connection refused",
-        "no such host",
-        "x509",
-        "tls",
-    ):
-        if marker in t:
-            return "unreachable"
+    if re.search(r"^error: ", text, re.MULTILINE):
+        return "invalid_input"
     return "internal"
 
 
@@ -38,9 +74,15 @@ def run_kubectl(ctx, argv):
     raises RwError with the D64 code. The real runner raises RwCommandError itself unless
     check=False; this asks for the process back so one classifier serves both."""
     try:
-        result = ctx.run(["kubectl", *argv], check=False)
+        result = ctx.run(["kubectl", *argv], timeout=RUN_TIMEOUT, check=False)
     except subprocess.TimeoutExpired:
-        raise RwError("timeout", f"kubectl {argv[0]} timed out") from None
+        raise RwError("timeout", f"kubectl {argv[0]} timed out after {RUN_TIMEOUT}s") from None
+    except OutputTooLargeError:
+        raise RwError(
+            "invalid_input",
+            "the output is too large to return; narrow the command "
+            "(-n, -l, --field-selector, -o name, --tail)",
+        ) from None
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         raise RwError(

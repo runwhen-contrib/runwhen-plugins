@@ -1,0 +1,17 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+inputs:
+  command: get cm -A -o yaml
+settings:
+  deniedResources:
+  - secrets
+  - configmaps
+calls: []
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

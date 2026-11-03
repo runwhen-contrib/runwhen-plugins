@@ -5,14 +5,16 @@
   "properties": {
     "argv": {
       "type": "array",
-      "items": { "type": "string" },
+      "maxItems": 2100,
+      "items": { "type": "string", "maxLength": 4200 },
       "description": "The normalised command that ran (flags rewritten as --name=value; logs get a default --tail and --limit-bytes)"
     },
-    "lines": { "type": "integer", "description": "Lines kubectl printed on stdout" },
-    "truncated": { "type": "boolean", "description": "output was cut to maxOutputLines lines (or 1 MiB)" },
-    "stderr": { "type": "string", "description": "What kubectl printed on stderr of a successful run (for example 'No resources found in x namespace.')" },
+    "lines": { "type": "integer", "minimum": 0, "description": "Lines kubectl printed on stdout" },
+    "truncated": { "type": "boolean", "description": "output was cut to maxOutputLines lines (or 1 MiB), or kubectl logs stopped at its 1 MiB byte limit" },
+    "redactions": { "type": "integer", "minimum": 0, "description": "Credential-looking values replaced by [REDACTED] in output and stderr" },
+    "stderr": { "type": "string", "maxLength": 1024, "description": "What kubectl printed on stderr of a successful run (for example 'No resources found in x namespace.')" },
     "stderrTruncated": { "type": "boolean" }
   },
-  "required": ["argv", "lines", "truncated", "stderr", "stderrTruncated"],
+  "required": ["argv", "lines", "truncated", "redactions", "stderr", "stderrTruncated"],
   "additionalProperties": false
 }

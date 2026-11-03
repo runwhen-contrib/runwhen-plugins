@@ -8,14 +8,16 @@ tasks:
     script: scripts/kubectl.py
     tags: [cli]
     readOnly: true
-    permissions: [{ apiGroups: ["*"], resources: ["*"], verbs: [get, list, watch] }]   # secrets are still excluded by deniedResources
+    permissions:
+      - { apiGroups: ["*"], resources: ["*"], verbs: [get, list, watch] }   # secrets are still excluded by deniedResources
+      - { nonResourceURLs: [/api, /apis], verbs: [get] }                    # kubectl api-resources, to resolve a deniedResources name that is not a built-in kind
     settings:
       allowedVerbs: { type: "string[]", default: [get, describe, logs, top, events, explain, api-resources] }
-      deniedResources: { type: "string[]", default: [secrets], description: "Resource kinds the task refuses, whatever the verbs and flags allow; configmaps are not denied" }
-      allowedFlags: { type: "string[]", default: [n, A, l, o, since, tail, previous, container, show-labels, sort-by] }
+      deniedResources: { type: "string[]", default: [secrets], description: "Resource kinds the task refuses, whatever the verbs and flags allow, under any spelling (plural, singular, kind, short name); configmaps are not denied by default. secrets is always denied, even if it is removed here. A name that is not a built-in kind is resolved with kubectl api-resources and the task fails closed if it cannot be" }
+      allowedFlags: { type: "string[]", default: [n, A, l, o, since, tail, previous, container, show-labels, sort-by, field-selector, no-headers, timestamps, since-time, all-containers, prefix, for, types, show-kind, label-columns, ignore-not-found, containers, sum, api-group, namespaced, verbs, api-version, recursive, show-events], description: "Flags the task accepts, by long name or short letter, each also limited to the verbs that take it; chunk-size, max-log-requests and limit-bytes are off by default" }
       maxOutputLines: { type: integer, default: 2000 }
     inputs:
-      command: { type: string, description: "kubectl arguments, e.g. get pods -o wide" }
+      command: { type: string, pattern: '^[^\x00]+$', description: "kubectl arguments, e.g. get pods -o wide" }
     outputs:
       output: { schema: ./schemas/output.v1.json, description: "kubectl's standard output, cut to maxOutputLines lines" }
       run: { schema: ./schemas/run.v1.json, description: "The normalised command that ran, how many lines it printed, whether output was cut, and its stderr" }

@@ -397,18 +397,17 @@ def test_setting_narrows_flags_by_long_or_short_name_with_or_without_dashes():
 
 
 def test_default_flags_are_the_contract_defaults():
-    assert list(ka.DEFAULT_ALLOWED_FLAGS) == (
+    assert set(ka.DEFAULT_ALLOWED_FLAGS) >= set(
         "n A l o since tail previous container show-labels sort-by".split()
     )
     assert list(ka.DEFAULT_ALLOWED_VERBS) == (
         "get describe logs top events explain api-resources".split()
     )
     assert ka.DEFAULT_DENIED_RESOURCES == ("secrets",)
-    # flags the table has but the default setting does not enable
-    assert code_of("get pods --field-selector=status.phase=Running") == "invalid_input"
-    assert code_of("get pods --no-headers") == "invalid_input"
-    assert code_of("logs pod --timestamps") == "invalid_input"
-    assert code_of("describe pods --show-events=false") == "invalid_input"
+    # flags the table has but the default setting does not enable (they change load, not content)
+    assert code_of("get pods --chunk-size=5") == "invalid_input"
+    assert code_of("logs pod --limit-bytes=5") == "invalid_input"
+    assert code_of("logs pod --max-log-requests=5") == "invalid_input"
 
 
 def test_unknown_names_in_the_setting_enable_nothing():
@@ -528,7 +527,7 @@ def test_secrets_are_denied_for_every_verb_that_takes_a_resource():
     assert code_of("describe secret db -n x") == "permission_denied"
     assert code_of("explain secrets") == "permission_denied"
     assert code_of("explain secret.data") == "permission_denied"
-    assert code_of("events --for=secret/x") == "invalid_input"  # --for is not enabled by default
+    assert code_of("events --for=secret/x") == "permission_denied"
     assert code_of("events --for=secret/x", allowed_flags=["for"]) == "permission_denied"
     verbs = list(ka.VERBS)
     assert code_of("events --for=secret/x", allowed_verbs=verbs, allowed_flags=["for"]) == (
@@ -591,10 +590,9 @@ def test_denied_resources_setting_is_configurable():
     assert code_of("get ingress", denied_resources=["ingresses"]) == "permission_denied"
     assert code_of("get secrets.v1", denied_resources=["secrets.v1"]) == "permission_denied"
     assert code_of("get secrets", denied_resources=["Secret"]) == "permission_denied"
-    # empty setting denies nothing (the operator's choice)
-    assert ok("get secrets", denied_resources=[])[1] == "secrets"
-    # and denying configmaps leaves secrets reachable only if the operator removed them
-    assert ok("get secrets", denied_resources=["configmaps"])[1] == "secrets"
+    # secrets is a floor: an empty setting, or one without it, still denies it
+    assert code_of("get secrets", denied_resources=[]) == "permission_denied"
+    assert code_of("get secrets", denied_resources=["configmaps"]) == "permission_denied"
 
 
 def test_denied_wins_over_other_errors_only_after_flags_are_valid():
@@ -608,11 +606,12 @@ def test_resource_type_and_denied_type_helpers():
     assert ka.resource_type("Secrets.v1./x") == "secrets"
     assert ka.resource_type("secret/x") == "secret"
     assert ka.resource_type("deployments.apps") == "deployments"
-    assert ka.denied_type("pods,Secret", ["secrets"]) == "secret"
-    assert ka.denied_type("pods", ["secrets"]) is None
-    assert ka.denied_type("", ["secrets"]) is None
-    assert ka.denied_type("secrets", []) is None
-    assert ka.denied_type("secrets", [""]) is None
+    names = ka.denied_names(["secrets"])
+    assert ka.denied_type("pods,Secret", names) == "secret"
+    assert ka.denied_type("pods", names) is None
+    assert ka.denied_type("", names) is None
+    assert ka.denied_type("secrets", set()) is None
+    assert "secret" in ka.denied_names([]) and "secret" in ka.denied_names([""])
 
 
 # -------------------------------------------------------------- logs ----
@@ -631,15 +630,15 @@ def test_logs_gets_a_default_tail_and_byte_limit():
 def test_logs_keeps_the_callers_window():
     argv = ok("logs deploy/web -n rw-healthy --tail=5")
     assert argv.count("--tail=5") == 1 and "--tail=200" not in argv
-    argv = ok("logs pod --since=10m")
-    assert "--since=10m" in argv and not any(a.startswith("--tail") for a in argv)
-    argv = ok("logs pod --since-time=2026-01-01T00:00:00Z", allowed_flags=["since-time"])
-    assert not any(a.startswith("--tail") for a in argv)
+    argv = ok("logs pod --since=10m --tail=9")
+    assert "--since=10m" in argv and argv.count("--tail=9") == 1
+    argv = ok("logs pod --since=10m")  # a window alone tails to maxOutputLines (newest win)
+    assert "--tail=2000" in argv and "--tail=200" not in argv
 
 
 def test_logs_tail_must_be_an_integer():
-    assert ok("logs pod --tail=-1")[:3] == ["logs", "pod", "--tail=-1"]
-    for bad in ("--tail=abc", "--tail=", "--tail=1.5", "--tail=1;2"):
+    assert ok("logs pod --tail=0")[:3] == ["logs", "pod", "--tail=0"]
+    for bad in ("--tail=abc", "--tail=", "--tail=1.5", "--tail=1;2", "--tail=-1"):
         assert code_of(f"logs pod {bad}") == "invalid_input", bad
 
 
@@ -765,6 +764,7 @@ def test_script_runs_the_normalised_argv():
         "argv": ["kubectl", "get", "pods", "--namespace=rw-broken", "--output=wide"],
         "lines": 3,
         "truncated": False,
+        "redactions": 0,
         "stderr": "",
         "stderrTruncated": False,
     }
@@ -894,7 +894,8 @@ def test_declaration_matches_the_contract_example():
     assert settings["maxOutputLines"]["default"] == 2000
     assert declared["readOnly"] is True
     assert declared["permissions"] == [
-        {"apiGroups": ["*"], "resources": ["*"], "verbs": ["get", "list", "watch"]}
+        {"apiGroups": ["*"], "resources": ["*"], "verbs": ["get", "list", "watch"]},
+        {"nonResourceURLs": ["/api", "/apis"], "verbs": ["get"]},  # to resolve CRD names
     ]
     assert list(declared["inputs"]) == ["command"]
 

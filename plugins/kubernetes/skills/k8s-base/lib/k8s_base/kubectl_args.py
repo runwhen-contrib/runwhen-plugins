@@ -22,9 +22,11 @@ import shlex
 import string
 
 from k8s_base.errors import RwError
+from k8s_base.resources import expand_denied, variants
 
 DEFAULT_ALLOWED_VERBS = ("get", "describe", "logs", "top", "events", "explain", "api-resources")
 DEFAULT_DENIED_RESOURCES = ("secrets",)
+ALWAYS_DENIED = ("secrets",)  # the floor: no setting removes it
 DEFAULT_ALLOWED_FLAGS = (
     "n",
     "A",
@@ -36,7 +38,26 @@ DEFAULT_ALLOWED_FLAGS = (
     "container",
     "show-labels",
     "sort-by",
-)
+    "field-selector",
+    "no-headers",
+    "timestamps",
+    "since-time",
+    "all-containers",
+    "prefix",
+    "for",
+    "types",
+    "show-kind",
+    "label-columns",
+    "ignore-not-found",
+    "containers",
+    "sum",
+    "api-group",
+    "namespaced",
+    "verbs",
+    "api-version",
+    "recursive",
+    "show-events",
+)  # not chunk-size, max-log-requests or limit-bytes: they change load, not what is shown
 
 # Every flag a verb below may take: name -> (short letter or None, takes a value).
 FLAGS = {
@@ -172,6 +193,11 @@ ALWAYS_REFUSED = frozenset(
     }
 )
 ALWAYS_REFUSED_SHORT = {"s": "server", "v": "v"}
+# Refused for a reason other than the connection, named in the error.
+REFUSED_REASON = {
+    "v": "raises kubectl's log verbosity, which can print request headers and credentials",
+    "vmodule": "raises kubectl's log verbosity, which can print request headers and credentials",
+}
 
 # A token that is one of these, starts with one of the prefixes or ends with ";" is shell
 # syntax. Nothing here runs a shell, so it could only ever reach kubectl as a stray
@@ -182,6 +208,7 @@ _UNREPEATABLE = frozenset({"output"})
 _BOOLEAN_VALUES = frozenset({"true", "false"})
 _INTEGER_RE = re.compile(r"-?[0-9]+")
 
+MAX_COMMAND_CHARS = 4096
 LOGS_DEFAULT_TAIL = "200"
 LOGS_LIMIT_BYTES = 1 << 20  # kubectl logs stops reading after this many bytes
 OUTPUT_MAX_BYTES = 1 << 20  # the task never returns more than this, whatever maxOutputLines is
@@ -195,6 +222,10 @@ def tokenise(command):
     """The command as argv tokens (a leading `kubectl` is dropped); never a shell."""
     if not isinstance(command, str):
         raise _invalid("command must be a string of kubectl arguments")
+    if "\x00" in command:
+        raise _invalid("the command contains a NUL character")
+    if len(command) > MAX_COMMAND_CHARS:
+        raise _invalid(f"the command is longer than {MAX_COMMAND_CHARS} characters")
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError as exc:
@@ -265,10 +296,10 @@ class _Walker:
 
     def _resolve(self, name, shown):
         if name in ALWAYS_REFUSED:
-            raise _invalid(
-                f"{shown} is never allowed: it changes the cluster, identity or transport "
-                "this task runs against"
+            why = REFUSED_REASON.get(
+                name, "it changes the cluster, identity or transport this task runs against"
             )
+            raise _invalid(f"{shown} is never allowed: {why}")
         if name not in FLAGS or name not in self.allowed:
             allowed = ", ".join(self._shown_allowed())
             raise _invalid(f"{shown} is not allowed for {self.verb}; allowed: {allowed or 'none'}")
@@ -337,40 +368,37 @@ def resource_type(part):
     return part.split("/", 1)[0].lower().split(".", 1)[0].strip()
 
 
-def _variants(name):
-    """The name, its singular (`secrets` -> `secret`) and its `es` singular: a denied
-    type matches under any of its spellings."""
-    out = {name}
-    if name.endswith("s"):
-        out.add(name[:-1])
-    if name.endswith("es"):
-        out.add(name[:-2])
-    return out
-
-
-def denied_type(arg, denied_resources):
+def denied_type(arg, denied_names):
     """The denied type named by one resource argument (a comma list, `type/name` or
-    `type.group`), or None."""
-    denied = set()
-    for entry in denied_resources:
-        denied |= _variants(resource_type(str(entry)))
-    denied.discard("")
+    `type.group`), or None. `denied_names` is the set `denied_names()` returns."""
     for part in arg.split(","):
         kind = resource_type(part)
-        if kind and _variants(kind) & denied:
+        if kind and variants(kind) & denied_names:
             return kind
     return None
 
 
-def _check_denied(verb, positionals, flags, denied_resources):
+def denied_names(denied_resources, resolver=None):
+    """Every spelling of the denied resources: the setting's entries plus `secrets`, which
+    no setting can remove (a floor like ALWAYS_REFUSED for flags). Plural, singular, kind
+    and short names resolve through resources.py; `resolver()` (rows of `kubectl
+    api-resources -o wide`) is called once for a name that table lacks, and an entry that
+    resolves nowhere raises invalid_input."""
+    return expand_denied([*ALWAYS_DENIED, *denied_resources], resolver)
+
+
+def _check_denied(verb, positionals, flags, denied_resources, resolver=None):
     """Refuse a denied type in any resource argument. The first positional is the type
     (list) of get/describe/top/explain/..., later ones are names unless they are
     `type/name`; `auth can-i VERB TYPE` carries the type in any position."""
     args = list(positionals) if verb == "auth can-i" else positionals[:1]
     args += [p for p in positionals[1:] if "/" in p]
     args += [value for name, value in flags if name == "for" and value]
+    if not args:
+        return
+    names = denied_names(denied_resources, resolver)
     for arg in args:
-        kind = denied_type(arg, denied_resources)
+        kind = denied_type(arg, names)
         if kind:
             raise RwError(
                 "permission_denied",
@@ -379,18 +407,20 @@ def _check_denied(verb, positionals, flags, denied_resources):
             )
 
 
-def _logs_args(flags):
+def _logs_args(flags, max_output_lines):
     """Validate `logs` values and return the defaults to append: a tail window when the
-    caller gave none, and a byte limit."""
+    caller gave none (the last 200 lines, or maxOutputLines when a --since window is set,
+    so the newest lines of the window are the ones returned), and a byte limit."""
     for name, value in flags:
-        if name == "tail" and (value is None or not _INTEGER_RE.fullmatch(value)):
-            raise _invalid(f"--tail must be an integer, not '{value}'")
+        if name == "tail" and (value is None or not re.fullmatch(r"[0-9]+", value)):
+            raise _invalid(f"--tail must be a non-negative integer, not '{value}'")
         if name == "limit-bytes":
             if value is None or not _INTEGER_RE.fullmatch(value) or int(value) < 1:
                 raise _invalid(f"--limit-bytes must be a positive integer, not '{value}'")
     defaults = []
-    if not any(n in ("tail", "since", "since-time") for n, _ in flags):
-        defaults.append(f"--tail={LOGS_DEFAULT_TAIL}")
+    if not any(n == "tail" for n, _ in flags):
+        windowed = any(n in ("since", "since-time") for n, _ in flags)
+        defaults.append(f"--tail={max_output_lines if windowed else LOGS_DEFAULT_TAIL}")
     if not any(n == "limit-bytes" for n, _ in flags):
         defaults.append(f"--limit-bytes={LOGS_LIMIT_BYTES}")
     return defaults
@@ -402,10 +432,15 @@ def parse_command(
     allowed_verbs=DEFAULT_ALLOWED_VERBS,
     denied_resources=DEFAULT_DENIED_RESOURCES,
     allowed_flags=DEFAULT_ALLOWED_FLAGS,
+    max_output_lines=2000,
+    resolver=None,
 ):
     """Validate `command` and return the normalised kubectl argv (no leading `kubectl`).
-    Raises RwError: invalid_input for anything outside the allow-lists,
-    permission_denied for a denied resource type. The first violation wins."""
+    Raises RwError: invalid_input for anything outside the allow-lists (or a
+    deniedResources entry that cannot be resolved), permission_denied for a denied
+    resource type. The first violation wins. `resolver` returns the rows of
+    `kubectl api-resources -o wide` and is only called for a denied name outside the
+    built-in table."""
     tokens = tokenise(command)
     verb, used = _match_verb(tokens, allowed_verbs)
     positionals, flags = _Walker(tokens[used:], verb, allowed_flags).run()
@@ -415,23 +450,28 @@ def parse_command(
     for p in positionals:
         if p.startswith("-"):
             raise _invalid(f"'{p}' is not a valid resource argument")
-    _check_denied(verb, positionals, flags, denied_resources)
-    defaults = _logs_args(flags) if verb == "logs" else []
+    _check_denied(verb, positionals, flags, denied_resources, resolver)
+    defaults = _logs_args(flags, max_output_lines) if verb == "logs" else []
     rendered = [f"--{n}" if v is None else f"--{n}={v}" for n, v in flags]
     return [*tokens[:used], *positionals, *rendered, *defaults]
 
 
-def truncate_output(text, max_lines, max_bytes=OUTPUT_MAX_BYTES):
-    """(text, total_lines, truncated): the first `max_lines` lines, at most `max_bytes`
-    bytes. total_lines counts the whole text."""
+def truncate_output(text, max_lines, max_bytes=OUTPUT_MAX_BYTES, from_end=False):
+    """(text, total_lines, truncated): `max_lines` lines (the first, or with `from_end` the
+    last, which is where the newest log lines are), at most `max_bytes` bytes. total_lines
+    counts the whole text."""
     lines = text.splitlines()
     total = len(lines)
-    kept = "\n".join(lines[:max_lines])
-    if lines:
+    kept_lines = lines[-max_lines:] if from_end else lines[:max_lines]
+    kept = "\n".join(kept_lines)
+    if kept_lines:
         kept += "\n"
     cut = total > max_lines
     raw = kept.encode("utf-8")
     if len(raw) > max_bytes:
-        kept = raw[:max_bytes].decode("utf-8", errors="ignore")
+        if from_end:
+            kept = raw[-max_bytes:].decode("utf-8", errors="ignore")
+        else:
+            kept = raw[:max_bytes].decode("utf-8", errors="ignore")
         cut = True
     return kept, total, cut
