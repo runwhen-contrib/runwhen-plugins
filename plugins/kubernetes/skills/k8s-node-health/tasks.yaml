@@ -1,0 +1,91 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (most relevant first)
+  utilizationPercent:
+    type: number
+    default: 90
+    description: A node using this percent or more of its allocatable CPU or memory has atOrAbove true in node-utilization
+tasks:
+  - name: node-conditions
+    title: Node conditions
+    description: >-
+      Per node: the Ready condition (status, reason, lastTransitionTime),
+      MemoryPressure, DiskPressure, PIDPressure and NetworkUnavailable when their
+      status is not False, whether the node is cordoned (unschedulable), its taints
+      (key and effect), kubelet version and age. Nodes that are not Ready come
+      first. A cluster target covers every node, a node target that node. Nodes are
+      cluster-scoped: a namespace-scoped connection fails with permission_denied.
+    script: scripts/node_conditions.py
+    tags: [nodes, ready, conditions, taints, cordon]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [nodes], verbs: [get, list] }
+    outputs:
+      nodes: { schema: ./schemas/nodes.v1.json, description: "Ready, pressure conditions, cordon, taints, version and age of each node, not Ready first" }
+      counts: { schema: ./schemas/counts.v1.json, description: "Node totals before the maxItems cap" }
+
+  - name: node-restarts
+    title: Node restarts
+    description: >-
+      Within the look-back window: nodes whose Ready condition changed state, and
+      node events with reason NodeNotReady, NodeReady, Rebooted, RegisteredNode or
+      Starting (from the kubelet), grouped per node with counts and the last time.
+      Node events live in the default namespace and expire after about an hour
+      (the API server event TTL), so a window longer than that sees only what is
+      left. When the events cannot be read the Ready transitions are still
+      returned, events is null and a permission_denied error says why.
+    script: scripts/node_restarts.py
+    tags: [nodes, restarts, reboot, events]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [nodes], verbs: [get, list] }
+      - { apiGroups: [""], resources: [events], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window, applied to when each event was last seen and to the Ready transition time" }
+    outputs:
+      transitions: { schema: ./schemas/transitions.v1.json, description: "Nodes whose Ready condition changed state within the window" }
+      events: { schema: ./schemas/node-events.v1.json, description: "Restart-related node events grouped per node and reason; null when they could not be read" }
+
+  - name: node-utilization
+    title: Node utilization
+    description: >-
+      Per node: CPU and memory usage from the metrics.k8s.io NodeMetrics API
+      against the node's allocatable, as percent, and whether each is at or above
+      the utilizationPercent setting. A node with no metrics entry has null usage,
+      not zero. Needs metrics-server (or another metrics.k8s.io provider): when
+      the API is not served the task fails with a dependency error.
+    script: scripts/node_utilization.py
+    tags: [nodes, utilization, cpu, memory, metrics]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [nodes], verbs: [get, list] }
+      - { apiGroups: [metrics.k8s.io], resources: [nodes], verbs: [list] }
+    outputs:
+      nodes: { schema: ./schemas/utilization.v1.json, description: "Usage against allocatable for CPU and memory per node, busiest first" }
+      inspected: { schema: ./schemas/utilization-inspected.v1.json, description: "Nodes looked at, how many had metrics, and the threshold used" }
+
+  - name: overcommit
+    title: Node overcommit
+    description: >-
+      Per node: the sum of resource requests and limits of its non-terminated pods
+      (init containers by the effective-request rule, native sidecars added, pod
+      overhead included) against the node's allocatable for CPU and memory, as
+      percent, with limitsAboveAllocatable true when the limits add up to more
+      than the node can hold. Containers with no request or limit are counted per
+      node, since the sums understate for them. Lists pods in every namespace.
+    script: scripts/overcommit.py
+    tags: [nodes, overcommit, requests, limits, capacity]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [nodes], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      nodes: { schema: ./schemas/overcommit.v1.json, description: "Requests and limits against allocatable for CPU and memory per node" }
+      inspected: { schema: ./schemas/overcommit-inspected.v1.json, description: "Pods counted and the pods that were not (unscheduled, terminated, on other nodes)" }
