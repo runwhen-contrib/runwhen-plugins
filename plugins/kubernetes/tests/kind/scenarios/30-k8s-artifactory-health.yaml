@@ -1,0 +1,134 @@
+# k8s-artifactory-health scenarios, applied by up.sh. A real Artifactory is far too heavy for the
+# 4 GiB kind VM, so each "Artifactory" is an nginx stub (memory limit 64Mi) that serves the
+# documented health endpoints on the ports and with the labels of the official JFrog Helm chart
+# (StatefulSet label app=artifactory/role=artifactory/component=artifactory/release=<release>;
+# container ports http 8082 = router, http-internal 8081 = Artifactory; Service ports http-router
+# and http-artifactory). Namespace rw-artifactory:
+#   artifactory         StatefulSet, healthy: liveness and readiness answer 200 OK, the router
+#                       health lists every service HEALTHY (Service artifactory)
+#   artifactory-broken  StatefulSet whose readiness answers 503, and whose router health lists
+#                       jfrt UNHEALTHY; its pod is not Ready, so its Service has no endpoints
+#                       (Service artifactory-broken answers 503 as well)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-artifactory
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: artifactory-stub
+  namespace: rw-artifactory
+data:
+  healthy.conf: |
+    server {
+      listen 8081;
+      listen 8082;
+      default_type text/plain;
+      location = /artifactory/api/v1/system/liveness { return 200 "OK"; }
+      location = /artifactory/api/v1/system/readiness { return 200 "OK"; }
+      location = /router/api/v1/system/health {
+        default_type application/json;
+        return 200 '{"router":{"node_id":"artifactory-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"}]}';
+      }
+      location / { return 404 "not found"; }
+    }
+  broken.conf: |
+    server {
+      listen 8081;
+      listen 8082;
+      default_type text/plain;
+      location = /artifactory/api/v1/system/liveness { return 200 "OK"; }
+      location = /artifactory/api/v1/system/readiness { return 503 "Service Unavailable"; }
+      location = /router/api/v1/system/health {
+        default_type application/json;
+        return 200 '{"router":{"node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-broken-0","state":"UNHEALTHY","message":"database connection refused"}]}';
+      }
+      location / { return 404 "not found"; }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifactory
+  namespace: rw-artifactory
+spec:
+  selector: {app: artifactory, role: artifactory, release: artifactory}
+  ports:
+    - {name: http-router, port: 8082, targetPort: http}
+    - {name: http-artifactory, port: 8081, targetPort: http-internal}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifactory-broken
+  namespace: rw-artifactory
+spec:
+  selector: {app: artifactory, role: artifactory, release: artifactory-broken}
+  ports:
+    - {name: http-router, port: 8082, targetPort: http}
+    - {name: http-artifactory, port: 8081, targetPort: http-internal}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: artifactory
+  namespace: rw-artifactory
+spec:
+  replicas: 1
+  serviceName: artifactory
+  selector:
+    matchLabels: {app: artifactory, role: artifactory, release: artifactory}
+  template:
+    metadata:
+      labels: {app: artifactory, role: artifactory, component: artifactory, release: artifactory}
+    spec:
+      containers:
+        - name: artifactory
+          image: nginx:1.27-alpine
+          ports:
+            - {name: http, containerPort: 8082}
+            - {name: http-internal, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /artifactory/api/v1/system/readiness, port: http-internal}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/conf.d/default.conf, subPath: healthy.conf}
+      volumes:
+        - name: conf
+          configMap: {name: artifactory-stub}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: artifactory-broken
+  namespace: rw-artifactory
+spec:
+  replicas: 1
+  serviceName: artifactory-broken
+  selector:
+    matchLabels: {app: artifactory, role: artifactory, release: artifactory-broken}
+  template:
+    metadata:
+      labels: {app: artifactory, role: artifactory, component: artifactory, release: artifactory-broken}
+    spec:
+      containers:
+        - name: artifactory
+          image: nginx:1.27-alpine
+          ports:
+            - {name: http, containerPort: 8082}
+            - {name: http-internal, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /artifactory/api/v1/system/readiness, port: http-internal}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/conf.d/default.conf, subPath: broken.conf}
+      volumes:
+        - name: conf
+          configMap: {name: artifactory-stub}

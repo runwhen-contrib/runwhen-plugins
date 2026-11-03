@@ -313,7 +313,13 @@ kubernetes:
       "Check SeaweedFS Capacity Projection": "k8s-seaweedfs-health/volumes (slot and disk utilisation as facts). The time-to-full projection is dropped: it compared with a snapshot file kept on the runner between runs, which a task run does not have, and extrapolated a two-point rate"
       "Check SeaweedFS Known Version Issues": "dropped: matches the helm.sh/chart label against a curated static catalog of known issues, which is advice that goes stale, not a fact about this cluster (its filter was 2>/dev/null || true, so a malformed row matched nothing). The images are in cluster-status and the server Version in volumes"
       "Check SeaweedFS Bucket Quota and Usage": "k8s-seaweedfs-health/buckets (usedBytes per bucket from the master, quota state/limit/percent from the filer entry, extended attribute names, anonymous list result), without weed shell text scraping. Always-on 'N buckets healthy' status issue dropped"
-  - { bundle: k8s-artifactory-health,    skills: [k8s-artifactory-health], status: planned }
+  - bundle: k8s-artifactory-health
+    skills: [k8s-artifactory-health]
+    status: ported
+    ported: [k8s-artifactory-health]
+    note: "per-workload target (StatefulSet or Deployment, using its own selector), every pod and every Service that selects it, rather than `kubectl exec statefulset/NAME` (pod-0 only, needs pods/exec and curl in the image, and an exec denial, a missing curl and an unhealthy app all read as an endpoint failure); HTTP through the API server's pod and Service proxy with the chart's declared ports (http-internal 8081 for liveness and readiness, http 8082 for the router; the classic hard-coded localhost:8091 is the `port` input); the 'OK' substring test is an exact OK, a 503 is a fact (ok false) and any other reply is an error, never ok; the router health document (state per service) is read too; an endpoint that wants credentials is authRequired with a permission_denied error and the task is skipped when all of them do (no credential is sent: the classic TODO topology check is not ported, it needs a generic connection, misc plugin M4); LABELS and EXPECTED_AVAILABILITY were imported and unused"
+    tasks:
+      "Check Artifactory Liveness and Readiness Endpoints": "k8s-artifactory-health/health (liveness and readiness per pod and per Service, plus /router/api/v1/system/health; the classic 'OK' substring test is ok true, a non-OK reply is ok false (503) or an error)"
   - { bundle: k8s-jenkins-healthcheck,   skills: [k8s-jenkins-health], status: planned }
   - bundle: k8s-otelcollector
     skills: [k8s-otelcollector-health]

@@ -1,0 +1,39 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most pods and Services the health output lists
+tasks:
+  - name: health
+    title: Artifactory health
+    description: >-
+      For each running pod of the workload and each Service that selects its pods, through the API
+      server's pod and Service proxy (no exec, no port-forward, no credential): liveness and
+      readiness (/artifactory/api/v1/system/) on the Artifactory port (default: container port
+      http-internal, else 8081) and /router/api/v1/system/health on the router port (default:
+      container port http, else 8082). Liveness and readiness answer 200 with the text OK, or 503
+      (a fact: ok false); 404 is served false; 401 or 403 from Artifactory means credentials are
+      needed, which are never sent: authRequired with a permission_denied error, and the task is
+      skipped when everything that answered wanted them. A 200 that is not the expected payload is
+      an error, never ok. A Service is asked on the Service port that targets the pod's port; with
+      no ready endpoint it answers 503 (noEndpoints). A pod that is not Running is listed, not
+      asked. Inputs port, routerPort, scheme.
+    script: scripts/health.py
+    timeout: 120s
+    tags: [artifactory, liveness, readiness, router, health]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Artifactory port for liveness and readiness; by default the pod's container port named http-internal, else 8081" }
+      routerPort: { type: integer, required: false, min: 1, max: 65535, description: "Router port for /router/api/v1/system/health; by default the pod's container port named http, else 8082" }
+      scheme: { type: string, default: http, description: "http or https" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods, services], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy, services/proxy], verbs: [get] }
+    outputs:
+      health: { schema: ./schemas/health.v1.json, description: "Per pod and per Service: the liveness, readiness and router health answers (HTTP status, ok, served, authRequired) and the workload's replica counts" }

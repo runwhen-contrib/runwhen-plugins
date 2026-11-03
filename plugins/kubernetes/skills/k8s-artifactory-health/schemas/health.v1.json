@@ -1,0 +1,984 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Artifactory health per pod and Service",
+  "description": "What each pod of the workload, and each Service selecting those pods, answered on Artifactory's liveness, readiness and router health endpoints through the API server's proxy. ok is true for the expected payload, false for a 503 or an unhealthy router state, null when nothing usable came back.",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer"
+    },
+    "serviceCount": {
+      "type": "integer",
+      "description": "Services whose selector matches the pod template's labels"
+    },
+    "servicesRead": {
+      "type": "boolean",
+      "description": "false when listing Services was forbidden: serviceCount is then 0 and says nothing"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods or Services were cut at maxItems"
+    },
+    "notOkCount": {
+      "type": "integer",
+      "description": "endpoints (pods and Services) whose ok is false"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's Ready condition (the kubelet's probe, which may not be these endpoints)"
+          },
+          "artifactoryPort": {
+            "type": "integer"
+          },
+          "routerPort": {
+            "type": "integer"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running (or beyond the first 10), or a Service beyond the first 10; not asked"
+          },
+          "liveness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "readiness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "router": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "artifactoryPort",
+          "routerPort",
+          "queried",
+          "liveness",
+          "readiness",
+          "router"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running (or beyond the first 10), or a Service beyond the first 10; not asked"
+          },
+          "liveness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "readiness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "router": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "queried",
+          "liveness",
+          "readiness",
+          "router"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "podCount",
+    "serviceCount",
+    "servicesRead",
+    "truncated",
+    "notOkCount",
+    "pods",
+    "services"
+  ],
+  "additionalProperties": false
+}
