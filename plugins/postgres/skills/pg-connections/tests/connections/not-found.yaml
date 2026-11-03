@@ -1,0 +1,86 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T21:44:07.799Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    WITH cfg AS (
+      SELECT current_setting('max_connections')::int AS max_connections,
+             current_setting('superuser_reserved_connections')::int AS superuser_reserved,
+             nullif(current_setting('reserved_connections', true), '')::int AS reserved,
+             (current_setting('is_superuser') = 'on'
+               OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')) AS full_view
+    ), s AS (
+      SELECT a.datname, a.usename, a.application_name, a.state, a.backend_type, a.wait_event_type,
+             a.xact_start, a.state_change,
+             (a.backend_type = 'client backend'
+               OR (a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL)) AS is_client,
+             NOT (cfg.full_view OR coalesce(pg_has_role(current_user, a.usesysid, 'USAGE'), false)) AS hidden
+      FROM pg_stat_activity a CROSS JOIN cfg
+      WHERE a.pid <> pg_backend_pid()
+    ), by_type AS (
+      SELECT backend_type, count(*) AS n FROM s GROUP BY backend_type
+    ), by_db AS (
+      SELECT datname, count(*) AS n FROM s WHERE is_client GROUP BY datname
+    ), by_user AS (
+      SELECT usename, application_name, count(*) AS n FROM s WHERE is_client GROUP BY usename, application_name
+    )
+    SELECT json_build_object(
+      'fullView', (SELECT full_view FROM cfg),
+      'maxConnections', (SELECT max_connections FROM cfg),
+      'superuserReservedConnections', (SELECT superuser_reserved FROM cfg),
+      'reservedConnections', (SELECT reserved FROM cfg),
+      'inUse', (SELECT count(*) FROM s WHERE is_client),
+      'hiddenSessions', (SELECT count(*) FROM s WHERE is_client AND hidden),
+      'byState', (SELECT json_build_object(
+          'active', count(*) FILTER (WHERE state = 'active'),
+          'idle', count(*) FILTER (WHERE state = 'idle'),
+          'idleInTransaction', count(*) FILTER (WHERE state = 'idle in transaction'),
+          'idleInTransactionAborted', count(*) FILTER (WHERE state = 'idle in transaction (aborted)'),
+          'fastpath', count(*) FILTER (WHERE state = 'fastpath function call'),
+          'disabled', count(*) FILTER (WHERE state = 'disabled'),
+          'nullState', count(*) FILTER (WHERE state IS NULL))
+        FROM s WHERE is_client),
+      'byBackendType', json_build_object(
+        'total', (SELECT count(*) FROM by_type),
+        'items', (SELECT coalesce(json_agg(json_build_object('backendType', backend_type, 'count', n)
+                                           ORDER BY n DESC, backend_type), '[]'::json)
+                  FROM (SELECT * FROM by_type ORDER BY n DESC, backend_type LIMIT 200) t)),
+      'byDatabase', json_build_object(
+        'total', (SELECT count(*) FROM by_db),
+        'items', (SELECT coalesce(json_agg(json_build_object('database', datname, 'count', n)
+                                           ORDER BY n DESC, datname), '[]'::json)
+                  FROM (SELECT * FROM by_db ORDER BY n DESC, datname LIMIT 200) t)),
+      'byUserApplication', json_build_object(
+        'total', (SELECT count(*) FROM by_user),
+        'items', (SELECT coalesce(json_agg(json_build_object('user', usename, 'applicationName', application_name, 'count', n)
+                                           ORDER BY n DESC, usename, application_name), '[]'::json)
+                  FROM (SELECT * FROM by_user ORDER BY n DESC, usename, application_name LIMIT 200) t)),
+      'oldestIdleInTransactionMs', (SELECT (extract(epoch FROM max(now() - state_change)) * 1000)::bigint
+          FROM s WHERE is_client AND state IN ('idle in transaction', 'idle in transaction (aborted)')),
+      'oldestTransactionMs', (SELECT (extract(epoch FROM max(now() - xact_start)) * 1000)::bigint
+          FROM s WHERE is_client AND xact_start IS NOT NULL),
+      'waitingOnLock', (SELECT count(*) FROM s WHERE is_client AND wait_event_type = 'Lock')
+    )
+  rc: 2
+  stdout: ''
+  stderr: |
+    psql: error: connection to server at "127.0.0.1", port 55432 failed: FATAL:  database "nope" does not exist
+expect:
+  status: failed
+  errorCodes:
+  - not_found

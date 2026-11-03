@@ -1,0 +1,87 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+inputs:
+  minDuration: 10s
+now: '2026-11-03T21:44:09.743Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    WITH cfg AS (
+      SELECT (current_setting('is_superuser') = 'on'
+               OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')) AS full_view
+    ), hidden AS (
+      SELECT count(*) AS n
+      FROM pg_stat_activity a CROSS JOIN cfg
+      WHERE a.pid <> pg_backend_pid()
+        AND (a.backend_type = 'client backend'
+             OR (a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL))
+        AND NOT (cfg.full_view OR coalesce(pg_has_role(current_user, a.usesysid, 'USAGE'), false))
+    ), cand AS (
+      SELECT a.pid, a.datname, a.usename, a.application_name, host(a.client_addr) AS client_addr,
+             a.state, a.backend_type, a.wait_event_type, a.wait_event,
+             to_jsonb(a) ->> 'query_id' AS query_id,
+             CASE WHEN a.state = 'active' THEN 'active' ELSE 'idleInTransaction' END AS kind,
+             CASE WHEN a.state = 'active' THEN now() - a.query_start
+                  ELSE now() - a.state_change END AS dur,
+             now() - a.xact_start AS xact_age
+      FROM pg_stat_activity a
+      WHERE a.pid <> pg_backend_pid()
+        AND a.backend_type <> 'walsender'
+        AND a.state IN ('active', 'idle in transaction', 'idle in transaction (aborted)')
+    ), hits AS (
+      SELECT * FROM cand WHERE dur > interval '1 millisecond' * 10000
+    )
+    SELECT json_build_object(
+      'fullView', (SELECT full_view FROM cfg),
+      'hiddenSessions', (SELECT n FROM hidden),
+      'total', (SELECT count(*) FROM hits),
+      'items', (SELECT coalesce(json_agg(json_build_object(
+          'pid', pid,
+          'database', datname,
+          'user', usename,
+          'applicationName', application_name,
+          'clientAddr', client_addr,
+          'state', state,
+          'kind', kind,
+          'durationMs', (extract(epoch FROM dur) * 1000)::bigint,
+          'xactAgeMs', (extract(epoch FROM xact_age) * 1000)::bigint,
+          'waitEventType', wait_event_type,
+          'waitEvent', wait_event,
+          'backendType', backend_type,
+          'queryId', query_id,
+          'blockedBy', pg_blocking_pids(pid)
+        ) ORDER BY dur DESC, pid), '[]'::json)
+        FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT 200) h)
+    )
+  rc: 0
+  stdout: |
+    {"fullView" : true, "hiddenSessions" : 0, "total" : 2, "items" : [{"pid" : 576, "database" : "orders", "user" : "rw_monitor", "applicationName" : "rw-fixture-sessions", "clientAddr" : "127.0.0.1", "state" : "idle in transaction", "kind" : "idleInTransaction", "durationMs" : 285596, "xactAgeMs" : 285596, "waitEventType" : "Client", "waitEvent" : "ClientRead", "backendType" : "client backend", "queryId" : null, "blockedBy" : []}, {"pid" : 583, "database" : "orders", "user" : "rw_monitor", "applicationName" : "rw-fixture-sessions", "clientAddr" : "127.0.0.1", "state" : "active", "kind" : "active", "durationMs" : 285545, "xactAgeMs" : 285545, "waitEventType" : "Timeout", "waitEvent" : "PgSleep", "backendType" : "client backend", "queryId" : null, "blockedBy" : []}]}
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    longRunning:
+      visibility: full
+      hiddenSessions: 0
+      minDurationMs: 10000
+      queryTextIncluded: false
+      truncated: false
+      items:
+        $contains:
+        - {database: orders, user: rw_monitor, applicationName: rw-fixture-sessions, state: idle in transaction, kind: idleInTransaction, backendType: client backend, blockedBy: []}
+        - {database: orders, user: rw_monitor, applicationName: rw-fixture-sessions, state: active, kind: active, waitEvent: PgSleep, blockedBy: []}
