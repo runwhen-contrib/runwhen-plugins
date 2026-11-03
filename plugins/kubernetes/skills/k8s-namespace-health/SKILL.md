@@ -47,16 +47,22 @@ task reads Secrets, ConfigMaps or logs.
   exit codes), `notReady` (Running, Ready condition not True), `waiting`
   (container waiting reasons; init containers have `init: true`) and `restarts`
   (a container restarted at least `restartThreshold` times, with how the last
-  run ended). `counts` has the totals before the `maxItems` cap.
+  run ended and `recent`: whether that run finished within `since`). `counts` has the totals before the `maxItems` cap. `restartCount` is a
+  lifetime counter of the container, so a pod that crashed last week and has been
+  stable since still has it; the comparison with `restartThreshold` is `>=`
+  deliberately, and `recent` is what tells an active crash loop from old history.
 - `failed-jobs`: Jobs with a Failed condition (`failureReason` such as
   `BackoffLimitExceeded` or `DeadlineExceeded`) and active Jobs running longer
   than `jobActiveMaxMinutes` (`longRunning`). `cronJob` names the owning CronJob.
   A failed Job is listed until it is deleted, so an old failure of a CronJob that
   has since succeeded still shows: compare `failedAt` with the CronJob's runs.
 - `resource-quotas`: each resource of each ResourceQuota with `used`, `hard`,
-  `ratio` and `atOrAbove` (ratio at or above `quotaRatio`). A `ratio` of null
-  with a hard limit of 0 means nothing can be created; null `used` means the
-  quota controller has not computed usage yet.
+  `ratio` and `atOrAbove` (ratio at or above `quotaRatio`), plus `scopes` and
+  `scopeSelector` when the quota is scoped. A `ratio` of null with a hard limit of
+  0 means nothing can be created; null `used` means the quota controller has not
+  computed usage yet. Rows with a null ratio come first, then the highest ratio.
+  A quota that is full shows up as `FailedCreate ... exceeded quota` Warning
+  events on the ReplicaSet or Job in `warning-events`.
 - `pdb-coverage`: `uncovered` lists Deployments and StatefulSets with more than
   one replica that no PodDisruptionBudget selects through their pod template
   labels; `pdbs` lists budgets whose `disruptionsAllowed` is 0 with
@@ -83,13 +89,25 @@ Outputs are facts, not verdicts: nothing here says healthy or unhealthy.
   `pods`, `replicasets.apps`, `jobs.batch`, `deployments.apps` or
   `statefulsets.apps`, keeps its main facts but lacks the enrichment from that
   list (owners become null; `inspected` reports null for a kind not read).
-- States that look like failures but are usually normal: a Pending pod with
-  `scheduled: true` and `ContainerCreating` for a few seconds; `Terminating` pods
-  (`terminating: true`); Failed pods of a Job still inside its backoff limit
-  (the Job is not in `failed-jobs` until it gives up); a StatefulSet pod waiting
-  for its volume; an active Job that is simply a long batch run.
+- States that look like failures but are usually normal:
+  - a Pending pod with `scheduled: true` and `ContainerCreating`, or a container
+    waiting with `PodInitializing`, for a few seconds around a start;
+  - startup or readiness `Unhealthy` Warning events during a rollout, before the
+    new pods are Ready;
+  - `Terminating` pods (`terminating: true`); a Terminating pod that is still
+    Ready is not reported at all;
+  - Evicted and other Failed pods linger until the pod garbage collector removes
+    them, long after the workload recovered;
+  - Failed pods of a Job still inside its backoff limit (the Job is not in
+    `failed-jobs` until it gives up); an active Job that is simply a long batch run;
+  - a StatefulSet pod waiting for its volume.
+- The `pods` quota counts only non-terminal pods, so Failed and Succeeded pods do
+  not use it. `warning-events` covers Warning events only; Normal events are not
+  read.
 - `restartThreshold` defaults to 3 (the classic bundle's default), unlike
   `kubernetes:k8s-workload-health/pod-restarts`, which defaults to 1.
+  `jobActiveMaxMinutes` defaults to 360, the classic value, since batch Jobs often
+  run for hours.
 
 ## What to try next
 
@@ -100,8 +118,8 @@ Outputs are facts, not verdicts: nothing here says healthy or unhealthy.
   `kubernetes:k8s-node-health/node-conditions`.
 - A pod waiting on a volume or a Pending claim:
   `kubernetes:k8s-pvc-health/binding-status`.
-- A failed Job owned by a CronJob: `kubernetes:k8s-cronjob-health` (schedule,
-  suspension, last runs).
+- A failed Job owned by a CronJob: `kubernetes:k8s-cronjob-health/schedule-health`
+  (schedule, suspension, last runs).
 - A quota at its limit: look at which workloads hold the usage with
   `unhealthy-pods` and the workload skills; raising a quota is a change this skill
   does not make.

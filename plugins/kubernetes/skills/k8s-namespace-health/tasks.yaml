@@ -7,18 +7,26 @@ settings:
   maxItems:
     type: integer
     default: 200
+    min: 1
     description: Most entries any list output returns (most relevant first)
   restartThreshold:
     type: integer
     default: 3
-    description: A container with at least this many restarts makes its pod appear in unhealthy-pods with the restarts state
+    min: 1
+    description: A container with at least this many restarts (a lifetime counter) makes its pod appear in unhealthy-pods with the restarts state
   jobActiveMaxMinutes:
     type: integer
-    default: 60
-    description: An active Job running longer than this many minutes has longRunning true in failed-jobs
+    default: 360
+    min: 1
+    description: >-
+      An active Job running longer than this many minutes has longRunning true in
+      failed-jobs. Default 360 (6 hours) is the classic bundle's value; batch Jobs
+      often legitimately run for hours.
   quotaRatio:
     type: number
     default: 0.8
+    min: 0
+    max: 1
     description: A ResourceQuota resource with used/hard at or above this ratio has atOrAbove true in resource-quotas
 tasks:
   - name: warning-events
@@ -50,7 +58,8 @@ tasks:
       Pending (with the scheduler's reason when unscheduled), Failed, Running
       but not Ready, containers waiting with their reason (ImagePullBackOff,
       CrashLoopBackOff, ContainerCreating), and containers restarted at least
-      restartThreshold times. Each pod names its owning workload.
+      restartThreshold times (each restart entry says whether the last
+      termination was within the look-back window). Each pod names its owning workload.
     script: scripts/unhealthy_pods.py
     tags: [pods, readiness, restarts]
     readOnly: true
@@ -59,6 +68,8 @@ tasks:
       - { apiGroups: [""], resources: [pods], verbs: [list] }
       - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
       - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window for the recent flag on a restarting container's last termination (pod states themselves have no look-back)" }
     outputs:
       pods: { schema: ./schemas/unhealthy-pods.v1.json, description: "One entry per unhealthy pod, most states first" }
       counts: { schema: ./schemas/pod-counts.v1.json, description: Totals before the maxItems cap }

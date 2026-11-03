@@ -1,0 +1,91 @@
+{
+ "items": [
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "3",
+     "deployment.kubernetes.io/max-replicas": "4",
+     "deployment.kubernetes.io/revision": "1"
+    },
+    "creationTimestamp": "2026-11-03T18:46:06Z",
+    "generation": 1,
+    "labels": {
+     "app": "over-quota",
+     "pod-template-hash": "84b6b8ddbb"
+    },
+    "name": "over-quota-84b6b8ddbb",
+    "namespace": "rw-quota",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "over-quota",
+      "uid": "5a07585f-05b4-4a11-b9d3-601096123a23"
+     }
+    ],
+    "resourceVersion": "8314",
+    "uid": "a50a05b7-dd3a-4dae-96b5-42f27c63e01c"
+   },
+   "spec": {
+    "replicas": 3,
+    "selector": {
+     "matchLabels": {
+      "app": "over-quota",
+      "pod-template-hash": "84b6b8ddbb"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "over-quota",
+       "pod-template-hash": "84b6b8ddbb"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "registry.k8s.io/pause:3.9",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "pause",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "1Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 2,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T18:46:06Z",
+      "message": "pods \"over-quota-84b6b8ddbb-m8p6m\" is forbidden: exceeded quota: pods-two, requested: pods=1, used: pods=2, limited: pods=2",
+      "reason": "FailedCreate",
+      "status": "True",
+      "type": "ReplicaFailure"
+     }
+    ],
+    "fullyLabeledReplicas": 2,
+    "observedGeneration": 1,
+    "readyReplicas": 2,
+    "replicas": 2,
+    "terminatingReplicas": 0
+   }
+  }
+ ]
+}

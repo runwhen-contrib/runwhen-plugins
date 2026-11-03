@@ -1,6 +1,7 @@
-# Namespace-level conditions for the k8s-namespace-health skill.
-# Applies on top of 10-healthy.yaml and 20-broken.yaml (rw-broken already has a
-# failed Job `fails` and failing pods).
+# Namespace-level conditions for the k8s-namespace-health skill. Applied by up.sh
+# (it applies every scenarios/30-*.yaml; manual extras go in a matching
+# 30-<skill>.sh) on top of 10-healthy.yaml and 20-broken.yaml (rw-broken already
+# has a failed Job `fails` and failing pods).
 
 # rw-healthy: a PDB that allows one disruption for the 2-replica `web`, and a
 # quota far above current usage.
@@ -73,15 +74,38 @@ spec:
   selector:
     matchLabels: {app: crashloop}
 ---
-# rw-broken: a pod quota with little headroom, and a Job-count quota well below its
-# limit. Applied last so existing pods are admitted. With the other scenario files
-# applied there are about ten non-terminal pods, so pods sits near 10/12.
+# rw-quota: a quota that admits two pods while the Deployment asks for three, so
+# usage reads 2/2 and the ReplicaSet records a real FailedCreate "exceeded quota"
+# Warning. A separate namespace keeps the quota from blocking other scenarios.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-quota
+---
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: tight
-  namespace: rw-broken
+  name: pods-two
+  namespace: rw-quota
 spec:
   hard:
-    pods: "12"
-    count/jobs.batch: "4"
+    pods: "2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: over-quota
+  namespace: rw-quota
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: over-quota}
+  template:
+    metadata:
+      labels: {app: over-quota}
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}

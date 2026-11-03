@@ -47,18 +47,20 @@ def ev(kind, name, reason, last, **extra):
     return out
 
 
-def warnings(ns="broken", since="1h", **replace):
+def warnings(ns="broken", since="1h", now=NOW, **replace):
     args = {k: load(ns, k) for k in ("events", "pods", "replicasets", "jobs")}
     args.update(replace)
     return events.warning_events(
-        args["events"], args["pods"], args["replicasets"], args["jobs"], since, NOW, 200
+        args["events"], args["pods"], args["replicasets"], args["jobs"], since, now, 200
     )
 
 
-def unhealthy(ns="broken", threshold=3, **replace):
+def unhealthy(ns="broken", threshold=3, since="1h", now=NOW, **replace):
     args = {k: load(ns, k) for k in ("pods", "replicasets", "jobs")}
     args.update(replace)
-    return pods.unhealthy_pods(args["pods"], args["replicasets"], args["jobs"], threshold)
+    return pods.unhealthy_pods(
+        args["pods"], args["replicasets"], args["jobs"], threshold, since, now
+    )
 
 
 # ------------------------------------------------------------ helpers ----
@@ -295,6 +297,25 @@ def test_restart_threshold_controls_the_restarts_state():
     assert all("restarts" not in r["states"] for r in unhealthy(threshold=10_000))
 
 
+def test_restarts_carry_recent_against_the_since_window():
+    def last_run(since, now=NOW):
+        rows = by_name(unhealthy(since=since, now=now))
+        return rows["crashloop-77d67d4789-f6rbl"]["restarts"][0]
+
+    assert last_run("1h")["recent"] is True
+    assert last_run("1s")["recent"] is False
+    # three hours later the same termination is no longer recent, though restartCount is unchanged
+    later = last_run("1h", NOW + timedelta(hours=3))
+    assert later["recent"] is False and later["restartCount"] >= 3
+
+
+def test_restart_without_a_recorded_termination_is_not_recent():
+    pod = copy.deepcopy(named(load("broken", "pods"), "crashloop-77d67d4789-f6rbl"))
+    pod["status"]["containerStatuses"][0].pop("lastState")
+    (row,) = pods.unhealthy_pods([pod], [], [], 3, "1h", NOW)
+    assert row["restarts"][0]["lastTerminated"] is None and row["restarts"][0]["recent"] is False
+
+
 def test_unschedulable_pending_pod_carries_the_scheduler_reason_however_old():
     pod = copy.deepcopy(named(load("broken", "pods"), "bad-image-866577b69d-llmzv"))
     pod["status"]["conditions"] = [
@@ -309,7 +330,7 @@ def test_unschedulable_pending_pod_carries_the_scheduler_reason_however_old():
     pod["status"].pop("containerStatuses", None)
     pod["metadata"]["creationTimestamp"] = "2020-01-01T00:00:00Z"
     # classic filtered on lastTransitionTime inside the look-back, so a pod pending for years aged out
-    (row,) = pods.unhealthy_pods([pod], [], [], 3)
+    (row,) = pods.unhealthy_pods([pod], [], [], 3, "1h", NOW)
     assert row["states"] == ["pending"]
     assert row["pending"] == {
         "scheduled": False,
@@ -329,7 +350,7 @@ def test_failed_pod_keeps_its_reason_and_succeeded_pod_is_not_listed():
         "phase": "Succeeded",
         "conditions": [{"type": "Ready", "status": "False", "reason": "PodCompleted"}],
     }
-    rows = by_name(pods.unhealthy_pods([failed, done], [], [], 3))
+    rows = by_name(pods.unhealthy_pods([failed, done], [], [], 3, "1h", NOW))
     assert rows["fails-24pcc"]["failed"]["reason"] == "Evicted"
     assert "done" not in rows
 
@@ -403,15 +424,38 @@ def test_job_counts():
 # ----------------------------------------------------- resource-quotas ----
 
 
-def test_broken_namespace_quota_is_near_its_limit():
-    rows = quotas.quota_usage(load("broken", "resourcequotas"), 0.8, 200)
-    by_resource = {(r["quota"], r["resource"]): r for r in rows}
-    pods_row = by_resource[("tight", "pods")]
-    assert pods_row["hard"] == "12" and int(pods_row["used"]) >= 10
-    assert pods_row["ratio"] >= 0.8 and pods_row["atOrAbove"] is True
-    jobs_row = by_resource[("tight", "count/jobs.batch")]
-    assert jobs_row["ratio"] == 0.5 and jobs_row["atOrAbove"] is False
-    assert rows[0]["resource"] == "pods"  # highest ratio first
+def test_quota_namespace_reads_exactly_two_of_two_pods():
+    (row,) = quotas.quota_usage(load("quota", "resourcequotas"), 0.8, 200)
+    assert row == {
+        "quota": "pods-two",
+        "resource": "pods",
+        "used": "2",
+        "hard": "2",
+        "ratio": 1.0,
+        "atOrAbove": True,
+        "scopes": [],
+        "scopeSelector": None,
+    }
+
+
+def test_the_replicaset_records_a_real_exceeded_quota_warning_with_its_owner():
+    rows = warnings("quota", since="1h", now=datetime(2026, 11, 3, 18, 47, tzinfo=timezone.utc))
+    (row,) = rows
+    assert row["kind"] == "ReplicaSet" and row["reason"] == "FailedCreate"
+    assert "exceeded quota: pods-two" in row["message"] and row["count"] >= 2
+    assert row["owner"] == {"kind": "Deployment", "name": "over-quota", "resolved": True}
+    assert row["objectExists"] is True
+
+
+def test_quota_namespace_pods_are_all_healthy_and_the_third_never_exists():
+    assert len(load("quota", "pods")) == 2
+    assert unhealthy("quota") == []
+
+
+def test_broken_namespace_has_no_resource_quota():
+    # the shared rw-broken namespace carries no quota, so nothing there is blocked by one
+    assert quotas.quota_usage(load("broken", "resourcequotas"), 0.8, 200) == []
+    assert all(e["reason"] != "FailedCreate" for e in load("broken", "events"))
 
 
 def test_healthy_namespace_quota_has_headroom():
@@ -448,6 +492,54 @@ def test_quota_edges_zero_hard_not_yet_computed_and_bad_quantity():
     ]
     with pytest.raises(ValueError):
         quotas.quota_usage(odd, 0.8, 200)
+
+
+def test_zero_hard_and_unknown_rows_sort_first_so_a_cut_never_drops_at_limit_rows():
+    q = [
+        {
+            "metadata": {"name": "a"},
+            "status": {"hard": {"cpu": "10", "pods": "0"}, "used": {"cpu": "9", "pods": "0"}},
+        },
+        {"metadata": {"name": "b"}, "spec": {"hard": {"memory": "1Gi"}}},
+    ]
+    rows = quotas.quota_usage(q, 0.8, 200)
+    assert [(r["quota"], r["resource"]) for r in rows] == [
+        ("a", "pods"),
+        ("b", "memory"),
+        ("a", "cpu"),
+    ]
+    assert [(r["quota"], r["resource"]) for r in quotas.quota_usage(q, 0.8, 2)] == [
+        ("a", "pods"),
+        ("b", "memory"),
+    ]
+
+
+def test_scope_selector_is_emitted_and_bounded():
+    q = [
+        {
+            "metadata": {"name": "s"},
+            "spec": {
+                "scopes": ["NotTerminating"],
+                "scopeSelector": {
+                    "matchExpressions": [
+                        {
+                            "scopeName": "PriorityClass",
+                            "operator": "In",
+                            "values": [f"p{i}" for i in range(80)],
+                        }
+                    ]
+                    * 60
+                },
+                "hard": {"pods": "10"},
+            },
+            "status": {"hard": {"pods": "10"}, "used": {"pods": "1"}},
+        }
+    ]
+    (row,) = quotas.quota_usage(q, 0.8, 200)
+    assert row["scopes"] == ["NotTerminating"]
+    selector = row["scopeSelector"]
+    assert len(selector) == 50 and len(selector[0]["values"]) == 50
+    assert selector[0]["scopeName"] == "PriorityClass" and selector[0]["operator"] == "In"
 
 
 def test_no_quotas_is_an_empty_list():
@@ -591,7 +683,7 @@ def test_pod_messages_and_nested_lists_are_bounded():
             "waiting": {"reason": "ImagePullBackOff", "message": "m" * 3000 if i == 0 else "m"}
         }
         pod["status"]["containerStatuses"].append(status)
-    (row,) = pods.unhealthy_pods([pod], [], [], 3)
+    (row,) = pods.unhealthy_pods([pod], [], [], 3, "1h", NOW)
     assert len(row["waiting"]) == 50 and row["truncated"] is True
     assert len(row["waiting"][0]["message"]) == 1024
 
@@ -613,7 +705,7 @@ def test_init_containers_count_and_are_marked():
             },
         }
     ]
-    (row,) = pods.unhealthy_pods([pod], [], [], 3)
+    (row,) = pods.unhealthy_pods([pod], [], [], 3, "1h", NOW)
     assert row["waiting"][0]["init"] is True and row["restarts"][0]["init"] is True
     assert row["restarts"][0]["container"] == "setup"
 
@@ -730,7 +822,7 @@ class FakeCtx:
         return next(
             w
             for w in words
-            if w not in ("get", "rw-broken", "rw-healthy", "type=Warning", "gone", "x")
+            if w not in ("get", "rw-broken", "rw-healthy", "rw-quota", "type=Warning", "gone", "x")
         )
 
     def run(self, argv):
@@ -886,3 +978,58 @@ def test_a_subprocess_timeout_is_a_timeout_error():
     with pytest.raises(RwError) as exc:
         script("failed_jobs").main(Slow("broken", "rw-broken"))
     assert exc.value.code == "timeout"
+
+
+def test_resource_quotas_script_on_the_quota_namespace():
+    out = script("resource_quotas").main(FakeCtx("quota", "rw-quota"))
+    (row,) = out["quotas"]
+    assert (row["used"], row["hard"], row["atOrAbove"]) == ("2", "2", True)
+
+
+def test_unhealthy_pods_script_takes_since_and_rejects_a_bad_one_before_kubectl():
+    ctx = FakeCtx("broken", "rw-broken")
+    out = script("unhealthy_pods").main(ctx, since="3650d")
+    restarts = [r for p in out["pods"] for r in p["restarts"] if r["lastTerminated"]]
+    assert restarts and all(r["recent"] for r in restarts)  # a 3650d window covers the capture
+    bad = FakeCtx("broken", "rw-broken")
+    with pytest.raises(RwError) as exc:
+        script("unhealthy_pods").main(bad, since="soon")
+    assert exc.value.code == "invalid_input" and bad.calls == []
+
+
+@pytest.mark.parametrize(
+    ("name", "setting", "value"),
+    [
+        ("warning_events", "max_items", 0),
+        ("unhealthy_pods", "max_items", -5),
+        ("unhealthy_pods", "restart_threshold", 0),
+        ("failed_jobs", "job_active_max_minutes", 0),
+        ("failed_jobs", "max_items", 0),
+        ("resource_quotas", "quota_ratio", 1.5),
+        ("resource_quotas", "quota_ratio", -0.1),
+        ("pdb_coverage", "max_items", 0),
+    ],
+)
+def test_out_of_range_settings_are_invalid_input_before_any_kubectl_call(name, setting, value):
+    ctx = FakeCtx("broken", "rw-broken")
+    setattr(ctx.settings, setting, value)
+    with pytest.raises(RwError) as exc:
+        script(name).main(ctx)
+    assert exc.value.code == "invalid_input" and ctx.calls == []
+
+
+def test_settings_declare_their_bounds_and_defaults():
+    settings = yaml.safe_load((SKILL / "tasks.yaml").read_text())["settings"]
+    for name in ("maxItems", "restartThreshold", "jobActiveMaxMinutes"):
+        assert settings[name]["min"] == 1
+    assert (settings["quotaRatio"]["min"], settings["quotaRatio"]["max"]) == (0, 1)
+    assert settings["jobActiveMaxMinutes"]["default"] == 360
+    assert settings["restartThreshold"]["default"] == 3 and settings["maxItems"]["default"] == 200
+
+
+def test_unhealthy_pods_declares_the_since_input():
+    declared_inputs = declared("unhealthy_pods")["inputs"]
+    assert (
+        declared_inputs["since"]["type"] == "duration"
+        and declared_inputs["since"]["default"] == "1h"
+    )

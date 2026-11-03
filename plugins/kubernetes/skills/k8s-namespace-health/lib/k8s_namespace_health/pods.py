@@ -1,6 +1,6 @@
 """Current state of the pods in a namespace."""
 
-from k8s_namespace_health.common import nested, trunc
+from k8s_namespace_health.common import nested, parse_time, trunc, within
 from k8s_namespace_health.owners import index_objects, resolve_owner
 
 
@@ -72,18 +72,20 @@ def _waiting(pod):
     return out, cut_any or more
 
 
-def _restarts(pod, threshold):
+def _restarts(pod, threshold, since, now):
     out = []
     for is_init, s in _container_statuses(pod):
         count = s.get("restartCount", 0)
         if count < 1 or count < threshold:
             continue
         last = (s.get("lastState") or {}).get("terminated")
+        finished = parse_time(last.get("finishedAt")) if last else None
         out.append(
             {
                 "container": s["name"],
                 "init": is_init,
                 "restartCount": count,
+                "recent": within(finished, since, now),
                 "lastTerminated": (
                     {
                         "reason": last.get("reason"),
@@ -99,7 +101,7 @@ def _restarts(pod, threshold):
     return out, more
 
 
-def unhealthy_pods(pods, replicasets, jobs, restart_threshold):
+def unhealthy_pods(pods, replicasets, jobs, restart_threshold, since, now):
     """Pods that are not in a good state right now, whenever they got there.
 
     Judged on current state only, with no look-back: a pod that has been Pending
@@ -107,7 +109,9 @@ def unhealthy_pods(pods, replicasets, jobs, restart_threshold):
     `pending` (phase Pending; `pending.reason` is the scheduler's reason when
     unscheduled), `failed` (phase Failed), `notReady` (Running with the Ready
     condition not True), `waiting` (a container is waiting, with its reason) and
-    `restarts` (a container restarted at least `restart_threshold` times).
+    `restarts` (a container restarted at least `restart_threshold` times;
+    restartCount is a lifetime counter, so each entry also carries `recent`:
+    its last termination finished within `since` of `now`).
     Succeeded pods only appear for restarts. Most states first, then by name.
     Nested lists stop at 50 and messages at 1024 characters (`truncated`).
     `replicasets` and `jobs` may be None when they could not be listed: an owner
@@ -122,7 +126,7 @@ def unhealthy_pods(pods, replicasets, jobs, restart_threshold):
         ready = _condition(pod, "Ready")
         is_ready = ready is not None and ready.get("status") == "True"
         waiting, waiting_cut = _waiting(pod)
-        restarts, restarts_cut = _restarts(pod, restart_threshold)
+        restarts, restarts_cut = _restarts(pod, restart_threshold, since, now)
         cut = waiting_cut or restarts_cut
         states = []
         if phase == "Pending":

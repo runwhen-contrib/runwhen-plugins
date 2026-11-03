@@ -26,6 +26,32 @@ def check_duration(value):
         raise RwError("invalid_input", str(exc)) from exc
 
 
+# Bounds of the numeric settings (the same min/max tasks.yaml declares), enforced here
+# too so an out-of-range value fails as invalid_input before any kubectl call.
+SETTING_BOUNDS = {
+    "max_items": (1, None),
+    "restart_threshold": (1, None),
+    "job_active_max_minutes": (1, None),
+    "quota_ratio": (0, 1),
+}
+
+
+def check_settings(ctx, *names):
+    for name in names:
+        value = getattr(ctx.settings, name)
+        low, high = SETTING_BOUNDS[name]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or value < low
+            or (high is not None and value > high)
+        ):
+            raise RwError(
+                "invalid_input",
+                f"setting {name} must be between {low} and {high or 'any'}, got {value!r}",
+            )
+
+
 def load_namespace(ctx):
     """The namespace the tasks look in: the target's name.
 
