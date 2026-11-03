@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "One entry per pod of the CSI provider DaemonSet(s)",
+  "description": "Not-ready pods first, then the most restarts. Init containers are flagged init.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "daemonset": {
+        "type": "string"
+      },
+      "pod": {
+        "type": "string"
+      },
+      "phase": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "node": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "restarts": {
+        "type": "integer"
+      },
+      "containers": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "init": {
+              "type": "boolean"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "restartCount": {
+              "type": "integer"
+            },
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lastTerminated": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "exitCode": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "finishedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "reason",
+                "exitCode",
+                "finishedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "name",
+            "init",
+            "ready",
+            "restartCount",
+            "state",
+            "reason",
+            "lastTerminated"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "containersTruncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "daemonset",
+      "pod",
+      "phase",
+      "ready",
+      "node",
+      "restarts",
+      "containers",
+      "containersTruncated"
+    ],
+    "additionalProperties": false
+  }
+}
