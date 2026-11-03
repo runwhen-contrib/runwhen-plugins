@@ -324,7 +324,13 @@ kubernetes:
       "Query Collector Queued Spans": "k8s-otelcollector-health/exporter-queue (queues: otelcol_exporter_queue_size against queue_capacity per exporter and data type, utilisation against the queueUtilizationPercent setting instead of 500 queued items; the metrics are parsed, with the older and newer names)"
       "Check OpenTelemetry Collector Logs For Errors": "k8s-workload-logs/error-patterns (target the collector workload; the grep for the lowercase word error over a single backing pod is replaced by that skill's pattern search over the workload's pods; the collector's own counters are in exporter-queue)"
       "Query OpenTelemetry Logs For Dropped Spans": "k8s-otelcollector-health/exporter-queue (counters: exporter send_failed and enqueue_failed, receiver refused, processor dropped and refused per data type, from the collector's metrics: cumulative counts with their uptime instead of grepping the word dropped in the last 60 minutes of logs, which also matched 'dropped: 0' lines)"
-  - { bundle: k8s-jaeger-http-query,     skills: [k8s-jaeger-health], status: planned }
+  - bundle: k8s-jaeger-http-query
+    skills: [k8s-jaeger-health]
+    status: ported
+    ported: [k8s-jaeger-health]
+    note: "per-workload target (the matched Deployment or StatefulSet, using its own selector) instead of the first service found by label; HTTP through the API server's pod proxy instead of a port-forward that slept 5s and was never checked (a dead forward gave no services, no traces and no issues, and 'service not found' exited 1 into a runbook that only parses the recommendation text); every service is queried, not the first matching one; LOOKBACK was imported but never passed to the script (lookback= blank): `since` (default 1h, microsecond start/end from the run's reference time) is passed; Jaeger's tag search is exact match, so one query is made per status code and per status attribute key (http.status_code and http.response.status_code) instead of one unfiltered limit=1000 fetch; every status in the list is counted, not only 400/401/403/404/500 (the classic loop reused the previous iteration's issue text for other codes); 2xx, 3xx and spans without a status are not counted, rather than every non-200 (the classic filter `!= 200` counted 201/204/301); a reply that is not Jaeger query JSON is an error, never no errors; no tag value but status code, operation, service and URL path (query string removed) is returned"
+    tasks:
+      "Query Traces in Jaeger for Unhealthy HTTP Response Codes": k8s-jaeger-health/http-errors
   - { bundle: k8s-litellm-proxy-health,  skills: [k8s-litellm-health], status: planned,
       note: "unauthenticated health endpoints only; master-key reads (secrets, printenv) are not ported" }
   - { bundle: k8s-litellm-spend-governance, skills: [], status: planned, plugin: misc,

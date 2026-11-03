@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HTTP error spans per Jaeger service",
+  "description": "Spans in the look-back window whose HTTP status is 4xx or 5xx, per service and operation, from the Jaeger query API. Only status codes in statusCodes are searched for (exact-match tag search); a service with no error spans has zero counts and no operations. Tag values other than the status code, the operation, the service name and the URL path are never returned.",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "viewedFrom": {
+      "type": "string",
+      "description": "The pod whose query API was asked"
+    },
+    "window": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "integer",
+          "description": "seconds"
+        },
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "startMicros": {
+          "type": "integer"
+        },
+        "endMicros": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "since",
+        "start",
+        "end",
+        "startMicros",
+        "endMicros"
+      ],
+      "additionalProperties": false
+    },
+    "limit": {
+      "type": "integer",
+      "description": "most traces per query"
+    },
+    "statusCodes": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "statusKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The span attributes the status was searched on"
+    },
+    "serviceCount": {
+      "type": "integer",
+      "description": "Services Jaeger knows in total"
+    },
+    "queriedCount": {
+      "type": "integer",
+      "description": "Services whose queries all succeeded"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "services were cut at maxItems and not queried"
+    },
+    "unknownServices": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Names in the services input that Jaeger does not know"
+    },
+    "excludedServices": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Names in excludeServices that Jaeger knows"
+    },
+    "serverErrorSpans": {
+      "type": "integer",
+      "description": "Total over the queried services"
+    },
+    "clientErrorSpans": {
+      "type": "integer",
+      "description": "Total over the queried services"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false when the service could not be read (see errors) or was not asked before the deadline; its counts are then null"
+          },
+          "tracesSeen": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Distinct traces the queries returned for the service"
+          },
+          "limitReached": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "a query returned `limit` traces: the counts are a lower bound"
+          },
+          "serverErrorSpans": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "clientErrorSpans": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "operationCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "operationsTruncated": {
+            "type": "boolean",
+            "description": "operations were cut at 50"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "description": "The span's operation name, cut at 1024 characters"
+                },
+                "serverErrorSpans": {
+                  "type": "integer",
+                  "description": "Spans with a status of 500 or more"
+                },
+                "clientErrorSpans": {
+                  "type": "integer",
+                  "description": "Spans with a status of 400 to 499"
+                },
+                "byStatus": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Span count per status code"
+                },
+                "urlPaths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "description": "Distinct URL paths of those spans, query string removed"
+                },
+                "urlPathsTruncated": {
+                  "type": "boolean",
+                  "description": "more than 10 distinct paths"
+                },
+                "sampleServerTraceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 5
+                },
+                "sampleClientTraceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 5
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "description": "the operation name or a path was cut at 1024 characters"
+                }
+              },
+              "required": [
+                "operation",
+                "serverErrorSpans",
+                "clientErrorSpans",
+                "byStatus",
+                "urlPaths",
+                "urlPathsTruncated",
+                "sampleServerTraceIds",
+                "sampleClientTraceIds",
+                "truncated"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 50,
+            "description": "Operations with at least one error span, most server errors first"
+          }
+        },
+        "required": [
+          "name",
+          "queried",
+          "tracesSeen",
+          "limitReached",
+          "serverErrorSpans",
+          "clientErrorSpans",
+          "operationCount",
+          "operationsTruncated",
+          "operations"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Queried services first, most server errors first; capped at maxItems"
+    }
+  },
+  "required": [
+    "workload",
+    "viewedFrom",
+    "window",
+    "limit",
+    "statusCodes",
+    "statusKeys",
+    "serviceCount",
+    "queriedCount",
+    "truncated",
+    "unknownServices",
+    "excludedServices",
+    "serverErrorSpans",
+    "clientErrorSpans",
+    "services"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,45 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most services a list output returns (services beyond it are not queried)
+  statusCodes:
+    type: "integer[]"
+    default: [400, 401, 403, 404, 429, 500, 502, 503, 504]
+    description: HTTP status codes searched for, 400 to 599. Jaeger's tag search is exact match, so each code is one query per status attribute key per service; a span with a code that is not listed is not counted. Add 501 or 408 where those matter
+tasks:
+  - name: http-errors
+    title: HTTP errors in traces
+    description: >-
+      For each service in Jaeger (or the ones in the services input), the spans in the last
+      `since` (default 1h, relative to the run's reference time) whose HTTP status is a client
+      error (4xx) or a server error (5xx), counted per operation with the status codes, URL
+      paths (query string removed) and sample trace IDs. Read through the API server's pod
+      proxy of the Jaeger query pod (no exec, no port-forward, no Secret, no credential).
+      Jaeger's tag search is exact match, so one query is made per status code in the
+      statusCodes setting and per attribute key (http.status_code and the newer
+      http.response.status_code); limit is the most traces each query returns, and
+      limitReached says a service hit it (its counts are then a lower bound). A reply that is
+      not Jaeger query JSON is an error, never no errors.
+    script: scripts/http_errors.py
+    timeout: 120s
+    tags: [jaeger, tracing, http, errors]
+    readOnly: true
+    inputs:
+      since: { type: duration, default: 1h, description: "How far back to look, relative to the run's reference time" }
+      limit: { type: integer, default: 100, min: 1, max: 1500, description: "Most traces Jaeger returns per query (per service, status code and attribute key)" }
+      services: { type: "string[]", default: [], description: "Only these services; empty means every service Jaeger knows" }
+      excludeServices: { type: "string[]", default: [], description: "Services to leave out" }
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Jaeger query HTTP port; by default the pod's container port named query, http-query or query-http, else 16686" }
+      scheme: { type: string, default: http, description: "http or https" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      httpErrors: { schema: ./schemas/http-errors.v1.json, description: "Per service: counts of 5xx and 4xx spans per operation with status codes, URL paths and sample trace IDs, and the window and limits used" }

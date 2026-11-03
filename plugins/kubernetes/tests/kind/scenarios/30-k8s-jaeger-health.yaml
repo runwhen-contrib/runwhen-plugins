@@ -1,0 +1,137 @@
+# k8s-jaeger-health scenario, applied by up.sh. A real jaegertracing/all-in-one (in-memory
+# storage, memory limit 128Mi) in namespace rw-jaeger, plus a one-shot Job (30-k8s-jaeger-health.sh
+# re-runs it when the in-memory store is empty) that sends OTLP/HTTP spans with HTTP status tags:
+#   checkout   POST /pay -> 500 x4, 503 x2, 200 x10;  GET /cart -> 404 x3, 200 x10
+#              (http.url carries a query string with a fake token: the skill must not return it)
+#   catalog    GET /items -> 200 x15;  GET /items/{id} -> 404 x3          (no 5xx)
+#   gateway    GET /api -> 502 x2, 200 x6, using the newer semantic-convention keys
+#              http.response.status_code and url.path
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-jaeger
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: rw-jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: jaeger, app.kubernetes.io/component: all-in-one}
+  template:
+    metadata:
+      labels: {app: jaeger, app.kubernetes.io/component: all-in-one}
+    spec:
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.76.0
+          args: ["--memory.max-traces=500"]
+          env:
+            - {name: SPAN_STORAGE_TYPE, value: memory}
+            - {name: COLLECTOR_OTLP_ENABLED, value: "true"}
+            - {name: GOMEMLIMIT, value: 100MiB}
+          ports:
+            - {name: query, containerPort: 16686}
+            - {name: otlp-http, containerPort: 4318}
+            - {name: admin, containerPort: 14269}
+          readinessProbe:
+            httpGet: {path: /, port: 14269}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-query
+  namespace: rw-jaeger
+  labels: {app: jaeger, app.kubernetes.io/component: query}
+spec:
+  selector: {app: jaeger, app.kubernetes.io/component: all-in-one}
+  ports:
+    - {name: query, port: 16686, targetPort: query}
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emit-spans
+  namespace: rw-jaeger
+data:
+  emit.py: |
+    import json, os, random, time, urllib.request
+
+    URL = "http://jaeger-query:4318/v1/traces"
+
+    def attr(key, value):
+        if isinstance(value, int):
+            return {"key": key, "value": {"intValue": str(value)}}
+        return {"key": key, "value": {"stringValue": value}}
+
+    def send(service, name, count, status, status_key, extra):
+        spans = []
+        for _ in range(count):
+            start = time.time_ns() - random.randint(1, 60) * 1_000_000_000
+            spans.append({
+                "traceId": os.urandom(16).hex(),
+                "spanId": os.urandom(8).hex(),
+                "name": name,
+                "kind": 2,
+                "startTimeUnixNano": str(start),
+                "endTimeUnixNano": str(start + 5_000_000),
+                "attributes": [attr(status_key, status)] + [attr(k, v) for k, v in extra],
+            })
+        body = {"resourceSpans": [{
+            "resource": {"attributes": [attr("service.name", service)]},
+            "scopeSpans": [{"scope": {"name": "rw-scenario"}, "spans": spans}],
+        }]}
+        req = urllib.request.Request(URL, json.dumps(body).encode(), {"Content-Type": "application/json"})
+        for attempt in range(60):
+            try:
+                urllib.request.urlopen(req, timeout=5).read()
+                return
+            except Exception as exc:
+                print("retry", attempt, exc, flush=True)
+                time.sleep(3)
+        raise SystemExit("jaeger did not accept spans")
+
+    OLD = "http.status_code"
+    cart = [("http.url", "http://checkout:8080/cart/items?user=42&token=not-a-real-token"), ("http.method", "GET")]
+    pay = [("http.url", "http://checkout:8080/pay"), ("http.method", "POST")]
+    send("checkout", "POST /pay", 4, 500, OLD, pay)
+    send("checkout", "POST /pay", 2, 503, OLD, pay)
+    send("checkout", "POST /pay", 10, 200, OLD, pay)
+    send("checkout", "GET /cart", 3, 404, OLD, cart)
+    send("checkout", "GET /cart", 10, 200, OLD, cart)
+    send("catalog", "GET /items", 15, 200, OLD, [("http.target", "/items?page=2"), ("http.method", "GET")])
+    send("catalog", "GET /items/{id}", 3, 404, OLD, [("http.target", "/items/9?debug=1"), ("http.method", "GET")])
+    new = [("url.path", "/api"), ("url.query", "key=not-a-real-key"), ("http.request.method", "GET")]
+    send("gateway", "GET /api", 2, 502, "http.response.status_code", new)
+    send("gateway", "GET /api", 6, 200, "http.response.status_code", new)
+    print("sent", flush=True)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: emit-spans
+  namespace: rw-jaeger
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: emit
+          image: python:3.12-alpine
+          command: [python, /emit/emit.py]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: emit, mountPath: /emit}
+      volumes:
+        - name: emit
+          configMap: {name: emit-spans}
