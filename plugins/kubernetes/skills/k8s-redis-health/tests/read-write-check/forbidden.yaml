@@ -1,0 +1,25 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-redis/statefulsets/redis
+now: '2026-11-03T22:33:04.004Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - statefulsets.apps
+  - redis
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): statefulsets.apps "redis" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "statefulsets" in API group "apps" in the namespace "rw-redis"
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied
