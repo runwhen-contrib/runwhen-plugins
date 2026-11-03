@@ -1,0 +1,22 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-broken/persistentvolumeclaims/pending
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - persistentvolumeclaims
+  - pending
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): persistentvolumeclaims "pending" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "persistentvolumeclaims" in API group "" in the namespace "rw-broken"
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

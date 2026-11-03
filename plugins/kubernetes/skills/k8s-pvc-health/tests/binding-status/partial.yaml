@@ -1,0 +1,122 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/persistentvolumeclaims/data
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - persistentvolumeclaims
+  - data
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"name\":\"data\",\"namespace\":\"rw-healthy\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}\n",
+                "pv.kubernetes.io/bind-completed": "yes",
+                "pv.kubernetes.io/bound-by-controller": "yes",
+                "volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
+                "volume.kubernetes.io/selected-node": "rw-plugins-control-plane",
+                "volume.kubernetes.io/storage-provisioner": "rancher.io/local-path"
+            },
+            "creationTimestamp": "2026-11-03T17:33:01Z",
+            "finalizers": [
+                "kubernetes.io/pvc-protection"
+            ],
+            "name": "data",
+            "namespace": "rw-healthy",
+            "resourceVersion": "715",
+            "uid": "9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+        },
+        "spec": {
+            "accessModes": [
+                "ReadWriteOnce"
+            ],
+            "resources": {
+                "requests": {
+                    "storage": "100Mi"
+                }
+            },
+            "storageClassName": "standard",
+            "volumeMode": "Filesystem",
+            "volumeName": "pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+        },
+        "status": {
+            "accessModes": [
+                "ReadWriteOnce"
+            ],
+            "capacity": {
+                "storage": "100Mi"
+            },
+            "conditions": [
+                {
+                    "lastProbeTime": null,
+                    "lastTransitionTime": "2026-11-03T17:33:09Z",
+                    "message": "A pod is currently referencing this PVC",
+                    "reason": "PodUsingPVC",
+                    "status": "False",
+                    "type": "Unused"
+                }
+            ],
+            "phase": "Bound"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - storageclass
+  - standard
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): storageclasses.storage.k8s.io "standard" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "storageclasses" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - persistentvolume
+  - pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): persistentvolumes "pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "persistentvolumes" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - events
+  - --field-selector
+  - involvedObject.kind=PersistentVolumeClaim,involvedObject.name=data,involvedObject.uid=9a220631-0e66-46d2-9391-bc2fa7cf72ee
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    claim: {phase: Bound}
+    storageClass: {name: standard, exists: null}
+    volume: {exists: null}
