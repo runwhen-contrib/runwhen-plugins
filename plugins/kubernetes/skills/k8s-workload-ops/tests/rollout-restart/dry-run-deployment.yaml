@@ -1,0 +1,163 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/deployments/web
+inputs:
+  reason: fixture
+dryRun: true
+now: '2026-11-03T20:50:15.284Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - deployments.apps
+  - web
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "8",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:alpine\",\"livenessProbe\":{\"httpGet\":{\"path\":\"/\",\"port\":80},\"periodSeconds\":10},\"name\":\"nginx\",\"ports\":[{\"containerPort\":80}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/\",\"port\":80},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"8Mi\"}}}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:00Z",
+            "generation": 13,
+            "name": "web",
+            "namespace": "rw-healthy",
+            "resourceVersion": "9167",
+            "uid": "757486e0-aa1c-47a2-b8f2-d282ecd9ba0e"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 2,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "web"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "web"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "nginx:alpine",
+                            "imagePullPolicy": "IfNotPresent",
+                            "livenessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/",
+                                    "port": 80,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 10,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "name": "nginx",
+                            "ports": [
+                                {
+                                    "containerPort": 80,
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/",
+                                    "port": 80,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "64Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            }
+        },
+        "status": {
+            "availableReplicas": 2,
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T18:48:16Z",
+                    "lastUpdateTime": "2026-11-03T18:48:16Z",
+                    "message": "Deployment has minimum availability.",
+                    "reason": "MinimumReplicasAvailable",
+                    "status": "True",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T17:33:00Z",
+                    "lastUpdateTime": "2026-11-03T18:50:16Z",
+                    "message": "ReplicaSet \"web-868f7b7477\" has successfully progressed.",
+                    "reason": "NewReplicaSetAvailable",
+                    "status": "True",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 13,
+            "readyReplicas": 2,
+            "replicas": 2,
+            "terminatingReplicas": 0,
+            "updatedReplicas": 2
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - patch
+  - deployment.apps/web
+  - --type=merge
+  - -p
+  - '{"metadata": {"annotations": {"runwhen.com/restart-reason": "fixture"}}, "spec": {"template": {"metadata":
+    {"annotations": {"kubectl.kubernetes.io/restartedAt": "2026-11-03T20:50:15Z"}}}}}'
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    deployment.apps/web patched
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"kind": "Deployment", "name": "web", "namespace": "rw-healthy", "updateStrategy": "RollingUpdate", "gitopsManaged": false}
+    restart: {"applied": false, "reason": "fixture", "reasonRecorded": false, "restartedAt": null, "updateStrategy": "RollingUpdate", "revisionBefore": 8, "revisionAfter": null, "completed": null}
