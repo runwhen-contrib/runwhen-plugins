@@ -1,0 +1,223 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-broken/ingresses/wrong-port
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - ingresses.networking.k8s.io
+  - wrong-port
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"Ingress\",\"metadata\":{\"annotations\":{},\"name\":\"wrong-port\",\"namespace\":\"rw-broken\"},\"spec\":{\"rules\":[{\"host\":\"wrong-port.rw-broken.local\",\"http\":{\"paths\":[{\"backend\":{\"service\":{\"name\":\"crashloop\",\"port\":{\"number\":8080}}},\"path\":\"/\",\"pathType\":\"Prefix\"}]}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T18:39:28Z",
+            "generation": 1,
+            "name": "wrong-port",
+            "namespace": "rw-broken",
+            "resourceVersion": "7199",
+            "uid": "53385f1f-52f1-4d78-a3f0-547c02a566d0"
+        },
+        "spec": {
+            "rules": [
+                {
+                    "host": "wrong-port.rw-broken.local",
+                    "http": {
+                        "paths": [
+                            {
+                                "backend": {
+                                    "service": {
+                                        "name": "crashloop",
+                                        "port": {
+                                            "number": 8080
+                                        }
+                                    }
+                                },
+                                "path": "/",
+                                "pathType": "Prefix"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"crashloop\",\"namespace\":\"rw-broken\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"crashloop\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T18:39:28Z",
+                    "name": "crashloop",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "7198",
+                    "uid": "206c675c-293d-46ce-af9c-7b73b98578fe"
+                },
+                "spec": {
+                    "clusterIP": "10.96.98.91",
+                    "clusterIPs": [
+                        "10.96.98.91"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 80
+                        }
+                    ],
+                    "selector": {
+                        "app": "crashloop"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name in (crashloop)
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.10"
+                        ],
+                        "conditions": {
+                            "ready": false,
+                            "serving": false,
+                            "terminating": false
+                        },
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "crashloop-77d67d4789-f6rbl",
+                            "namespace": "rw-broken",
+                            "uid": "ac4e3e29-f5ee-425d-b3ef-15dffebe422a"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T19:11:36Z"
+                    },
+                    "creationTimestamp": "2026-11-03T18:39:28Z",
+                    "generateName": "crashloop-",
+                    "generation": 15,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "crashloop"
+                    },
+                    "name": "crashloop-wjnhn",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "crashloop",
+                            "uid": "206c675c-293d-46ce-af9c-7b73b98578fe"
+                        }
+                    ],
+                    "resourceVersion": "11214",
+                    "uid": "59fdf442-70d5-41d0-8d5f-7ee170ce3cc0"
+                },
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": 80,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    backends:
+      items:
+      - source: rule
+        host: wrong-port.rw-broken.local
+        path: /
+        pathType: Prefix
+        kind: service
+        service:
+          name: crashloop
+          portNumber: 8080
+          portName: null
+        resource: null
+        serviceExists: true
+        serviceType: ClusterIP
+        hasSelector: true
+        publishNotReady: false
+        portExists: false
+        targetPort: null
+        protocol: null
+        endpoints: null
+      total: 1

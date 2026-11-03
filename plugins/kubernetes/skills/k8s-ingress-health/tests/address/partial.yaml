@@ -1,0 +1,156 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/ingresses/web
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - ingresses.networking.k8s.io
+  - web
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"Ingress\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"rules\":[{\"host\":\"web.rw-healthy.local\",\"http\":{\"paths\":[{\"backend\":{\"service\":{\"name\":\"web\",\"port\":{\"number\":80}}},\"path\":\"/\",\"pathType\":\"Prefix\"}]}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:00Z",
+            "generation": 1,
+            "name": "web",
+            "namespace": "rw-healthy",
+            "resourceVersion": "499",
+            "uid": "01e72069-124f-4ec9-9571-25eb7d9e0f3d"
+        },
+        "spec": {
+            "rules": [
+                {
+                    "host": "web.rw-healthy.local",
+                    "http": {
+                        "paths": [
+                            {
+                                "backend": {
+                                    "service": {
+                                        "name": "web",
+                                        "port": {
+                                            "number": 80
+                                        }
+                                    }
+                                },
+                                "path": "/",
+                                "pathType": "Prefix"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - ingressclasses.networking.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): ingressclasses.networking.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "ingressclasses" in API group "networking.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"ports\":[{\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"web\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "485",
+                    "uid": "7933aec9-247b-4b7d-8303-0c6f93b4ca7c"
+                },
+                "spec": {
+                    "clusterIP": "10.96.69.240",
+                    "clusterIPs": [
+                        "10.96.69.240"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 80
+                        }
+                    ],
+                    "selector": {
+                        "app": "web"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    ingress:
+      assigned: false
+      addresses: []
+    ingressClass:
+      classSource: none
+      defaultClasses: null
+      multipleDefaults: null
+    serviceAddresses:
+      items:
+      - service: web
+        exists: true
+        type: ClusterIP
+        addresses: []
+        addressesTruncated: false
+        differsFromIngress: null
