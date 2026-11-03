@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Services that select a LiteLLM workload",
+  "description": "The Services in the namespace whose selector picks the workload's pod template labels, with their ports, EndpointSlice ready counts and whether each targetPort is declared by the pod template. No request is sent to the proxy.",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "servicePort": {
+      "type": "integer"
+    },
+    "containerPorts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "port"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    },
+    "serviceCount": {
+      "type": "integer",
+      "description": "Services that select the workload's pods"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "Services were cut at maxItems"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "headless": {
+            "type": "boolean"
+          },
+          "selector": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "exposesPort": {
+            "type": "boolean",
+            "description": "a Service port equals servicePort"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "port": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetPort": {
+                  "type": [
+                    "integer",
+                    "string"
+                  ]
+                },
+                "protocol": {
+                  "type": "string"
+                },
+                "targetPortDeclared": {
+                  "type": "boolean",
+                  "description": "the pod template declares a container port with this number (or name): an undeclared number is legal, an undeclared name leaves the endpoints without a port"
+                }
+              },
+              "required": [
+                "name",
+                "port",
+                "targetPort",
+                "protocol",
+                "targetPortDeclared"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 50
+          },
+          "endpoints": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "sliceCount": {
+                    "type": "integer"
+                  },
+                  "readyEndpoints": {
+                    "type": "integer",
+                    "description": "endpoints whose ready condition is true or unset"
+                  },
+                  "notReadyEndpoints": {
+                    "type": "integer",
+                    "description": "endpoints whose ready condition is false"
+                  },
+                  "ports": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "port": {
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "port",
+                        "protocol"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 50
+                  }
+                },
+                "required": [
+                  "sliceCount",
+                  "readyEndpoints",
+                  "notReadyEndpoints",
+                  "ports"
+                ],
+                "additionalProperties": false
+              }
+            ],
+            "description": "null when the EndpointSlices could not be read (see errors)"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "headless",
+          "selector",
+          "exposesPort",
+          "ports",
+          "endpoints"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "servicePort",
+    "containerPorts",
+    "serviceCount",
+    "truncated",
+    "services"
+  ],
+  "additionalProperties": false
+}

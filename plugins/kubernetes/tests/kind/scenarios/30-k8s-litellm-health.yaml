@@ -1,0 +1,195 @@
+# k8s-litellm-health scenario, applied by up.sh. The real ghcr.io/berriai/litellm image does not fit the
+# memory budget of this cluster (it was OOM-killed at a 320Mi limit and needs about 480Mi to answer),
+# so each "LiteLLM" here is a documented python stub (python:3.12-alpine, 64Mi limit) that serves
+# LiteLLM's unauthenticated health endpoints as v1.102.1 does (read from its source, health_endpoints/
+# _health_endpoints.py): /health/liveliness and /health/liveness answer "I'm alive!", /health/readiness
+# answers {"status": "healthy", "db": ...} (the public payload) or, with
+# general_settings.allow_public_health_readiness_details, the detailed payload (cache,
+# litellm_version, success_callbacks, ...), and 503 once a graceful shutdown has begun. Keyed endpoints
+# answer 401. In namespace rw-litellm:
+#   litellm           healthy: alive, ready, db connected, cache redis (detailed payload); Service on 4000
+#   litellm-degraded  ready (200) but db "disconnected" and no cache (allow_requests_on_db_unavailable);
+#                     its Service exposes port 8080, not 4000
+#   litellm-draining  a proxy in graceful shutdown: every health endpoint answers 503, so its pod is
+#                     not Ready and its Service has a not-ready endpoint
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-litellm
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-stub
+  namespace: rw-litellm
+data:
+  stub.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    MODE = os.environ.get("STUB_MODE", "healthy")
+    VERSION = "1.102.1"
+    DETAILED = {
+        "status": "healthy", "db": "connected", "cache": "redis", "litellm_version": VERSION,
+        "success_callbacks": ["_PROXY_VirtualKeyModelMaxBudgetLimiter", "_PROXY_MaxParallelRequestsHandler_v3", "prometheus"],
+        "use_aiohttp_transport": True, "log_level": "INFO", "is_detailed_debug": False,
+        "show_no_redis_warning": False, "show_env_credential_login_warning": False,
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def send(self, code, body):
+            data = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            draining = MODE == "draining"
+            if path in ("/health/liveliness", "/health/liveness"):
+                return self.send(503, {"status": "shutting_down"}) if draining else self.send(200, "I'm alive!")
+            if path == "/health/readiness":
+                if draining:
+                    return self.send(503, {"status": "shutting_down"})
+                if MODE == "degraded":
+                    return self.send(200, {**DETAILED, "db": "disconnected", "cache": None})
+                return self.send(200, DETAILED)
+            if path in ("/model/info", "/health", "/v1/models"):
+                return self.send(401, {"error": {"message": "Authentication Error, No api key passed in.", "type": "auth_error", "code": "401"}})
+            return self.send(404, {"detail": "Not Found"})
+
+        def log_message(self, *args):
+            pass
+
+    ThreadingHTTPServer(("0.0.0.0", 4000), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: rw-litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: litellm}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: litellm}
+    spec:
+      containers:
+        - name: litellm
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py]
+          env:
+            - {name: STUB_MODE, value: healthy}
+          ports:
+            - {name: http, containerPort: 4000}
+          readinessProbe:
+            httpGet: {path: /health/readiness, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: litellm-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: rw-litellm
+spec:
+  selector: {app.kubernetes.io/name: litellm}
+  ports:
+    - {name: http, port: 4000, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-degraded
+  namespace: rw-litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: litellm-degraded}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: litellm-degraded}
+    spec:
+      containers:
+        - name: litellm
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py]
+          env:
+            - {name: STUB_MODE, value: degraded}
+          ports:
+            - {name: http, containerPort: 4000}
+          readinessProbe:
+            httpGet: {path: /health/readiness, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: litellm-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-degraded
+  namespace: rw-litellm
+spec:
+  selector: {app.kubernetes.io/name: litellm-degraded}
+  ports:
+    - {name: http, port: 8080, targetPort: 4000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-draining
+  namespace: rw-litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: litellm-draining}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: litellm-draining}
+    spec:
+      containers:
+        - name: litellm
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py]
+          env:
+            - {name: STUB_MODE, value: draining}
+          ports:
+            - {name: http, containerPort: 4000}
+          readinessProbe:
+            httpGet: {path: /health/readiness, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: litellm-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-draining
+  namespace: rw-litellm
+spec:
+  selector: {app.kubernetes.io/name: litellm-draining}
+  ports:
+    - {name: http, port: 4000, targetPort: http}
