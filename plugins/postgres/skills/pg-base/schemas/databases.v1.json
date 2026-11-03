@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The instance's databases: not templates, and only those that accept connections",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "owner": {"type": "string"},
+          "encoding": {"type": "string"},
+          "sizeBytes": {
+            "type": ["integer", "null"],
+            "description": "pg_database_size; null when the role has neither CONNECT on the database nor pg_read_all_stats (the run reports permission_denied scoped to the database)"
+          }
+        },
+        "required": ["name", "owner", "encoding", "sizeBytes"],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Databases found"},
+    "omitted": {"type": "integer", "description": "Databases left out of items by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}

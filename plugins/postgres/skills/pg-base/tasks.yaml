@@ -1,0 +1,45 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1          # ships psql; no other runtime is named for non-Kubernetes plugins (42a)
+defaults: { credentials: postgres/libpq, timeout: 60s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  connectTimeout: { type: duration, default: 10s, description: "How long psql waits for a connection (PGCONNECT_TIMEOUT)" }
+  statementTimeout: { type: duration, default: 30s, description: "statement_timeout of the session; a statement that runs longer is cancelled (timeout)" }
+tasks:
+  - name: discover
+    title: Discover instance and databases
+    description: Reads the instance's identity and lists its databases (not templates, connections allowed) with owner, encoding and size, as facts and as an rw.discovery.v1 sync. Reports the instance's system identifier as the root's canonical key. Read-only.
+    script: scripts/discover.py
+    tags: [discovery, inventory]
+    readOnly: true
+    credentials: [postgres/libpq, runwhen/sync]    # runwhen/sync is platform-minted per run by the lease, not a connection
+    permissions:
+      - { function: pg_catalog.pg_control_system, privilege: EXECUTE }   # the system identifier
+      - { function: pg_catalog.pg_database_size, privilege: EXECUTE }
+      - { database: "*", privilege: CONNECT }                            # pg_database_size needs CONNECT on the database or pg_read_all_stats; a database it cannot size is reported
+    outputs:
+      summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-step errors and root.canonicalKey (systemIdentifier)" }
+      instance: { schema: ./schemas/instance.v1.json, description: "Host, port, version, whether it is a standby, system identifier" }
+      databases: { schema: ./schemas/databases.v1.json, description: "Name, owner, encoding and size of each database, cut to maxItems" }
+      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this instance and all its databases" }
+  - name: check-permissions
+    title: Check permissions
+    description: Tests each PostgreSQL permission (role membership, database privilege, function EXECUTE) against the connecting role and reports granted, partial (with the databases or overloads), denied or unverified per rule. Read-only.
+    script: scripts/check_permissions.py
+    tags: [permission-check]
+    readOnly: true
+    timeout: 120s
+    permissions:
+      - { function: pg_catalog.pg_has_role, privilege: EXECUTE }
+      - { function: pg_catalog.has_database_privilege, privilege: EXECUTE }
+      - { function: pg_catalog.has_function_privilege, privilege: EXECUTE }
+      - { function: pg_catalog.pg_control_system, privilege: EXECUTE }   # the system identifier, the root's canonical key
+    inputs:
+      rules:
+        type: object[]
+        schema:   # any non-empty object: a rule that is not a postgres permission gets its own `unverified` entry
+          type: object
+          minProperties: 1
+        description: "Permissions to test, in the integration's permission shape; at most 500. The report has one entry per rule, in this order"
+    outputs:
+      access: { kind: rw.access.v1, description: "One entry per rule, in input order: hash, the rule, granted | partial (with scope: the databases or function overloads) | denied | unverified, and evidence. root.canonicalKey systemIdentifier when the role may read it" }

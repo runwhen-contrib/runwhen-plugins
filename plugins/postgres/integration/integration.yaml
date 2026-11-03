@@ -1,0 +1,65 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types live beside it in types.yaml.
+apiVersion: runwhen.com/integration/v1
+platform: postgres
+title: PostgreSQL
+docs: https://docs.runwhen.com/integrations/postgres
+
+# --- what tools read (D38, D45) ---------------------------------------------
+# libpq's own environment: psql and every libpq client read these variables, so a task
+# script never handles the password (it never reads or prints PGPASSWORD). The CA bundle,
+# when the connection has one, is a 0600 file named by PGSSLROOTCERT.
+credentialTypes:
+  postgres/libpq:
+    title: libpq connection
+    description: "The libpq environment a client reads: PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE and PGSSLMODE, and optionally a CA bundle file named by PGSSLROOTCERT."
+    content: libpq
+    materialize:
+      env: [PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGSSLMODE]
+      file: { env: PGSSLROOTCERT, mode: "0600" }
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Each method is self-contained: it accepts its own reference kinds, has its own
+# inputs, and produces the type. No method depends on another connection.
+authMethods:
+  password:
+    title: Password
+    description: "A role and its password, from a Secret, Vault or a file; the reference supplies the secret values, the inputs supply the rest of the libpq environment."
+    produces: postgres/libpq
+    accepts: [k8s-secret, vault, file]       # credential-reference kinds the runner can materialize
+    native: passthrough                      # the reference's keys map onto the env variables of the type
+    inputs:
+      host: { type: string, required: true, description: "Server host name or address (PGHOST)" }
+      port: { type: integer, default: 5432, min: 1, max: 65535, description: "Server port (PGPORT)" }
+      user: { type: string, required: true, description: "Role to connect as (PGUSER)" }
+      database: { type: string, default: postgres, description: "Database to connect to (PGDATABASE)" }
+      sslmode: { type: enum, enum: [disable, allow, prefer, require, verify-ca, verify-full], default: prefer, description: "libpq sslmode (PGSSLMODE)" }
+  # IAM and cloud methods (RDS IAM auth, Cloud SQL, Azure AD) are script methods (D67) and
+  # are added with the cloud plugins' credentials, after v0.
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/pg-permission.json       # one permission = a role, a database privilege or a function privilege (D68)
+
+# --- how the platform plugs this integration in -------------------------------
+entryPoints:
+  discovery: { task: pg-base/discover, schedule: "*/15 * * * *" }
+  permissionCheck: { task: pg-base/check-permissions }
+
+# --- "that looks like one of mine" (D54) -----------------------------------
+# A Kubernetes Service that exposes 5432 or carries the postgres name label proposes an
+# instance. `when` is OR across matchers; a matcher ANDs its labels and doc equalities
+# (key = JMESPath over the Service's doc), so the port test is one matcher and each label
+# is another.
+recognizers:
+  - id: kubernetes-service
+    description: A Kubernetes Service that exposes port 5432 or is labelled app.kubernetes.io/name postgresql or postgres.
+    from: kubernetes/service
+    when:
+      - doc: { "spec.ports[?port==`5432`].port | [0]": 5432 }
+      - labels: { app.kubernetes.io/name: postgresql }
+      - labels: { app.kubernetes.io/name: postgres }
+    propose:
+      name: "{{namespace}}-{{name}}"
+      identity: { host: "{{name}}.{{namespace}}.svc", port: 5432 }
+      authMethod: password
+      inputs: { host: "{{name}}.{{namespace}}.svc", port: 5432 }

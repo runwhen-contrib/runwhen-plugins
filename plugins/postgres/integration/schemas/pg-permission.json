@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PostgreSQL permission",
+  "description": "One permission in PostgreSQL's own terms (D68): membership of a role, a privilege on a database, or EXECUTE on a function. Exactly one of role, database or function is named.",
+  "oneOf": [
+    {
+      "type": "object",
+      "title": "Role membership",
+      "description": "The connecting role holds the privileges of the named role, for example pg_monitor, pg_read_all_stats or pg_signal_backend.",
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        }
+      },
+      "required": ["role"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "Database privilege",
+      "description": "A privilege on one database, or on every database that accepts connections and is not a template when database is \"*\".",
+      "properties": {
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "privilege": {
+          "enum": ["CONNECT", "CREATE", "TEMPORARY"]
+        }
+      },
+      "required": ["database", "privilege"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "Function privilege",
+      "description": "EXECUTE on the function schema.name; a name shared by several overloads is granted when every overload is.",
+      "properties": {
+        "function": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$]*[.][A-Za-z_][A-Za-z0-9_$]*$",
+          "maxLength": 127
+        },
+        "privilege": {
+          "const": "EXECUTE"
+        }
+      },
+      "required": ["function", "privilege"],
+      "additionalProperties": false
+    }
+  ]
+}
