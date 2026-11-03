@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The PostgreSQL instance the connection reaches",
+  "type": "object",
+  "properties": {
+    "host": {"type": "string", "description": "PGHOST of the connection"},
+    "port": {"type": "integer", "description": "PGPORT of the connection"},
+    "version": {"type": "string", "description": "server_version, e.g. 16.15"},
+    "versionNum": {"type": "integer", "description": "server_version_num, e.g. 160015"},
+    "inRecovery": {"type": "boolean", "description": "true on a standby (pg_is_in_recovery)"},
+    "systemIdentifier": {
+      "type": ["string", "null"],
+      "description": "pg_control_system().system_identifier, the root's canonical key; null when the role may not read it. A physical standby reports its primary's"
+    },
+    "currentUser": {"type": "string", "description": "The role the connection runs as"}
+  },
+  "required": ["host", "port", "version", "versionNum", "inRecovery", "systemIdentifier", "currentUser"],
+  "additionalProperties": false
+}

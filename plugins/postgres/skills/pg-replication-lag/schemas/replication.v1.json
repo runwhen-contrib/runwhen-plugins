@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Replication facts of one instance",
+  "type": "object",
+  "properties": {
+    "role": {
+      "enum": [
+        "primary",
+        "standby"
+      ],
+      "description": "From pg_is_in_recovery()"
+    },
+    "visibility": {
+      "enum": [
+        "full",
+        "partial"
+      ],
+      "description": "partial when the role lacks pg_read_all_stats (pg_monitor): the replication views hide their columns; an empty or null view is then not proof of anything"
+    },
+    "database": {
+      "type": "string",
+      "description": "The database the connection is in"
+    },
+    "primary": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Set on a primary",
+      "properties": {
+        "currentLsn": {
+          "type": "string",
+          "description": "pg_current_wal_lsn(), read once: every distance in this output is from this position"
+        },
+        "replicas": {
+          "type": "object",
+          "description": "pg_stat_replication: one entry per connected walsender, standbys and also pg_basebackup, pg_receivewal and logical-replication walsenders; an empty list is a primary with none connected. Cut to maxItems in the query",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pid": {
+                    "type": "integer",
+                    "description": "walsender pid"
+                  },
+                  "usename": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Replication role"
+                  },
+                  "applicationName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The standby's application_name (its cluster_name or walreceiver)"
+                  },
+                  "clientAddr": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Address the standby connected from; null for a local socket (null where pg_stat_replication hides it from this role: visibility partial)"
+                  },
+                  "state": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "startup, catchup, streaming, backup or stopping (null where pg_stat_replication hides it from this role: visibility partial)"
+                  },
+                  "syncState": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "async, potential, sync or quorum (null where pg_stat_replication hides it from this role: visibility partial)"
+                  },
+                  "writeLagMs": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Time from flushing local WAL until the standby wrote it; null when no recent measurement (an idle standby is not zero)"
+                  },
+                  "flushLagMs": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Same until the standby flushed it"
+                  },
+                  "replayLagMs": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Same until the standby replayed it"
+                  },
+                  "sentLsnBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "pg_current_wal_lsn() minus sent_lsn, bytes not yet sent"
+                  },
+                  "writeLsnBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "pg_current_wal_lsn() minus write_lsn, bytes not yet written by the standby"
+                  },
+                  "flushLsnBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "pg_current_wal_lsn() minus flush_lsn"
+                  },
+                  "replayLsnBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "pg_current_wal_lsn() minus replay_lsn, bytes the standby has not replayed"
+                  }
+                },
+                "required": [
+                  "pid",
+                  "usename",
+                  "applicationName",
+                  "clientAddr",
+                  "state",
+                  "syncState",
+                  "writeLagMs",
+                  "flushLagMs",
+                  "replayLagMs",
+                  "sentLsnBytes",
+                  "writeLsnBytes",
+                  "flushLsnBytes",
+                  "replayLsnBytes"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "total": {
+              "type": "integer",
+              "description": "Entries found before the maxItems cap"
+            },
+            "omitted": {
+              "type": "integer",
+              "description": "Entries left out of items by maxItems"
+            },
+            "truncated": {
+              "type": "boolean",
+              "description": "true when items was cut at maxItems"
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "omitted",
+            "truncated"
+          ],
+          "additionalProperties": false
+        },
+        "slots": {
+          "type": "object",
+          "description": "pg_replication_slots; an empty list is a primary with no slot. Cut to maxItems in the query",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "slotName": {
+                    "type": "string",
+                    "description": "Replication slot"
+                  },
+                  "slotType": {
+                    "type": "string",
+                    "description": "physical or logical"
+                  },
+                  "database": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Database of a logical slot"
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "description": "true while a walsender or a client uses the slot"
+                  },
+                  "activePid": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Pid using the slot"
+                  },
+                  "walStatus": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "reserved, extended, unreserved or lost; null when the slot has no restart_lsn"
+                  },
+                  "retainedWalBytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "pg_current_wal_lsn() minus restart_lsn: for a live slot, the WAL it keeps on disk; for a lost slot (walStatus lost) only a distance, WAL already removed is not on disk; null without a restart_lsn"
+                  },
+                  "safeWalSize": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Bytes of WAL that can still be written before the slot is at risk of losing WAL (max_slot_wal_keep_size); null when unlimited and for a lost slot"
+                  }
+                },
+                "required": [
+                  "slotName",
+                  "slotType",
+                  "database",
+                  "active",
+                  "activePid",
+                  "walStatus",
+                  "retainedWalBytes",
+                  "safeWalSize"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "total": {
+              "type": "integer",
+              "description": "Entries found before the maxItems cap"
+            },
+            "omitted": {
+              "type": "integer",
+              "description": "Entries left out of items by maxItems"
+            },
+            "truncated": {
+              "type": "boolean",
+              "description": "true when items was cut at maxItems"
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "omitted",
+            "truncated"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "currentLsn",
+        "replicas",
+        "slots"
+      ],
+      "additionalProperties": false
+    },
+    "standby": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Set on a standby",
+      "properties": {
+        "receiver": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "pg_stat_wal_receiver; null when this standby has no WAL receiver running (archive recovery, or cut off from the sender)",
+          "properties": {
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "streaming, starting, waiting, stopping...; null when hidden (visibility partial)"
+            },
+            "senderHost": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Host of the primary the receiver is connected to"
+            },
+            "senderPort": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Port of that primary"
+            },
+            "slotName": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Slot the receiver uses, if any"
+            },
+            "lastMsgReceiptAgeMs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Milliseconds since the receiver last got a message from the sender (now minus last_msg_receipt_time); an idle primary still sends keepalives, so a streaming receiver keeps this small (below wal_receiver_timeout). Null when hidden (visibility partial)"
+            },
+            "latestEndLsn": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "latest_end_lsn: the last WAL position reported by the sender; null when hidden (visibility partial)"
+            }
+          },
+          "required": [
+            "status",
+            "senderHost",
+            "senderPort",
+            "slotName",
+            "lastMsgReceiptAgeMs",
+            "latestEndLsn"
+          ],
+          "additionalProperties": false
+        },
+        "receiveLsn": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pg_last_wal_receive_lsn(): the last WAL position received and flushed. It keeps its last value after the receiver exits, so it does not show the standby is still connected (see receiver and lastMsgReceiptAgeMs); null when WAL was never received"
+        },
+        "replayLsn": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pg_last_wal_replay_lsn()"
+        },
+        "receivedNotReplayedBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Received minus replayed WAL, in bytes"
+        },
+        "receiveEqualsReplay": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true when everything received has been replayed; with true, replayDelayMs measures how long ago the primary last committed, not a backlog, but only while receiver.status is streaming and receiver.lastMsgReceiptAgeMs is recent. With no receiver or a stale message the standby is cut off, whatever this says"
+        },
+        "replayDelayMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "clock_timestamp() minus pg_last_xact_replay_timestamp(), in milliseconds; null until a transaction has been replayed"
+        },
+        "replayPaused": {
+          "type": "boolean",
+          "description": "pg_is_wal_replay_paused()"
+        },
+        "replayPauseState": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pg_get_wal_replay_pause_state(): not paused, pause requested or paused; null before PostgreSQL 14"
+        }
+      },
+      "required": [
+        "receiver",
+        "receiveLsn",
+        "replayLsn",
+        "receivedNotReplayedBytes",
+        "receiveEqualsReplay",
+        "replayDelayMs",
+        "replayPaused",
+        "replayPauseState"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "role",
+    "visibility",
+    "database",
+    "primary",
+    "standby"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,76 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T22:56:49.133Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - |-
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
+      'inRecovery', pg_is_in_recovery(),
+      'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
+      'database', current_database(),
+      'serverVersionNum', current_setting('server_version_num')::int
+    ); COMMIT;
+  rc: 0
+  stdout: |
+    {"inRecovery" : true, "fullView" : true, "database" : "postgres", "serverVersionNum" : 160015}
+  stderr: ''
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - |-
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH lsn AS MATERIALIZED (
+      SELECT pg_last_wal_receive_lsn() AS recv, pg_last_wal_replay_lsn() AS replay
+    )
+    SELECT json_build_object(
+      'receiver', (SELECT json_build_object(
+          'status', w.status,
+          'senderHost', w.sender_host,
+          'senderPort', w.sender_port,
+          'slotName', w.slot_name::text,
+          'lastMsgReceiptAgeMs', floor(extract(epoch FROM clock_timestamp() - w.last_msg_receipt_time) * 1000)::bigint,
+          'latestEndLsn', w.latest_end_lsn::text
+        ) FROM pg_stat_wal_receiver w LIMIT 1),
+      'receiveLsn', (SELECT recv::text FROM lsn),
+      'replayLsn', (SELECT replay::text FROM lsn),
+      'receivedNotReplayedBytes', (SELECT pg_wal_lsn_diff(recv, replay)::bigint FROM lsn),
+      'receiveEqualsReplay', (SELECT recv = replay FROM lsn),
+      'replayDelayMs', floor(extract(epoch FROM clock_timestamp() - pg_last_xact_replay_timestamp()) * 1000)::bigint,
+      'replayPaused', pg_is_wal_replay_paused(),
+      'replayPauseState', pg_get_wal_replay_pause_state()
+    ); COMMIT;
+  rc: 0
+  stdout: |
+    {"receiver" : {"status" : "streaming", "senderHost" : "rw-pg-primary", "senderPort" : 5432, "slotName" : "rw_standby", "lastMsgReceiptAgeMs" : 1142, "latestEndLsn" : "0/306CCF8"}, "receiveLsn" : "0/306CCF8", "replayLsn" : "0/306CCF8", "receivedNotReplayedBytes" : 0, "receiveEqualsReplay" : true, "replayDelayMs" : 1142, "replayPaused" : false, "replayPauseState" : "not paused"}
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    replication:
+      role: standby
+      visibility: full
+      primary: null
+      standby:
+        receiver: {status: streaming, senderHost: rw-pg-primary, senderPort: 5432, slotName: rw_standby}
+        receiveEqualsReplay: true
+        receivedNotReplayedBytes: 0
+        replayPaused: false
+        replayPauseState: not paused

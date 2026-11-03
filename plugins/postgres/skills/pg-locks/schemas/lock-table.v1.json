@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Estimated fill of the shared lock table",
+  "type": "object",
+  "properties": {
+    "maxLocksPerTransaction": {
+      "type": "integer",
+      "description": "max_locks_per_transaction"
+    },
+    "maxConnections": {
+      "type": "integer",
+      "description": "max_connections"
+    },
+    "maxPreparedTransactions": {
+      "type": "integer",
+      "description": "max_prepared_transactions"
+    },
+    "capacity": {
+      "type": "integer",
+      "description": "max_locks_per_transaction * (max_connections + max_prepared_transactions): the documented size of the lock table"
+    },
+    "tableEntries": {
+      "type": "integer",
+      "description": "Distinct lock tags in pg_locks that are not fast-path locks: entries in the shared lock table"
+    },
+    "fastPathLocks": {
+      "type": "integer",
+      "description": "Fast-path lock rows, held outside the shared table (at most 16 per backend)"
+    },
+    "estimatedFillRatio": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "tableEntries / capacity; an estimate, null when capacity is 0"
+    }
+  },
+  "required": [
+    "maxLocksPerTransaction",
+    "maxConnections",
+    "maxPreparedTransactions",
+    "capacity",
+    "tableEntries",
+    "fastPathLocks",
+    "estimatedFillRatio"
+  ],
+  "additionalProperties": false
+}

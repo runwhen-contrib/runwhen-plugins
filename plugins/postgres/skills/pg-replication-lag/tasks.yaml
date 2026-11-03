@@ -1,0 +1,27 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1          # ships psql; no other runtime is named for non-Kubernetes plugins (42a)
+defaults: { credentials: postgres/libpq, timeout: 60s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  connectTimeout: { type: duration, default: 10s, description: "How long psql waits for a connection (PGCONNECT_TIMEOUT)" }
+  statementTimeout: { type: duration, default: 30s, description: "statement_timeout of the session; a statement that runs longer is cancelled (timeout)" }
+tasks:
+  - name: replication-status
+    title: Replication status
+    description: Detects whether the instance is a primary or a standby (pg_is_in_recovery). On a primary, each connected replica (state, sync state, write/flush/replay lag in ms, and sent/write/flush/replay LSN distance in bytes) and each replication slot (active, wal_status, WAL retained in bytes, safe_wal_size). On a standby, the WAL receiver (status, sender, age of its last message in ms, latest end LSN), received against replayed LSN, replay delay in ms, whether receive equals replay, and whether replay is paused (the pause state needs PostgreSQL 14). The current WAL position is read once. Replicas and slots are cut to maxItems in the query. Read-only.
+    script: scripts/replication_status.py
+    tags: [replication]
+    readOnly: true
+    permissions:
+      - { role: pg_read_all_stats }                                 # without it pg_stat_replication and pg_stat_wal_receiver hide their columns (the run is partial); pg_monitor includes it
+      - { function: pg_catalog.pg_is_in_recovery, privilege: EXECUTE }  # primary or standby
+      - { function: pg_catalog.pg_has_role, privilege: EXECUTE }        # decides whether the views are full
+      - { function: pg_catalog.pg_current_wal_lsn, privilege: EXECUTE }
+      - { function: pg_catalog.pg_wal_lsn_diff, privilege: EXECUTE }
+      - { function: pg_catalog.pg_last_wal_receive_lsn, privilege: EXECUTE }
+      - { function: pg_catalog.pg_last_wal_replay_lsn, privilege: EXECUTE }
+      - { function: pg_catalog.pg_last_xact_replay_timestamp, privilege: EXECUTE }
+      - { function: pg_catalog.pg_is_wal_replay_paused, privilege: EXECUTE }
+      - { function: pg_catalog.pg_get_wal_replay_pause_state, privilege: EXECUTE }
+    outputs:
+      replication: { schema: ./schemas/replication.v1.json, description: "role primary or standby; on a primary the replicas and slots (cut to maxItems), on a standby the receiver and replay position; visibility full or partial" }

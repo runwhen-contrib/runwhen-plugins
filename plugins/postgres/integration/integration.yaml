@@ -1,0 +1,70 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types live beside it in types.yaml.
+apiVersion: runwhen.com/integration/v1
+platform: postgres
+title: PostgreSQL
+docs: https://docs.runwhen.com/integrations/postgres
+
+# --- what tools read (D38, D45) ---------------------------------------------
+# libpq's own environment: psql and every libpq client read these variables, so a task
+# script never handles the password (it never reads or prints PGPASSWORD). Env only: an auth
+# plan materializes either env or one file (auth-plan.schema.json, maxProperties 1). A custom CA
+# bundle (PGSSLROOTCERT, a file) comes later, with its own credential type or method.
+credentialTypes:
+  postgres/libpq:
+    title: libpq connection
+    description: "The libpq environment a client reads: PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE and PGSSLMODE."
+    materialize:
+      env: [PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGSSLMODE]
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Each method is self-contained: it accepts its own reference kinds, has its own
+# inputs, and produces the type. No method depends on another connection.
+authMethods:
+  password:
+    title: Password
+    description: "A role and its password, from a Secret, Vault or a file; the reference supplies the password, the inputs supply the rest of the libpq environment. sslmode defaults to require."
+    produces: postgres/libpq
+    accepts: [k8s-secret, vault, file]       # credential-reference kinds the runner can materialize
+    script: auth/password.py                 # relative to this file: integration/auth/ (F7); the reference key is password, PGPASSWORD or value
+    inputs:
+      host: { type: string, required: true, description: "Server host name or address (PGHOST)" }
+      port: { type: integer, default: 5432, min: 1, max: 65535, description: "Server port (PGPORT)" }
+      user: { type: string, required: true, description: "Role to connect as (PGUSER)" }
+      database: { type: string, default: postgres, description: "Database to connect to (PGDATABASE)" }
+      sslmode: { type: enum, enum: [disable, allow, prefer, require, verify-ca, verify-full], default: require, description: "libpq sslmode (PGSSLMODE)" }
+  # IAM and cloud methods (RDS IAM auth, Cloud SQL, Azure AD) are script methods too and are
+  # added with the cloud plugins' credentials, after v0.
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/pg-permission.json       # one permission = a role, a database privilege or a function privilege (D68)
+
+# --- how the platform plugs this integration in -------------------------------
+entryPoints:
+  discovery: { task: pg-base/discover, schedule: "*/15 * * * *" }
+  permissionCheck: { task: pg-base/check-permissions }
+
+# --- "that looks like one of mine" (D54) -----------------------------------
+# A Kubernetes Service that exposes port 5432 and is not headless. `when` is OR across
+# matchers; one matcher ANDs its doc equalities (key = JMESPath over the Service's doc), so the
+# port test and the headless test are in the same matcher. Labels may narrow this, never stand
+# alone: a postgres label on a Service that does not expose 5432 is not an instance to connect to.
+# pgbouncer and pgpool on 5432 are proposed too. That is safe: every query runs in a read-only
+# transaction with a local statement_timeout and nothing is set on the session (pg_base/pg.py),
+# and a proposal is only a proposal until a user confirms it with a credential.
+# propose.name is `namespace-name`: the template variables are name, namespace, labels.<k> and
+# doc.<jmespath> (CONTRACTS F12), with no cluster variable, so two clusters with the same
+# namespace and Service name propose the same name.
+recognizers:
+  - id: kubernetes-service
+    description: A Kubernetes Service (not headless) that exposes port 5432.
+    from: kubernetes/service
+    when:
+      - doc:
+          "spec.ports[?port==`5432`].port | [0]": 5432
+          "spec.clusterIP != 'None'": true
+    propose:
+      name: "{{namespace}}-{{name}}"
+      identity: { host: "{{name}}.{{namespace}}.svc", port: 5432 }
+      authMethod: password
+      inputs: { host: "{{name}}.{{namespace}}.svc", port: 5432 }

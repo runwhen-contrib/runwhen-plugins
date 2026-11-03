@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pg_locks counted by mode and granted",
+  "type": "object",
+  "properties": {
+    "total": {
+      "type": "integer",
+      "description": "Rows in pg_locks, other than this task's own backend"
+    },
+    "granted": {
+      "type": "integer",
+      "description": "Granted lock rows"
+    },
+    "waiting": {
+      "type": "integer",
+      "description": "Ungranted lock rows"
+    },
+    "waitingBackends": {
+      "type": "integer",
+      "description": "Distinct backends with an ungranted lock"
+    },
+    "longestWaitMs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Longest wait of an ungranted lock in milliseconds; null when nothing waits, and always null on PostgreSQL 13 (no pg_locks.waitstart)"
+    },
+    "waitTimesUnavailable": {
+      "type": "boolean",
+      "description": "true on PostgreSQL 13, which has no pg_locks.waitstart: longestWaitMs is null whatever is waiting"
+    },
+    "byMode": {
+      "type": "object",
+      "description": "One entry per mode and granted",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "description": "Lock mode, e.g. RowExclusiveLock"
+              },
+              "granted": {
+                "type": "boolean",
+                "description": "true for granted locks"
+              },
+              "count": {
+                "type": "integer",
+                "description": "Lock rows with this mode and granted"
+              }
+            },
+            "required": [
+              "mode",
+              "granted",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "description": "Entries found before the maxItems cap"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Entries left out of items by maxItems"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "true when items was cut at maxItems"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted",
+        "truncated"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "total",
+    "granted",
+    "waiting",
+    "waitingBackends",
+    "longestWaitMs",
+    "waitTimesUnavailable",
+    "byMode"
+  ],
+  "additionalProperties": false
+}

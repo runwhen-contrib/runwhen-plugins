@@ -1,0 +1,7 @@
+# Postgres = instance -> database (D51): a type exists only if a skill targets it. Nothing
+# deeper: tables, schemas and roles are not resources (51: "Not tables").
+types:
+  # canonicalKey: pg_control_system().system_identifier, stable across host renames and
+  # the same on a physical standby and its primary (see pg-base/discover).
+  instance: { root: true, rootKey: [host, port], canonicalKey: systemIdentifier, plural: instances }
+  database: { parent: instance, plural: databases }
