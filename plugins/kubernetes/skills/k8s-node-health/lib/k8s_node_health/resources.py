@@ -109,33 +109,42 @@ def _amount(container, section, resource):
 def effective(pod, section, resource):
     """(pod total, long-running containers without a value) for `requests` or `limits`.
 
-    Effective rule: the larger of the app containers plus all native sidecars
-    (init containers with restartPolicy Always), and the peak while the init
-    containers run (each regular init container plus the sidecars started
-    before it), plus spec.overhead. Containers that set nothing add 0 and are
-    counted so a caller knows the sum understates.
+    Pod-level `spec.resources` (1.34+), when it sets the value, is the pod
+    total and nothing is counted missing. Otherwise the effective rule: the
+    larger of the app containers plus all native sidecars (init containers
+    with restartPolicy Always), and the peak while the init containers run
+    (each regular init container plus the sidecars started before it). Either
+    way `spec.overhead` is added to requests, and to limits only when the limit
+    total is above zero (a pod with no limit stays unlimited). Containers that
+    set nothing add 0 and are counted so a caller knows the sum understates.
     """
     spec = pod.get("spec") or {}
     zero = Fraction(0)
+    pod_level = parse_quantity((((spec.get("resources") or {}).get(section)) or {}).get(resource))
     missing = 0
-    app = zero
-    for c in spec.get("containers") or []:
-        a = _amount(c, section, resource)
-        missing += a is None
-        app += a or zero
-    sidecars = zero
-    peak = zero
-    for c in spec.get("initContainers") or []:
-        a = _amount(c, section, resource)
-        if c.get("restartPolicy") == "Always":
+    if pod_level is not None:
+        total = pod_level
+    else:
+        app = zero
+        for c in spec.get("containers") or []:
+            a = _amount(c, section, resource)
             missing += a is None
-            sidecars += a or zero
-            peak = max(peak, sidecars)
-        else:
-            peak = max(peak, sidecars + (a or zero))
-    total = max(app + sidecars, peak)
-    overhead = parse_quantity(((spec.get("overhead") or {}).get(resource)))
-    return total + (overhead or zero), missing
+            app += a or zero
+        sidecars = zero
+        peak = zero
+        for c in spec.get("initContainers") or []:
+            a = _amount(c, section, resource)
+            if c.get("restartPolicy") == "Always":
+                missing += a is None
+                sidecars += a or zero
+                peak = max(peak, sidecars)
+            else:
+                peak = max(peak, sidecars + (a or zero))
+        total = max(app + sidecars, peak)
+    overhead = parse_quantity(((spec.get("overhead") or {}).get(resource))) or zero
+    if section == "requests" or total > 0:
+        total += overhead
+    return total, missing
 
 
 def _is_active(pod):
@@ -155,18 +164,73 @@ def _block(totals, alloc, convert, unit):
     return out
 
 
-def overcommit(nodes, pods, max_items):
+SECTIONS = ("requests", "limits")
+RESOURCES = ("cpu", "memory")
+TOP_PODS = 5
+
+
+def _pod_amounts(pod):
+    """({(section, resource): total}, {(section, resource): containers missing a value}) for a pod."""
+    totals, missing = {}, {}
+    for section in SECTIONS:
+        for resource in RESOURCES:
+            totals[section, resource], missing[section, resource] = effective(
+                pod, section, resource
+            )
+    return totals, missing
+
+
+def _share(totals, section, alloc):
+    """A pod's cpu and memory for one section as amounts and percent of the node's allocatable."""
+    cpu = number(totals[section, "cpu"] * 1000)
+    mem = int(round(totals[section, "memory"]))
+    return {
+        "cpuMillicores": cpu,
+        "cpuPercent": percent(cpu, alloc["cpuMillicores"]),
+        "memoryBytes": mem,
+        "memoryPercent": percent(mem, alloc["memoryBytes"]),
+    }
+
+
+def _rank(share):
+    pcts = [p for p in (share["cpuPercent"], share["memoryPercent"]) if p is not None]
+    return max(pcts) if pcts else 0
+
+
+def _above(share, alloc, threshold):
+    """Whether the pod's cpu or memory exceeds `threshold` percent of the node's allocatable."""
+    flags = []
+    for amount, total in (
+        (share["cpuMillicores"], alloc["cpuMillicores"]),
+        (share["memoryBytes"], alloc["memoryBytes"]),
+    ):
+        flags.append(None if not total else amount * 100 > total * threshold)
+    return _any(*flags) if any(f is not None for f in flags) else None
+
+
+def _top_pods(entries, section, count=TOP_PODS):
+    """The `count` pods with the largest `section` share, leaving out pods that set none."""
+    chosen = [
+        e for e in entries if e[section]["cpuMillicores"] > 0 or e[section]["memoryBytes"] > 0
+    ]
+    chosen.sort(key=lambda e: (-_rank(e[section]), e["namespace"], e["name"]))
+    return chosen[:count]
+
+
+def overcommit(nodes, pods, max_items, pod_limit_percent=90):
     """Per node: summed requests and limits of its non-terminated pods against allocatable.
 
-    Returns (rows capped at max_items, inspected). Pods with no node yet
-    (Pending, unscheduled) and Succeeded/Failed pods are not counted; pods on
-    a node that is not in `nodes` are counted in inspected.podsOnOtherNodes.
+    Returns (rows capped at max_items, inspected). Succeeded/Failed pods and
+    pods with no node yet (Pending, unscheduled) are not counted; pods on a
+    node that is not in `nodes` are counted in inspected.podsOnOtherNodes.
+    Each row also has the five pods with the largest limits and requests, and
+    whether the largest single pod's limits pass `pod_limit_percent` of the
+    node (the classic per-pod assertion).
     """
     by_node = {n["metadata"]["name"]: [] for n in nodes}
-    unscheduled = other = terminated = 0
+    unscheduled = other = 0
     for pod in pods:
         if not _is_active(pod):
-            terminated += 1
             continue
         node_name = (pod.get("spec") or {}).get("nodeName")
         if not node_name:
@@ -179,14 +243,25 @@ def overcommit(nodes, pods, max_items):
     for node in nodes:
         name = node["metadata"]["name"]
         alloc = allocatable(node)
-        cpu = {"requests": [Fraction(0), 0], "limits": [Fraction(0), 0]}
-        mem = {"requests": [Fraction(0), 0], "limits": [Fraction(0), 0]}
+        cpu = {s: [Fraction(0), 0] for s in SECTIONS}
+        mem = {s: [Fraction(0), 0] for s in SECTIONS}
+        entries = []
         for pod in by_node[name]:
-            for totals, resource in ((cpu, "cpu"), (mem, "memory")):
-                for section in ("requests", "limits"):
-                    t, missing = effective(pod, section, resource)
-                    totals[section][0] += t
-                    totals[section][1] += missing
+            totals, missing = _pod_amounts(pod)
+            for sums, resource in ((cpu, "cpu"), (mem, "memory")):
+                for section in SECTIONS:
+                    sums[section][0] += totals[section, resource]
+                    sums[section][1] += missing[section, resource]
+            limits = _share(totals, "limits", alloc)
+            entries.append(
+                {
+                    "namespace": pod["metadata"].get("namespace"),
+                    "name": pod["metadata"]["name"],
+                    "requests": _share(totals, "requests", alloc),
+                    "limits": limits,
+                    "podAboveLimitPercent": _above(limits, alloc, pod_limit_percent),
+                }
+            )
         cpu_block = _block(
             {k: (v[0] * 1000, v[1]) for k, v in cpu.items()},
             alloc["cpuMillicores"],
@@ -194,6 +269,9 @@ def overcommit(nodes, pods, max_items):
             "Millicores",
         )
         mem_block = _block(mem, alloc["memoryBytes"], lambda q: int(round(q)), "Bytes")
+        limited = [e for e in entries if _top_pods([e], "limits")]
+        largest = max((_rank(e["limits"]) for e in limited), default=None)
+        flags = [e["podAboveLimitPercent"] for e in limited]
         rows.append(
             {
                 "name": name,
@@ -211,14 +289,24 @@ def overcommit(nodes, pods, max_items):
                 "limitsAboveAllocatable": _any(
                     cpu_block["limitsAboveAllocatable"], mem_block["limitsAboveAllocatable"]
                 ),
+                "largestPodLimitPercent": largest,
+                "podAboveLimitPercent": _any(*flags) if flags else None,
+                "topPodsByLimits": _top_pods(entries, "limits"),
+                "topPodsByRequests": _top_pods(entries, "requests"),
             }
         )
-    rows.sort(key=lambda r: (r["limitsAboveAllocatable"] is not True, r["name"]))
+    rows.sort(
+        key=lambda r: (
+            r["limitsAboveAllocatable"] is not True,
+            r["requestsAboveAllocatable"] is not True,
+            r["podAboveLimitPercent"] is not True,
+            r["name"],
+        )
+    )
     inspected = {
         "nodes": len(rows),
         "pods": sum(r["pods"] for r in rows),
         "podsUnscheduled": unscheduled,
-        "podsTerminated": terminated,
         "podsOnOtherNodes": other,
     }
     return cap(rows, max_items), inspected

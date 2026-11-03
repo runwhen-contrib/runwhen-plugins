@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Per node: summed pod requests and limits against allocatable for CPU and memory",
+  "title": "Per node: summed pod requests and limits against allocatable for CPU and memory, with the largest pods",
   "type": "array",
   "items": {
     "type": "object",
@@ -166,6 +166,210 @@
           "boolean",
           "null"
         ]
+      },
+      "largestPodLimitPercent": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "podAboveLimitPercent": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "topPodsByLimits": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpuMillicores": {
+                  "type": [
+                    "number"
+                  ]
+                },
+                "cpuPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memoryBytes": {
+                  "type": "integer"
+                },
+                "memoryPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpuMillicores",
+                "cpuPercent",
+                "memoryBytes",
+                "memoryPercent"
+              ],
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "cpuMillicores": {
+                  "type": [
+                    "number"
+                  ]
+                },
+                "cpuPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memoryBytes": {
+                  "type": "integer"
+                },
+                "memoryPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpuMillicores",
+                "cpuPercent",
+                "memoryBytes",
+                "memoryPercent"
+              ],
+              "additionalProperties": false
+            },
+            "podAboveLimitPercent": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "namespace",
+            "name",
+            "requests",
+            "limits",
+            "podAboveLimitPercent"
+          ],
+          "additionalProperties": false
+        },
+        "maxItems": 5
+      },
+      "topPodsByRequests": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpuMillicores": {
+                  "type": [
+                    "number"
+                  ]
+                },
+                "cpuPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memoryBytes": {
+                  "type": "integer"
+                },
+                "memoryPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpuMillicores",
+                "cpuPercent",
+                "memoryBytes",
+                "memoryPercent"
+              ],
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "cpuMillicores": {
+                  "type": [
+                    "number"
+                  ]
+                },
+                "cpuPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "memoryBytes": {
+                  "type": "integer"
+                },
+                "memoryPercent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpuMillicores",
+                "cpuPercent",
+                "memoryBytes",
+                "memoryPercent"
+              ],
+              "additionalProperties": false
+            },
+            "podAboveLimitPercent": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "namespace",
+            "name",
+            "requests",
+            "limits",
+            "podAboveLimitPercent"
+          ],
+          "additionalProperties": false
+        },
+        "maxItems": 5
       }
     },
     "required": [
@@ -176,7 +380,11 @@
       "cpu",
       "memory",
       "requestsAboveAllocatable",
-      "limitsAboveAllocatable"
+      "limitsAboveAllocatable",
+      "largestPodLimitPercent",
+      "podAboveLimitPercent",
+      "topPodsByLimits",
+      "topPodsByRequests"
     ],
     "additionalProperties": false
   }

@@ -5,6 +5,7 @@ from k8s_node_health.k8s import kubectl_json, kubectl_json_scoped
 
 TYPES = ("kubernetes/cluster", "kubernetes/node")
 _PLURALS = {"clusters": "kubernetes/cluster", "nodes": "kubernetes/node"}
+ACTIVE_PODS = "status.phase!=Succeeded,status.phase!=Failed"
 EVENTS_NAMESPACE = "default"  # where the control plane and kubelets write Node events
 
 
@@ -34,12 +35,14 @@ def load_nodes(ctx):
 
 
 def load_pods(ctx):
-    """Pods in every namespace, only those bound to the node for a node target."""
+    """Non-terminated pods in every namespace, only those bound to the node for a node target.
+
+    Succeeded and Failed pods are filtered server-side: a long-lived cluster
+    keeps thousands of them and they hold no resources.
+    """
     name = node_name(ctx)
-    args = ["get", "pods", "-A"]
-    if name:
-        args += ["--field-selector", f"spec.nodeName={name}"]
-    return kubectl_json(ctx, *args)["items"]
+    selector = ACTIVE_PODS + (f",spec.nodeName={name}" if name else "")
+    return kubectl_json(ctx, "get", "pods", "-A", "--field-selector", selector)["items"]
 
 
 def load_node_events(ctx):
@@ -65,6 +68,9 @@ def load_node_metrics(ctx):
     try:
         return kubectl_json(ctx, "get", "nodes.metrics.k8s.io")["items"]
     except RwError as exc:
-        if exc.code == "dependency":
+        text = exc.message.lower()
+        if exc.code == "dependency" and (
+            "the server doesn't have a resource type" in text or "unable to handle" in text
+        ):
             raise RwError("dependency", "metrics.k8s.io not available") from None
         raise

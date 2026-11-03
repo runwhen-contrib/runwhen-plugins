@@ -113,7 +113,9 @@ class FakeCtx:
         self.calls = []
         self.errors = []
         self.resource = SimpleNamespace(type=rtype, name=name, namespace=None)
-        self.settings = SimpleNamespace(max_items=200, utilization_percent=90, **settings)
+        self.settings = SimpleNamespace(
+            max_items=200, utilization_percent=90, pod_limit_percent=90, **settings
+        )
 
     def run(self, argv):
         self.calls.append(argv)
@@ -466,7 +468,7 @@ def test_captured_pods_sum_requests_and_limits_for_active_pods_only():
     rows, inspected = r.overcommit(load("nodes")["items"], pods, 200)
     (row,) = rows
     active = [p for p in pods if p["status"]["phase"] not in ("Succeeded", "Failed")]
-    assert inspected["podsTerminated"] == len(pods) - len(active) == 2  # the two Failed job pods
+    assert len(pods) - len(active) == 2  # the two Failed job pods are not counted
     assert row["pods"] == len(active) and inspected["pods"] == len(active)
     want_cpu = want_mem = want_lim_mem = 0
     for p in active:
@@ -572,7 +574,6 @@ def test_unscheduled_terminated_and_other_node_pods_are_not_counted():
         "nodes": 1,
         "pods": 2,
         "podsUnscheduled": 1,
-        "podsTerminated": 2,
         "podsOnOtherNodes": 1,
     }
 
@@ -650,8 +651,8 @@ def test_script_overcommit_node_target_filters_pods_server_side():
     )
     out = script("overcommit").main(ctx)
     pods_call = [c for c in ctx.calls if "pods" in c][0]
-    assert f"spec.nodeName={NODE}" in pods_call and "-A" in pods_call
-    assert out["nodes"][0]["pods"] == 25 and out["inspected"]["podsTerminated"] == 2
+    assert any(f"spec.nodeName={NODE}" in a for a in pods_call) and "-A" in pods_call
+    assert out["nodes"][0]["pods"] == 25
 
 
 def test_script_node_restarts_events_forbidden_still_returns_transitions():
@@ -690,7 +691,7 @@ def test_script_node_restarts_node_target_selects_the_node_events():
         name=NODE,
     )
     out = script("node_restarts").main(ctx, since="2h")
-    assert out["events"][0]["node"] == NODE and out["events"][0]["total"] == 3
+    assert out["events"]["nodes"][0]["node"] == NODE and out["events"]["nodes"][0]["total"] == 3
     assert [t["node"] for t in out["transitions"]] == [NODE]
     events_call = [c for c in ctx.calls if "events" in c][0]
     assert f"involvedObject.kind=Node,involvedObject.name={NODE}" in events_call
@@ -786,3 +787,361 @@ def test_outputs_validate_against_schemas():
     check("node-restarts", script("node_restarts").main(FakeCtx(routes), since="2h"))
     check("node-utilization", script("node_utilization").main(FakeCtx(routes)))
     check("overcommit", script("overcommit").main(FakeCtx(routes)))
+
+
+# ================================================== review fixes ==========
+
+
+def labelled(name, **labels):
+    doc = node(name=name)
+    doc["metadata"]["labels"] = labels
+    return doc
+
+
+# --- 1. removal reasons, capacity, eventsExamined / oldestEventSeen ---------
+
+
+def test_removal_and_stop_reasons_show_a_node_that_came_and_went():
+    reasons = [
+        "RemovingNode",
+        "DeletingNode",
+        "NodeShutdown",
+        "TerminatingNode",
+        "Shutdown",
+        "Removed",
+        "Preempting",
+        "PreemptScheduled",
+        "TerminationEvent",
+        "TerminationGracePeriod",
+    ]
+    events = [event(x, name="gone", last="2026-11-03T18:30:00Z") for x in reasons]
+    events += [
+        event("TerminatingEvictedPod", name="gone"),
+        event("NodeHasSufficientPID", name="gone"),
+    ]
+    (row,) = n.node_events(events, NOW, "1h", 200)
+    assert {x["reason"] for x in row["reasons"]} == set(reasons)
+    assert n.is_restart_reason("NodeNotReady") and n.is_restart_reason("Preemption")
+    assert not n.is_restart_reason("TerminatingEvictedPod")
+
+
+@pytest.mark.parametrize(
+    "labels, want",
+    [
+        ({"karpenter.sh/capacity-type": "spot"}, "spot"),
+        ({"karpenter.sh/capacity-type": "on-demand"}, "on-demand"),
+        ({"eks.amazonaws.com/capacityType": "SPOT"}, "spot"),
+        ({"eks.amazonaws.com/capacityType": "ON_DEMAND"}, "on-demand"),
+        ({"cloud.google.com/gke-preemptible": "true"}, "preemptible"),
+        ({"cloud.google.com/gke-preemptible": "false"}, None),
+        ({"cloud.google.com/gke-spot": "true"}, "spot"),
+        ({"kubernetes.azure.com/scalesetpriority": "spot"}, "spot"),
+        ({"kubernetes.azure.com/scalesetpriority": "regular"}, "on-demand"),
+        ({"kubernetes.io/os": "linux"}, None),
+    ],
+)
+def test_capacity_type_from_provider_labels(labels, want):
+    assert n.node_view(labelled("x", **labels), NOW)["capacity"] == want
+
+
+def test_events_output_reports_examined_and_oldest_event_seen():
+    events = [
+        event("NodeNotReady", name="a", last="2026-11-03T18:35:00Z"),
+        event(
+            "NodeHasSufficientMemory", name="a", last="2026-11-03T17:50:00Z"
+        ),  # not a restart reason
+        event("RegisteredNode", name="b", last="2026-11-03T16:00:00Z"),  # outside the window
+    ]
+    out = n.events_output(events, NOW, "1h", 200)
+    assert out["eventsExamined"] == 3 and out["oldestEventSeen"] == "2026-11-03T16:00:00Z"
+    assert [r["node"] for r in out["nodes"]] == ["a"]
+    empty = n.events_output([], NOW, "1h", 200)
+    assert empty == {"eventsExamined": 0, "oldestEventSeen": None, "nodes": []}
+
+
+# --- 7/8. other conditions and sort order ----------------------------------
+
+
+def test_other_condition_types_not_false_are_reported():
+    doc = node()
+    set_condition(doc, "KernelDeadlock", "True", "AskedToReboot", "kernel is stuck")
+    set_condition(doc, "FrequentKubeletRestart", "False", "NoFrequentKubeletRestart")
+    set_condition(doc, "CorruptDockerOverlay2", "Unknown", "Unknown", "m" * 3000)
+    view = n.node_view(doc, NOW)
+    other = {c["type"]: c for c in view["otherConditions"]}
+    assert set(other) == {"KernelDeadlock", "CorruptDockerOverlay2"}
+    assert other["KernelDeadlock"]["reason"] == "AskedToReboot"
+    assert len(other["CorruptDockerOverlay2"]["message"]) == 1024
+    assert other["CorruptDockerOverlay2"]["truncated"] is True
+    assert view["conditions"] == []  # the four standard ones stay in `conditions`
+    for i in range(80):
+        set_condition(doc, f"Custom{i}", "True")
+    assert len(n.node_view(doc, NOW)["otherConditions"]) == 50
+    assert n.node_view(node(), NOW)["otherConditions"] == []
+
+
+def test_node_conditions_sort_puts_interesting_nodes_first_so_the_cap_keeps_them():
+    healthy = node(name="a-healthy")
+    cordoned = node(name="b-cordoned")
+    cordoned["spec"]["unschedulable"] = True
+    pressure = node(name="c-pressure")
+    set_condition(pressure, "DiskPressure", "True")
+    custom = node(name="d-custom")
+    set_condition(custom, "KernelDeadlock", "True")
+    down = node(name="e-down")
+    set_condition(down, "Ready", "False")
+    views, counts = n.node_conditions([healthy, cordoned, custom, pressure, down], NOW, 200)
+    assert [v["name"] for v in views] == [
+        "e-down",
+        "c-pressure",
+        "d-custom",
+        "b-cordoned",
+        "a-healthy",
+    ]
+    assert counts["withConditions"] == 2
+    cut, _ = n.node_conditions([healthy, cordoned, custom, pressure, down], NOW, 2)
+    assert [v["name"] for v in cut] == ["e-down", "c-pressure"]
+
+
+# --- 2. per-pod top lists ---------------------------------------------------
+
+
+def test_top_pods_by_limits_and_requests_with_percent_and_largest_pod():
+    pods = [
+        pod("small", containers=[({"cpu": "100m", "memory": "64Mi"}, {"cpu": "200m"})]),
+        pod("big", containers=[({"cpu": "1"}, {"cpu": "3800m", "memory": "1Gi"})]),
+        pod("mem", containers=[({"memory": "2Gi"}, {})]),
+        pod("none", containers=[({}, {})]),
+    ]
+    (row,), _ = r.overcommit([node()], pods, 200, pod_limit_percent=90)
+    by_limits = row["topPodsByLimits"]
+    assert [p["name"] for p in by_limits] == ["big", "small"]  # pods with no limit are left out
+    big = by_limits[0]
+    assert big["namespace"] == "default"
+    assert big["limits"]["cpuMillicores"] == 3800 and big["limits"]["cpuPercent"] == 95.0
+    assert big["limits"]["memoryBytes"] == 2**30
+    assert big["podAboveLimitPercent"] is True
+    assert by_limits[1]["podAboveLimitPercent"] is False
+    assert row["largestPodLimitPercent"] == 95.0 and row["podAboveLimitPercent"] is True
+    by_requests = row["topPodsByRequests"]
+    assert [p["name"] for p in by_requests][:2] == [
+        "mem",
+        "big",
+    ]  # 2Gi is 52% of memory; 1 core 25%
+    assert by_requests[0]["requests"]["memoryPercent"] == pytest.approx(52.3, abs=0.1)
+    assert "none" not in [p["name"] for p in by_requests]
+
+
+def test_top_pods_are_capped_at_five_and_the_threshold_is_a_setting():
+    pods = [pod(f"p{i}", containers=[({}, {"cpu": f"{(i + 1) * 100}m"})]) for i in range(8)]
+    (row,), _ = r.overcommit([node()], pods, 200, pod_limit_percent=90)
+    assert [p["name"] for p in row["topPodsByLimits"]] == ["p7", "p6", "p5", "p4", "p3"]
+    assert row["podAboveLimitPercent"] is False and row["largestPodLimitPercent"] == 20.0
+    (low,), _ = r.overcommit([node()], pods, 200, pod_limit_percent=15)
+    assert low["podAboveLimitPercent"] is True
+    assert [p["podAboveLimitPercent"] for p in low["topPodsByLimits"]][:2] == [True, True]
+    assert [p["podAboveLimitPercent"] for p in low["topPodsByLimits"]][-1] is False
+
+
+def test_node_with_no_limits_has_null_largest_pod_percent():
+    (row,), _ = r.overcommit([node()], [pod("p", containers=[({"cpu": "1"}, {})])], 200)
+    assert row["largestPodLimitPercent"] is None and row["podAboveLimitPercent"] is None
+    assert row["topPodsByLimits"] == []
+
+
+def test_overcommit_sort_keys_keep_interesting_nodes_inside_the_cap():
+    a_ok = node(name="a-ok")
+    b_pod = node(name="b-pod")  # no sum above allocatable, but one pod is above 90%
+    c_req = node(name="c-req")
+    d_lim = node(name="d-lim")
+    pods = [
+        pod("one", node_name="b-pod", containers=[({}, {"cpu": "3800m"})]),
+        pod("req", node_name="c-req", containers=[({"cpu": "5"}, {})]),
+        pod("lim", node_name="d-lim", containers=[({}, {"cpu": "2"}), ({}, {"cpu": "3"})]),
+    ]
+    rows, _ = r.overcommit([a_ok, b_pod, c_req, d_lim], pods, 200)
+    assert [x["name"] for x in rows] == ["d-lim", "c-req", "b-pod", "a-ok"]
+    assert [x["name"] for x in r.overcommit([a_ok, b_pod, c_req, d_lim], pods, 2)[0]] == [
+        "d-lim",
+        "c-req",
+    ]
+
+
+# --- 3. overhead and limits -------------------------------------------------
+
+
+def test_overhead_is_added_to_limits_only_when_the_limit_total_is_positive():
+    with_limit = pod(
+        "a", containers=[({}, {"cpu": "1"})], overhead={"cpu": "250m", "memory": "64Mi"}
+    )
+    without = pod("b", containers=[({"cpu": "1"}, {})], overhead={"cpu": "250m", "memory": "64Mi"})
+    assert r.effective(with_limit, "limits", "cpu")[0] * 1000 == 1250
+    assert r.effective(with_limit, "limits", "memory")[0] == 0  # no memory limit: stays 0
+    assert r.effective(without, "limits", "cpu")[0] == 0
+    assert r.effective(without, "requests", "cpu")[0] * 1000 == 1250  # requests always take it
+    (row,), _ = r.overcommit([node()], [without], 200)
+    assert row["cpu"]["limitsMillicores"] == 0 and row["memory"]["limitsBytes"] == 0
+
+
+# --- 4. pod-level resources (1.34+) ----------------------------------------
+
+
+def test_pod_level_resources_replace_the_container_sum():
+    p = pod("p", containers=[({"cpu": "100m"}, {"cpu": "200m"}), ({}, {})])
+    p["spec"]["resources"] = {"requests": {"cpu": "2"}, "limits": {"cpu": "4", "memory": "1Gi"}}
+    total, missing = r.effective(p, "requests", "cpu")
+    assert total * 1000 == 2000 and missing == 0  # not 100m, and no container counted missing
+    total, missing = r.effective(p, "limits", "cpu")
+    assert total * 1000 == 4000 and missing == 0
+    # memory requests are not set at pod level: containers set none either, both counted.
+    total, missing = r.effective(p, "requests", "memory")
+    assert total == 0 and missing == 2
+    # memory limit is set at pod level only: containers set none, not counted missing.
+    total, missing = r.effective(p, "limits", "memory")
+    assert total == 2**30 and missing == 0
+
+
+def test_pod_level_request_still_takes_overhead():
+    p = pod("p", containers=[({}, {})], overhead={"cpu": "100m"})
+    p["spec"]["resources"] = {"requests": {"cpu": "1"}}
+    assert r.effective(p, "requests", "cpu")[0] * 1000 == 1100
+
+
+# --- 5. load_pods server-side selector -------------------------------------
+
+
+def test_load_pods_filters_terminated_pods_server_side():
+    ctx = FakeCtx([(("get", "pods"), ok(load("pods")))])
+    fetch.load_pods(ctx)
+    (call,) = ctx.calls
+    selector = call[call.index("--field-selector") + 1]
+    assert selector == "status.phase!=Succeeded,status.phase!=Failed"
+    one = FakeCtx([(("get", "pods"), ok(load("pods")))], rtype="kubernetes/node", name=NODE)
+    fetch.load_pods(one)
+    selector = one.calls[0][one.calls[0].index("--field-selector") + 1]
+    assert selector == f"status.phase!=Succeeded,status.phase!=Failed,spec.nodeName={NODE}"
+
+
+def test_overcommit_task_has_a_longer_timeout_and_no_terminated_count():
+    import yaml
+
+    tasks = {t["name"]: t for t in yaml.safe_load((SKILL / "tasks.yaml").read_text())["tasks"]}
+    assert tasks["overcommit"]["timeout"] == "120s"
+    assert (
+        "podsTerminated"
+        not in json.loads((SKILL / "schemas" / "overcommit-inspected.v1.json").read_text())[
+            "properties"
+        ]
+    )
+    settings = yaml.safe_load((SKILL / "tasks.yaml").read_text())["settings"]
+    assert settings["podLimitPercent"]["default"] == 90
+
+
+# --- 6. RBAC subset and forbidden pods -------------------------------------
+
+VALUE_FLAGS = {"-n", "--namespace", "-o", "--field-selector", "-l", "--selector", "--context"}
+RESOURCES = {
+    "nodes": ("", "nodes"),
+    "pods": ("", "pods"),
+    "events": ("", "events"),
+    "nodes.metrics.k8s.io": ("metrics.k8s.io", "nodes"),
+}
+
+
+def rbac_needs(argv):
+    """The (apiGroup, resource, verb) triple one kubectl argv needs.
+
+    get <kind> <name> -> get; get <kind> (no name, with or without --field-selector / -l) -> list.
+    Raises on anything else, so a skill that issues a new verb has to extend this mapping.
+    """
+    flags, positional, it = {}, [], iter(argv[1:])
+    for a in it:
+        if a in VALUE_FLAGS:
+            flags[a] = next(it)
+        elif not a.startswith("-"):
+            positional.append(a)
+    if positional[0] != "get":
+        raise AssertionError(f"no RBAC mapping for kubectl {positional[0]}: {argv}")
+    group, plural = RESOURCES[positional[1]]
+    named_object = len(positional) > 2 and "-l" not in flags and "--selector" not in flags
+    return {(group, plural, "get" if named_object else "list")}
+
+
+def declared(task):
+    return {
+        (g, r, v)
+        for rule in task["permissions"]
+        for g in rule["apiGroups"]
+        for r in rule["resources"]
+        for v in rule["verbs"]
+    }
+
+
+def tasks_by_name():
+    import yaml
+
+    return {t["name"]: t for t in yaml.safe_load((SKILL / "tasks.yaml").read_text())["tasks"]}
+
+
+@pytest.mark.parametrize(
+    "task", ["node-conditions", "node-restarts", "node-utilization", "overcommit"]
+)
+def test_declared_permissions_are_exactly_what_the_script_calls(task):
+    needed = set()
+    for rtype, name in (("kubernetes/cluster", "rw-plugins"), ("kubernetes/node", NODE)):
+        one = {"items": [load("nodes")["items"][0]]}
+        routes = [
+            (("get", "nodes.metrics.k8s.io"), ok(load("node_metrics"))),
+            (("get", "nodes", NODE), ok(one["items"][0])),
+            (("get", "nodes"), ok(one)),
+            (("get", "pods"), ok(load("pods"))),
+            (("get", "events"), ok(load("node_events"))),
+        ]
+        ctx = FakeCtx(routes, rtype=rtype, name=name)
+        script(task.replace("-", "_")).main(ctx)
+        for argv in ctx.calls:
+            needed |= rbac_needs(argv)
+    assert needed == declared(tasks_by_name()[task]), task
+
+
+def test_rbac_needs_maps_the_verbs():
+    assert rbac_needs(["kubectl", "get", "nodes", "-o", "json"]) == {("", "nodes", "list")}
+    assert rbac_needs(["kubectl", "get", "nodes", "n1", "-o", "json"]) == {("", "nodes", "get")}
+    assert rbac_needs(
+        ["kubectl", "get", "pods", "-A", "--field-selector", "spec.nodeName=n1", "-o", "json"]
+    ) == {("", "pods", "list")}
+    assert rbac_needs(["kubectl", "get", "nodes.metrics.k8s.io", "-o", "json"]) == {
+        ("metrics.k8s.io", "nodes", "list")
+    }
+    with pytest.raises(AssertionError):
+        rbac_needs(["kubectl", "exec", "p"])
+
+
+def test_overcommit_forbidden_pods_raises_permission_denied():
+    # Nodes are readable but pods are not: nothing useful remains, so the task raises.
+    ctx = FakeCtx([(("get", "pods"), FORBIDDEN), (("get", "nodes"), ok(load("nodes")))])
+    with pytest.raises(RwError) as exc:
+        script("overcommit").main(ctx)
+    assert exc.value.code == "permission_denied"
+
+
+# --- 10. metrics relabel ----------------------------------------------------
+
+
+def test_metrics_dependency_keeps_its_own_message_when_it_is_not_about_the_resource_type():
+    missing_kubectl = (127, "", "kubectl: executable file not found in $PATH")
+    ctx = FakeCtx([(("get", "nodes.metrics.k8s.io"), missing_kubectl)])
+    with pytest.raises(RwError) as exc:
+        fetch.load_node_metrics(ctx)
+    assert exc.value.code == "dependency"
+    assert exc.value.message != "metrics.k8s.io not available"
+    assert "executable file not found" in exc.value.message
+    unavailable = (
+        1,
+        "",
+        "Error from server (ServiceUnavailable): the server is currently unable to handle the request",
+    )
+    ctx = FakeCtx([(("get", "nodes.metrics.k8s.io"), unavailable)])
+    with pytest.raises(RwError) as exc:
+        fetch.load_node_metrics(ctx)
+    assert exc.value.message == "metrics.k8s.io not available"

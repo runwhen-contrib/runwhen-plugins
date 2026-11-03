@@ -12,15 +12,21 @@ settings:
     type: number
     default: 90
     description: A node using this percent or more of its allocatable CPU or memory has atOrAbove true in node-utilization
+  podLimitPercent:
+    type: number
+    default: 90
+    description: A pod whose limits are above this percent of its node's allocatable CPU or memory has podAboveLimitPercent true in overcommit
 tasks:
   - name: node-conditions
     title: Node conditions
     description: >-
       Per node: the Ready condition (status, reason, lastTransitionTime),
       MemoryPressure, DiskPressure, PIDPressure and NetworkUnavailable when their
-      status is not False, whether the node is cordoned (unschedulable), its taints
-      (key and effect), kubelet version and age. Nodes that are not Ready come
-      first. A cluster target covers every node, a node target that node. Nodes are
+      status is not False, any other condition type (node-problem-detector, cloud
+      providers) whose status is not False, whether the node is cordoned
+      (unschedulable), its taints (key and effect), capacity type (on-demand,
+      spot or preemptible, from provider labels), kubelet version and age. Nodes
+      that are not Ready come first, then those with conditions, then cordoned. A cluster target covers every node, a node target that node. Nodes are
       cluster-scoped: a namespace-scoped connection fails with permission_denied.
     script: scripts/node_conditions.py
     tags: [nodes, ready, conditions, taints, cordon]
@@ -36,11 +42,16 @@ tasks:
     description: >-
       Within the look-back window: nodes whose Ready condition changed state, and
       node events with reason NodeNotReady, NodeReady, Rebooted, RegisteredNode or
-      Starting (from the kubelet), grouped per node with counts and the last time.
-      Node events live in the default namespace and expire after about an hour
-      (the API server event TTL), so a window longer than that sees only what is
-      left. When the events cannot be read the Ready transitions are still
-      returned, events is null and a permission_denied error says why.
+      Starting (from the kubelet), or a removal or stop reason (RemovingNode,
+      DeletingNode, NodeShutdown, TerminatingNode, Removed, Shutdown*, Preempt*,
+      Termination*), grouped per node with counts and the last time, with how many
+      events were examined and the oldest one seen. Node events live in the
+      default namespace and expire after about an hour (the API server event
+      TTL), so a window longer than that sees only what is left. The events read
+      is only needed in default, but RBAC rules here carry no namespace, so the
+      permission below is declared unscoped. When the events cannot be read the
+      Ready transitions are still returned, events is null and a
+      permission_denied error says why.
     script: scripts/node_restarts.py
     tags: [nodes, restarts, reboot, events]
     readOnly: true
@@ -51,7 +62,7 @@ tasks:
       since: { type: duration, default: 1h, description: "Look-back window, applied to when each event was last seen and to the Ready transition time" }
     outputs:
       transitions: { schema: ./schemas/transitions.v1.json, description: "Nodes whose Ready condition changed state within the window" }
-      events: { schema: ./schemas/node-events.v1.json, description: "Restart-related node events grouped per node and reason; null when they could not be read" }
+      events: { schema: ./schemas/node-events.v1.json, description: "Restart and removal node events grouped per node and reason, with eventsExamined and oldestEventSeen; null when they could not be read" }
 
   - name: node-utilization
     title: Node utilization
@@ -78,9 +89,13 @@ tasks:
       (init containers by the effective-request rule, native sidecars added, pod
       overhead included) against the node's allocatable for CPU and memory, as
       percent, with limitsAboveAllocatable true when the limits add up to more
-      than the node can hold. Containers with no request or limit are counted per
-      node, since the sums understate for them. Lists pods in every namespace.
+      than the node can hold. Also the five pods with the largest limits and
+      requests per node, and largestPodLimitPercent with podAboveLimitPercent
+      against the podLimitPercent setting. Containers with no request or limit
+      are counted per node, since the sums understate for them. Lists
+      non-terminated pods in every namespace, so it gets a longer timeout.
     script: scripts/overcommit.py
+    timeout: 120s
     tags: [nodes, overcommit, requests, limits, capacity]
     readOnly: true
     permissions:
@@ -88,4 +103,4 @@ tasks:
       - { apiGroups: [""], resources: [pods], verbs: [list] }
     outputs:
       nodes: { schema: ./schemas/overcommit.v1.json, description: "Requests and limits against allocatable for CPU and memory per node" }
-      inspected: { schema: ./schemas/overcommit-inspected.v1.json, description: "Pods counted and the pods that were not (unscheduled, terminated, on other nodes)" }
+      inspected: { schema: ./schemas/overcommit-inspected.v1.json, description: "Pods counted and the active pods that were not (unscheduled, on other nodes)" }
