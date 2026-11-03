@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kubernetes RBAC rule",
+  "description": "One permission in Kubernetes' own terms: an RBAC PolicyRule. A resource rule names apiGroups and resources (the core group is \"\"); a non-resource rule names nonResourceURLs.",
+  "type": "object",
+  "properties": {
+    "apiGroups": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "resourceNames": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "nonResourceURLs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "verbs"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "apiGroups",
+        "resources"
+      ]
+    },
+    {
+      "required": [
+        "nonResourceURLs"
+      ]
+    }
+  ],
+  "additionalProperties": false
+}

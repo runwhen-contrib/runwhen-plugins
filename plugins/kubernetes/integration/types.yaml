@@ -1,0 +1,62 @@
+types:
+  cluster: { root: true, rootKey: server, plural: clusters }
+  namespace: { parent: cluster, plural: namespaces, aliases: [ns], native: { group: "", kind: Namespace } }
+  pod: { parent: namespace, plural: pods, native: { group: "", kind: Pod }, ephemeral: true }
+  service: { parent: namespace, plural: services, aliases: [svc], native: { group: "", kind: Service } }
+  endpoints: { parent: namespace, plural: endpoints, aliases: [ep], native: { group: "", kind: Endpoints }, ephemeral: true }
+  configmap: { parent: namespace, plural: configmaps, aliases: [cm], native: { group: "", kind: ConfigMap } }
+  secret: { parent: namespace, plural: secrets, native: { group: "", kind: Secret } }
+  serviceaccount: { parent: namespace, plural: serviceaccounts, aliases: [sa], native: { group: "", kind: ServiceAccount } }
+  persistentvolumeclaim: { parent: namespace, plural: persistentvolumeclaims, aliases: [pvc], native: { group: "", kind: PersistentVolumeClaim } }
+  replicationcontroller: { parent: namespace, plural: replicationcontrollers, aliases: [rc], native: { group: "", kind: ReplicationController } }
+  limitrange: { parent: namespace, plural: limitranges, aliases: [limits], native: { group: "", kind: LimitRange } }
+  resourcequota: { parent: namespace, plural: resourcequotas, aliases: [quota], native: { group: "", kind: ResourceQuota } }
+  event: { parent: namespace, plural: events, native: { group: events.k8s.io, kind: Event }, ephemeral: true }
+  node: { parent: cluster, plural: nodes, aliases: ["no"], native: { group: "", kind: Node } }
+  persistentvolume: { parent: cluster, plural: persistentvolumes, aliases: [pv], native: { group: "", kind: PersistentVolume } }
+  componentstatus: { parent: cluster, plural: componentstatuses, aliases: [cs], native: { group: "", kind: ComponentStatus }, ephemeral: true }
+  deployment: { parent: namespace, plural: deployments, aliases: [deploy], native: { group: apps, kind: Deployment } }
+  statefulset: { parent: namespace, plural: statefulsets, aliases: [sts], native: { group: apps, kind: StatefulSet } }
+  daemonset: { parent: namespace, plural: daemonsets, aliases: [ds], native: { group: apps, kind: DaemonSet } }
+  replicaset: { parent: namespace, plural: replicasets, aliases: [rs], native: { group: apps, kind: ReplicaSet }, ephemeral: true }
+  controllerrevision: { parent: namespace, plural: controllerrevisions, native: { group: apps, kind: ControllerRevision }, ephemeral: true }
+  job: { parent: namespace, plural: jobs, native: { group: batch, kind: Job } }
+  cronjob: { parent: namespace, plural: cronjobs, aliases: [cj], native: { group: batch, kind: CronJob } }
+  ingress: { parent: namespace, plural: ingresses, aliases: [ing], native: { group: networking.k8s.io, kind: Ingress } }
+  networkpolicy: { parent: namespace, plural: networkpolicies, aliases: [netpol], native: { group: networking.k8s.io, kind: NetworkPolicy } }
+  ingressclass: { parent: cluster, plural: ingressclasses, native: { group: networking.k8s.io, kind: IngressClass } }
+  endpointslice: { parent: namespace, plural: endpointslices, native: { group: discovery.k8s.io, kind: EndpointSlice }, ephemeral: true }
+  role: { parent: namespace, plural: roles, native: { group: rbac.authorization.k8s.io, kind: Role } }
+  rolebinding: { parent: namespace, plural: rolebindings, native: { group: rbac.authorization.k8s.io, kind: RoleBinding } }
+  clusterrole: { parent: cluster, plural: clusterroles, native: { group: rbac.authorization.k8s.io, kind: ClusterRole } }
+  clusterrolebinding: { parent: cluster, plural: clusterrolebindings, native: { group: rbac.authorization.k8s.io, kind: ClusterRoleBinding } }
+  storageclass: { parent: cluster, plural: storageclasses, aliases: [sc], native: { group: storage.k8s.io, kind: StorageClass } }
+  volumeattachment: { parent: cluster, plural: volumeattachments, native: { group: storage.k8s.io, kind: VolumeAttachment } }
+  csidriver: { parent: cluster, plural: csidrivers, native: { group: storage.k8s.io, kind: CSIDriver } }
+  csinode: { parent: cluster, plural: csinodes, native: { group: storage.k8s.io, kind: CSINode } }
+  poddisruptionbudget: { parent: namespace, plural: poddisruptionbudgets, aliases: [pdb], native: { group: policy, kind: PodDisruptionBudget } }
+  horizontalpodautoscaler: { parent: namespace, plural: horizontalpodautoscalers, aliases: [hpa], native: { group: autoscaling, kind: HorizontalPodAutoscaler } }
+  lease: { parent: namespace, plural: leases, native: { group: coordination.k8s.io, kind: Lease }, ephemeral: true }
+  priorityclass: { parent: cluster, plural: priorityclasses, aliases: [pc], native: { group: scheduling.k8s.io, kind: PriorityClass } }
+  validatingwebhookconfiguration: { parent: cluster, plural: validatingwebhookconfigurations, native: { group: admissionregistration.k8s.io, kind: ValidatingWebhookConfiguration } }
+  mutatingwebhookconfiguration: { parent: cluster, plural: mutatingwebhookconfigurations, native: { group: admissionregistration.k8s.io, kind: MutatingWebhookConfiguration } }
+  runtimeclass: { parent: cluster, plural: runtimeclasses, native: { group: node.k8s.io, kind: RuntimeClass } }
+  customresourcedefinition: { parent: cluster, plural: customresourcedefinitions, aliases: [crd, crds], native: { group: apiextensions.k8s.io, kind: CustomResourceDefinition } }
+  certificatesigningrequest: { parent: cluster, plural: certificatesigningrequests, aliases: [csr], native: { group: certificates.k8s.io, kind: CertificateSigningRequest } }
+
+  # --- CRD types shipped skills target (D19), added by hand: not in chain.py's builtin table.
+  # Discovery would otherwise name these <kind>.<group>; native {group, kind} is what resolves them to these names.
+  helmrelease: { parent: namespace, plural: helmreleases, native: { group: helm.toolkit.fluxcd.io, kind: HelmRelease } }
+  kustomization: { parent: namespace, plural: kustomizations, native: { group: kustomize.toolkit.fluxcd.io, kind: Kustomization } }
+  application: { parent: namespace, plural: applications, native: { group: argoproj.io, kind: Application } }
+  certificate: { parent: namespace, plural: certificates, native: { group: cert-manager.io, kind: Certificate } }
+  certificaterequest: { parent: namespace, plural: certificaterequests, native: { group: cert-manager.io, kind: CertificateRequest }, ephemeral: true }  # chain.py: per-issuance, ephemeral
+  nodepool: { parent: cluster, plural: nodepools, native: { group: karpenter.sh, kind: NodePool } }
+  nodeclaim: { parent: cluster, plural: nodeclaims, native: { group: karpenter.sh, kind: NodeClaim } }
+  prometheus: { parent: namespace, plural: prometheuses, native: { group: monitoring.coreos.com, kind: Prometheus } }
+  servicemonitor: { parent: namespace, plural: servicemonitors, native: { group: monitoring.coreos.com, kind: ServiceMonitor } }
+  postgrescluster: { parent: namespace, plural: postgresclusters, native: { group: postgres-operator.crunchydata.com, kind: PostgresCluster } }
+  postgresql: { parent: namespace, plural: postgresqls, native: { group: acid.zalan.do, kind: postgresql } }
+
+discovered:
+  parentFor: { namespaced: namespace, clusterScoped: cluster }
