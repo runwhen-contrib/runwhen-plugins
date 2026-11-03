@@ -1,0 +1,86 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-flux/helmreleases/podinfo-suspended
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - podinfo-suspended
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-suspended\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.5.x\"}},\"interval\":\"10m\",\"suspend\":true}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 1,
+            "name": "podinfo-suspended",
+            "namespace": "rw-flux",
+            "resourceVersion": "14610",
+            "uid": "2a062039-49ce-4ba6-9467-e2b17fb0d730"
+        },
+        "spec": {
+            "chart": {
+                "spec": {
+                    "chart": "podinfo",
+                    "sourceRef": {
+                        "kind": "HelmRepository",
+                        "name": "podinfo"
+                    },
+                    "version": "6.5.x"
+                }
+            },
+            "interval": "10m",
+            "suspend": true
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:00:00Z",
+                    "message": "Helm install succeeded",
+                    "observedGeneration": 1,
+                    "reason": "InstallSucceeded",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ],
+            "history": [
+                {
+                    "appVersion": "6.5.1",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.5.1",
+                    "lastDeployed": "2026-11-03T19:00:00Z",
+                    "name": "podinfo-suspended",
+                    "namespace": "rw-flux",
+                    "status": "deployed",
+                    "version": 1
+                }
+            ],
+            "lastAttemptedRevision": "6.5.1",
+            "observedGeneration": 1
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target:
+      kind: HelmRelease
+      name: podinfo-suspended
+      namespace: rw-flux
+    suspension:
+      applied: false
+      changed: false
+      wouldChange: false
+      suspendedBefore: true
+      suspendedAfter: true

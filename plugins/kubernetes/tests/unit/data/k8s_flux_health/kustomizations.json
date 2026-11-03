@@ -1,0 +1,161 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps-broken\",\"namespace\":\"rw-flux\"},\"spec\":{\"dependsOn\":[{\"name\":\"apps-ok\"},{\"name\":\"infra\",\"namespace\":\"rw-flux-other\"}],\"interval\":\"10m\",\"path\":\"./apps/broken\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"fleet\",\"namespace\":\"flux-system\"},\"suspend\":false}}\n"
+                },
+                "creationTimestamp": "2026-11-03T20:03:22Z",
+                "generation": 1,
+                "name": "apps-broken",
+                "namespace": "rw-flux",
+                "resourceVersion": "17101",
+                "uid": "e019f07e-06cb-4e6b-b520-423ae087d779"
+            },
+            "spec": {
+                "dependsOn": [
+                    {
+                        "name": "apps-ok"
+                    },
+                    {
+                        "name": "infra",
+                        "namespace": "rw-flux-other"
+                    }
+                ],
+                "interval": "10m",
+                "path": "./apps/broken",
+                "prune": true,
+                "sourceRef": {
+                    "kind": "GitRepository",
+                    "name": "fleet",
+                    "namespace": "flux-system"
+                },
+                "suspend": false
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-03T20:05:00Z",
+                        "message": "kustomize build failed: accumulating resources: missing kustomization file",
+                        "observedGeneration": 1,
+                        "reason": "BuildFailed",
+                        "status": "False",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-03T20:05:00Z",
+                        "message": "kustomize build failed: accumulating resources: missing kustomization file",
+                        "observedGeneration": 1,
+                        "reason": "BuildFailed",
+                        "status": "True",
+                        "type": "Stalled"
+                    }
+                ],
+                "lastAppliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "lastAttemptedRevision": "main@sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "lastHandledReconcileAt": "2026-11-03T20:05:00Z",
+                "observedGeneration": 1
+            }
+        },
+        {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps-ok\",\"namespace\":\"rw-flux\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./apps\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"fleet\"},\"suspend\":false}}\n"
+                },
+                "creationTimestamp": "2026-11-03T20:03:22Z",
+                "generation": 1,
+                "name": "apps-ok",
+                "namespace": "rw-flux",
+                "resourceVersion": "17100",
+                "uid": "241e1421-1bf2-4e02-b062-27f0e76bae6e"
+            },
+            "spec": {
+                "interval": "10m",
+                "path": "./apps",
+                "prune": true,
+                "sourceRef": {
+                    "kind": "GitRepository",
+                    "name": "fleet"
+                },
+                "suspend": false
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-03T20:00:00Z",
+                        "message": "Applied revision: main@sha1:aaaaaaaa",
+                        "observedGeneration": 1,
+                        "reason": "ReconciliationSucceeded",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "inventory": {
+                    "entries": [
+                        {
+                            "id": "rw-flux_cfg__ConfigMap",
+                            "v": "v1"
+                        },
+                        {
+                            "id": "rw-flux_app_apps_Deployment",
+                            "v": "v1"
+                        }
+                    ]
+                },
+                "lastAppliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "lastAttemptedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "lastHandledReconcileAt": "2026-11-03T20:00:00Z",
+                "observedGeneration": 1
+            }
+        },
+        {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps-suspended\",\"namespace\":\"rw-flux\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./apps\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"fleet\"},\"suspend\":true}}\n"
+                },
+                "creationTimestamp": "2026-11-03T20:03:22Z",
+                "generation": 1,
+                "name": "apps-suspended",
+                "namespace": "rw-flux",
+                "resourceVersion": "17102",
+                "uid": "5fe051e8-b750-4368-a85d-86f9fe2e2618"
+            },
+            "spec": {
+                "interval": "10m",
+                "path": "./apps",
+                "prune": true,
+                "sourceRef": {
+                    "kind": "GitRepository",
+                    "name": "fleet"
+                },
+                "suspend": true
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-03T19:00:00Z",
+                        "message": "Applied revision: main@sha1:aaaaaaaa",
+                        "observedGeneration": 1,
+                        "reason": "ReconciliationSucceeded",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "lastAppliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "lastAttemptedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "observedGeneration": 1
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

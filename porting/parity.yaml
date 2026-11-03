@@ -66,10 +66,44 @@ kubernetes:
   - { bundle: k8s-istio-system-health,     skills: [k8s-istio-health], status: planned }
 
   # --- GitOps CRDs ---------------------------------------------------------------------------------------------
-  - { bundle: k8s-fluxcd-helm-health,          skills: [k8s-flux-health], status: planned, note: "classic error-messages task always fires (jsonpath outside {})" }
-  - { bundle: k8s-fluxcd-kustomization-health, skills: [k8s-flux-health], status: planned }
-  - { bundle: k8s-fluxcd-reconcile,            skills: [k8s-flux-health], status: planned }
-  - { bundle: k8s-chaos-flux,                  skills: [k8s-chaos], status: planned, note: "suspend/resume become flux write tasks; arbitrary CHAOS_COMMAND exec dropped" }
+  - bundle: k8s-fluxcd-helm-health
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "classic error-messages task always fired (jsonpath outside {}) and the mismatch task passed when both revisions were null; ready-status reads the Ready/Stalled conditions and reports neverApplied"
+    tasks:
+      "List all available FluxCD Helmreleases": "dropped: report-only table of every HelmRelease in the namespace; the skill's target is one HelmRelease"
+      "Fetch Installed FluxCD Helmrelease Versions": k8s-flux-health/ready-status
+      "Fetch Mismatched FluxCD HelmRelease Version": k8s-flux-health/ready-status
+      "Fetch FluxCD HelmRelease Error Messages": k8s-flux-health/ready-status
+      "Check for Available Helm Chart Updates": "dropped: D72 / no egress; needs the chart repository (helm repo add) from the runner, and a failed lookup read as 'up to date'"
+  - bundle: k8s-fluxcd-kustomization-health
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "classic unready task dropped any Ready=False Kustomization without a Reconciling condition (e.g. Stalled); conditions are now reported independently"
+    tasks:
+      "List All FluxCD Kustomization objects": "dropped: report-only table of every Kustomization in the namespace; the skill's target is one Kustomization"
+      "List Suspended FluxCD Kustomization objects": "k8s-flux-health/ready-status (suspended; no duration: Flux records no suspend time and the Ready transition time is not it)"
+      "List Unready FluxCD Kustomizations": k8s-flux-health/ready-status
+  - bundle: k8s-fluxcd-reconcile
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "the classic task reads the Flux controllers' logs for level=error (target: the flux-system namespace); the new tasks target HelmRelease/Kustomization. Controller logs are read with k8s-workload-logs/error-patterns on the controller Deployments. The classic 'reconcile' naming matches the new reconcile write task, not this check"
+    tasks:
+      "Check FluxCD Reconciliation Health in Kubernetes Namespace": "dropped: namespace-target controller-log grep (no rc checks: a failed kubectl logs read as zero errors); object-level health is ready-status, controller logs are kubernetes:k8s-workload-logs/error-patterns"
+  - bundle: k8s-chaos-flux
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "suspend/resume are flux write tasks; the arbitrary-command chaos tasks are dropped"
+    tasks:
+      "Suspend the Flux Resource Reconciliation": k8s-flux-health/suspend
+      "Resume Flux Resource Reconciliation": k8s-flux-health/resume
+      "Select Random FluxCD Workload for Chaos Target": "dropped: picks a random target (and never index 0); a target is given, not picked"
+      "Execute Chaos Command on target resource": "dropped: arbitrary command exec in a workload container (CHAOS_COMMAND)"
+      "Execute Additional Chaos Command": "dropped: arbitrary command exec in a workload container (ADDNL_COMMAND)"
   - bundle: k8s-argocd-application-health
     skills: [k8s-argocd-health]
     status: ported
