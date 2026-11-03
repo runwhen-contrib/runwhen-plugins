@@ -1,0 +1,95 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (most relevant first)
+  stuckMinutes:
+    type: number
+    default: 15
+    description: A NodeClaim older than this many minutes without Ready=True (and not being deleted) has stuck true in nodeclaims
+  limitWarningPercent:
+    type: number
+    default: 90
+    description: A NodePool resource at this percent of its limit or more has atOrAbove true in nodepool-status
+tasks:
+  - name: nodepool-status
+    title: NodePool status
+    description: >-
+      The NodePool's Ready condition and every other condition with reason and
+      message, weight, consolidation policy and consolidateAfter, expireAfter, its
+      disruption budgets, how much of each spec.limits entry status.resources has
+      used (cpu, memory, nodes, ...: percent, atOrAbove against the
+      limitWarningPercent setting, exhausted), and the NodeClass it refers to:
+      whether it exists and is Ready (EC2NodeClass, AKSNodeClass and GCPNodeClass are
+      read). A NodeClass of another group or kind is not looked up: lookedUp is
+      false with no error. NodeClasses are cluster-scoped; when reading one is
+      forbidden the pool facts are still returned, the NodeClass exists and ready are
+      null and a permission_denied error says why.
+    script: scripts/nodepool_status.py
+    tags: [nodepool, karpenter, conditions, limits, disruption, nodeclass]
+    readOnly: true
+    permissions:
+      - { apiGroups: [karpenter.sh], resources: [nodepools], verbs: [get] }
+      - { apiGroups: [karpenter.k8s.aws], resources: [ec2nodeclasses], verbs: [get] }
+      - { apiGroups: [karpenter.azure.com], resources: [aksnodeclasses], verbs: [get] }
+      - { apiGroups: [karpenter.k8s.gcp], resources: [gcpnodeclasses], verbs: [get] }
+    outputs:
+      pool: { schema: ./schemas/pool.v1.json, description: "Conditions, weight, disruption policy and budgets, expireAfter and the NodeClass reference" }
+      limits: { schema: ./schemas/limits.v1.json, description: "Each limited or reported resource: limit, used, percent, atOrAbove, exhausted" }
+      nodeClass: { schema: ./schemas/node-class.v1.json, description: "The referenced NodeClass: whether it exists and is Ready; lookedUp false for an unknown group or kind" }
+
+  - name: nodeclaims
+    title: NodeClaims
+    description: >-
+      The NodeClaims of the pool (label karpenter.sh/nodepool, and owned by this
+      pool when they name an owner): phase from the Launched, Registered,
+      Initialized and Ready conditions (Launching, Registering, Initializing, Ready,
+      NotReady or Deleting), age, stuck (older than the stuckMinutes setting without
+      Ready), the Drifted, Empty and Consolidatable conditions, node name, capacity
+      type, instance type and zone; stuck claims first. Counts per phase and capacity
+      type cover every claim, not just the ones listed. NodeClaims are cluster-scoped
+      and listing them needs a ClusterRole; when it is forbidden the task fails.
+    script: scripts/nodeclaims.py
+    tags: [nodeclaim, karpenter, provisioning, stuck]
+    readOnly: true
+    permissions:
+      - { apiGroups: [karpenter.sh], resources: [nodepools], verbs: [get] }
+      - { apiGroups: [karpenter.sh], resources: [nodeclaims], verbs: [list] }
+    outputs:
+      nodeClaims: { schema: ./schemas/nodeclaims.v1.json, description: "The pool's NodeClaims with phase, age, stuck, conditions, node and instance facts, stuck first" }
+      counts: { schema: ./schemas/claim-counts.v1.json, description: "Totals before the maxItems cap: ready, notReady, stuck, deleting, drifted, per phase and per capacity type" }
+
+  - name: pending-pods
+    title: Pending pods this pool could serve
+    description: >-
+      Pending pods in every namespace whose PodScheduled condition is False with
+      reason Unschedulable and whose karpenter.sh/nodepool constraint (nodeSelector or
+      required node affinity) names this pool or is absent, oldest first with the
+      pods that select this pool before the rest: age, the scheduler's message,
+      requested cpu and memory, owner. Counts say how many pending pods exist, how
+      many are unschedulable, how many select this pool, are unconstrained or
+      select another pool. Events on those pods within the since window, of the
+      reasons FailedScheduling (the scheduler and Karpenter), Nominated and
+      FailedProvisioning, are grouped per pod and reason; when listing events is forbidden they
+      are null with a permission_denied error and the pods are kept. Pods and events
+      are cluster-wide reads that need a ClusterRole. Taints, tolerations and other
+      labels are not evaluated: "could serve" is the pool-label constraint only.
+    script: scripts/pending_pods.py
+    timeout: 120s
+    tags: [pending, unschedulable, karpenter, provisioning, capacity]
+    readOnly: true
+    permissions:
+      - { apiGroups: [karpenter.sh], resources: [nodepools], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [events], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window, applied to when each event was last seen" }
+    outputs:
+      pods: { schema: ./schemas/pending-pods.v1.json, description: "Unschedulable pods this pool could serve, selecting pods first, oldest first" }
+      counts: { schema: ./schemas/pending-counts.v1.json, description: "Pending, unschedulable, selecting this pool, unconstrained and selecting another pool, before the maxItems cap" }
+      events: { schema: ./schemas/pending-events.v1.json, description: "Events on those pods grouped per pod and reason; null when events could not be read" }

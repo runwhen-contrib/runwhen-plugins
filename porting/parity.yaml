@@ -159,8 +159,29 @@ kubernetes:
       "Get Namespace Certificate Summary": k8s-certmanager-health/certificate-status
       "Find Unhealthy Certificates": k8s-certmanager-health/certificate-status
       "Find Failed Certificate Requests and Identify Issues": k8s-certmanager-health/requests
-  - { bundle: k8s-karpenter-autoscaling-health,   skills: [k8s-karpenter-health], status: planned }
-  - { bundle: k8s-karpenter-control-plane-health, skills: [k8s-karpenter-health], status: planned }
+  - bundle: k8s-karpenter-autoscaling-health
+    skills: [k8s-karpenter-health]
+    status: ported
+    ported: [k8s-karpenter-health]
+    note: "per-NodePool target, not a cluster sweep; classic ran every list as `2>/dev/null || echo {items:[]}` (forbidden or failing lists became zero items; a forbidden `get crd` read as 'CRD not installed'); NodeClaim/Node/pod facts are now bounded to the pool; the SLI score (conditions, pending count, stuck claims) is the platform's job over the three tasks"
+    tasks:
+      "Summarize NodePool and NodeClaim Health in Cluster": k8s-karpenter-health/nodepool-status
+      "Detect Workloads Blocked on Provisioning or Capacity in Cluster": k8s-karpenter-health/pending-pods
+      "Scan Karpenter Controller Logs for Errors": "dropped: the controller is an ordinary Deployment; k8s-workload-logs/error-patterns and recent-logs on it"
+      "Check Cloud NodeClass Resources for Misconfiguration Signals": k8s-karpenter-health/nodepool-status
+      "Identify Stale or Stuck NodeClaims in Cluster": k8s-karpenter-health/nodeclaims
+      "Correlate Recent Karpenter Log Patterns with Pending Pods": "dropped: optional log grep that matched pod names by substring; pending-pods carries the scheduler's and Karpenter's events on each pod, and k8s-workload-logs/recent-logs reads the controller"
+  - bundle: k8s-karpenter-control-plane-health
+    skills: [k8s-karpenter-health]
+    status: ported
+    ported: [k8s-karpenter-health]
+    note: "controller health maps to k8s-workload-health / k8s-workload-logs on the karpenter Deployment (no task in this skill); webhook and API-group inventory are not NodePool facts"
+    tasks:
+      "Check Karpenter Controller Workload Health in Cluster": "dropped: k8s-workload-health/rollout-status and pod-status on the karpenter Deployment"
+      "Verify Karpenter Admission Webhooks in Cluster": "dropped: cluster-wide webhook configuration inventory, not a NodePool or workload fact; a failing webhook shows in the controller's pod-status and logs"
+      "Inspect Warning Events in Karpenter Namespace": "dropped: k8s-workload-health/warning-events on the karpenter Deployment"
+      "Summarize Installed Karpenter API Versions and CRDs": "dropped: the nodepool type only has targets where the CRD is installed; an absent NodeClass type is reported by nodepool-status (nodeClass.typeInstalled)"
+      "Check Karpenter Service and Metrics Endpoints": "dropped: Service/Endpoints inventory of the controller namespace is not a NodePool fact; no sibling skill reads Services yet"
 
   # --- apps on kubernetes (labels-scoped) ------------------------------------------------------------------------
   - { bundle: k8s-postgres-healthcheck,  skills: [k8s-postgres-operator-health], status: planned,
