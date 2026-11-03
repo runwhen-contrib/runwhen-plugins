@@ -1,0 +1,21 @@
+# Applied with a good image; up.sh then rolls it to a bad image once, so the
+# new ReplicaSet never becomes ready and Progressing goes False after 30s.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stuck-rollout
+  namespace: rw-broken
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 30
+  selector:
+    matchLabels: {app: stuck-rollout}
+  template:
+    metadata:
+      labels: {app: stuck-rollout}
+    spec:
+      containers:
+        - name: app
+          image: nginx:alpine
+          resources:
+            requests: {cpu: 1m, memory: 8Mi}

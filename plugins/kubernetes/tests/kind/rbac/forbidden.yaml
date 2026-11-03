@@ -1,0 +1,21 @@
+# Read-only identity scoped to rw-healthy. Anything in rw-broken (or cluster
+# scope) is Forbidden for it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rw-viewer
+  namespace: rw-healthy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rw-viewer-view
+  namespace: rw-healthy
+subjects:
+  - kind: ServiceAccount
+    name: rw-viewer
+    namespace: rw-healthy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
