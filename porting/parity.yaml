@@ -86,7 +86,19 @@ kubernetes:
   # --- networking ----------------------------------------------------------------------------------------------
   - { bundle: k8s-ingress-gce-healthcheck, skills: [k8s-ingress-health], status: ported, ported: [k8s-ingress-health],
       note: "backends annotation check ported; Cloud Logging and LB-config tasks need a GCP credential -> gcp plugin (D72)" }
-  - { bundle: k8s-istio-system-health,     skills: [k8s-istio-health], status: planned }
+  - bundle: k8s-istio-system-health
+    skills: [k8s-istio-health]
+    status: ported
+    ported: [k8s-istio-health]
+    note: "all seven classic tasks swept every namespace of the cluster and were confirmed false-pass (2>/dev/null, no rc checks); split by target (D47): namespace -> injection-status, istiod/gateway Deployment -> control-plane-status, Deployment -> proxy-errors. istioctl analyze and mTLS certificate validity are not ported: the runtime has no istioctl. The usage-vs-limit part of the sidecar resource task (kubectl top) is not ported; requests and limits are"
+    tasks:
+      "Verify Istio Sidecar Injection for Cluster": k8s-istio-health/injection-status
+      "Check Istio Sidecar Resource Usage for Cluster": "k8s-istio-health/injection-status (requests and limits only; live usage from the metrics API is not read)"
+      "Validate Istio Installation in Cluster": k8s-istio-health/control-plane-status
+      "Check Istio Controlplane Logs For Errors in Cluster": "k8s-workload-logs/error-patterns (target the istiod or gateway Deployment; the classic task guessed pods by app=<component> labels)"
+      "Fetch Istio Proxy Logs in Cluster": k8s-istio-health/proxy-errors
+      "Verify Istio SSL Certificates in Cluster": "dropped: needs istioctl proxy-config secret (Envoy admin through exec or port-forward); the runtime has no istioctl and mTLS certificate validity is not observable from the Kubernetes API"
+      "Check Istio Configuration Health in Cluster": "dropped: needs istioctl analyze; the runtime has no istioctl"
 
   # --- GitOps CRDs ---------------------------------------------------------------------------------------------
   - bundle: k8s-fluxcd-helm-health

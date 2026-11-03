@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Image tag(s) of the Istio container; more than one means a rollout or version skew",
+  "type": "object",
+  "properties": {
+    "container": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Container whose image tag is the version: discovery, else istio-proxy"
+    },
+    "source": {
+      "enum": [
+        "pods",
+        "template"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tag",
+          "count"
+        ]
+      }
+    }
+  },
+  "required": [
+    "container",
+    "source",
+    "tags"
+  ]
+}
