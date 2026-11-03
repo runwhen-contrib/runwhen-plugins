@@ -2,7 +2,11 @@
 sync. Types come from integration/types.yaml (discovery_types.TYPES, non-ephemeral only); a type
 whose API the cluster does not serve is recorded `excluded`, not an error; a list that is
 forbidden or fails is a scoped error (`ctx.error(code, scope=<type>)`) and a non-complete
-partition, and the run goes on.
+partition, and the run goes on. `kubectl api-resources` that exits non-zero but still prints its
+table (one aggregated API group down) is used: the types of the groups named in stderr are
+`failed`, never `excluded`, and each group is a scoped `dependency` error. A `deadline` bounds the
+whole enumeration: once past, no list is started, every type not yet listed is a `failed`
+partition with a scoped `timeout` error, and the caller still pushes and commits.
 
 Partitions are what papi sweeps by: only `complete` ones. So a partition is complete only when the
 list was read in full; a narrowed scope (the `namespaces` setting), a forbidden or failed list and
@@ -10,18 +14,21 @@ a list cut at maxItems are never complete.
 """
 
 import json
+import re
 import time
 from urllib.parse import urlsplit
 
 from k8s_base import discovery_doc as dd
 from k8s_base.discovery_types import TYPES
 from k8s_base.errors import RwError
-from k8s_base.k8s import run_kubectl
+from k8s_base.k8s import classify_error, run_kubectl, run_kubectl_result
 
 LIST_TIMEOUT = 50
 SIDE_TIMEOUT = 20
 EXCLUDED_TYPES = {"secret": "secrets are never synced"}
 MAX_UID = 1024
+_now = time.monotonic  # replaced in tests
+_GROUP_VERSION = re.compile(r"([A-Za-z0-9][A-Za-z0-9.-]*)/v\d+(?:alpha\d+|beta\d+)?\b")
 
 
 def parse_served(text):
@@ -64,6 +71,54 @@ def get_json(ctx, argv, timeout=LIST_TIMEOUT):
     return value
 
 
+def list_items(ctx, argv, timeout=LIST_TIMEOUT):
+    """The `items` of a `kubectl get <list> -o json`. A document without a list of items is not
+    an empty list: it is a reply this task does not understand."""
+    items = get_json(ctx, argv, timeout).get("items")
+    if not isinstance(items, list):
+        raise RwError("internal", f"kubectl {argv[0]} printed no items list")
+    return items
+
+
+def groups_in(stderr):
+    """The API groups a failed `kubectl api-resources` names (`metrics.k8s.io/v1beta1: ...`)."""
+    seen = []
+    for match in _GROUP_VERSION.finditer(stderr):
+        if match.group(1) not in seen:
+            seen.append(match.group(1))
+    return seen
+
+
+def api_resources(ctx):
+    """(served, failed groups). `kubectl api-resources` exits 1 when one group's discovery
+    fails yet still prints the table of the others: that table is used, each group named in
+    stderr is a scoped dependency error. Without a table the failure is the run's."""
+    rc, stdout, stderr = run_kubectl_result(
+        ctx, ["api-resources", "--verbs=list", "-o", "wide"], timeout=SIDE_TIMEOUT
+    )
+    if rc == 0:
+        return parse_served(stdout), {}
+    code = classify_error(stderr, rc)
+    try:
+        served = parse_served(stdout)
+    except RwError:
+        served = {}
+    if not served:
+        raise RwError(code, stderr[:1024] or f"kubectl exited {rc}")
+    text = stderr.splitlines()[0][:300] if stderr else f"kubectl exited {rc}"
+    failed = {}
+    for group in groups_in(stderr):
+        failed[group] = f"API group {group} could not be discovered: {text}"
+        ctx.error("dependency", failed[group], scope=group)
+    if not failed:
+        ctx.error(
+            code,
+            f"kubectl api-resources failed, its table may be incomplete: {text}",
+            scope="api-resources",
+        )
+    return served, failed
+
+
 def scoped_error(ctx, exc, scope):
     ctx.error(exc.code, exc.message, scope=scope)
 
@@ -77,11 +132,21 @@ def cluster_facts(ctx):
         ["config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"],
         timeout=SIDE_TIMEOUT,
     )
-    parts = urlsplit(stdout.strip())
-    server = (
-        f"{parts.scheme}://{parts.hostname}" + (f":{parts.port}" if parts.port else "") + parts.path
-    )
-    return server.rstrip("/"), version
+    return server_url(stdout), version
+
+
+def server_url(text):
+    """scheme://host[:port]/path of the kubeconfig's server, credentials dropped. The host is kept
+    as written, so an IPv6 literal keeps its brackets."""
+    try:
+        parts = urlsplit(text.strip())
+        parts.port  # noqa: B018 - a bad port raises ValueError here
+    except ValueError:
+        raise RwError("invalid_input", "the kubeconfig server URL is not a valid URL") from None
+    host = parts.netloc.rpartition("@")[2]
+    if not parts.scheme or not host:
+        raise RwError("invalid_input", "the kubeconfig server URL has no scheme or host")
+    return f"{parts.scheme}://{host}{parts.path}".rstrip("/")
 
 
 def kube_system_uid(ctx):
@@ -108,17 +173,35 @@ def kube_system_uid(ctx):
 class Run:
     """One discovery run: collects items (root first, then namespaces, then the rest) and partitions."""
 
-    def __init__(self, ctx, scope_path, cluster, namespaces, max_items, max_string):
+    def __init__(
+        self, ctx, scope_path, cluster, namespaces, max_items, max_string, deadline_at=None
+    ):
         self.ctx = ctx
         self.scope = scope_path
         self.cluster = cluster
         self.requested = namespaces
         self.max_items = max_items
         self.max_string = max_string
+        self.deadline_at = deadline_at
         self.items = []
         self.rest = []
         self.partitions = []
         self.counts = {}
+
+    def expired(self):
+        return self.deadline_at is not None and _now() >= self.deadline_at
+
+    def timed_out(self, type_name, parent_path=None, report=True):
+        """A list that was not started because the deadline passed: failed, so nothing is swept."""
+        if report:
+            self.ctx.error(
+                "timeout", "the deadline passed before this type was listed", scope=type_name
+            )
+        self.partitions.append(
+            dd.partition(
+                type_name, "failed", parent_path, reason="the deadline passed before it was listed"
+            )
+        )
 
     def chain(self, *pairs):
         return [("cluster", self.cluster), *pairs]
@@ -163,7 +246,7 @@ class Run:
         if self.requested:
             return self._requested_namespaces()
         try:
-            listed = get_json(self.ctx, ["get", "namespaces", "-o", "json"])
+            listed = list_items(self.ctx, ["get", "namespaces", "-o", "json"])
         except RwError as exc:
             scoped_error(self.ctx, exc, "namespace")
             status = "forbidden" if exc.code == "permission_denied" else "failed"
@@ -171,7 +254,7 @@ class Run:
                 dd.partition("namespace", status, self.scope, reason=exc.message)
             )
             return []
-        objs = [o for o in listed.get("items", []) if (o.get("metadata") or {}).get("name")]
+        objs = [o for o in listed if (o.get("metadata") or {}).get("name")]
         objs, cut_at = self._cap(objs)
         self._add_namespaces(objs)
         self.partitions.append(
@@ -191,8 +274,10 @@ class Run:
                 scoped_error(self.ctx, exc, f"namespace/{name}")
                 if exc.code != "permission_denied":
                     continue
-                # not readable, but asked for: its children (readable with a namespaced Role) need a parent
-                obj = dd.stub_namespace(name)
+                # not readable, but asked for: its children may be readable with a namespaced Role.
+                # No stub item; the namespace partition is never complete, so nothing is swept.
+                names.append(name)
+                continue
             found.append(obj)
             names.append(name)
         self._add_namespaces(found)
@@ -223,7 +308,7 @@ class Run:
     def cluster_scoped(self, type_name, plural, group, kind):
         arg = resource_arg(plural, group)
         try:
-            objs = get_json(self.ctx, ["get", arg, "-o", "json"]).get("items", [])
+            objs = list_items(self.ctx, ["get", arg, "-o", "json"])
         except RwError as exc:
             self._failed(type_name, exc, self.scope)
             return
@@ -234,9 +319,7 @@ class Run:
         arg = resource_arg(plural, group)
         if not self.requested:
             try:
-                objs = get_json(self.ctx, ["get", arg, "--all-namespaces", "-o", "json"]).get(
-                    "items", []
-                )
+                objs = list_items(self.ctx, ["get", arg, "--all-namespaces", "-o", "json"])
             except RwError as exc:
                 self._failed(type_name, exc, None)
                 return
@@ -249,11 +332,13 @@ class Run:
                 chunk, cut_at = self._cap(by_ns[ns])
                 self._push(type_name, kind, chunk, ns, self.ns_path(ns), cut_at)
             return
-        for ns in namespaces:
+        for i, ns in enumerate(namespaces):
+            if self.expired():
+                for rest in namespaces[i:]:
+                    self.timed_out(type_name, self.ns_path(rest), report=rest == ns)
+                return
             try:
-                objs = get_json(self.ctx, ["get", arg, "--namespace", ns, "-o", "json"]).get(
-                    "items", []
-                )
+                objs = list_items(self.ctx, ["get", arg, "--namespace", ns, "-o", "json"])
             except RwError as exc:
                 self._failed(type_name, exc, self.ns_path(ns))
                 continue
@@ -283,17 +368,15 @@ class Run:
         self.partitions.append(dd.partition(type_name, status, parent_path, reason=exc.message))
 
 
-def discover(ctx, scope_path, cluster, namespaces, max_items, max_string):
-    """Run the whole enumeration. Returns (items, partitions, counts, root uid)."""
-    started = time.monotonic()
+def discover(ctx, scope_path, cluster, namespaces, max_items, max_string, deadline_s=None):
+    """Run the whole enumeration. Returns (run, root uid, duration ms)."""
+    started = _now()
     server, version = cluster_facts(ctx)
     uid = kube_system_uid(ctx)
-    stdout, _ = run_kubectl(
-        ctx, ["api-resources", "--verbs=list", "-o", "wide"], timeout=SIDE_TIMEOUT
-    )
-    served = parse_served(stdout)
+    served, failed_groups = api_resources(ctx)
 
-    run = Run(ctx, scope_path, cluster, namespaces, max_items, max_string)
+    deadline_at = None if deadline_s is None else started + deadline_s
+    run = Run(ctx, scope_path, cluster, namespaces, max_items, max_string, deadline_at)
     run.cluster_item(server, version, uid)
     ns_list = run.namespaces(served)
     for type_name, parent, plural, group, kind in TYPES:
@@ -306,6 +389,10 @@ def discover(ctx, scope_path, cluster, namespaces, max_items, max_string):
             continue
         row = served.get((group, kind))
         want_namespaced = parent == "namespace"
+        if row is None and group in failed_groups:
+            # not "not served": the group's discovery failed, so the cluster may well serve it
+            run.partitions.append(dd.partition(type_name, "failed", reason=failed_groups[group]))
+            continue
         if row is None or row[1] != want_namespaced:
             why = (
                 "API not served by this cluster"
@@ -316,9 +403,15 @@ def discover(ctx, scope_path, cluster, namespaces, max_items, max_string):
             continue
         served_plural = row[0]
         if not want_namespaced:
-            run.cluster_scoped(type_name, served_plural, group, kind)
+            if run.expired():
+                run.timed_out(type_name)
+            else:
+                run.cluster_scoped(type_name, served_plural, group, kind)
         elif ns_list or run.requested:
-            run.namespaced(type_name, served_plural, group, kind, ns_list)
+            if run.expired():
+                run.timed_out(type_name)
+            else:
+                run.namespaced(type_name, served_plural, group, kind, ns_list)
         else:
             run.partitions.append(
                 dd.partition(
@@ -328,4 +421,4 @@ def discover(ctx, scope_path, cluster, namespaces, max_items, max_string):
                 )
             )
     run.items.extend(run.rest)
-    return run, uid, int((time.monotonic() - started) * 1000)
+    return run, uid, int((_now() - started) * 1000)

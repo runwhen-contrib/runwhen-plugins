@@ -1,5 +1,6 @@
 """Settings the kubectl script reads, validated before any kubectl call."""
 
+import re
 from types import SimpleNamespace
 
 from k8s_base.errors import RwError
@@ -29,3 +30,15 @@ def read_settings(settings):
         allowed_flags=_strings(settings, "allowed_flags"),
         max_output_lines=lines,
     )
+
+
+_DURATION = re.compile(r"(\d+)(ms|s|m|h|d)")
+_UNIT = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_duration(text, name="duration"):
+    """Seconds of a duration like 480s or 1m30s (ms|s|m|h|d, combinable); anything else raises
+    RwError invalid_input."""
+    if isinstance(text, str) and re.fullmatch(r"(?:\d+(?:ms|s|m|h|d))+", text):
+        return sum(int(n) * _UNIT[u] for n, u in _DURATION.findall(text))
+    raise RwError("invalid_input", f"setting {name} must be a duration like 480s, got {text!r}")

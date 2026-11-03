@@ -29,7 +29,8 @@ tasks:
       with its canonical key (the kube-system namespace uid), then namespaces and everything
       under them, with one partition per type and parent saying whether the list was read in full.
       An API the cluster does not serve is skipped and recorded; a forbidden list is a scoped
-      permission_denied and the run continues (partial).
+      permission_denied and the run continues (partial); so does an aggregated API group whose
+      discovery fails (its types are failed, never excluded).
     script: scripts/discover.py
     tags: [discovery]
     readOnly: true
@@ -38,31 +39,33 @@ tasks:
     permissions:
       - { nonResourceURLs: [/version], verbs: [get] }
       - { nonResourceURLs: [/api, /api/*, /apis, /apis/*], verbs: [get] }                # kubectl api-resources: which types the cluster serves
-      - { apiGroups: [""], resources: [configmaps, limitranges, namespaces, nodes, persistentvolumeclaims, persistentvolumes, replicationcontrollers, resourcequotas, serviceaccounts, services], verbs: [get, list] }
-      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [get, list] }
-      - { apiGroups: [admissionregistration.k8s.io], resources: [mutatingwebhookconfigurations, validatingwebhookconfigurations], verbs: [get, list] }
-      - { apiGroups: [apiextensions.k8s.io], resources: [customresourcedefinitions], verbs: [get, list] }
-      - { apiGroups: [apps], resources: [daemonsets, deployments, statefulsets], verbs: [get, list] }
-      - { apiGroups: [argoproj.io], resources: [applications], verbs: [get, list] }
-      - { apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list] }
-      - { apiGroups: [batch], resources: [cronjobs, jobs], verbs: [get, list] }
-      - { apiGroups: [cert-manager.io], resources: [certificates, clusterissuers, issuers], verbs: [get, list] }
-      - { apiGroups: [certificates.k8s.io], resources: [certificatesigningrequests], verbs: [get, list] }
-      - { apiGroups: [gateway.networking.k8s.io], resources: [gateways, httproutes], verbs: [get, list] }
-      - { apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, list] }
-      - { apiGroups: [karpenter.sh], resources: [nodeclaims, nodepools], verbs: [get, list] }
-      - { apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [get, list] }
-      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses, servicemonitors], verbs: [get, list] }
-      - { apiGroups: [networking.k8s.io], resources: [ingressclasses, ingresses, networkpolicies], verbs: [get, list] }
-      - { apiGroups: [node.k8s.io], resources: [runtimeclasses], verbs: [get, list] }
-      - { apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [get, list] }
-      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get, list] }
-      - { apiGroups: [rbac.authorization.k8s.io], resources: [clusterrolebindings, clusterroles, rolebindings, roles], verbs: [get, list] }
-      - { apiGroups: [scheduling.k8s.io], resources: [priorityclasses], verbs: [get, list] }
-      - { apiGroups: [storage.k8s.io], resources: [csidrivers, csinodes, storageclasses, volumeattachments], verbs: [get, list] }
+      - { apiGroups: [""], resources: [configmaps, limitranges, namespaces, nodes, persistentvolumeclaims, persistentvolumes, replicationcontrollers, resourcequotas, serviceaccounts, services], verbs: [list] }
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }                          # kube-system's uid (the canonical key); each namespace named by the namespaces setting
+      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [list] }
+      - { apiGroups: [admissionregistration.k8s.io], resources: [mutatingwebhookconfigurations, validatingwebhookconfigurations], verbs: [list] }
+      - { apiGroups: [apiextensions.k8s.io], resources: [customresourcedefinitions], verbs: [list] }
+      - { apiGroups: [apps], resources: [daemonsets, deployments, statefulsets], verbs: [list] }
+      - { apiGroups: [argoproj.io], resources: [applications], verbs: [list] }
+      - { apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [list] }
+      - { apiGroups: [batch], resources: [cronjobs, jobs], verbs: [list] }
+      - { apiGroups: [cert-manager.io], resources: [certificates, clusterissuers, issuers], verbs: [list] }
+      - { apiGroups: [certificates.k8s.io], resources: [certificatesigningrequests], verbs: [list] }
+      - { apiGroups: [gateway.networking.k8s.io], resources: [gateways, httproutes], verbs: [list] }
+      - { apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [list] }
+      - { apiGroups: [karpenter.sh], resources: [nodeclaims, nodepools], verbs: [list] }
+      - { apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [list] }
+      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses, servicemonitors], verbs: [list] }
+      - { apiGroups: [networking.k8s.io], resources: [ingressclasses, ingresses, networkpolicies], verbs: [list] }
+      - { apiGroups: [node.k8s.io], resources: [runtimeclasses], verbs: [list] }
+      - { apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [list] }
+      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [list] }
+      - { apiGroups: [rbac.authorization.k8s.io], resources: [clusterrolebindings, clusterroles, rolebindings, roles], verbs: [list] }
+      - { apiGroups: [scheduling.k8s.io], resources: [priorityclasses], verbs: [list] }
+      - { apiGroups: [storage.k8s.io], resources: [csidrivers, csinodes, storageclasses, volumeattachments], verbs: [list] }
     settings:
       namespaces: { type: "string[]", default: [], description: "Namespaces to cover. Empty: every namespace the identity can list. Naming namespaces narrows the run: the namespace partition is then never complete, so nothing outside them is swept; a named namespace that cannot be read still gets a stub item so its children have a parent" }
       maxItems: { type: integer, default: 2000, min: 1, max: 100000, description: "Most objects of one type in one partition (a namespace, or the cluster). A longer list is cut and its partition is failed, never complete, so nothing is swept for it" }
+      deadline: { type: duration, default: 480s, description: "How long the enumeration may run (1s to 570s; the task's timeout is 600s). Once passed no further list is started, every type not yet listed is a failed partition with a scoped timeout error, and the sync is still pushed and committed" }
       maxStringBytes: { type: integer, default: 4096, min: 64, max: 1048576, description: "Longest string kept in a document; longer ones are cut (and scrubbed of credential shapes)" }
     outputs:
       summary: { kind: rw.discovery.summary.v1, description: "Counts per type, partition totals by status, duration, per-step errors, and root.canonicalKey kubeSystemUid when kube-system is readable" }

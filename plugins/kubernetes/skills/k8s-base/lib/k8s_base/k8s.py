@@ -52,7 +52,11 @@ def classify_error(stderr, returncode=1):
         return "dependency"
     if returncode == 124:
         return "timeout"
-    if "doesn't have a resource type" in t or "metrics api not available" in t:
+    if (
+        "doesn't have a resource type" in t
+        or "metrics api not available" in t
+        or "unable to retrieve the complete list" in t  # a broken aggregated API group
+    ):
         return "dependency"
     match = _SERVER_ERROR.search(text)
     if match:
@@ -70,10 +74,10 @@ def classify_error(stderr, returncode=1):
     return "internal"
 
 
-def run_kubectl(ctx, argv, cwd=None, timeout=RUN_TIMEOUT):
-    """Run `kubectl <argv>` (already validated) and return (stdout, stderr). A non-zero exit
-    raises RwError with the D64 code. The real runner raises RwCommandError itself unless
-    check=False; this asks for the process back so one classifier serves both."""
+def run_kubectl_result(ctx, argv, cwd=None, timeout=RUN_TIMEOUT):
+    """Run `kubectl <argv>` (already validated) and return (returncode, stdout, stderr) whatever
+    the exit code: for the one call whose partial output is still useful (`api-resources` with a
+    broken aggregated group). A timeout or an oversized output still raises RwError."""
     try:
         extra = {} if cwd is None else {"cwd": cwd}
         result = ctx.run(["kubectl", *argv], timeout=timeout, check=False, **extra)
@@ -85,10 +89,14 @@ def run_kubectl(ctx, argv, cwd=None, timeout=RUN_TIMEOUT):
             "the output is too large to return; narrow the command "
             "(-n, -l, --field-selector, -o name, --tail)",
         ) from None
-    if result.returncode != 0:
-        stderr = (result.stderr or "").strip()
-        raise RwError(
-            classify_error(stderr, result.returncode),
-            stderr[:1024] or f"kubectl exited {result.returncode}",
-        )
-    return result.stdout or "", (result.stderr or "").strip()
+    return result.returncode, result.stdout or "", (result.stderr or "").strip()
+
+
+def run_kubectl(ctx, argv, cwd=None, timeout=RUN_TIMEOUT):
+    """Run `kubectl <argv>` (already validated) and return (stdout, stderr). A non-zero exit
+    raises RwError with the D64 code. The real runner raises RwCommandError itself unless
+    check=False; this asks for the process back so one classifier serves both."""
+    rc, stdout, stderr = run_kubectl_result(ctx, argv, cwd, timeout)
+    if rc != 0:
+        raise RwError(classify_error(stderr, rc), stderr[:1024] or f"kubectl exited {rc}")
+    return stdout, stderr

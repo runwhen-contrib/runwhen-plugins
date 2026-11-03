@@ -151,19 +151,47 @@ is the `sync` artifact. There is no classic bundle behind it (no parity row).
 
 - It lists every non-ephemeral type in `integration/types.yaml` that the cluster serves
   (`kubectl api-resources`): namespaces, workloads, services, config, RBAC, storage, nodes and the
-  CRD types the integration names. Pods, events, ReplicaSets and EndpointSlices are never listed.
-  Secrets are never listed or synced (partition `excluded`). ConfigMaps sync key names, sizes and
-  hashes, not values; container `env` literals and exec probe arguments are dropped.
+  CRD types the integration names. Never listed, because they are ephemeral in `types.yaml`:
+  `pod`, `endpoints`, `event`, `componentstatus`, `replicaset`, `controllerrevision`,
+  `endpointslice`, `lease` and `certificaterequest`. Secrets are never listed or synced
+  (partition `excluded`). Jobs that a CronJob spawned are skipped: they are recreated every run
+  and are not resources of their own (the CronJob is).
+- What leaves the cluster is redacted by key name as well as by text. A string under a key that
+  names a credential (`password`, `token`, `bearerToken`, `apiKey`, `secretKey`, `authorization`,
+  `session`, `cookie`, ...) is `[redacted]`, except references to one (`secretName`,
+  `tokenSecretRef`, `passwordFile`). Container `command` and `args` (also in init and ephemeral
+  containers and pod templates) keep the first word and a count; `env` literals and http probe
+  header values are dropped. ConfigMaps sync key names and sizes plus ONE hash of the whole data
+  map. CRDs sync names, group, scope, versions and a hash of the schema, never the schema.
+  HelmRelease `values`, ArgoCD helm values and Kustomize `patches` are `{sha256, sizeBytes}`.
+  The `last-applied-configuration` and `kapp.k14s.io/original` annotations are dropped at every
+  depth; other annotation values are cut at 512 bytes.
 - Settings: `namespaces` (empty: every namespace it can list; naming some narrows the run and
   nothing outside them is swept), `maxItems` (2000 per type and namespace; a longer list is cut and
-  its partition `failed`), `maxStringBytes` (4096).
+  its partition `failed`), `maxStringBytes` (4096), `deadline` (480s, 1s to 570s; the task times out
+  at 600s).
 - Output `summary` (`rw.discovery.summary.v1`): `counts` per type, `partitions` by status,
   `durationMs`, `errors`, and `root.canonicalKey` (`kubeSystemUid`) when kube-system is readable.
-  Artifact `sync`: the whole `rw.discovery.v1` document (open, item batches, commit).
+  It is built after the push, so what the platform said is in `errors`. Artifact `sync`: the whole
+  `rw.discovery.v1` document (open, item batches, commit), written as a stream.
 - `complete` partitions are the only ones papi sweeps. `forbidden` and `failed` mean that list
   was not read (a scoped `permission_denied` or other error names the type) and the run is
   `partial`. `excluded` is not an error: the API is not served here, the type is never synced
   (Secrets), or the `namespaces` setting left it out. Without permission to list namespaces and no
   `namespaces` setting, namespaced types are `excluded` with that reason.
-- A named namespace that cannot be read still gets a stub item so its children have a parent; one
-  that does not exist is a scoped `not_found` and is skipped. An unreachable cluster fails the run.
+- A `failed` partition with no `parentPath` is type-wide: nothing of that type is swept anywhere.
+  It is what a broken API group gives: `kubectl api-resources` exits 1 when one aggregated group
+  cannot be discovered but still prints the others; the group is a scoped `dependency` error and
+  its types are `failed` (not `excluded`: the cluster may well serve them). Past the `deadline` no
+  list is started: every type not yet listed is `failed` with a scoped `timeout` error, and the
+  sync is still pushed and committed.
+- Pushing (only with the per-run `runwhen/sync` credential in `$RW_SYNC_CREDENTIAL`, inline JSON or
+  a file path): the API must be https and a redirect is an error. A commit the platform **held**
+  (for example its mass-delete guard) is not a success: the run is `partial` with an `internal`
+  error scoped `sync` carrying the platform's reason, and nothing was swept. Items the platform
+  **rejected** (`unknown_type`, `parent_missing`, ...), or batches it did not account for, make
+  their type and namespace partition `failed` before the commit, so nothing is swept for them,
+  and the run is `partial`. A commit that times out may still have landed: it is reported as
+  `timeout`, not retried and not aborted. A named namespace that cannot be read gets no item of
+  its own (its children keep their parent path); one that does not exist is a scoped `not_found`
+  and is skipped. An unreachable cluster fails the run.
