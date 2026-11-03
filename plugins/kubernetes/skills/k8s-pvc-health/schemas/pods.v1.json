@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pods in the namespace that mount the claim (null when the pods could not be listed)",
+  "type": [
+    "array",
+    "null"
+  ],
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "phase": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "node": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "active": {
+        "type": "boolean"
+      },
+      "terminating": {
+        "type": "boolean"
+      },
+      "mounts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "container": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "string"
+            },
+            "mountPath": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "readOnly": {
+              "type": "boolean"
+            },
+            "init": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "container",
+            "init",
+            "volume",
+            "mountPath",
+            "readOnly"
+          ],
+          "additionalProperties": false
+        },
+        "maxItems": 50
+      }
+    },
+    "required": [
+      "name",
+      "phase",
+      "ready",
+      "node",
+      "active",
+      "terminating",
+      "mounts"
+    ],
+    "additionalProperties": false
+  }
+}
