@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "The role of each pod considered for the read-write check",
-  "description": "role is null for a pod that is not ready (not asked) or whose role could not be read (error says why).",
+  "description": "role is null for a pod that is not ready (not asked) or whose role could not be read (error says why). mode is Redis' own redis_mode (standalone, cluster or sentinel).",
   "type": "array",
   "items": {
     "type": "object",
     "properties": {
       "pod": {
-        "type": "string"
+        "type": "string",
+        "maxLength": 1024
       },
       "ready": {
         "type": "boolean"
@@ -16,13 +17,15 @@
         "type": [
           "string",
           "null"
-        ]
+        ],
+        "maxLength": 1024
       },
       "role": {
         "type": [
           "string",
           "null"
-        ]
+        ],
+        "maxLength": 1024
       },
       "error": {
         "type": [
@@ -31,7 +34,8 @@
         ],
         "properties": {
           "code": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 1024
           },
           "message": {
             "type": "string",
@@ -43,6 +47,13 @@
           "message"
         ],
         "additionalProperties": false
+      },
+      "mode": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1024
       }
     },
     "required": [
@@ -50,7 +61,8 @@
       "ready",
       "container",
       "role",
-      "error"
+      "error",
+      "mode"
     ],
     "additionalProperties": false
   }

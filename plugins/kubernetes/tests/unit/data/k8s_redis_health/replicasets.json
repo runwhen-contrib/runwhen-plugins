@@ -1,23 +1,40 @@
 {
-  "apiVersion": "v1",
   "items": [
     {
-      "apiVersion": "apps/v1",
-      "kind": "ReplicaSet",
       "metadata": {
-        "annotations": {
-          "deployment.kubernetes.io/desired-replicas": "1",
-          "deployment.kubernetes.io/max-replicas": "2",
-          "deployment.kubernetes.io/revision": "2"
-        },
-        "creationTimestamp": "2026-11-03T22:28:57Z",
-        "generation": 1,
-        "labels": {
-          "app": "redis-locked",
-          "pod-template-hash": "8444d567d6"
-        },
+        "name": "redis-cluster-559c6c97b7",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "Deployment",
+            "name": "redis-cluster",
+            "uid": "3c98901d-3b29-417d-b0ba-0bd3b7debb03"
+          }
+        ],
+        "uid": "d6759a9b-f2b0-4556-a68f-e66766fcb222"
+      }
+    },
+    {
+      "metadata": {
+        "name": "redis-idle-6c994fd87c",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "Deployment",
+            "name": "redis-idle",
+            "uid": "3e449966-e3bf-4f7b-8379-e334d2a07351"
+          }
+        ],
+        "uid": "71d74a5e-2a1f-45d1-b994-03ce17070714"
+      }
+    },
+    {
+      "metadata": {
         "name": "redis-locked-8444d567d6",
-        "namespace": "rw-redis",
         "ownerReferences": [
           {
             "apiVersion": "apps/v1",
@@ -25,112 +42,15 @@
             "controller": true,
             "kind": "Deployment",
             "name": "redis-locked",
-            "uid": "05c5dd82-fa5f-45fa-92d4-5ea7ab1cbf2f"
+            "uid": "dc99c27d-eba5-4076-a170-5e1bac382369"
           }
         ],
-        "resourceVersion": "41265",
-        "uid": "8b23825b-d159-49a0-8d20-9c11a38fda9d"
-      },
-      "spec": {
-        "replicas": 1,
-        "selector": {
-          "matchLabels": {
-            "app": "redis-locked",
-            "pod-template-hash": "8444d567d6"
-          }
-        },
-        "template": {
-          "metadata": {
-            "labels": {
-              "app": "redis-locked",
-              "pod-template-hash": "8444d567d6"
-            }
-          },
-          "spec": {
-            "containers": [
-              {
-                "command": [
-                  "sh",
-                  "-c",
-                  "exec redis-server --requirepass \"$LOCK_PW\" --save \"\""
-                ],
-                "env": [
-                  {
-                    "name": "LOCK_PW",
-                    "valueFrom": {
-                      "secretKeyRef": {
-                        "key": "password",
-                        "name": "redis-auth"
-                      }
-                    }
-                  }
-                ],
-                "image": "redis:7-alpine",
-                "imagePullPolicy": "IfNotPresent",
-                "name": "redis",
-                "ports": [
-                  {
-                    "containerPort": 6379,
-                    "name": "redis",
-                    "protocol": "TCP"
-                  }
-                ],
-                "readinessProbe": {
-                  "failureThreshold": 3,
-                  "periodSeconds": 5,
-                  "successThreshold": 1,
-                  "tcpSocket": {
-                    "port": 6379
-                  },
-                  "timeoutSeconds": 1
-                },
-                "resources": {
-                  "limits": {
-                    "memory": "64Mi"
-                  },
-                  "requests": {
-                    "cpu": "5m",
-                    "memory": "8Mi"
-                  }
-                },
-                "terminationMessagePath": "/dev/termination-log",
-                "terminationMessagePolicy": "File"
-              }
-            ],
-            "dnsPolicy": "ClusterFirst",
-            "restartPolicy": "Always",
-            "schedulerName": "default-scheduler",
-            "securityContext": {},
-            "terminationGracePeriodSeconds": 30
-          }
-        }
-      },
-      "status": {
-        "availableReplicas": 1,
-        "fullyLabeledReplicas": 1,
-        "observedGeneration": 1,
-        "readyReplicas": 1,
-        "replicas": 1,
-        "terminatingReplicas": 0
+        "uid": "1aa4cae8-f1ec-4742-9582-3c0bfe23f842"
       }
     },
     {
-      "apiVersion": "apps/v1",
-      "kind": "ReplicaSet",
       "metadata": {
-        "annotations": {
-          "deployment.kubernetes.io/desired-replicas": "1",
-          "deployment.kubernetes.io/max-replicas": "2",
-          "deployment.kubernetes.io/revision": "1"
-        },
-        "creationTimestamp": "2026-11-03T22:19:50Z",
-        "generation": 1,
-        "labels": {
-          "app": "redis-open",
-          "pod-template-hash": "5cfd5c66b6"
-        },
         "name": "redis-open-5cfd5c66b6",
-        "namespace": "rw-redis",
         "ownerReferences": [
           {
             "apiVersion": "apps/v1",
@@ -138,90 +58,27 @@
             "controller": true,
             "kind": "Deployment",
             "name": "redis-open",
-            "uid": "53f8d254-97a3-4e1d-9273-14b4949082cf"
+            "uid": "6b32b597-31be-4aa2-a390-b0c42652ce44"
           }
         ],
-        "resourceVersion": "39864",
-        "uid": "f8a88678-9f79-49fa-80f6-0582e8fc30ac"
-      },
-      "spec": {
-        "replicas": 1,
-        "selector": {
-          "matchLabels": {
-            "app": "redis-open",
-            "pod-template-hash": "5cfd5c66b6"
+        "uid": "53306dbb-df02-4a7f-8008-56b478b1b480"
+      }
+    },
+    {
+      "metadata": {
+        "name": "redis-sentinel-5c646c5cf9",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "Deployment",
+            "name": "redis-sentinel",
+            "uid": "6e2ba5d1-c3f1-4dd8-ba76-71d4694830d3"
           }
-        },
-        "template": {
-          "metadata": {
-            "labels": {
-              "app": "redis-open",
-              "pod-template-hash": "5cfd5c66b6"
-            }
-          },
-          "spec": {
-            "containers": [
-              {
-                "command": [
-                  "redis-server",
-                  "--save",
-                  ""
-                ],
-                "image": "redis:7-alpine",
-                "imagePullPolicy": "IfNotPresent",
-                "name": "redis",
-                "ports": [
-                  {
-                    "containerPort": 6379,
-                    "name": "redis",
-                    "protocol": "TCP"
-                  }
-                ],
-                "readinessProbe": {
-                  "exec": {
-                    "command": [
-                      "redis-cli",
-                      "ping"
-                    ]
-                  },
-                  "failureThreshold": 3,
-                  "periodSeconds": 5,
-                  "successThreshold": 1,
-                  "timeoutSeconds": 1
-                },
-                "resources": {
-                  "limits": {
-                    "memory": "64Mi"
-                  },
-                  "requests": {
-                    "cpu": "5m",
-                    "memory": "8Mi"
-                  }
-                },
-                "terminationMessagePath": "/dev/termination-log",
-                "terminationMessagePolicy": "File"
-              }
-            ],
-            "dnsPolicy": "ClusterFirst",
-            "restartPolicy": "Always",
-            "schedulerName": "default-scheduler",
-            "securityContext": {},
-            "terminationGracePeriodSeconds": 30
-          }
-        }
-      },
-      "status": {
-        "availableReplicas": 1,
-        "fullyLabeledReplicas": 1,
-        "observedGeneration": 1,
-        "readyReplicas": 1,
-        "replicas": 1,
-        "terminatingReplicas": 0
+        ],
+        "uid": "81417f6c-d9ad-4479-b197-ae9721977840"
       }
     }
-  ],
-  "kind": "List",
-  "metadata": {
-    "resourceVersion": ""
-  }
+  ]
 }

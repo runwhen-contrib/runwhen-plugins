@@ -47,6 +47,7 @@ def daemonset_status(ds):
         "updated": status.get("updatedNumberScheduled", 0),
         "available": status.get("numberAvailable", 0),
         "unavailable": unavailable,
+        "anyUnavailable": unavailable > 0,
         "misscheduled": status.get("numberMisscheduled", 0),
         "generation": generation,
         "observedGeneration": observed,

@@ -5,7 +5,10 @@ try:  # the SDK's class once it is importable
 except ImportError:
 
     class RwError(Exception):
-        def __init__(self, code, message):
+        def __init__(self, code, message, scope=None, hint=None, details=None):
             super().__init__(f"{code}: {message}")
             self.code = code
             self.message = message
+            self.scope = scope
+            self.hint = hint
+            self.details = details

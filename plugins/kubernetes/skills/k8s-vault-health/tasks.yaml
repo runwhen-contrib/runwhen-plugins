@@ -17,9 +17,11 @@ tasks:
       /v1/sys/health through the API server's pod proxy (no port-forward, no exec, no token) and
       reports whether it is initialized, sealed, standby, a performance standby or a DR secondary,
       its version, cluster name and id and replication modes, with the StatefulSet's desired,
-      ready and updated replicas. The health status codes (429, 472, 473, 501, 503) are facts, not
-      errors: the code is derived and reported as state and healthCode. A pod that is not Running
-      is listed and not asked.
+      ready and updated replicas. The health status codes (429, 472, 473, 501, 503, 530) are facts,
+      not errors: the code is derived and reported as state and healthCode. A pod that is not
+      Running, or that the 45 second budget of the task ran out before, is listed and not asked. A
+      StatefulSet that wants pods and has none to ask makes the result partial (unreachable for
+      the pods scope).
     script: scripts/server_status.py
     tags: [vault, sealed, health, statefulset]
     readOnly: true

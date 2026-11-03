@@ -14,8 +14,9 @@ from types import SimpleNamespace
 import pytest
 import yaml
 from jsonschema import Draft202012Validator
-from k8s_vault_health import csi, k8s, vault
+from k8s_vault_health import csi, k8s, project, vault
 from k8s_vault_health import workload as w
+from k8s_vault_health.budget import Budget
 from k8s_vault_health.errors import RwError
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-vault-health"
@@ -45,6 +46,32 @@ WORKLOADS = {
     ("kubernetes/daemonset", "vault-csi-provider"): ("daemonsets.apps", DS),
     ("kubernetes/daemonset", "vault-csi-provider-broken"): ("daemonsets.apps", DS_BROKEN),
 }
+
+
+PROJECTIONS = {
+    proj.template(many): proj
+    for proj in (project.STATEFULSET_FIELDS, project.DAEMONSET_FIELDS, project.POD_FIELDS)
+    for many in (False, True)
+}
+
+
+def _get(obj, path):
+    for key in path.split("."):
+        obj = (obj or {}).get(key)
+    return obj
+
+
+def render(obj, proj):
+    """What kubectl prints for one object under a projection (the inverse of Projection.parse)."""
+    lines = ["@"]
+    for path in proj.strings:
+        lines.append(f"s:{path}={_get(obj, path) or ''}")
+    for path in proj.values:
+        value = _get(obj, path)
+        lines.append(
+            f"j:{path}=" + ("" if value is None else json.dumps(value, separators=(",", ":")))
+        )
+    return "\n".join(lines) + "\n"
 
 
 class FakeCommandError(RwError):
@@ -85,6 +112,7 @@ class FakeCtx:
         self.events = copy.deepcopy(events if events is not None else EVENTS)
         self.calls = []
         self.errors = []
+        self.timeouts = []
 
     def now(self):
         return REFERENCE_TIME
@@ -98,12 +126,19 @@ class FakeCtx:
     def run(self, argv, check=True, **kwargs):
         """Like the v13 runner: a non-zero exit raises unless the caller passes check=False."""
         self.calls.append(argv)
+        self.timeouts.append(kwargs.get("timeout"))
         line = " ".join(argv[1:])
         answer = next((a for needle, a in self.answers if needle in line), None)
         rc, out, err = answer if answer is not None else self.default(argv, line)
         if rc and check:
             raise FakeCommandError(argv, rc, err)
         return SimpleNamespace(returncode=rc, stdout=out, stderr=err)
+
+    def projected(self, argv, objects):
+        """kubectl get ... -o jsonpath=<a projection of the skill>: the objects rendered."""
+        assert argv[argv.index("-o") + 1].startswith("jsonpath="), argv  # never the whole object
+        proj = PROJECTIONS[argv[argv.index("-o") + 1][len("jsonpath=") :]]
+        return 0, "".join(render(o, proj) for o in objects), ""
 
     def default(self, argv, line):
         if argv[1:3] == ["get", "--raw"]:
@@ -119,14 +154,14 @@ class FakeCtx:
         if "get namespaces rw-vault" in line:
             return 0, json.dumps({"kind": "Namespace", "metadata": {"name": "rw-vault"}}), ""
         if "get statefulsets.apps -l" in line:
-            return 0, json.dumps({"items": [STS, STS_SEALED]}), ""
+            return self.projected(argv, [STS, STS_SEALED])
         if "get daemonsets.apps -l" in line:
-            return 0, json.dumps({"items": [DS, DS_BROKEN]}), ""
+            return self.projected(argv, [DS, DS_BROKEN])
         for (rtype, name), (plural, doc) in WORKLOADS.items():
             if f"get {plural} {name} " in line + " ":
-                return 0, json.dumps(doc), ""
+                return self.projected(argv, [doc])
         if "get pods" in line:
-            return 0, json.dumps({"items": self.pods}), ""
+            return self.projected(argv, self.pods)
         if "get events" in line:
             return 0, json.dumps({"items": self.events}), ""
         raise AssertionError(f"unexpected call {argv}")
@@ -241,6 +276,7 @@ def test_every_status_code_is_overridden_to_200_so_the_body_survives_the_proxy()
         "drsecondarycode": "200",
         "sealedcode": "200",
         "uninitcode": "200",
+        "removedcode": "200",  # 530: removed from the raft cluster; older Vaults ignore it
     }
 
 
@@ -326,7 +362,7 @@ def test_owned_pods_follow_selector_and_controller_ownership():
     names = lambda pods: [p["metadata"]["name"] for p in pods]  # noqa: E731
     assert names(w.owned_pods(STS, PODS)) == ["vault-0"]
     assert names(w.owned_pods(STS_SEALED, PODS)) == ["vault-sealed-0"]
-    assert names(w.owned_pods(DS, PODS)) == ["vault-csi-provider-l2j4b"]
+    assert names(w.owned_pods(DS, PODS)) == ["vault-csi-provider-qb97m"]
     stray = copy.deepcopy(pod_doc("vault-0"))
     stray["metadata"]["name"] = "vault-stray"
     stray["metadata"]["ownerReferences"] = [{"kind": "StatefulSet", "uid": "x", "controller": True}]
@@ -524,10 +560,10 @@ def test_a_proxy_timeout_is_a_timeout_error():
     from k8s_vault_health.fetch import vault_health
 
     def run(argv, check=True, **kw):
-        raise subprocess.TimeoutExpired(argv, 20)
+        raise subprocess.TimeoutExpired(argv, 10)
 
     with pytest.raises(RwError) as exc:
-        vault_health(SimpleNamespace(run=run), "rw-vault", "vault-0", "http", 8200)
+        vault_health(SimpleNamespace(run=run), "rw-vault", "vault-0", "http", 8200, Budget())
     assert exc.value.code == "timeout"
 
 
@@ -569,15 +605,11 @@ def test_the_wrong_kind_of_target_is_refused_before_any_kubectl_call():
 
 
 def test_a_namespace_without_vault_is_not_found_never_an_empty_result():
-    ctx = FakeCtx(
-        namespace_target=True, answers=[("get statefulsets.apps -l", (0, '{"items": []}', ""))]
-    )
+    ctx = FakeCtx(namespace_target=True, answers=[("get statefulsets.apps -l", (0, "", ""))])
     with pytest.raises(RwError) as exc:
         server(ctx)
     assert exc.value.code == "not_found"
-    ctx = FakeCtx(
-        namespace_target=True, answers=[("get daemonsets.apps -l", (0, '{"items": []}', ""))]
-    )
+    ctx = FakeCtx(namespace_target=True, answers=[("get daemonsets.apps -l", (0, "", ""))])
     with pytest.raises(RwError) as exc:
         csi_status(ctx)
     assert exc.value.code == "not_found"
@@ -807,7 +839,7 @@ def test_a_daemonset_target_reports_only_that_daemonset():
     ctx = FakeCtx("kubernetes/daemonset", "vault-csi-provider")
     out = csi_status(ctx)
     assert [d["name"] for d in out["daemonsets"]] == ["vault-csi-provider"]
-    assert [p["pod"] for p in out["pods"]] == ["vault-csi-provider-l2j4b"]
+    assert [p["pod"] for p in out["pods"]] == ["vault-csi-provider-qb97m"]
     assert out["events"] == []  # a ready provider has no Warning events
 
 
@@ -981,3 +1013,260 @@ def test_both_tasks_only_read():
 def test_every_schema_is_valid_json_schema():
     for path in (SKILL / "schemas").glob("*.json"):
         Draft202012Validator.check_schema(json.loads(path.read_text()))
+
+
+# ------------------------------------------------- runs that prove nothing ----
+
+
+def test_a_statefulset_that_wants_pods_and_has_none_to_ask_is_partial_not_clean():
+    for pods in ([], [p for p in PODS if p["metadata"]["name"] == "vault-0"]):
+        ctx = FakeCtx(pods=[dict(p, status={"phase": "Pending"}) for p in pods])
+        out = server(ctx)
+        assert out["counts"]["queried"] == 0 and proxy_calls(ctx) == []
+        [err] = ctx.errors
+        assert (err["code"], err["scope"]) == ("unreachable", "pods")
+        assert "no Vault pod could be queried" in err["message"] and err["hint"]
+
+
+def test_a_statefulset_scaled_to_zero_is_a_clean_empty_result():
+    sts = copy.deepcopy(STS)
+    sts["spec"]["replicas"] = 0
+    ctx = FakeCtx(pods=[])
+    ctx.resource.name = "vault"
+    real = ctx.default
+    ctx.default = lambda argv, line: (
+        ctx.projected(argv, [sts])
+        if "get statefulsets.apps vault " in line + " "
+        else real(argv, line)
+    )
+    out = server(ctx)
+    assert out["statefulsets"][0]["desired"] == 0 and ctx.errors == []
+
+
+def test_a_pod_that_was_queried_keeps_the_result_clean_of_the_no_pod_error():
+    ctx = FakeCtx()
+    server(ctx)
+    assert ctx.errors == []
+
+
+# ---------------------------------------------------------- proxy mapping ----
+
+
+MTLS = (
+    "Error from server (ServiceUnavailable): error trying to reach service: remote error: "
+    "tls: bad certificate"
+)
+
+
+def test_a_listener_that_wants_a_client_certificate_is_unreachable_with_a_hint():
+    ctx = FakeCtx(answers=[("get --raw", (1, "", MTLS))])
+    with pytest.raises(RwError) as exc:
+        server(ctx, scheme="https")
+    assert exc.value.code == "unreachable"
+    assert "bad certificate" in exc.value.message
+    assert "mutual TLS" in exc.value.hint
+
+
+def test_the_mutual_tls_hint_reaches_the_scoped_error_of_a_partial_result():
+    ctx = FakeCtx(namespace_target=True, answers=[("vault-sealed-0:8200", (1, "", MTLS))])
+    out = server(ctx)
+    assert by_pod(out["pods"])["vault-sealed-0"]["error"]["code"] == "unreachable"
+    [err] = ctx.errors
+    assert (err["code"], err["scope"]) == ("unreachable", "pod/vault-sealed-0")
+    assert "mutual TLS" in err["hint"]
+
+
+def test_a_404_from_the_proxy_names_the_port_input():
+    not_found = (
+        "Error from server (NotFound): the server could not find the requested resource (get pods "
+        "http:vault-0:9999)"
+    )
+    ctx = FakeCtx(answers=[("get --raw", (1, "", not_found))])
+    with pytest.raises(RwError) as exc:
+        server(ctx, port=9999)
+    assert exc.value.code == "not_found"
+    assert "port" in exc.value.hint and "8200" in exc.value.hint
+
+
+def test_a_removed_raft_node_is_the_removed_state_not_internal():
+    removed = {**doc(), "removed_from_cluster": True}
+    assert vault.health_state(removed) == ("removed", 530)
+    ctx = FakeCtx(health={"vault-0": removed})
+    out = server(ctx)
+    entry = out["pods"][0]
+    assert (entry["health"]["state"], entry["health"]["healthCode"]) == ("removed", 530)
+    assert entry["error"] is None and ctx.errors == []
+    assert out["counts"]["byState"] == {"removed": 1}
+
+
+def test_a_530_the_proxy_could_not_carry_is_the_removed_state_too():
+    ctx = FakeCtx(answers=[("get --raw", (1, "", "Error from server: unexpected status code 530"))])
+    out = server(ctx)
+    entry = out["pods"][0]
+    assert entry["health"]["state"] == "removed" and entry["health"]["healthCode"] == 530
+    assert (entry["health"]["initialized"], entry["health"]["sealed"]) == (None, None)
+    assert entry["error"] is None
+
+
+def test_a_port_that_contains_530_is_not_taken_for_a_removed_node():
+    ctx = FakeCtx(answers=[("get --raw", (1, "", "dial tcp 10.0.0.5:8530: connection refused"))])
+    with pytest.raises(RwError) as exc:
+        server(ctx)
+    assert exc.value.code == "unreachable"
+
+
+def test_removed_pods_sort_with_the_sealed_ones_first():
+    health = {
+        "vault-0": HEALTH["vault-0"],
+        "vault-sealed-0": {**doc(), "removed_from_cluster": True},
+    }
+    out = server(FakeCtx(namespace_target=True, health=health))
+    assert [p["pod"] for p in out["pods"]][0] == "vault-sealed-0"
+
+
+# ------------------------------------------------------------ time budget ----
+
+
+class Clock:
+    def __init__(self):
+        self.now = 500.0
+
+    def __call__(self):
+        return self.now
+
+
+def slow(ctx, clock, seconds):
+    real = ctx.run
+
+    def run(argv, check=True, **kw):
+        if argv[1:3] == ["get", "--raw"]:
+            clock.now += seconds
+        return real(argv, check=check, **kw)
+
+    ctx.run = run
+    return ctx
+
+
+def test_pods_reached_after_the_budget_is_spent_get_a_timeout_error_and_are_not_asked():
+    from k8s_vault_health.check import server_status
+
+    clock = Clock()
+    ctx = slow(FakeCtx(namespace_target=True), clock, 50)
+    _sts, pods, counts = server_status(ctx, "http", 8200, 200, Budget(45, clock))
+    by = by_pod(pods)
+    assert by["vault-0"]["queried"] is True and by["vault-0"]["error"] is None
+    assert by["vault-sealed-0"]["queried"] is False
+    assert by["vault-sealed-0"]["error"]["code"] == "timeout"
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("timeout", "pod/vault-sealed-0")]
+    assert len(proxy_calls(ctx)) == 1
+    assert counts["queried"] == 1 and counts["failed"] == 1
+
+
+def test_a_budget_spent_before_any_pod_fails_the_task_with_timeout():
+    from k8s_vault_health.check import server_status
+
+    clock = Clock()
+    budget = Budget(45, clock)
+    clock.now += 46  # the fetches before the first pod used it all
+    with pytest.raises(RwError) as exc:
+        server_status(FakeCtx(), "http", 8200, 200, budget)
+    assert exc.value.code == "timeout"
+
+
+def test_every_proxy_call_gets_a_timeout_of_at_most_ten_seconds():
+    ctx = FakeCtx(namespace_target=True)
+    server(ctx)
+    proxied = [t for argv, t in zip(ctx.calls, ctx.timeouts) if argv[1:3] == ["get", "--raw"]]
+    assert proxied and all(t is not None and 1 <= t <= 10 for t in proxied)
+
+
+# ------------------------------------------------------------ csi, bounds ----
+
+
+def test_any_unavailable_pod_is_flagged_even_below_max_unavailable():
+    ok = csi.daemonset_status(DS)
+    assert (ok["unavailable"], ok["anyUnavailable"]) == (0, False)
+    broken = csi.daemonset_status(DS_BROKEN)
+    assert broken["unavailable"] == 1 and broken["anyUnavailable"] is True
+    assert broken["unavailableExceedsMax"] is False  # 1 is within the default maxUnavailable of 1
+    out = csi_status(FakeCtx("kubernetes/daemonset", "vault-csi-provider-broken"))
+    assert out["daemonsets"][0]["anyUnavailable"] is True
+
+
+def test_server_text_is_bounded_to_1024():
+    facts = vault.health_facts(
+        doc(version="1." + "9" * 3000, cluster_name="c" * 3000, replication_dr_mode="d" * 3000)
+    )
+    assert len(facts["version"]) == len(facts["clusterName"]) == 1024
+    assert len(facts["replicationDrMode"]) == 1024
+
+
+def test_every_string_in_the_schemas_has_a_maxlength_unless_it_is_an_enum():
+    def walk(node, where):
+        if isinstance(node, dict):
+            types = node.get("type")
+            types = types if isinstance(types, list) else [types]
+            if "string" in types and not ({"enum", "const", "format"} & node.keys()):
+                assert "maxLength" in node, where
+            for key, value in node.items():
+                walk(value, f"{where}/{key}")
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, f"{where}/{i}")
+
+    for path in (SKILL / "schemas").glob("*.json"):
+        walk(json.loads(path.read_text()), path.name)
+
+
+# --------------------------------------------------- narrow kubectl fetches ----
+
+
+def test_no_workload_or_pod_read_returns_a_whole_object_so_env_never_comes_back():
+    ctx = FakeCtx(namespace_target=True)
+    server(ctx)
+    csi_status(ctx)
+    csi_status(FakeCtx("kubernetes/daemonset", "vault-csi-provider"))
+    reads = [
+        a
+        for a in ctx.calls
+        if "get" in a
+        and "--raw" not in a
+        and a[a.index("get") + 1] != "events"
+        and "namespaces" not in a
+    ]
+    assert reads
+    for argv in reads:
+        out = argv[argv.index("-o") + 1]
+        assert out.startswith("jsonpath="), argv
+        for forbidden in (
+            "env",
+            "annotations",
+            "command",
+            "args",
+            "template",
+            "metadata}",
+            "spec}",
+        ):
+            assert forbidden not in out, (forbidden, out)
+
+
+def test_the_recorded_data_holds_no_env_and_no_last_applied_configuration():
+    blob = "".join(p.read_text() for p in DATA.glob("*.json"))
+    for forbidden in ('"env"', "VAULT_LOCAL_CONFIG", "last-applied-configuration", "valueFrom"):
+        assert forbidden not in blob
+
+
+def test_a_projection_round_trips_and_leaves_out_what_the_object_lacks():
+    pod = next(p for p in PODS if p["metadata"]["name"] == "vault-0")
+    doc_ = project.POD_FIELDS.parse(render(pod, project.POD_FIELDS), many=False)
+    assert doc_["metadata"]["name"] == "vault-0" and doc_["status"] == pod["status"]
+    bare = project.POD_FIELDS.parse("@\ns:metadata.name=x\nj:status=\n", many=False)
+    assert bare == {"metadata": {"name": "x"}}
+    assert project.STATEFULSET_FIELDS.parse("", many=True) == {"items": []}
+
+
+@pytest.mark.parametrize("bad", ["", "oops\n", "@\nx:metadata.name=a\n", "@\nj:status={nope\n"])
+def test_output_that_is_not_the_projection_is_an_internal_error(bad):
+    with pytest.raises(RwError) as exc:
+        project.POD_FIELDS.parse(bad, many=False)
+    assert exc.value.code == "internal"

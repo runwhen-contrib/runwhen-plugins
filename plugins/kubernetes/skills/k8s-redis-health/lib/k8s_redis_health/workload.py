@@ -143,9 +143,13 @@ def _image_name(image):
     return (image or "").split("@")[0].rsplit("/", 1)[-1].split(":")[0]
 
 
+SERVER_NAMES = ("redis", "valkey")
+
+
 def choose_container(pod, requested=None):
     """The name of the container to run redis-cli in: `requested` (must exist), else the one named
-    redis, else the first whose image is redis (not an exporter or sentinel), else the first."""
+    redis or valkey, else the first whose image name starts with redis or valkey (not an exporter
+    or sentinel), else the first container."""
     containers = pod.get("spec", {}).get("containers") or []
     names = [c["name"] for c in containers]
     if requested:
@@ -155,11 +159,12 @@ def choose_container(pod, requested=None):
                 f"pod {pod['metadata']['name']} has no container {requested!r}; it has {', '.join(names)}",
             )
         return requested
-    if "redis" in names:
-        return "redis"
+    for name in SERVER_NAMES:
+        if name in names:
+            return name
     for c in containers:
         image = _image_name(c.get("image"))
-        if image.startswith("redis") and "exporter" not in image and "sentinel" not in image:
+        if image.startswith(SERVER_NAMES) and "exporter" not in image and "sentinel" not in image:
             return c["name"]
     if not names:
         raise RwError("not_found", f"pod {pod['metadata']['name']} has no containers")

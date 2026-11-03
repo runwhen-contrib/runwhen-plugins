@@ -1,116 +1,14 @@
 {
-  "apiVersion": "apps/v1",
-  "kind": "StatefulSet",
   "metadata": {
-    "annotations": {
-      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"redis\",\"namespace\":\"rw-redis\"},\"spec\":{\"podManagementPolicy\":\"Parallel\",\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"redis\"}},\"serviceName\":\"redis\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"redis\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"if [ \\\"${HOSTNAME##*-}\\\" = 0 ]; then\\n  exec redis-server --requirepass \\\"$REDIS_PASSWORD\\\" --maxmemory 48mb --maxmemory-policy allkeys-lru --save \\\"\\\"\\nfi\\nexec redis-server --replicaof redis-0.redis.rw-redis.svc 6379 --masterauth \\\"$REDIS_PASSWORD\\\" --requirepass \\\"$REDIS_PASSWORD\\\" --maxmemory 48mb --maxmemory-policy allkeys-lru --save \\\"\\\"\\n\"],\"env\":[{\"name\":\"REDIS_PASSWORD\",\"valueFrom\":{\"secretKeyRef\":{\"key\":\"password\",\"name\":\"redis-auth\"}}}],\"image\":\"redis:7-alpine\",\"name\":\"redis\",\"ports\":[{\"containerPort\":6379,\"name\":\"redis\"}],\"readinessProbe\":{\"exec\":{\"command\":[\"sh\",\"-c\",\"REDISCLI_AUTH=\\\"$REDIS_PASSWORD\\\" redis-cli ping | grep -q PONG\"]},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"8Mi\"}}}]}}}}\n"
-    },
-    "creationTimestamp": "2026-11-03T22:19:50Z",
-    "generation": 1,
     "name": "redis",
     "namespace": "rw-redis",
-    "resourceVersion": "39880",
-    "uid": "cf5e596e-ec1b-4df6-9d34-3cf401d37804"
+    "uid": "452d7dec-0775-49e2-b975-c76e54cb2bf7"
   },
   "spec": {
-    "persistentVolumeClaimRetentionPolicy": {
-      "whenDeleted": "Retain",
-      "whenScaled": "Retain"
-    },
-    "podManagementPolicy": "Parallel",
-    "replicas": 2,
-    "revisionHistoryLimit": 10,
     "selector": {
       "matchLabels": {
         "app": "redis"
       }
-    },
-    "serviceName": "redis",
-    "template": {
-      "metadata": {
-        "labels": {
-          "app": "redis"
-        }
-      },
-      "spec": {
-        "containers": [
-          {
-            "command": [
-              "sh",
-              "-c",
-              "if [ \"${HOSTNAME##*-}\" = 0 ]; then\n  exec redis-server --requirepass \"$REDIS_PASSWORD\" --maxmemory 48mb --maxmemory-policy allkeys-lru --save \"\"\nfi\nexec redis-server --replicaof redis-0.redis.rw-redis.svc 6379 --masterauth \"$REDIS_PASSWORD\" --requirepass \"$REDIS_PASSWORD\" --maxmemory 48mb --maxmemory-policy allkeys-lru --save \"\"\n"
-            ],
-            "env": [
-              {
-                "name": "REDIS_PASSWORD",
-                "valueFrom": {
-                  "secretKeyRef": {
-                    "key": "password",
-                    "name": "redis-auth"
-                  }
-                }
-              }
-            ],
-            "image": "redis:7-alpine",
-            "imagePullPolicy": "IfNotPresent",
-            "name": "redis",
-            "ports": [
-              {
-                "containerPort": 6379,
-                "name": "redis",
-                "protocol": "TCP"
-              }
-            ],
-            "readinessProbe": {
-              "exec": {
-                "command": [
-                  "sh",
-                  "-c",
-                  "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"
-                ]
-              },
-              "failureThreshold": 3,
-              "periodSeconds": 5,
-              "successThreshold": 1,
-              "timeoutSeconds": 1
-            },
-            "resources": {
-              "limits": {
-                "memory": "64Mi"
-              },
-              "requests": {
-                "cpu": "5m",
-                "memory": "8Mi"
-              }
-            },
-            "terminationMessagePath": "/dev/termination-log",
-            "terminationMessagePolicy": "File"
-          }
-        ],
-        "dnsPolicy": "ClusterFirst",
-        "restartPolicy": "Always",
-        "schedulerName": "default-scheduler",
-        "securityContext": {},
-        "terminationGracePeriodSeconds": 30
-      }
-    },
-    "updateStrategy": {
-      "rollingUpdate": {
-        "maxUnavailable": 1,
-        "partition": 0
-      },
-      "type": "RollingUpdate"
     }
-  },
-  "status": {
-    "availableReplicas": 2,
-    "collisionCount": 0,
-    "currentReplicas": 2,
-    "currentRevision": "redis-69cc669dc8",
-    "observedGeneration": 1,
-    "readyReplicas": 2,
-    "replicas": 2,
-    "updateRevision": "redis-69cc669dc8",
-    "updatedReplicas": 2
   }
 }

@@ -6,32 +6,80 @@ from datetime import UTC, datetime
 from k8s_redis_health.errors import RwError
 from k8s_redis_health.workload import NESTED_MAX, limit_text
 
-# Runs inside the redis container. The container's own REDIS_PASSWORD (set from a Secret by its
-# manifest) becomes REDISCLI_AUTH, so the password is never read by this skill, never on argv and
-# never printed. It is exported only when set: an empty REDISCLI_AUTH makes redis-cli send AUTH ""
-# to a server without a password, which prints an "AUTH failed" warning.
+# Runs inside the redis container. The container's own password becomes REDISCLI_AUTH, so it is
+# never read by this skill, never on argv and never printed. Sources, first one set wins:
+# REDIS_PASSWORD, the contents of the file REDIS_PASSWORD_FILE names, VALKEY_PASSWORD, the contents
+# of the file VALKEY_PASSWORD_FILE names. REDISCLI_AUTH is exported only when a password was found:
+# an empty one makes redis-cli send AUTH "" to a server without a password, which prints an
+# "AUTH failed" warning. A Valkey image may carry valkey-cli alone.
 EXEC_SCRIPT = (
-    'if [ -n "${REDIS_PASSWORD:-}" ]; then REDISCLI_AUTH="$REDIS_PASSWORD"; export REDISCLI_AUTH; fi;'
-    ' exec redis-cli "$@"'
+    'pw="${REDIS_PASSWORD:-}";'
+    ' if [ -z "$pw" ] && [ -n "${REDIS_PASSWORD_FILE:-}" ] && [ -r "$REDIS_PASSWORD_FILE" ];'
+    ' then pw=$(cat "$REDIS_PASSWORD_FILE"); fi;'
+    ' if [ -z "$pw" ]; then pw="${VALKEY_PASSWORD:-}"; fi;'
+    ' if [ -z "$pw" ] && [ -n "${VALKEY_PASSWORD_FILE:-}" ] && [ -r "$VALKEY_PASSWORD_FILE" ];'
+    ' then pw=$(cat "$VALKEY_PASSWORD_FILE"); fi;'
+    ' if [ -n "$pw" ]; then REDISCLI_AUTH="$pw"; export REDISCLI_AUTH; fi;'
+    ' if command -v redis-cli >/dev/null; then exec redis-cli "$@"; fi;'
+    ' exec valkey-cli "$@"'
 )
+
+DEFAULT_PORT = 6379
+REPLY_LINE_LIMIT = 256  # longest Redis reply line carried in a message
 
 # redis-cli exits 0 on an error reply and prints it; a line that starts like one of these means
 # "the credentials did not work". Only line starts count: INFO's errorstats section lists
 # errorstat_NOAUTH and errorstat_WRONGPASS counters of earlier failures.
 _AUTH_MARKERS = ("NOAUTH", "WRONGPASS", "AUTH failed", "NOPERM", "ERR invalid password")
 
-AUTH_HINT = (
-    "Redis requires a password and the container has no working REDIS_PASSWORD environment "
-    "variable; set it on the container (from a Secret) or run the check another way"
+AUTH_REFUSED_HINT = "the supplied password was refused, or none is configured on the server"
+NOAUTH_HINT = (
+    "Redis requires a password and the container supplies none: set REDIS_PASSWORD, "
+    "REDIS_PASSWORD_FILE, VALKEY_PASSWORD or VALKEY_PASSWORD_FILE on the container"
 )
+NOPERM_HINT = "the Redis user the container authenticates as may not run this command (ACL)"
+
+# the Redis error replies INFO can answer, and what they mean for the task
+_INFO_ERROR_CODES = {
+    "LOADING": "unreachable",
+    "BUSY": "unreachable",
+    "MASTERDOWN": "unreachable",
+    "NOPERM": "permission_denied",
+    "NOAUTH": "permission_denied",
+}
+
+MODES_REFUSED = ("cluster", "sentinel")
+
+
+def check_port(port):
+    """The port as an int, or invalid_input (before any kubectl call)."""
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise RwError("invalid_input", f"port must be 1 to 65535, not {port!r}")
+    return port
+
+
+def auth_line(text):
+    """The first line of redis-cli output that says authentication is required or was refused, cut
+    to REPLY_LINE_LIMIT; None when there is none."""
+    for line in (text or "").replace("\r", "").splitlines():
+        line = line.strip()
+        if line.startswith(_AUTH_MARKERS):
+            return line[:REPLY_LINE_LIMIT]
+    return None
 
 
 def auth_failure(text):
     """True when redis-cli output says authentication is required or was refused."""
-    return any(
-        line.strip().startswith(_AUTH_MARKERS)
-        for line in (text or "").replace("\r", "").splitlines()
-    )
+    return auth_line(text) is not None
+
+
+def auth_hint(line):
+    """The hint that goes with an authentication failure line."""
+    if line.startswith("NOAUTH"):
+        return NOAUTH_HINT
+    if line.startswith("NOPERM"):
+        return NOPERM_HINT
+    return AUTH_REFUSED_HINT
 
 
 def reply_text(stdout):
@@ -51,12 +99,42 @@ def parse_info(text):
     return fields
 
 
-def check_info(fields, required="redis_version"):
-    """The parsed INFO must carry a field of the section asked for; an error reply or foreign output
-    does not."""
-    if required not in fields:
-        raise RwError("internal", f"redis-cli INFO returned no {required} field")
+def info_error(reply):
+    """The RwError for an INFO reply that is a Redis error reply (LOADING, BUSY, MASTERDOWN,
+    NOPERM, NOAUTH, any other), carrying the first reply line; None when it is INFO output."""
+    if parse_info(reply):
+        return None
+    line = reply_text(reply).split("\n", 1)[0][:REPLY_LINE_LIMIT]
+    token = line.split(" ", 1)[0]
+    code = _INFO_ERROR_CODES.get(token, "internal")
+    if not line:
+        return RwError("internal", "Redis answered INFO with no reply")
+    hint = auth_hint(line) if code == "permission_denied" else None
+    return RwError(code, f"Redis answered INFO with an error: {line}", hint=hint)
+
+
+def require_server(fields):
+    """The INFO fields of a Redis server (standalone, replica, primary or cluster node). Sentinel
+    and anything else that answers INFO without a `role` is not one: invalid_input."""
+    if "role" not in fields:
+        raise RwError(
+            "invalid_input",
+            "not a Redis server (sentinel?): INFO has no role field; "
+            "point the container and port inputs at a Redis data node",
+        )
     return fields
+
+
+def refuse_unsupported_mode(fields):
+    """invalid_input for a cluster or sentinel: the write check does not apply there."""
+    mode = fields.get("redis_mode")
+    if mode in MODES_REFUSED:
+        raise RwError(
+            "invalid_input",
+            f"unsupported_mode: this Redis runs in {mode} mode; the write check supports "
+            "standalone and replication only",
+            details={"reason": "unsupported_mode", "mode": mode},
+        )
 
 
 def _int(fields, key):
@@ -73,6 +151,11 @@ def _float(fields, key):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _text(fields, key):
+    """A string the server reports, bounded (it is server-supplied free text)."""
+    return limit_text(fields.get(key))[0]
 
 
 def _flag(fields, key):
@@ -99,9 +182,9 @@ def _replicas(fields):
         parts = dict(p.split("=", 1) for p in fields[key].split(",") if "=" in p)
         out.append(
             {
-                "ip": parts.get("ip"),
+                "ip": limit_text(parts.get("ip"))[0],
                 "port": int(parts["port"]) if parts.get("port", "").isdigit() else None,
-                "state": parts.get("state"),
+                "state": limit_text(parts.get("state"))[0],
                 "offset": int(parts["offset"]) if parts.get("offset", "").isdigit() else None,
                 "lagSeconds": int(parts["lag"]) if parts.get("lag", "").isdigit() else None,
             }
@@ -121,19 +204,19 @@ def instance_facts(fields, memory_threshold_percent):
     port = _int(fields, "master_port")
     return {
         "server": {
-            "redisVersion": fields.get("redis_version"),
-            "redisMode": fields.get("redis_mode"),
+            "redisVersion": _text(fields, "redis_version"),
+            "redisMode": _text(fields, "redis_mode"),
             "uptimeSeconds": _int(fields, "uptime_in_seconds"),
             "tcpPort": _int(fields, "tcp_port"),
         },
         "replication": {
-            "role": fields.get("role"),
+            "role": _text(fields, "role"),
             "connectedReplicas": _int(fields, "connected_slaves"),
             "replicas": replicas[:NESTED_MAX],
             "replicasTruncated": len(replicas) > NESTED_MAX,
-            "masterHost": fields.get("master_host"),
+            "masterHost": _text(fields, "master_host"),
             "masterPort": port,
-            "masterLinkStatus": fields.get("master_link_status"),
+            "masterLinkStatus": _text(fields, "master_link_status"),
             "masterLinkDownSinceSeconds": _since(_int(fields, "master_link_down_since_seconds")),
             "masterLastIoSecondsAgo": _since(_int(fields, "master_last_io_seconds_ago")),
             "masterSyncInProgress": _flag(fields, "master_sync_in_progress"),
@@ -144,7 +227,7 @@ def instance_facts(fields, memory_threshold_percent):
             "maxBytes": maxmemory,
             "usedPercent": percent,
             "overThreshold": None if percent is None else percent >= memory_threshold_percent,
-            "maxmemoryPolicy": fields.get("maxmemory_policy"),
+            "maxmemoryPolicy": _text(fields, "maxmemory_policy"),
         },
         "clients": {
             "connected": _int(fields, "connected_clients"),
@@ -157,15 +240,15 @@ def instance_facts(fields, memory_threshold_percent):
         "persistence": {
             "loading": _flag(fields, "loading"),
             "rdb": {
-                "lastBgsaveStatus": fields.get("rdb_last_bgsave_status"),
+                "lastBgsaveStatus": _text(fields, "rdb_last_bgsave_status"),
                 "lastSaveTime": _epoch(_int(fields, "rdb_last_save_time")),
                 "changesSinceLastSave": _int(fields, "rdb_changes_since_last_save"),
                 "bgsaveInProgress": _flag(fields, "rdb_bgsave_in_progress"),
             },
             "aof": {
                 "enabled": _flag(fields, "aof_enabled"),
-                "lastRewriteStatus": fields.get("aof_last_bgrewrite_status"),
-                "lastWriteStatus": fields.get("aof_last_write_status"),
+                "lastRewriteStatus": _text(fields, "aof_last_bgrewrite_status"),
+                "lastWriteStatus": _text(fields, "aof_last_write_status"),
             },
         },
     }
@@ -173,7 +256,7 @@ def instance_facts(fields, memory_threshold_percent):
 
 def role_of(fields):
     """'master' or 'slave' from parsed INFO replication; None when INFO has no role."""
-    return fields.get("role")
+    return _text(fields, "role")
 
 
 def reply_view(text):

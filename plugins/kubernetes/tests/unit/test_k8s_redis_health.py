@@ -15,9 +15,12 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 from k8s_redis_health import k8s
+from k8s_redis_health import project
 from k8s_redis_health import redis as r
 from k8s_redis_health import workload as w
+from k8s_redis_health.budget import Budget
 from k8s_redis_health.errors import RwError
+from k8s_redis_health.fetch import Conn
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-redis-health"
 DATA = Path(__file__).parent / "data" / "k8s_redis_health"
@@ -50,11 +53,8 @@ INFO = {
     "redis-1": text("info_replica"),
     "redis-orphan-0": text("info_orphan"),
 }
-INFO_REPLICATION = {
-    "redis-0": text("info_replication_primary"),
-    "redis-1": text("info_replication_replica"),
-    "redis-orphan-0": text("info_replication_orphan"),
-}
+INFO_CLUSTER = text("info_cluster")
+INFO_SENTINEL = text("info_sentinel")
 REFERENCE_TIME = datetime(2026, 11, 4, 9, 14, 2, 123456, tzinfo=timezone.utc)
 KEY = "rw:healthcheck:20261104T091402123456"
 
@@ -70,6 +70,34 @@ class FakeCommandError(RwError):
 
 def pod_named(prefix):
     return next(p for p in PODS if p["metadata"]["name"].startswith(prefix))
+
+
+PROJECTIONS = {
+    proj.template(many): (proj, many)
+    for proj in (project.WORKLOAD, project.REPLICASET, project.POD)
+    for many in (False, True)
+}
+
+
+def _get(obj, path):
+    for key in path.split("."):
+        obj = (obj or {}).get(key)
+    return obj
+
+
+def render(obj, proj):
+    """What kubectl prints for one object under a projection (the inverse of Projection.parse)."""
+    lines = ["@"]
+    for path in proj.strings:
+        lines.append(f"s:{path}={_get(obj, path) or ''}")
+    for path in proj.values:
+        value = _get(obj, path)
+        lines.append(
+            f"j:{path}=" + ("" if value is None else json.dumps(value, separators=(",", ":")))
+        )
+    if proj.containers:
+        lines += [f"c:{c['name']}|{c['image']}" for c in obj["spec"]["containers"]]
+    return "\n".join(lines) + "\n"
 
 
 class FakeCtx:
@@ -93,6 +121,8 @@ class FakeCtx:
         self.keys = {}
         self.calls = []
         self.errors = []
+        self.timeouts = []
+        self.ports = []
 
     def now(self):
         return REFERENCE_TIME
@@ -104,18 +134,20 @@ class FakeCtx:
         return [" ".join(c[1:]) for c in self.calls]
 
     def execs(self):
-        """[(pod, container, redis-cli args)] of every kubectl exec."""
+        """[(pod, container, redis-cli args)] of every kubectl exec (the -p <port> is in ports)."""
         out = []
         for argv in self.calls:
             if "exec" in argv:
                 i = argv.index("exec")
                 sh = argv.index("sh", argv.index("--") + 2)  # the `sh` after `sh -c <script>`
-                out.append((argv[i + 1], argv[argv.index("-c") + 1], argv[sh + 1 :]))
+                assert argv[sh + 1] == "-p"
+                out.append((argv[i + 1], argv[argv.index("-c") + 1], argv[sh + 3 :]))
         return out
 
     def run(self, argv, check=True, **kwargs):
         """Like the v13 runner: a non-zero exit raises unless the caller passes check=False."""
         self.calls.append(argv)
+        self.timeouts.append(kwargs.get("timeout"))
         line = " ".join(argv[1:])
         answer = next((a for needle, a in self.answers if needle in line), None)
         rc, out, err = answer if answer is not None else self.default(argv, line)
@@ -123,17 +155,25 @@ class FakeCtx:
             raise FakeCommandError(argv, rc, err)
         return SimpleNamespace(returncode=rc, stdout=out, stderr=err)
 
+    def projected(self, argv, objects):
+        """kubectl get ... -o jsonpath=<a projection of the skill>: the objects rendered."""
+        assert argv[argv.index("-o") + 1].startswith("jsonpath="), argv  # never the whole object
+        proj, many = PROJECTIONS[argv[argv.index("-o") + 1][len("jsonpath=") :]]
+        return 0, "".join(render(o, proj) for o in objects), ""
+
     def default(self, argv, line):
         if f"get {self.resource_plural} {self.resource.name} " in line + " ":
-            return 0, json.dumps(self.doc), ""
+            return self.projected(argv, [self.doc])
         if "get replicasets.apps" in line:
-            return 0, json.dumps({"items": RS}), ""
+            return self.projected(argv, RS)
         if "get pods" in line:
-            return 0, json.dumps({"items": self.pods}), ""
+            return self.projected(argv, self.pods)
         if " exec " in f" {line} ":
             pod = argv[argv.index("exec") + 1]
-            args = argv[argv.index("sh", argv.index("--") + 2) + 1 :]
-            return self.redis(pod, args)
+            sh = argv.index("sh", argv.index("--") + 2)
+            assert argv[sh + 1] == "-p"
+            self.ports.append(int(argv[sh + 2]))
+            return self.redis(pod, argv[sh + 3 :])
         raise AssertionError(f"unexpected call {argv}")
 
     def server(self, pod, args):
@@ -144,13 +184,13 @@ class FakeCtx:
         if cmd == "PING":
             return 0, "PONG\n", ""
         if cmd == "INFO":
-            if len(args) > 1:
-                return 0, INFO_REPLICATION.get(pod, INFO_REPLICATION["redis-0"]), ""
             return 0, INFO.get(pod, INFO["redis-0"]), ""
         if pod in ("redis-1", "redis-orphan-0") and cmd in ("SET", "DEL"):
             return 0, "READONLY You can't write against a read only replica.\n\n", ""
         if cmd == "SET":
-            assert args[3:] == ["EX", "60"]
+            assert args[3:] == ["NX", "EX", "60"]
+            if args[1] in self.keys:
+                return 0, "\n", ""  # redis-cli prints a nil reply as nothing
             self.keys[args[1]] = args[2]
             return 0, "OK\n", ""
         if cmd == "GET":
@@ -265,11 +305,68 @@ def test_replicas_are_read_in_slave_order():
     assert [x["ip"] for x in r._replicas(fields)] == ["z", "a", "b"]
 
 
-def test_info_without_the_asked_section_is_an_internal_error():
+def test_info_without_a_role_is_not_a_redis_server():
+    for text_ in (INFO_SENTINEL, "# Server\r\nredis_version:7.2.0\r\n"):
+        with pytest.raises(RwError) as exc:
+            r.require_server(r.parse_info(text_))
+        assert exc.value.code == "invalid_input"
+        assert "not a Redis server (sentinel?)" in exc.value.message
+    assert r.require_server(r.parse_info(INFO["redis-0"]))["role"] == "master"
+
+
+@pytest.mark.parametrize(
+    "reply,code,hint",
+    [
+        ("LOADING Redis is loading the dataset in memory", "unreachable", False),
+        ("BUSY Redis is busy running a script.", "unreachable", False),
+        (
+            "MASTERDOWN Link with MASTER is down and replica-serve-stale-data is set to 'no'.",
+            "unreachable",
+            False,
+        ),
+        (
+            "NOPERM this user has no permissions to run the 'info' command",
+            "permission_denied",
+            True,
+        ),
+        ("NOAUTH Authentication required.", "permission_denied", True),
+        ("ERR unknown command 'INFO'", "internal", False),
+    ],
+)
+def test_an_error_reply_to_info_carries_its_first_line_and_a_code(reply, code, hint):
+    err = r.info_error(reply + "\nsecond line\n")
+    assert err.code == code
+    assert reply in err.message and "second line" not in err.message
+    assert bool(err.hint) is hint
+    assert r.info_error(INFO["redis-0"]) is None
+
+
+def test_an_error_reply_line_is_cut_at_256_characters():
+    err = r.info_error("LOADING " + "x" * 1000)
+    assert len(err.message) < 256 + 60 and "x" * 300 not in err.message
+
+
+def test_loading_on_info_of_every_pod_fails_unreachable_with_the_reply_line():
+    ctx = FakeCtx(answers=[("INFO", (0, "LOADING Redis is loading the dataset in memory\n", ""))])
     with pytest.raises(RwError) as exc:
-        r.check_info(r.parse_info("WRONGTYPE nonsense\r\n"))
-    assert exc.value.code == "internal"
-    assert r.check_info(r.parse_info(INFO_REPLICATION["redis-0"]), "role")["role"] == "master"
+        ping(ctx)
+    assert exc.value.code == "unreachable"
+    assert "LOADING Redis is loading" in exc.value.message
+
+
+def test_loading_on_info_of_one_pod_is_partial_and_keeps_its_ping():
+    def redis(pod, args):
+        if pod == "redis-1" and args[0] == "INFO":
+            return 0, "LOADING Redis is loading the dataset in memory\n", ""
+        return FakeCtx().server(pod, args)
+
+    ctx = FakeCtx(redis=redis)
+    out = ping(ctx)
+    entry = by_pod(out["instances"])["redis-1"]
+    assert entry["ping"]["ok"] is True and entry["info"] is None
+    assert entry["error"]["code"] == "unreachable"
+    assert "LOADING Redis is loading" in entry["error"]["message"]
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("unreachable", "pod/redis-1")]
 
 
 # --------------------------------------------------------- credentials ----
@@ -294,9 +391,73 @@ def test_info_that_lists_earlier_auth_errors_is_not_an_auth_failure():
 
 
 def test_the_exec_script_takes_the_password_from_the_containers_own_env():
-    assert "REDIS_PASSWORD" in r.EXEC_SCRIPT and "REDISCLI_AUTH" in r.EXEC_SCRIPT
-    assert 'exec redis-cli "$@"' in r.EXEC_SCRIPT
+    for name in (
+        "REDIS_PASSWORD",
+        "REDIS_PASSWORD_FILE",
+        "VALKEY_PASSWORD",
+        "VALKEY_PASSWORD_FILE",
+    ):
+        assert name in r.EXEC_SCRIPT
+    assert "REDISCLI_AUTH" in r.EXEC_SCRIPT and 'exec redis-cli "$@"' in r.EXEC_SCRIPT
     assert "-a " not in r.EXEC_SCRIPT and "--pass" not in r.EXEC_SCRIPT
+    assert "echo" not in r.EXEC_SCRIPT and "printf" not in r.EXEC_SCRIPT  # never echoes one
+
+
+def run_exec_script(tmp_path, env, cli="redis-cli"):
+    """Run EXEC_SCRIPT under a real sh, with a stand-in `cli` that reports the REDISCLI_AUTH it
+    was given and its argv."""
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / cli
+    stub.write_text('#!/bin/sh\necho "auth=[${REDISCLI_AUTH-unset}] args=$*"\n')
+    stub.chmod(0o755)
+    base = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+    out = subprocess.run(
+        ["sh", "-c", r.EXEC_SCRIPT, "sh", "-p", "6379", "PING"],
+        env={**base, **env},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout.strip()
+
+
+def test_password_sources_are_tried_in_order(tmp_path):
+    redis_file = tmp_path / "redis-pw"
+    redis_file.write_text("from-redis-file\n")
+    valkey_file = tmp_path / "valkey-pw"
+    valkey_file.write_text("from-valkey-file\n\n")
+    env = {
+        "REDIS_PASSWORD": "from-redis-env",
+        "REDIS_PASSWORD_FILE": str(redis_file),
+        "VALKEY_PASSWORD": "from-valkey-env",
+        "VALKEY_PASSWORD_FILE": str(valkey_file),
+    }
+    expected = [
+        ("from-redis-env", "REDIS_PASSWORD"),
+        ("from-redis-file", "REDIS_PASSWORD_FILE"),
+        ("from-valkey-env", "VALKEY_PASSWORD"),
+        ("from-valkey-file", "VALKEY_PASSWORD_FILE"),
+    ]
+    for want, dropped in expected:
+        out = run_exec_script(tmp_path, env)
+        assert out == f"auth=[{want}] args=-p 6379 PING"
+        del env[dropped]
+    assert run_exec_script(tmp_path, env) == "auth=[unset] args=-p 6379 PING"
+
+
+def test_a_password_file_that_is_missing_or_empty_is_skipped(tmp_path):
+    empty = tmp_path / "empty"
+    empty.write_text("\n")
+    env = {"REDIS_PASSWORD_FILE": str(tmp_path / "nope"), "VALKEY_PASSWORD_FILE": str(empty)}
+    assert run_exec_script(tmp_path, env) == "auth=[unset] args=-p 6379 PING"
+
+
+def test_a_valkey_image_with_only_valkey_cli_is_reached(tmp_path):
+    out = run_exec_script(tmp_path, {"VALKEY_PASSWORD": "v"}, cli="valkey-cli")
+    assert out == "auth=[v] args=-p 6379 PING"
 
 
 def test_no_call_reads_a_secret_or_puts_a_password_on_a_command_line():
@@ -392,6 +553,15 @@ def test_container_choice():
         == "cache"
     )
     assert w.choose_container(container_pod(("a", "busybox"), ("b", "alpine"))) == "a"
+    # valkey is a server like redis: by name, or by image
+    assert w.choose_container(container_pod(("side", "x"), ("valkey", "x"))) == "valkey"
+    assert w.choose_container(container_pod(("a", "busybox"), ("db", "valkey/valkey:8"))) == "db"
+    assert (
+        w.choose_container(container_pod(("sentinel", "redis-sentinel:7"), ("cache", "redis:7")))
+        == "cache"
+    )
+    # a pod with only a sentinel falls back to its first container, and INFO then says so
+    assert w.choose_container(container_pod(("sentinel", "redis-sentinel:7"))) == "sentinel"
     assert w.choose_container(container_pod(("redis", "redis:7"), ("side", "x")), "side") == "side"
     with pytest.raises(RwError) as exc:
         w.choose_container(container_pod(("redis", "redis:7")), "nope")
@@ -578,8 +748,22 @@ def test_a_password_the_container_lacks_is_permission_denied_with_a_hint():
     with pytest.raises(RwError) as exc:
         ping(ctx)
     assert exc.value.code == "permission_denied"
-    assert "REDIS_PASSWORD" in exc.value.message
+    assert "NOAUTH" in exc.value.message
+    assert "REDIS_PASSWORD_FILE" in exc.value.hint and "VALKEY_PASSWORD" in exc.value.hint
     assert [e[2][0] for e in ctx.execs()] == ["PING"]  # stopped at the refusal
+
+
+def test_a_refused_password_has_the_refusal_hint():
+    ctx = FakeCtx(
+        answers=[(" exec ", (0, "AUTH failed: WRONGPASS invalid username-password pair\n", ""))]
+    )
+    with pytest.raises(RwError) as exc:
+        ping(ctx)
+    assert exc.value.code == "permission_denied"
+    assert (
+        exc.value.hint == "the supplied password was refused, or none is configured on the server"
+    )
+    assert "WRONGPASS" in exc.value.message
 
 
 def test_one_pod_failing_makes_the_result_partial_with_the_others_kept():
@@ -619,13 +803,13 @@ def test_exec_timeout_is_a_timeout_error():
     ctx = FakeCtx()
 
     def run(argv, check=True, **kw):
-        raise subprocess.TimeoutExpired(argv, 20)
+        raise subprocess.TimeoutExpired(argv, 10)
 
     ctx.run = run
     with pytest.raises(RwError) as exc:
         from k8s_redis_health.fetch import redis_cli
 
-        redis_cli(ctx, pod_named("redis-0"), "redis", "PING")
+        redis_cli(ctx, pod_named("redis-0"), "redis", Conn(), "PING")
     assert exc.value.code == "timeout"
 
 
@@ -670,13 +854,14 @@ def test_the_check_writes_reads_and_deletes_on_the_primary_only():
     out = rw(ctx)
     primary_steps = [e for e in ctx.execs() if e[2][0] in ("SET", "GET", "DEL")]
     assert primary_steps == [
-        ("redis-0", "redis", ["SET", KEY, "20261104T091402123456", "EX", "60"]),
+        ("redis-0", "redis", ["SET", KEY, "20261104T091402123456", "NX", "EX", "60"]),
         ("redis-0", "redis", ["GET", KEY]),
         ("redis-0", "redis", ["DEL", KEY]),
     ]
     check = out["check"]
     assert check["key"] == KEY and check["ttlSeconds"] == 60
     assert (check["ran"], check["reason"], check["dryRun"]) == (True, None, False)
+    assert check["otherPrimaries"] == []
     [primary] = check["primaries"]
     assert primary["pod"] == "redis-0"
     assert [(s["step"], s["performed"], s["ok"]) for s in primary["steps"]] == [
@@ -687,7 +872,10 @@ def test_the_check_writes_reads_and_deletes_on_the_primary_only():
     assert all(s["latencyMs"] >= 0 for s in primary["steps"])
     assert (primary["allOk"], primary["valueMatches"], primary["keyRemoved"]) == (True, True, True)
     assert ctx.keys == {}  # nothing left behind
-    assert [c["role"] for c in out["candidates"]] == ["master", "slave"]
+    assert [(c["role"], c["mode"]) for c in out["candidates"]] == [
+        ("master", "standalone"),
+        ("slave", "standalone"),
+    ]
 
 
 def test_the_key_is_unique_to_the_run_and_comes_from_ctx_now():
@@ -709,25 +897,56 @@ def test_a_dry_run_finds_the_primary_and_writes_nothing():
     assert primary["allOk"] is None
 
 
-def test_a_redis_with_no_primary_is_reported_and_nothing_is_written():
+def written(ctx):
+    return [e for e in ctx.execs() if e[2][0] in ("SET", "GET", "DEL")]
+
+
+def test_a_redis_with_no_primary_fails_not_found_and_names_the_bitnami_split():
     ctx = FakeCtx("redis-orphan")
-    out = rw(ctx)
-    assert out["check"]["reason"] == "no_primary" and out["check"]["ran"] is False
-    assert out["check"]["primaries"] == []
-    assert [c["role"] for c in out["candidates"]] == ["slave"]
-    assert not [e for e in ctx.execs() if e[2][0] in ("SET", "GET", "DEL")]
+    with pytest.raises(RwError) as exc:
+        rw(ctx)
+    assert exc.value.code == "not_found" and "no Redis primary" in exc.value.message
+    assert "Bitnami" in exc.value.hint and "master StatefulSet" in exc.value.hint
+    assert written(ctx) == []
 
 
-def test_no_ready_pod_is_reported_and_nothing_is_asked():
+def test_a_dry_run_with_no_primary_fails_too():
+    with pytest.raises(RwError) as exc:
+        rw(FakeCtx("redis-orphan", dry_run=True))
+    assert exc.value.code == "not_found"
+
+
+def test_no_primary_found_while_a_pod_could_not_be_asked_is_not_a_proof_of_none():
+    def redis(pod, args):
+        if pod == "redis-0":
+            return 1, "", "Could not connect to Redis at 127.0.0.1:6379: Connection refused"
+        return FakeCtx().server(pod, args)
+
+    ctx = FakeCtx(redis=redis)
+    with pytest.raises(RwError) as exc:
+        rw(ctx)
+    assert exc.value.code == "unreachable"  # not not_found: the primary may be the pod not asked
+    assert written(ctx) == []
+
+
+def test_no_ready_pod_fails_unreachable_and_nothing_is_asked():
     pods = copy.deepcopy(PODS)
     for p in pods:
         for c in p["status"]["conditions"]:
             if c["type"] == "Ready":
                 c["status"] = "False"
     ctx = FakeCtx(pods=pods)
-    out = rw(ctx)
-    assert out["check"]["reason"] == "no_ready_pods" and ctx.execs() == []
-    assert all(c["role"] is None for c in out["candidates"])
+    with pytest.raises(RwError) as exc:
+        rw(ctx)
+    assert exc.value.code == "unreachable" and "no ready Redis pod" in exc.value.message
+    assert ctx.execs() == []
+
+
+def test_a_workload_with_no_pods_fails_unreachable_not_ok():
+    for dry in (False, True):
+        with pytest.raises(RwError) as exc:
+            rw(FakeCtx(pods=[], dry_run=dry))
+        assert exc.value.code == "unreachable"
 
 
 def test_a_primary_that_refuses_the_set_is_reported_and_nothing_follows():
@@ -780,6 +999,60 @@ def test_a_set_that_could_not_run_skips_the_get_and_still_tries_the_delete():
     assert steps["del"]["performed"] is True and primary["allOk"] is False
 
 
+def test_a_set_that_answers_nil_is_a_failed_step_and_nothing_is_deleted():
+    ctx = FakeCtx(answers=[("SET", (0, "\n", ""))])  # NX did not set: redis-cli prints nothing
+    out = rw(ctx)
+    [primary] = out["check"]["primaries"]
+    steps = {s["step"]: s for s in primary["steps"]}
+    assert steps["set"]["ok"] is False and steps["set"]["reply"] == "(nil)"
+    assert steps["set"]["errorCode"] is None
+    assert steps["get"]["performed"] is False and steps["del"]["performed"] is False
+    assert primary["allOk"] is False
+    assert [e[2][0] for e in written(ctx)] == ["SET"]
+
+
+def test_the_set_uses_nx_so_it_never_overwrites_a_key():
+    ctx = FakeCtx()
+    ctx.keys[KEY] = "someone else's"
+    out = rw(ctx)
+    assert ctx.keys == {KEY: "someone else's"}  # untouched, not deleted either
+    assert out["check"]["primaries"][0]["steps"][0]["reply"] == "(nil)"
+
+
+def test_a_set_that_timed_out_may_have_written_so_the_delete_is_tried():
+    import subprocess
+
+    ctx = FakeCtx()
+    real = ctx.run
+
+    def run(argv, check=True, **kw):
+        if "SET" in argv:
+            ctx.calls.append(argv)
+            raise subprocess.TimeoutExpired(argv, 10)
+        return real(argv, check=check, **kw)
+
+    ctx.run = run
+    out = rw(ctx)
+    [primary] = out["check"]["primaries"]
+    steps = {s["step"]: s for s in primary["steps"]}
+    assert steps["set"]["errorCode"] == "timeout"
+    assert steps["get"]["performed"] is False
+    assert steps["del"]["performed"] is True
+
+
+def test_a_set_that_was_not_allowed_is_not_followed_by_a_delete():
+    ctx = FakeCtx(
+        answers=[("SET", (0, "NOPERM this user has no permissions to run the 'set' command\n", ""))]
+    )
+    out = rw(ctx)
+    [primary] = out["check"]["primaries"]
+    steps = {s["step"]: s for s in primary["steps"]}
+    assert steps["set"]["errorCode"] == "permission_denied"
+    assert steps["get"]["performed"] is False and steps["del"]["performed"] is False
+    assert [e[2][0] for e in written(ctx)] == ["SET"]  # no DEL went out
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "pod/redis-0")]
+
+
 def test_the_check_on_a_redis_whose_password_the_container_lacks_is_permission_denied():
     ctx = FakeCtx("redis-locked")
     with pytest.raises(RwError) as exc:
@@ -802,18 +1075,19 @@ def test_a_deployment_target_uses_its_only_pod():
     assert out["check"]["primaries"][0]["allOk"] is True
 
 
-def test_two_primaries_are_both_checked_and_a_replica_never():
-    pods = copy.deepcopy(PODS)
-
+def test_two_primaries_write_to_the_first_by_name_and_report_the_other():
     def redis(pod, args):
         if pod == "redis-1" and args[0] == "INFO":
-            return 0, INFO_REPLICATION["redis-0"], ""  # claims to be a master too
+            return 0, INFO["redis-0"], ""  # claims to be a master too
         return FakeCtx().server(pod, args)
 
+    pods = list(reversed(PODS))  # the order pods come in does not pick the primary
     ctx = FakeCtx(pods=pods, redis=redis)
-    ctx.redis = lambda pod, args: (redis(pod, args) if args[0] != "SET" else (0, "OK\n", ""))
     out = rw(ctx)
-    assert [p["pod"] for p in out["check"]["primaries"]] == ["redis-0", "redis-1"]
+    assert [p["pod"] for p in out["check"]["primaries"]] == ["redis-0"]
+    assert out["check"]["otherPrimaries"] == ["redis-1"]
+    assert {e[0] for e in written(ctx)} == {"redis-0"}
+    assert [c["role"] for c in out["candidates"]] == ["master", "master"]
 
 
 # ----------------------------------------------------------- permissions ----
@@ -908,3 +1182,287 @@ def test_the_write_task_declares_its_effects_and_a_dry_run():
 def test_every_schema_is_valid_json_schema():
     for path in (SKILL / "schemas").glob("*.json"):
         Draft202012Validator.check_schema(json.loads(path.read_text()))
+
+
+# ------------------------------------------------------ mode and sentinel ----
+
+
+def server_answering(info):
+    """A server whose INFO is `info` for every pod; everything else as the normal fake."""
+
+    def redis(pod, args):
+        if args[0] == "INFO":
+            return 0, info, ""
+        return FakeCtx().server(pod, args)
+
+    return redis
+
+
+def test_ping_reports_the_redis_mode():
+    out = ping(FakeCtx())
+    assert [i["mode"] for i in out["instances"]] == ["standalone", "standalone"]
+    cluster = ping(FakeCtx(redis=server_answering(INFO_CLUSTER)))
+    assert {i["mode"] for i in cluster["instances"]} == {"cluster"}
+    assert {i["info"]["replication"]["role"] for i in cluster["instances"]} == {"master"}
+
+
+def test_a_ping_of_a_sentinel_is_invalid_input_not_internal():
+    ctx = FakeCtx(redis=server_answering(INFO_SENTINEL))
+    with pytest.raises(RwError) as exc:
+        ping(ctx)
+    assert exc.value.code == "invalid_input"
+    assert "not a Redis server (sentinel?)" in exc.value.message
+
+
+def test_an_info_without_a_role_is_invalid_input_for_one_pod_and_partial_for_the_rest():
+    def redis(pod, args):
+        if pod == "redis-1" and args[0] == "INFO":
+            return 0, INFO_SENTINEL, ""
+        return FakeCtx().server(pod, args)
+
+    ctx = FakeCtx(redis=redis)
+    out = ping(ctx)
+    assert by_pod(out["instances"])["redis-1"]["error"]["code"] == "invalid_input"
+    assert by_pod(out["instances"])["redis-0"]["info"] is not None
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("invalid_input", "pod/redis-1")]
+
+
+@pytest.mark.parametrize("info,mode", [(INFO_CLUSTER, "cluster"), (INFO_SENTINEL, "sentinel")])
+@pytest.mark.parametrize("dry", [False, True])
+def test_the_write_check_refuses_cluster_and_sentinel_with_invalid_input(info, mode, dry):
+    ctx = FakeCtx(redis=server_answering(info), dry_run=dry)
+    with pytest.raises(RwError) as exc:
+        rw(ctx)
+    assert exc.value.code == "invalid_input"
+    assert "unsupported_mode" in exc.value.message and mode in exc.value.message
+    assert exc.value.details == {"reason": "unsupported_mode", "mode": mode}
+    assert written(ctx) == []
+
+
+def test_the_write_check_on_an_info_without_a_role_or_mode_is_invalid_input():
+    ctx = FakeCtx(redis=server_answering("# Server\r\nredis_version:7.2.0\r\n"))
+    with pytest.raises(RwError) as exc:
+        rw(ctx)
+    assert exc.value.code == "invalid_input"
+    assert "not a Redis server (sentinel?)" in exc.value.message
+
+
+# ------------------------------------------------------------------ port ----
+
+
+def test_the_port_input_is_passed_to_redis_cli_as_p():
+    ctx = FakeCtx()
+    ping(ctx, port=26379)
+    rw(ctx, port=6380)
+    assert set(ctx.ports[:4]) == {26379} and set(ctx.ports[4:]) == {6380}
+    ctx = FakeCtx()
+    ping(ctx)
+    assert set(ctx.ports) == {6379}
+
+
+@pytest.mark.parametrize("port", [0, 70000, -1, "6379", True])
+@pytest.mark.parametrize("module", ["ping", "read_write_check"])
+def test_a_bad_port_is_invalid_input_before_any_kubectl_call(module, port):
+    ctx = FakeCtx()
+    with pytest.raises(RwError) as exc:
+        script(module)(ctx, port=port)
+    assert exc.value.code == "invalid_input" and ctx.calls == []
+
+
+# ------------------------------------------------- narrow kubectl fetches ----
+
+
+def test_no_kubectl_read_returns_a_whole_object_so_env_never_comes_back():
+    ctx = FakeCtx("redis-open")
+    ping(ctx)
+    rw(ctx)
+    reads = [a for a in ctx.calls if "get" in a]
+    assert reads
+    for argv in reads:
+        out = argv[argv.index("-o") + 1]
+        assert out.startswith("jsonpath=") and out != "json"
+        for forbidden in (
+            "env",
+            "annotations",
+            "command",
+            "args",
+            "template",
+            "spec}",
+            "metadata}",
+        ):
+            assert forbidden not in out.replace("spec.nodeName", ""), (forbidden, out)
+
+
+def test_the_recorded_data_holds_no_env_and_no_last_applied_configuration():
+    blob = "".join(p.read_text() for p in DATA.glob("*.json"))
+    for forbidden in ('"env"', "last-applied-configuration", "secretKeyRef", "valueFrom"):
+        assert forbidden not in blob
+
+
+def test_a_projection_round_trips_and_leaves_out_what_the_object_lacks():
+    pod = pod_named("redis-0")
+    text_ = render(pod, project.POD)
+    doc = project.POD.parse(text_, many=False)
+    assert (
+        doc["metadata"]["name"] == "redis-0"
+        and doc["metadata"]["labels"] == pod["metadata"]["labels"]
+    )
+    assert doc["spec"]["containers"] == [{"name": "redis", "image": "redis:7-alpine"}]
+    assert "deletionTimestamp" not in doc["metadata"]
+    bare = project.POD.parse("@\ns:metadata.name=x\nj:metadata.labels=\n", many=False)
+    assert bare == {"metadata": {"name": "x"}}
+    assert project.POD.parse(text_ * 2, many=True)["items"][1] == doc
+
+
+@pytest.mark.parametrize(
+    "bad", ["", "oops\n", "@\nx:metadata.name=a\n", "@\nj:metadata.labels={nope\n"]
+)
+def test_output_that_is_not_the_projection_is_an_internal_error(bad):
+    with pytest.raises(RwError) as exc:
+        project.POD.parse(bad, many=False)
+    assert exc.value.code == "internal"
+
+
+# ----------------------------------------------------------- time budget ----
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_the_budget_counts_down_and_caps_a_call_at_what_is_left():
+    clock = Clock()
+    budget = Budget(45, clock)
+    assert budget.timeout(10) == 10 and not budget.spent()
+    clock.now += 40
+    assert budget.timeout(10) == 5
+    clock.now += 4.5
+    assert budget.timeout(10) == 1.0  # never below a second
+    clock.now += 1
+    assert budget.spent()
+    with pytest.raises(RwError) as exc:
+        budget.timeout(10)
+    assert exc.value.code == "timeout" and "45s" in exc.value.message
+
+
+def slow_ctx(clock, seconds, **kwargs):
+    """A FakeCtx whose every redis-cli call takes `seconds` of the (fake) clock."""
+    ctx = FakeCtx(**kwargs)
+    real = ctx.run
+
+    def run(argv, check=True, **kw):
+        if "exec" in argv:
+            clock.now += seconds(argv) if callable(seconds) else seconds
+        return real(argv, check=check, **kw)
+
+    ctx.run = run
+    return ctx
+
+
+def two_pods():
+    return [p for p in PODS if p["metadata"]["name"] in ("redis-0", "redis-1")]
+
+
+def test_ping_stops_asking_once_the_budget_is_spent_and_reports_the_rest_as_timeout():
+    from k8s_redis_health.check import ping_instances
+
+    clock = Clock()
+    ctx = slow_ctx(clock, 25)  # PING and INFO of redis-0 take 50s: the budget is spent
+    instances, counts = ping_instances(ctx, two_pods(), None, 90, Conn(budget=Budget(45, clock)))
+    first, second = instances
+    assert first["queried"] is True and first["error"] is None
+    assert second["queried"] is False and second["error"]["code"] == "timeout"
+    assert [e[0] for e in ctx.execs()] == ["redis-0", "redis-0"]  # redis-1 was never asked
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("timeout", "pod/redis-1")]
+    assert counts == {"pods": 2, "ready": 2, "queried": 1, "failed": 1}
+
+
+def test_a_budget_that_runs_out_between_ping_and_info_keeps_the_ping():
+    from k8s_redis_health.check import ping_instances
+
+    clock = Clock()
+    # redis-0 answers in 5s per call; redis-1's PING takes 40s, so its INFO is not asked
+    ctx = slow_ctx(clock, lambda argv: 40 if "redis-1" in argv and "PING" in argv else 5)
+    instances, _ = ping_instances(ctx, two_pods(), None, 90, Conn(budget=Budget(45, clock)))
+    first, second = instances
+    assert first["info"] is not None and first["error"] is None
+    assert second["ping"]["ok"] is True and second["info"] is None
+    assert second["error"]["code"] == "timeout"
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("timeout", "pod/redis-1")]
+
+
+def test_ping_is_partial_when_only_the_later_pods_ran_out_of_budget():
+    from k8s_redis_health.check import ping_instances
+
+    clock = Clock()
+    ctx = slow_ctx(clock, 12)  # redis-0 ends at 24s, redis-1 at 48s: redis-orphan-0 is not asked
+    pods = [*two_pods(), pod_named("redis-orphan")]
+    instances, _ = ping_instances(ctx, pods, None, 90, Conn(budget=Budget(45, clock)))
+    by = by_pod(instances)
+    assert by["redis-0"]["error"] is None and by["redis-1"]["error"] is None
+    assert by["redis-orphan-0"]["queried"] is False
+    assert by["redis-orphan-0"]["error"]["code"] == "timeout"
+    assert [e["scope"] for e in ctx.errors] == ["pod/redis-orphan-0"]  # partial, not failed
+
+
+def test_every_call_gets_a_timeout_that_fits_the_budget():
+    ctx = FakeCtx()
+    ping(ctx)
+    exec_timeouts = [t for argv, t in zip(ctx.calls, ctx.timeouts) if "exec" in argv]
+    assert exec_timeouts and all(t is not None and 1 <= t <= 10 for t in exec_timeouts)
+
+
+def test_the_write_check_spends_the_same_budget():
+    clock = Clock()
+    ctx = slow_ctx(clock, 20)
+    from k8s_redis_health.check import read_write_check
+
+    pods = [p for p in PODS if p["metadata"]["name"] in ("redis-0", "redis-1")]
+    candidates, check = read_write_check(
+        ctx, pods, None, REFERENCE_TIME, False, Conn(budget=Budget(45, clock))
+    )
+    # INFO of redis-0 (20s), INFO of redis-1 (40s), SET (60s): over budget from the SET on
+    steps = {s["step"]: s for s in check["primaries"][0]["steps"]}
+    assert steps["set"]["ok"] is True and steps["get"]["errorCode"] == "timeout"
+    assert steps["del"]["errorCode"] == "timeout"
+    assert {e["code"] for e in ctx.errors} == {"timeout"}
+
+
+# ------------------------------------------------------- bounded text ----
+
+
+def test_server_free_text_is_bounded_to_1024():
+    fields = {
+        "role": "master",
+        "redis_version": "7." + "9" * 3000,
+        "master_host": "h" * 3000,
+        "maxmemory_policy": "p" * 3000,
+        "slave0": "ip=" + "1" * 3000 + ",port=1,state=" + "s" * 3000,
+    }
+    facts = r.instance_facts(fields, 90)
+    assert len(facts["server"]["redisVersion"]) == 1024
+    assert len(facts["replication"]["masterHost"]) == 1024
+    assert len(facts["memory"]["maxmemoryPolicy"]) == 1024
+    assert len(facts["replication"]["replicas"][0]["ip"]) == 1024
+    assert len(facts["replication"]["replicas"][0]["state"]) == 1024
+
+
+def test_every_string_in_the_schemas_has_a_maxlength_unless_it_is_an_enum():
+    def walk(node, where):
+        if isinstance(node, dict):
+            types = node.get("type")
+            types = types if isinstance(types, list) else [types]
+            if "string" in types and "enum" not in node and "const" not in node:
+                assert "maxLength" in node, where
+            for key, value in node.items():
+                walk(value, f"{where}/{key}")
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, f"{where}/{i}")
+
+    for path in (SKILL / "schemas").glob("*.json"):
+        walk(json.loads(path.read_text()), path.name)

@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "The SET, GET and DEL on the primary",
-  "description": "ran is true when the sequence was sent to at least one primary. reason says why it was not: dry_run, no_ready_pods, no_primary. Steps that were not performed have performed false and ok null. latencyMs is the wall time of the kubectl exec running that one redis-cli command (exec round trip included).",
+  "description": "ran is true when the sequence was sent to the one primary written to (the first by pod name); false for a dry run, whose reason is dry_run. A Redis with no ready pod, no primary or a cluster or sentinel mode fails the task instead. otherPrimaries names every other pod whose role is master. Steps that were not performed have performed false and ok null; a SET that answered nil (the key already existed) has reply (nil), ok false and no GET or DEL. latencyMs is the wall time of the kubectl exec running that one redis-cli command (exec round trip included).",
   "type": "object",
   "properties": {
     "key": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 1024
     },
     "ttlSeconds": {
       "type": "integer"
@@ -19,22 +20,22 @@
     "reason": {
       "enum": [
         "dry_run",
-        "no_ready_pods",
-        "no_primary",
         null
       ]
     },
     "primaries": {
       "type": "array",
-      "maxItems": 50,
+      "maxItems": 1,
       "items": {
         "type": "object",
         "properties": {
           "pod": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 1024
           },
           "container": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 1024
           },
           "steps": {
             "type": "array",
@@ -68,13 +69,15 @@
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "maxLength": 1024
                 },
                 "errorCode": {
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "maxLength": 1024
                 }
               },
               "required": [
@@ -117,6 +120,14 @@
         ],
         "additionalProperties": false
       }
+    },
+    "otherPrimaries": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 1024
+      }
     }
   },
   "required": [
@@ -125,7 +136,8 @@
     "dryRun",
     "ran",
     "reason",
-    "primaries"
+    "primaries",
+    "otherPrimaries"
   ],
   "additionalProperties": false
 }

@@ -9,7 +9,7 @@ description: >-
   StatefulSet's ready replicas. csi-provider-status reads the Vault CSI provider
   DaemonSet: scheduled, ready and updated counts, container restarts and Warning
   events. Use when applications cannot read secrets, a Vault pod is not ready, a
-  restart left Vault sealed, or the CSI provider is not on every node.
+  restart left Vault sealed, or the CSI provider is not running on every node the DaemonSet targets.
 runwhen:
   role: health
   appliesTo:
@@ -40,14 +40,15 @@ No Secret is read and no Vault token is used.
 
 - `server-status`: `pods` has, per pod, `health.sealed`, `initialized`, `standby`,
   `performanceStandby`, `version`, `clusterName`, `clusterId`, `replicationPerformanceMode` and
-  `replicationDrMode`, plus `state` (one of `sealed`, `uninitialized`, `active`, `standby`,
+  `replicationDrMode`, plus `state` (one of `sealed`, `uninitialized`, `removed`, `active`, `standby`,
   `performance_standby`, `dr_secondary`) and `healthCode`, the HTTP status Vault returns for that
-  state (503, 501, 200, 429, 473, 472). These are facts, never errors: a standby or sealed Vault is
-  answering. Sealed and uninitialized pods come first. `containerRestarts` shows a pod that has
+  state (503, 501, 200, 429, 473, 472, 530). These are facts, never errors: a standby or sealed Vault is
+  answering. Sealed, uninitialized and removed pods come first. `containerRestarts` shows a pod that has
   restarted (which is how it came back sealed). `statefulsets` has `desired`, `ready`, `current`,
   `updated` and `available`; `counts.byState` totals the states.
 - `csi-provider-status`: `daemonsets` has `desired`, `current`, `ready`, `updated`, `available`,
-  `unavailable`, `misscheduled`, `maxUnavailable` and `unavailableExceedsMax`; `pods` has each pod's
+  `unavailable`, `anyUnavailable`, `misscheduled`, `maxUnavailable` and `unavailableExceedsMax`;
+  `pods` has each pod's
   node, containers (init ones flagged) with `restartCount`, `state`, `reason` and the last
   termination; `events` has Warning events about the DaemonSet and its pods within `since`
   (default 1h).
@@ -57,9 +58,14 @@ No Secret is read and no Vault token is used.
 - Vault answers a health request with a status code that names the state. The API server's proxy
   would turn those codes into errors and drop the body, so the task asks Vault to answer 200 for
   every state and reads the state from the body. `healthCode` is what Vault returns by default.
-- On a Vault with several pods exactly one is `active`; the rest `standby` is normal. A sealed pod
-  that reports `standby: true` is a Vault quirk: read `state`. `clusterName` and `clusterId` are null
-  while sealed.
+- Ready does not mean unsealed, and not ready does not mean sealed: trust `state`, Vault's own
+  answer, over the pod's `ready`.
+- On a healthy Vault with several pods one is `active` and the rest `standby`. That is not
+  guaranteed: during an election there may be none, and with DR or performance standbys (enterprise)
+  other states appear next to the active one. A sealed pod that reports `standby: true` is a Vault
+  quirk: read `state`. `clusterName` and `clusterId` are null while sealed.
+- `state: removed` (health code 530) is a pod taken out of its raft cluster; it no longer serves.
+  `initialized` and `sealed` are null when the API server dropped the body of the 530 reply.
 - `pods[].queried: false` is a pod that is not Running or has no address; it was listed, not asked.
   A pod with an `error` could not be asked (the result is `partial`; the code is
   `permission_denied` without `pods/proxy`, `unreachable` when nothing listens on the port, and
@@ -69,8 +75,20 @@ No Secret is read and no Vault token is used.
   self-signed one works; the health endpoint is unauthenticated, and no credential is sent.
 - A Vault pod that is not ready is normal while it is sealed or uninitialized: the chart's readiness
   probe fails on 503 and 501. `ready` is the pod's readiness; `state` is Vault's own answer.
-- A CSI `desired` of 0 means no node matches the DaemonSet's selector, not that all is well.
-  `unavailableExceedsMax: true` means more nodes lack a ready provider than the rollout allows.
+- A StatefulSet that wants pods but has none Running to ask gives a `partial` result with an
+  `unreachable` error for scope `pods` and `counts.queried: 0`: nothing was learned, which is not
+  health. The task asks pods one by one inside a 45 second budget; a pod reached after it is spent
+  is listed with a `timeout` error and `queried: false`.
+- Errors that name the cause: `tls: bad certificate` is a listener that wants a client certificate
+  (mutual TLS), which the API server's pod proxy cannot present (`unreachable`); a 404 from the
+  proxy (`not_found`) usually means nothing serves Vault on the `port` input. The message for an
+  https listener asked over http ("HTTP request to an HTTPS server") is mapped but was never
+  recorded against a real listener.
+- A CSI `desired` of 0 means no node matches the DaemonSet's selector, not that all is well. A
+  nonzero `unavailable` (`anyUnavailable: true`) is a fault in steady state, even below
+  `maxUnavailable`; only a rollout in progress explains it. `unavailableExceedsMax: true` means more
+  nodes lack a ready provider than the rollout allows. `desired` counts the nodes the DaemonSet
+  targets, so compare `ready` with it: the provider should run on every node the DaemonSet targets.
 - Events live about an hour on most clusters; an empty `events` list is not proof nothing happened
   earlier. Lists stop at `maxItems` (default 200); `counts` is before the cap.
 

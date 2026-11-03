@@ -1,98 +1,17 @@
 {
-  "apiVersion": "apps/v1",
-  "kind": "StatefulSet",
   "metadata": {
-    "annotations": {
-      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/instance\":\"vault\",\"app.kubernetes.io/name\":\"vault\"},\"name\":\"vault\",\"namespace\":\"rw-vault\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/instance\":\"vault\",\"app.kubernetes.io/name\":\"vault\",\"component\":\"server\"}},\"serviceName\":\"vault-internal\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/instance\":\"vault\",\"app.kubernetes.io/name\":\"vault\",\"component\":\"server\"}},\"spec\":{\"containers\":[{\"args\":[\"server\",\"-dev\",\"-dev-listen-address=0.0.0.0:8200\"],\"env\":[{\"name\":\"SKIP_SETCAP\",\"value\":\"true\"}],\"image\":\"hashicorp/vault:1.18.5\",\"name\":\"vault\",\"ports\":[{\"containerPort\":8200,\"name\":\"http\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/v1/sys/health\",\"port\":8200},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"48Mi\"}}}]}}}}\n"
-    },
-    "creationTimestamp": "2026-11-03T22:37:34Z",
     "generation": 1,
-    "labels": {
-      "app.kubernetes.io/instance": "vault",
-      "app.kubernetes.io/name": "vault"
-    },
     "name": "vault",
     "namespace": "rw-vault",
-    "resourceVersion": "42938",
-    "uid": "3a890e99-8473-4680-9455-c73369486964"
+    "uid": "ecdccb27-2cf6-4520-af07-c3277adbc9f2"
   },
   "spec": {
-    "persistentVolumeClaimRetentionPolicy": {
-      "whenDeleted": "Retain",
-      "whenScaled": "Retain"
-    },
-    "podManagementPolicy": "OrderedReady",
     "replicas": 1,
-    "revisionHistoryLimit": 10,
     "selector": {
       "matchLabels": {
         "app.kubernetes.io/instance": "vault",
         "app.kubernetes.io/name": "vault",
         "component": "server"
-      }
-    },
-    "serviceName": "vault-internal",
-    "template": {
-      "metadata": {
-        "labels": {
-          "app.kubernetes.io/instance": "vault",
-          "app.kubernetes.io/name": "vault",
-          "component": "server"
-        }
-      },
-      "spec": {
-        "containers": [
-          {
-            "args": [
-              "server",
-              "-dev",
-              "-dev-listen-address=0.0.0.0:8200"
-            ],
-            "env": [
-              {
-                "name": "SKIP_SETCAP",
-                "value": "true"
-              }
-            ],
-            "image": "hashicorp/vault:1.18.5",
-            "imagePullPolicy": "IfNotPresent",
-            "name": "vault",
-            "ports": [
-              {
-                "containerPort": 8200,
-                "name": "http",
-                "protocol": "TCP"
-              }
-            ],
-            "readinessProbe": {
-              "failureThreshold": 3,
-              "httpGet": {
-                "path": "/v1/sys/health",
-                "port": 8200,
-                "scheme": "HTTP"
-              },
-              "periodSeconds": 5,
-              "successThreshold": 1,
-              "timeoutSeconds": 1
-            },
-            "resources": {
-              "limits": {
-                "memory": "128Mi"
-              },
-              "requests": {
-                "cpu": "10m",
-                "memory": "48Mi"
-              }
-            },
-            "terminationMessagePath": "/dev/termination-log",
-            "terminationMessagePolicy": "File"
-          }
-        ],
-        "dnsPolicy": "ClusterFirst",
-        "restartPolicy": "Always",
-        "schedulerName": "default-scheduler",
-        "securityContext": {},
-        "terminationGracePeriodSeconds": 30
       }
     },
     "updateStrategy": {

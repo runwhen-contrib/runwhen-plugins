@@ -4,17 +4,18 @@ import json
 from urllib.parse import quote
 
 from k8s_vault_health.errors import RwError
-from k8s_vault_health.workload import pod_ready, restart_total
+from k8s_vault_health.workload import limit_text, pod_ready, restart_total
 
 SCHEMES = ("http", "https")
 
 # Vault answers /v1/sys/health with a status code that says the state (429 standby, 472 DR
-# secondary, 473 performance standby, 501 uninitialized, 503 sealed) and the same JSON body for all
-# of them. The API server's proxy turns any non-2xx answer into an error and drops the body, so
-# every code is overridden to 200: the body then always arrives and the state is read from it.
+# secondary, 473 performance standby, 501 uninitialized, 503 sealed, 530 removed from the raft
+# cluster) and the same JSON body for all of them. The API server's proxy turns any non-2xx answer
+# into an error and drops the body, so every code is overridden to 200: the body then always
+# arrives and the state is read from it. A Vault too old to know `removedcode` ignores it.
 QUERY = (
     "activecode=200&standbycode=200&performancestandbycode=200"
-    "&drsecondarycode=200&sealedcode=200&uninitcode=200"
+    "&drsecondarycode=200&sealedcode=200&uninitcode=200&removedcode=200"
 )
 
 
@@ -28,6 +29,10 @@ def health_path(namespace, pod, scheme, port):
         f"/api/v1/namespaces/{quote(namespace, safe='')}/pods/{scheme}:{quote(pod, safe='')}:{port}"
         f"/proxy/v1/sys/health?{QUERY}"
     )
+
+
+# what stands in for the body of a Vault that answered 530 where the proxy dropped it
+REMOVED_DOC = {"removed_from_cluster": True}
 
 
 def parse_health(text):
@@ -51,14 +56,17 @@ def _bool(doc, key):
 
 
 def _str(doc, key):
+    """A string the server reports, bounded (it is server-supplied free text)."""
     value = doc.get(key)
-    return value if isinstance(value, str) else None
+    return limit_text(value)[0] if isinstance(value, str) else None
 
 
 def health_state(doc):
     """(state, code): what the health document means and the HTTP status Vault returns for it with
-    its default settings (the order is Vault's own: uninitialized, sealed, DR secondary,
+    its default settings (uninitialized, sealed, removed from the cluster, DR secondary,
     performance standby, standby, active). Not an error: a standby or sealed Vault answers."""
+    if doc.get("removed_from_cluster") is True:
+        return "removed", 530
     if not doc["initialized"]:
         return "uninitialized", 501
     if doc["sealed"]:
@@ -79,8 +87,8 @@ def health_facts(doc):
     return {
         "state": state,
         "healthCode": code,
-        "initialized": doc["initialized"],
-        "sealed": doc["sealed"],
+        "initialized": _bool(doc, "initialized"),
+        "sealed": _bool(doc, "sealed"),
         "standby": _bool(doc, "standby"),
         "performanceStandby": _bool(doc, "performance_standby"),
         "version": _str(doc, "version"),
@@ -140,11 +148,11 @@ def askable(pod):
 
 
 def sort_entries(entries):
-    """Sealed or uninitialized first, then pods that are not ready, then by name."""
+    """Sealed, uninitialized or removed first, then pods that are not ready, then by name."""
 
     def key(e):
         state = (e["health"] or {}).get("state")
-        return (state not in ("sealed", "uninitialized"), e["ready"], e["pod"])
+        return (state not in ("sealed", "uninitialized", "removed"), e["ready"], e["pod"])
 
     return sorted(entries, key=key)
 

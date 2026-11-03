@@ -1,112 +1,17 @@
 {
-  "apiVersion": "apps/v1",
-  "kind": "StatefulSet",
   "metadata": {
-    "annotations": {
-      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/instance\":\"vault-sealed\",\"app.kubernetes.io/name\":\"vault\"},\"name\":\"vault-sealed\",\"namespace\":\"rw-vault\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/instance\":\"vault-sealed\",\"app.kubernetes.io/name\":\"vault\",\"component\":\"server\"}},\"serviceName\":\"vault-internal\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/instance\":\"vault-sealed\",\"app.kubernetes.io/name\":\"vault\",\"component\":\"server\"}},\"spec\":{\"containers\":[{\"args\":[\"server\"],\"env\":[{\"name\":\"SKIP_SETCAP\",\"value\":\"true\"},{\"name\":\"VAULT_LOCAL_CONFIG\",\"value\":\"{\\\"storage\\\":{\\\"file\\\":{\\\"path\\\":\\\"/vault/file\\\"}},\\\"listener\\\":{\\\"tcp\\\":{\\\"address\\\":\\\"0.0.0.0:8200\\\",\\\"tls_disable\\\":true}},\\\"disable_mlock\\\":true,\\\"ui\\\":false}\"}],\"image\":\"hashicorp/vault:1.18.5\",\"name\":\"vault\",\"ports\":[{\"containerPort\":8200,\"name\":\"http\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/v1/sys/health\",\"port\":8200},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"48Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/vault/file\",\"name\":\"data\"}]}],\"volumes\":[{\"emptyDir\":{},\"name\":\"data\"}]}}}}\n"
-    },
-    "creationTimestamp": "2026-11-03T22:37:34Z",
     "generation": 1,
-    "labels": {
-      "app.kubernetes.io/instance": "vault-sealed",
-      "app.kubernetes.io/name": "vault"
-    },
     "name": "vault-sealed",
     "namespace": "rw-vault",
-    "resourceVersion": "42832",
-    "uid": "bdb9a9a6-187c-4a07-b8c7-bfde8eb15c90"
+    "uid": "891850a1-44e7-44f9-815d-af2680acc0c9"
   },
   "spec": {
-    "persistentVolumeClaimRetentionPolicy": {
-      "whenDeleted": "Retain",
-      "whenScaled": "Retain"
-    },
-    "podManagementPolicy": "OrderedReady",
     "replicas": 1,
-    "revisionHistoryLimit": 10,
     "selector": {
       "matchLabels": {
         "app.kubernetes.io/instance": "vault-sealed",
         "app.kubernetes.io/name": "vault",
         "component": "server"
-      }
-    },
-    "serviceName": "vault-internal",
-    "template": {
-      "metadata": {
-        "labels": {
-          "app.kubernetes.io/instance": "vault-sealed",
-          "app.kubernetes.io/name": "vault",
-          "component": "server"
-        }
-      },
-      "spec": {
-        "containers": [
-          {
-            "args": [
-              "server"
-            ],
-            "env": [
-              {
-                "name": "SKIP_SETCAP",
-                "value": "true"
-              },
-              {
-                "name": "VAULT_LOCAL_CONFIG",
-                "value": "{\"storage\":{\"file\":{\"path\":\"/vault/file\"}},\"listener\":{\"tcp\":{\"address\":\"0.0.0.0:8200\",\"tls_disable\":true}},\"disable_mlock\":true,\"ui\":false}"
-              }
-            ],
-            "image": "hashicorp/vault:1.18.5",
-            "imagePullPolicy": "IfNotPresent",
-            "name": "vault",
-            "ports": [
-              {
-                "containerPort": 8200,
-                "name": "http",
-                "protocol": "TCP"
-              }
-            ],
-            "readinessProbe": {
-              "failureThreshold": 3,
-              "httpGet": {
-                "path": "/v1/sys/health",
-                "port": 8200,
-                "scheme": "HTTP"
-              },
-              "periodSeconds": 5,
-              "successThreshold": 1,
-              "timeoutSeconds": 1
-            },
-            "resources": {
-              "limits": {
-                "memory": "128Mi"
-              },
-              "requests": {
-                "cpu": "10m",
-                "memory": "48Mi"
-              }
-            },
-            "terminationMessagePath": "/dev/termination-log",
-            "terminationMessagePolicy": "File",
-            "volumeMounts": [
-              {
-                "mountPath": "/vault/file",
-                "name": "data"
-              }
-            ]
-          }
-        ],
-        "dnsPolicy": "ClusterFirst",
-        "restartPolicy": "Always",
-        "schedulerName": "default-scheduler",
-        "securityContext": {},
-        "terminationGracePeriodSeconds": 30,
-        "volumes": [
-          {
-            "emptyDir": {},
-            "name": "data"
-          }
-        ]
       }
     },
     "updateStrategy": {

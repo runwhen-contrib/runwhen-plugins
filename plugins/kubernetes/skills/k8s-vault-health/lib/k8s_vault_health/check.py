@@ -1,5 +1,6 @@
 """What the two tasks do: fetch through fetch.py, shape the facts with vault.py and csi.py."""
 
+from k8s_vault_health.budget import Budget
 from k8s_vault_health.clock import reference_time
 from k8s_vault_health.csi import daemonset_status, pod_views, warning_events
 from k8s_vault_health.errors import RwError
@@ -29,10 +30,14 @@ from k8s_vault_health.workload import (
 )
 
 
-def server_status(ctx, scheme, port, max_items):
+def server_status(ctx, scheme, port, max_items, budget=None):
     """(statefulsets, pods, counts). Every Running pod of every Vault StatefulSet is asked for
-    /v1/sys/health through the pod proxy; one that cannot be asked is listed with its error code
-    (the result is partial). If Vault could not be asked at all, the first failure is raised."""
+    /v1/sys/health through the pod proxy, within the task's time budget (a pod reached after it
+    was spent is listed with a timeout error and queried false); one that cannot be asked is listed
+    with its error code (the result is partial). If Vault could not be asked at all, the first
+    failure is raised; a StatefulSet that wants pods and has none Running to ask is reported as
+    unreachable for the `pods` scope (partial), never as a clean empty result."""
+    budget = budget or Budget()
     kind, resource = target(ctx)
     ns, workloads = load_workloads(ctx, kind, resource, STATEFULSET, VAULT_SERVER_LABEL)
     views, entries, failures = [], [], []
@@ -44,7 +49,9 @@ def server_status(ctx, scheme, port, max_items):
             if not askable(pod):
                 continue
             try:
-                entry["health"] = health_facts(vault_health(ctx, ns, entry["pod"], scheme, port))
+                entry["health"] = health_facts(
+                    vault_health(ctx, ns, entry["pod"], scheme, port, budget)
+                )
                 entry["queried"] = True
             except RwError as exc:
                 entry["error"] = error_entry(exc)
@@ -58,7 +65,16 @@ def server_status(ctx, scheme, port, max_items):
             entry["code"],
             f"pod {name}: {entry['message']}",
             scope=f"pod/{name}",
-            hint=_hint(entry["code"]),
+            hint=getattr(exc, "hint", None) or _hint(entry["code"]),
+        )
+    desired = sum(v["desired"] for v in views)
+    if desired > 0 and not any(e["queried"] for e in entries):
+        ctx.error(
+            "unreachable",
+            f"no Vault pod could be queried: {desired} wanted, {len(entries)} listed, none Running "
+            "with an address",
+            scope="pods",
+            hint="see kubernetes:k8s-workload-health/pod-status for why the pods are not Running",
         )
     ordered = sort_entries(entries)
     return cap(views, max_items), cap(ordered, max_items), counts(entries)
