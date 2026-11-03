@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jenkins build queue and executors per pod",
+  "description": "The queue items waiting longer than stuckAfter (measured against the run's reference time), Jenkins's own stuck and blocked counts, and the offline executors, as each pod answered through the API server's pod proxy. A section is null when its endpoint was not asked or gave no usable answer (an error or a 401/403: see errors).",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods were cut at maxItems"
+    },
+    "stuckAfterSeconds": {
+      "type": "number",
+      "description": "the stuckAfter input, in seconds"
+    },
+    "stuckAfterCount": {
+      "type": "integer",
+      "description": "queue items older than stuckAfter, over all pods"
+    },
+    "offlineCount": {
+      "type": "integer",
+      "description": "offline computers, over all pods"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's Ready condition (the kubelet's probe, which may not be these endpoints)"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running (or beyond the first 10), which is not asked"
+          },
+          "queue": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod was not asked or the endpoint did not answer usably",
+            "properties": {
+              "itemCount": {
+                "type": "integer",
+                "description": "items in the queue"
+              },
+              "flaggedStuckCount": {
+                "type": "integer",
+                "description": "items Jenkins itself flags stuck"
+              },
+              "flaggedBlockedCount": {
+                "type": "integer",
+                "description": "items Jenkins itself flags blocked"
+              },
+              "ageUnknownCount": {
+                "type": "integer",
+                "description": "items with no inQueueSince: their age cannot be told"
+              },
+              "stuckAfterCount": {
+                "type": "integer",
+                "description": "items waiting longer than stuckAfter"
+              },
+              "stuckAfterTruncated": {
+                "type": "boolean",
+                "description": "stuckAfterItems cut at maxItems"
+              },
+              "stuckAfterItems": {
+                "type": "array",
+                "description": "oldest first",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "task": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "inQueueSince": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ageSeconds": {
+                      "type": "number"
+                    },
+                    "stuck": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "blocked": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "buildable": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "why": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "whyTruncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "task",
+                    "inQueueSince",
+                    "ageSeconds",
+                    "stuck",
+                    "blocked",
+                    "buildable",
+                    "why",
+                    "whyTruncated"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "itemCount",
+              "flaggedStuckCount",
+              "flaggedBlockedCount",
+              "ageUnknownCount",
+              "stuckAfterCount",
+              "stuckAfterTruncated",
+              "stuckAfterItems"
+            ],
+            "additionalProperties": false
+          },
+          "computers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "null when the pod was not asked or the endpoint did not answer usably",
+            "properties": {
+              "computerCount": {
+                "type": "integer"
+              },
+              "offlineCount": {
+                "type": "integer"
+              },
+              "totalExecutors": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "busyExecutors": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "offlineTruncated": {
+                "type": "boolean",
+                "description": "offline cut at 50"
+              },
+              "offline": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "temporarilyOffline": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "numExecutors": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "cause": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "causeTruncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "temporarilyOffline",
+                    "numExecutors",
+                    "cause",
+                    "causeTruncated"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "computerCount",
+              "offlineCount",
+              "totalExecutors",
+              "busyExecutors",
+              "offlineTruncated",
+              "offline"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "port",
+          "queried",
+          "queue",
+          "computers"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "podCount",
+    "truncated",
+    "stuckAfterSeconds",
+    "stuckAfterCount",
+    "offlineCount",
+    "pods"
+  ],
+  "additionalProperties": false
+}

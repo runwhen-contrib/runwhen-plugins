@@ -1,0 +1,66 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most pods (and, per pod, queue items) a list output returns
+tasks:
+  - name: http-status
+    title: Jenkins HTTP status
+    description: >-
+      GET /login on each running pod of the StatefulSet or Deployment through the API server's pod
+      proxy (no exec, no port-forward, no credential). 200 from a Jenkins (an X-Jenkins header, else
+      the word Jenkins in the page) is ok; 503 and 404 are ok false; any other 200 is an error and
+      the pod's ok is null, never true. The X-Jenkins version header is read from the proxy's
+      response headers (kubectl -v=8 shows them); headersExposed says whether any were shown, so a
+      missing version is told from a proxy that hides headers. A 401 or 403 is authRequired with a
+      permission_denied error, and the task is skipped when every pod answers so. A pod that is not
+      Running is listed, not asked. Inputs port (default: container port http, else 8080), scheme
+      and urlPrefix (Jenkins's --prefix, e.g. /jenkins).
+    script: scripts/http_status.py
+    timeout: 120s
+    tags: [jenkins, http, login, version]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Jenkins HTTP port; by default the pod's container port named http, else 8080" }
+      scheme: { type: string, default: http, description: "http or https" }
+      urlPrefix: { type: string, default: "", description: "Jenkins's URL prefix (the chart's jenkinsUriPrefix), empty or plain path segments like /jenkins" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      login: { schema: ./schemas/login.v1.json, description: "Per pod: the /login answer (HTTP status, ok), the X-Jenkins version and the workload's replica counts" }
+
+  - name: queue
+    title: Jenkins build queue and executors
+    description: >-
+      /queue/api/json and /computer/api/json on each running pod through the API server's pod
+      proxy, anonymously (a ?tree= asks for only the fields read: queue items' build parameters are
+      never fetched). Reports the queue items waiting longer than input stuckAfter (default 30m,
+      against the run's reference time) with the task name, age, Jenkins's own stuck and blocked
+      flags and the why text cut at 1024, how many items Jenkins flags stuck or blocked, and the
+      offline executors (computers) with their cause. A 401 or 403 from Jenkins (anonymous read is
+      off) is authRequired with a permission_denied error and a hint that an API token needs a
+      generic connection (misc plugin, M4); when both endpoints answer so on every pod the task
+      is skipped. A reply that is not the expected JSON is an error, never an empty queue. Inputs
+      stuckAfter, port, scheme and urlPrefix.
+    script: scripts/queue_status.py
+    timeout: 120s
+    tags: [jenkins, queue, stuck, executors, computers]
+    readOnly: true
+    inputs:
+      stuckAfter: { type: duration, default: 30m, description: "A queue item waiting longer than this is listed" }
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Jenkins HTTP port; by default the pod's container port named http, else 8080" }
+      scheme: { type: string, default: http, description: "http or https" }
+      urlPrefix: { type: string, default: "", description: "Jenkins's URL prefix (the chart's jenkinsUriPrefix), empty or plain path segments like /jenkins" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      queue: { schema: ./schemas/queue.v1.json, description: "Per pod: queue items older than stuckAfter, Jenkins's stuck and blocked counts, and the offline executors" }

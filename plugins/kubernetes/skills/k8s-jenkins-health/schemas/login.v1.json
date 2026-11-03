@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jenkins /login per pod",
+  "description": "What each pod of the workload answered on /login through the API server's pod proxy. ok is true for a 200 from a Jenkins, false for a 503 or 404, null when the pod was not asked or the answer was an error.",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods were cut at maxItems"
+    },
+    "okCount": {
+      "type": "integer"
+    },
+    "notOkCount": {
+      "type": "integer"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's Ready condition (the kubelet's probe, which may not be these endpoints)"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running (or beyond the first 10), which is not asked"
+          },
+          "httpStatus": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "200, 401, 403, 404 or 503; null when the pod was not asked or the ask failed (see errors)"
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "authRequired": {
+            "type": "boolean",
+            "description": "Jenkins answered 401 or 403 on /login"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the X-Jenkins header (the Jenkins version); null when absent or when the headers were not shown"
+          },
+          "headersExposed": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "whether the proxy's response headers were shown at all; false means a null version says nothing"
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "port",
+          "queried",
+          "httpStatus",
+          "ok",
+          "authRequired",
+          "version",
+          "headersExposed"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "podCount",
+    "truncated",
+    "okCount",
+    "notOkCount",
+    "pods"
+  ],
+  "additionalProperties": false
+}
