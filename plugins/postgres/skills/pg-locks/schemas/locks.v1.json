@@ -24,7 +24,11 @@
         "integer",
         "null"
       ],
-      "description": "Longest wait of an ungranted lock in milliseconds; null when nothing waits"
+      "description": "Longest wait of an ungranted lock in milliseconds; null when nothing waits, and always null on PostgreSQL 13 (no pg_locks.waitstart)"
+    },
+    "waitTimesUnavailable": {
+      "type": "boolean",
+      "description": "true on PostgreSQL 13, which has no pg_locks.waitstart: longestWaitMs is null whatever is waiting"
     },
     "byMode": {
       "type": "object",
@@ -84,6 +88,7 @@
     "waiting",
     "waitingBackends",
     "longestWaitMs",
+    "waitTimesUnavailable",
     "byMode"
   ],
   "additionalProperties": false

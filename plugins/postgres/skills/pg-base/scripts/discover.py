@@ -1,7 +1,9 @@
 import json
 import os
+import time
 
 from pg_base import discovery as dc
+from pg_base.budget import budgeted_opener, budgeted_sleep, deadline_from
 from pg_base.discovery import discover
 from pg_base.errors import RwError
 from pg_base.settings import read_settings
@@ -9,6 +11,7 @@ from pg_base.sync import SyncClient, load_credential
 
 
 def main(ctx):
+    deadline = deadline_from(time.monotonic())
     st = read_settings(ctx.settings)
     outputs, sync = discover(ctx, st.max_items)
     # an artifact output is a file under $RW_OUT; the script returns no value for it
@@ -23,7 +26,11 @@ def main(ctx):
     # (rwtask run, tests) the sync is only written to the artifact.
     credential = os.environ.get("RW_SYNC_CREDENTIAL")
     if credential:
-        client = SyncClient(load_credential(credential))
+        client = SyncClient(
+            load_credential(credential),
+            opener=budgeted_opener(deadline),
+            sleep=budgeted_sleep(deadline),
+        )
         commit, rejected = client.push(sync)
         if rejected:
             ctx.error(

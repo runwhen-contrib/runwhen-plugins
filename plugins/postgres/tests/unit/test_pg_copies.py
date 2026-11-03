@@ -13,7 +13,10 @@ import yaml
 from pg_base import access as ax
 from pg_base import discovery as dc
 from pg_connections import connections as cn
+from pg_locks import blocking as bl
+from pg_locks import summary as sm
 from pg_long_running_queries import long_running as lr
+from pg_replication_lag import replication as rp
 
 PLUGIN = Path(__file__).parents[2]
 SKILLS = PLUGIN / "skills"
@@ -66,7 +69,12 @@ def test_each_skill_that_runs_psql_has_a_copy_and_none_is_unregistered(name):
     assert {p.parents[2].name for p in copies(name)} == SKILLS_WITH_COPIES
 
 
-SESSION_TASKS = (("pg-connections", "connections"), ("pg-long-running-queries", "long-running"))
+SESSION_TASKS = (
+    ("pg-connections", "connections"),
+    ("pg-long-running-queries", "long-running"),
+    ("pg-locks", "blocking"),
+    ("pg-replication-lag", "replication-status"),
+)
 HEALTH_SKILLS = (
     "pg-connections",
     "pg-long-running-queries",
@@ -93,7 +101,7 @@ def test_every_declared_permission_is_a_valid_postgres_permission():
 
 
 # The functions whose EXECUTE a task depends on and an admin may revoke; each must be declared
-# exactly when the task's SQL calls it.
+# exactly when the task's SQL calls it, in every health skill and in pg-base.
 TRACKED = (
     "pg_backend_pid",
     "pg_blocking_pids",
@@ -102,6 +110,14 @@ TRACKED = (
     "pg_has_role",
     "has_database_privilege",
     "has_function_privilege",
+    "pg_is_in_recovery",
+    "pg_current_wal_lsn",
+    "pg_wal_lsn_diff",
+    "pg_last_wal_receive_lsn",
+    "pg_last_wal_replay_lsn",
+    "pg_last_xact_replay_timestamp",
+    "pg_is_wal_replay_paused",
+    "pg_get_wal_replay_pause_state",
 )
 
 
@@ -115,13 +131,54 @@ def tracked_in(sql):
     return {f for f in TRACKED if f + "(" in sql}
 
 
-def test_discover_declares_exactly_the_functions_its_sql_calls():
+# (skill, task, every statement the task can send, for the newest server)
+def task_sql():
+    yield "pg-base", "discover", dc.INSTANCE_SQL + dc.SYSTEM_IDENTIFIER_SQL + dc.DATABASES_SQL
+    yield (
+        "pg-base",
+        "check-permissions",
+        ax.facts_sql({"r"}, {"pg_catalog.f"}) + dc.SYSTEM_IDENTIFIER_SQL,
+    )
+    yield "pg-connections", "connections", cn.connections_sql(5)
+    for include_query_text in (False, True):
+        yield (
+            "pg-long-running-queries",
+            "long-running",
+            lr.long_running_sql(1000, 5, include_query_text),
+        )
+    yield "pg-locks", "blocking", bl.blocking_sql(5)
+    yield "pg-locks", "lock-summary", sm.SUMMARY_SQL
+    yield (
+        "pg-replication-lag",
+        "replication-status",
+        rp.ROLE_SQL + rp.primary_sql(5) + rp.standby_sql(160000),
+    )
+
+
+@pytest.mark.parametrize("skill, name, sql", list(task_sql()))
+def test_every_task_declares_exactly_the_revocable_functions_its_sql_calls(skill, name, sql):
+    assert declared_functions(name, skill) == tracked_in(sql)
+
+
+def test_the_tracked_functions_each_have_a_task_that_calls_them():
+    used = set().union(*(tracked_in(sql) for _, _, sql in task_sql()))
+    assert used == set(TRACKED)
+
+
+def test_the_older_server_statements_call_nothing_the_task_does_not_declare():
+    # below 14 the standby statement leaves out the pause state: a subset of what is declared
+    sql = rp.standby_sql(130000)
+    assert "pg_get_wal_replay_pause_state" not in sql
+    assert tracked_in(sql) <= declared_functions("replication-status", "pg-replication-lag")
+
+
+def test_discover_declares_exactly_the_functions_its_sql_calls_by_name():
     sql = dc.INSTANCE_SQL + dc.SYSTEM_IDENTIFIER_SQL + dc.DATABASES_SQL
-    assert declared_functions("discover") == tracked_in(sql)
     assert tracked_in(sql) == {
         "pg_control_system",
         "pg_database_size",
         "pg_has_role",
+        "pg_is_in_recovery",
         "has_database_privilege",
     }
 
@@ -132,9 +189,10 @@ def test_discover_declares_no_database_privilege():
     assert not [p for p in task("discover")["permissions"] if "database" in p]
 
 
-def test_check_permissions_declares_the_functions_its_sql_calls():
-    sql = ax.facts_sql({"r"}, {"pg_catalog.f"}) + dc.SYSTEM_IDENTIFIER_SQL
-    assert declared_functions("check-permissions") == tracked_in(sql)
+def test_discovers_timeout_covers_its_queries_and_its_push():
+    from pg_base import budget
+
+    assert task("discover")["timeout"] == f"{budget.TASK_BUDGET}s"
 
 
 def test_the_entry_points_name_tasks_that_exist():
@@ -156,13 +214,6 @@ def test_the_root_declares_the_key_discover_reports():
 # --- the session skills -------------------------------------------------------------------------
 # pg_stat_activity shows other roles' sessions (state, query, wait event, times) only to a
 # superuser and to members of pg_read_all_stats, which pg_monitor includes.
-
-
-def test_the_session_tasks_declare_the_functions_their_sql_calls():
-    assert declared_functions("connections", "pg-connections") == tracked_in(cn.connections_sql(5))
-    for include_query_text in (False, True):
-        sql = lr.long_running_sql(1000, 5, include_query_text)
-        assert declared_functions("long-running", "pg-long-running-queries") == tracked_in(sql)
 
 
 @pytest.mark.parametrize("skill, name", SESSION_TASKS)
@@ -195,8 +246,8 @@ def test_min_duration_is_an_input_that_defaults_to_five_minutes():
     assert inputs["minDuration"]["type"] == "duration" and inputs["minDuration"]["default"] == "5m"
 
 
-@pytest.mark.parametrize("skill", ["pg-connections", "pg-long-running-queries"])
-def test_each_session_skills_output_schema_is_valid_2020_12_and_names_no_verdict(skill):
+@pytest.mark.parametrize("skill", HEALTH_SKILLS)
+def test_each_health_skills_output_schema_is_valid_2020_12_and_names_no_verdict(skill):
     doc = settings_doc(skill)
     for t in doc["tasks"]:
         for out_name, out in t["outputs"].items():

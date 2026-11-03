@@ -6,7 +6,12 @@ clock. The task's own backend (pg_backend_pid()) and walsenders (a replication c
 "active" for as long as it lives) are left out. Query text is returned only when the
 includeQueryText setting is on. The text is normalized IN the statement (`sqlnorm`: literals and
 comments replaced by `?`, then cut to 1024 characters), so raw query text never leaves the
-database; `sqltext.safe_query_text` is a second pass over what comes back."""
+database; `sqltext.safe_query_text` is a second pass over what comes back.
+
+A session can be blocked by a prepared transaction (`PREPARE TRANSACTION`), which has no backend:
+pg_blocking_pids lists it as pid 0. The statement finds it through the granted pg_locks rows that
+have no pid (they carry the virtual transaction of the session that prepared it, and an
+ExclusiveLock on its transaction id) and lists it in the item's `preparedTransactions`."""
 
 from .errors import RwError
 from .pg import parse_duration, psql_json
@@ -17,6 +22,11 @@ SCOPE = "pg_stat_activity"
 
 # `full_view` and `hidden` as in pg-connections: a role without pg_read_all_stats sees no state
 # for other roles' sessions, so they cannot match the filters below.
+#
+# pg_blocking_pids runs once per returned row (not per candidate). `preparedTransactions` names the
+# prepared transactions holding a lock on the object a session waits for, only for a session whose
+# blockers include pid 0; the conflict of the two lock modes is not checked, so a prepared
+# transaction that holds a compatible lock on the same object is listed as well.
 LONG_RUNNING_SQL = """WITH cfg AS (
   SELECT (current_setting('is_superuser') = 'on'
            OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')) AS full_view
@@ -41,6 +51,16 @@ LONG_RUNNING_SQL = """WITH cfg AS (
     AND a.state IN ('active', 'idle in transaction', 'idle in transaction (aborted)')
 ), hits AS (
   SELECT * FROM cand WHERE dur > interval '1 millisecond' * {min_ms}
+), lk AS MATERIALIZED (
+  SELECT pid, locktype, granted, database, relation, page, tuple, virtualxid, transactionid,
+         classid, objid, objsubid, virtualtransaction
+  FROM pg_locks
+), prep AS (
+  SELECT p.gid, p.prepared, p.owner::text AS owner, p.database::text AS database,
+         t.virtualtransaction AS vxid
+  FROM pg_prepared_xacts p
+  JOIN lk t ON t.pid IS NULL AND t.granted AND t.locktype = 'transactionid'
+           AND t.transactionid = p.transaction
 )
 SELECT json_build_object(
   'fullView', (SELECT full_view FROM cfg),
@@ -60,9 +80,32 @@ SELECT json_build_object(
       'waitEvent', wait_event,
       'backendType', backend_type,
       'queryId', query_id,
-      'blockedBy', pg_blocking_pids(pid){query_field}
+      'blockedBy', to_json(bp.pids[1:50]),
+      'blockedByTruncated', cardinality(bp.pids) > 50,
+      'preparedTransactions', CASE WHEN 0 = ANY(bp.pids) THEN coalesce((
+          SELECT json_agg(json_build_object(
+              'gid', x.gid,
+              'prepared', floor(extract(epoch FROM clock_timestamp() - x.prepared) * 1000)::bigint,
+              'owner', x.owner,
+              'database', x.database
+            ) ORDER BY x.prepared, x.gid)
+          FROM (SELECT DISTINCT pr.gid, pr.prepared, pr.owner, pr.database
+                FROM lk w
+                JOIN lk hl ON hl.pid IS NULL AND hl.granted AND hl.locktype = w.locktype
+                         AND hl.database IS NOT DISTINCT FROM w.database
+                         AND hl.relation IS NOT DISTINCT FROM w.relation
+                         AND hl.page IS NOT DISTINCT FROM w.page
+                         AND hl.tuple IS NOT DISTINCT FROM w.tuple
+                         AND hl.virtualxid IS NOT DISTINCT FROM w.virtualxid
+                         AND hl.transactionid IS NOT DISTINCT FROM w.transactionid
+                         AND hl.classid IS NOT DISTINCT FROM w.classid
+                         AND hl.objid IS NOT DISTINCT FROM w.objid
+                         AND hl.objsubid IS NOT DISTINCT FROM w.objsubid
+                JOIN prep pr ON pr.vxid = hl.virtualtransaction
+                WHERE w.pid = h.pid AND NOT w.granted
+                LIMIT 50) x), '[]'::json) ELSE '[]'::json END{query_field}
     ) ORDER BY dur DESC, pid), '[]'::json)
-    FROM {items_from})
+    FROM {items_from} CROSS JOIN LATERAL (SELECT pg_blocking_pids(h.pid) AS pids) bp)
 )"""
 
 PLAIN_ITEMS_FROM = "(SELECT * FROM hits ORDER BY dur DESC, pid LIMIT {limit}) h"
@@ -71,11 +114,21 @@ NORMALIZED_ITEMS_FROM = (
     "(SELECT t.*, " + normalized_query_expr("t.query") + " AS query_norm\n"
     "      FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT {limit}) t) h"
 )
-# query_norm is cut here, after the expression; the flag also covers the raw cut at RAW_QUERY_CHARS
+# query_norm is cut here, after the expression. queryTruncated also covers the raw cut at
+# RAW_QUERY_CHARS and the server's own cut: pg_stat_activity keeps at most
+# track_activity_query_size - 1 bytes (in whole characters, so up to 3 bytes fewer). That setting
+# is read from pg_settings, in bytes: current_setting() returns it with a unit ("1kB").
 QUERY_FIELD = (
     ",\n      'query', left(query_norm, {chars}),"
-    "\n      'queryTruncated', (char_length(query_norm) > {chars} OR char_length(query) >= {raw})"
+    "\n      'queryTruncated', (char_length(query_norm) > {chars} OR char_length(query) >= {raw}"
+    "\n                         OR query_cut_by_server)"
 ).format(chars=QUERY_CHARS, raw=RAW_QUERY_CHARS)
+QUERY_COLUMN = (
+    ",\n         left(a.query, {raw}) AS query,"
+    "\n         (octet_length(a.query) >= (SELECT setting::int FROM pg_settings"
+    "\n                                    WHERE name = 'track_activity_query_size') - 4)"
+    "\n           AS query_cut_by_server"
+).format(raw=RAW_QUERY_CHARS)
 
 
 def long_running_sql(min_ms, limit, include_query_text):
@@ -83,7 +136,7 @@ def long_running_sql(min_ms, limit, include_query_text):
     return (
         LONG_RUNNING_SQL.replace(
             "{query_column}",
-            f",\n         left(a.query, {RAW_QUERY_CHARS}) AS query" if include_query_text else "",
+            QUERY_COLUMN if include_query_text else "",
         )
         .replace("{query_field}", QUERY_FIELD if include_query_text else "")
         .replace("{items_from}", NORMALIZED_ITEMS_FROM if include_query_text else PLAIN_ITEMS_FROM)
@@ -113,6 +166,8 @@ def shape_item(item, include_query_text):
         "backendType": item["backendType"],
         "queryId": item["queryId"],
         "blockedBy": item["blockedBy"],
+        "blockedByTruncated": item["blockedByTruncated"],
+        "preparedTransactions": item["preparedTransactions"],
     }
     if include_query_text:
         # a second pass over text the statement already normalized and cut

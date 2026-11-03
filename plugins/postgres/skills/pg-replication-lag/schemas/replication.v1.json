@@ -30,11 +30,11 @@
       "properties": {
         "currentLsn": {
           "type": "string",
-          "description": "pg_current_wal_lsn()"
+          "description": "pg_current_wal_lsn(), read once: every distance in this output is from this position"
         },
         "replicas": {
           "type": "object",
-          "description": "pg_stat_replication: one entry per connected walsender; an empty list is a primary with no replica connected",
+          "description": "pg_stat_replication: one entry per connected walsender, standbys and also pg_basebackup, pg_receivewal and logical-replication walsenders; an empty list is a primary with none connected. Cut to maxItems in the query",
           "properties": {
             "items": {
               "type": "array",
@@ -171,7 +171,7 @@
         },
         "slots": {
           "type": "object",
-          "description": "pg_replication_slots; an empty list is a primary with no slot",
+          "description": "pg_replication_slots; an empty list is a primary with no slot. Cut to maxItems in the query",
           "properties": {
             "items": {
               "type": "array",
@@ -216,14 +216,14 @@
                       "integer",
                       "null"
                     ],
-                    "description": "pg_current_wal_lsn() minus restart_lsn: WAL the slot keeps on disk; null without a restart_lsn"
+                    "description": "pg_current_wal_lsn() minus restart_lsn: for a live slot, the WAL it keeps on disk; for a lost slot (walStatus lost) only a distance, WAL already removed is not on disk; null without a restart_lsn"
                   },
                   "safeWalSize": {
                     "type": [
                       "integer",
                       "null"
                     ],
-                    "description": "Bytes of WAL that can still be written before the slot is at risk of losing WAL (max_slot_wal_keep_size); null when unlimited"
+                    "description": "Bytes of WAL that can still be written before the slot is at risk of losing WAL (max_slot_wal_keep_size); null when unlimited and for a lost slot"
                   }
                 },
                 "required": [
@@ -280,7 +280,7 @@
             "object",
             "null"
           ],
-          "description": "pg_stat_wal_receiver; null when this standby has no WAL receiver running (archive recovery)",
+          "description": "pg_stat_wal_receiver; null when this standby has no WAL receiver running (archive recovery, or cut off from the sender)",
           "properties": {
             "status": {
               "type": [
@@ -309,13 +309,29 @@
                 "null"
               ],
               "description": "Slot the receiver uses, if any"
+            },
+            "lastMsgReceiptAgeMs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Milliseconds since the receiver last got a message from the sender (now minus last_msg_receipt_time); an idle primary still sends keepalives, so a streaming receiver keeps this small (below wal_receiver_timeout). Null when hidden (visibility partial)"
+            },
+            "latestEndLsn": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "latest_end_lsn: the last WAL position reported by the sender; null when hidden (visibility partial)"
             }
           },
           "required": [
             "status",
             "senderHost",
             "senderPort",
-            "slotName"
+            "slotName",
+            "lastMsgReceiptAgeMs",
+            "latestEndLsn"
           ],
           "additionalProperties": false
         },
@@ -324,7 +340,7 @@
             "string",
             "null"
           ],
-          "description": "pg_last_wal_receive_lsn(): the last WAL position received and flushed; null when nothing is streamed"
+          "description": "pg_last_wal_receive_lsn(): the last WAL position received and flushed. It keeps its last value after the receiver exits, so it does not show the standby is still connected (see receiver and lastMsgReceiptAgeMs); null when WAL was never received"
         },
         "replayLsn": {
           "type": [
@@ -345,7 +361,7 @@
             "boolean",
             "null"
           ],
-          "description": "true when everything received has been replayed; with true, replayDelayMs measures how long ago the primary last committed, not a backlog"
+          "description": "true when everything received has been replayed; with true, replayDelayMs measures how long ago the primary last committed, not a backlog, but only while receiver.status is streaming and receiver.lastMsgReceiptAgeMs is recent. With no receiver or a stale message the standby is cut off, whatever this says"
         },
         "replayDelayMs": {
           "type": [
@@ -359,8 +375,11 @@
           "description": "pg_is_wal_replay_paused()"
         },
         "replayPauseState": {
-          "type": "string",
-          "description": "pg_get_wal_replay_pause_state(): not paused, pause requested or paused"
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pg_get_wal_replay_pause_state(): not paused, pause requested or paused; null before PostgreSQL 14"
         }
       },
       "required": [

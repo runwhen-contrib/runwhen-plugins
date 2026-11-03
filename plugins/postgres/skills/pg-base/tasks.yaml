@@ -12,10 +12,11 @@ tasks:
     script: scripts/discover.py
     tags: [discovery, inventory]
     readOnly: true
-    timeout: 180s
+    timeout: 600s                                  # the queries and the push; the push is clamped to what is left (pg_base/budget.py)
     credentials: [postgres/libpq, runwhen/sync]    # runwhen/sync is platform-minted per run by the lease, not a connection
     permissions:
       - { function: pg_catalog.pg_control_system, privilege: EXECUTE }   # the system identifier
+      - { function: pg_catalog.pg_is_in_recovery, privilege: EXECUTE }   # whether the instance is a standby
       - { function: pg_catalog.pg_database_size, privilege: EXECUTE }    # sized only where the role has CONNECT on the database or pg_read_all_stats; the others are reported
       - { function: pg_catalog.pg_has_role, privilege: EXECUTE }         # decides whether pg_database_size may run
       - { function: pg_catalog.has_database_privilege, privilege: EXECUTE }

@@ -14,6 +14,10 @@
       "type": "string",
       "description": "The database the connection is in; relation names are resolved in it only"
     },
+    "waitTimesUnavailable": {
+      "type": "boolean",
+      "description": "true on PostgreSQL 13, which has no pg_locks.waitstart: every waitMs is null"
+    },
     "maxDepth": {
       "type": [
         "integer",
@@ -23,7 +27,7 @@
     },
     "waiters": {
       "type": "object",
-      "description": "Every backend waiting for a lock that something blocks, longest wait first",
+      "description": "Every backend waiting for a lock that something blocks, longest wait first; the rows are cut to maxItems in the query",
       "properties": {
         "items": {
           "type": "array",
@@ -67,7 +71,7 @@
                   "integer",
                   "null"
                 ],
-                "description": "Milliseconds the waiter has waited for the lock (pg_locks.waitstart); null if the wait started and ended while reading"
+                "description": "Milliseconds the waiter has waited for the lock (pg_locks.waitstart); null if the wait started and ended while reading, and always null on PostgreSQL 13 (see waitTimesUnavailable)"
               },
               "lockType": {
                 "type": "string",
@@ -107,14 +111,67 @@
                 "items": {
                   "type": "integer"
                 },
-                "description": "pg_blocking_pids of the waiter: sessions holding or queued ahead for a conflicting lock (at most 50)"
+                "description": "pg_blocking_pids of the waiter: sessions holding or queued ahead for a conflicting lock (at most 50); 0 is a prepared transaction, listed in preparedTransactions"
+              },
+              "blockedByTruncated": {
+                "type": "boolean",
+                "description": "true when the waiter has more than 50 blockers and blockedBy lists the first 50"
+              },
+              "preparedTransactions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "description": "A prepared transaction (PREPARE TRANSACTION): it has no backend and holds its locks until COMMIT PREPARED or ROLLBACK PREPARED",
+                  "properties": {
+                    "gid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The global identifier given to PREPARE TRANSACTION; null when the prepared transaction ended before it could be looked up"
+                    },
+                    "prepared": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "Milliseconds since PREPARE TRANSACTION (pg_prepared_xacts.prepared)"
+                    },
+                    "owner": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Role that prepared it"
+                    },
+                    "database": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Database it ran in"
+                    }
+                  },
+                  "required": [
+                    "gid",
+                    "prepared",
+                    "owner",
+                    "database"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "When blockedBy has 0: the prepared transactions that hold a lock on the object the waiter wants (at most 50). The conflict of the lock modes is not checked: one that holds a compatible lock on the same object is listed too"
               },
               "rootBlockerPids": {
                 "type": "array",
                 "items": {
                   "type": "integer"
                 },
-                "description": "Root blockers its chain reaches (at most 50)"
+                "description": "Root blockers its chain reaches (at most 50); 0 is a prepared transaction"
+              },
+              "rootBlockerPidsTruncated": {
+                "type": "boolean",
+                "description": "true when the chain reaches more than 50 root blockers and rootBlockerPids lists 50 of them"
               }
             },
             "required": [
@@ -131,7 +188,10 @@
               "relation",
               "depth",
               "blockedBy",
-              "rootBlockerPids"
+              "blockedByTruncated",
+              "preparedTransactions",
+              "rootBlockerPids",
+              "rootBlockerPidsTruncated"
             ],
             "additionalProperties": false
           }
@@ -159,7 +219,7 @@
     },
     "rootBlockers": {
       "type": "object",
-      "description": "Sessions that block others and are not waiting themselves, most waiters first",
+      "description": "Sessions that block others and are not waiting themselves, most waiters first; a prepared transaction is one entry (pid 0) per gid. The rows are cut to maxItems in the query",
       "properties": {
         "items": {
           "type": "array",
@@ -168,21 +228,21 @@
             "properties": {
               "pid": {
                 "type": "integer",
-                "description": "Backend pid of the root blocker"
+                "description": "Backend pid of the root blocker; 0 for a prepared transaction (see preparedTransaction)"
               },
               "datname": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "Database it is connected to"
+                "description": "Database it is connected to (a prepared transaction: the database it ran in)"
               },
               "usename": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "Role it runs as"
+                "description": "Role it runs as (a prepared transaction: the role that prepared it)"
               },
               "applicationName": {
                 "type": [
@@ -203,11 +263,55 @@
                   "integer",
                   "null"
                 ],
-                "description": "Milliseconds since its transaction started (xact_start) (null where pg_stat_activity hides it from this role: visibility partial)"
+                "description": "Milliseconds since its transaction started (xact_start) (null where pg_stat_activity hides it from this role: visibility partial; null for a prepared transaction: see preparedTransaction.prepared)"
               },
               "blockedWaiters": {
                 "type": "integer",
                 "description": "Waiting sessions whose chain reaches this root blocker"
+              },
+              "preparedTransaction": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Set when this root blocker is a prepared transaction (pid 0), null for a session. Its gid is null only when the transaction ended between the two reads",
+                "properties": {
+                  "gid": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The global identifier given to PREPARE TRANSACTION; null when the prepared transaction ended before it could be looked up"
+                  },
+                  "prepared": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Milliseconds since PREPARE TRANSACTION (pg_prepared_xacts.prepared)"
+                  },
+                  "owner": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Role that prepared it"
+                  },
+                  "database": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Database it ran in"
+                  }
+                },
+                "required": [
+                  "gid",
+                  "prepared",
+                  "owner",
+                  "database"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -217,7 +321,8 @@
               "applicationName",
               "state",
               "xactAgeMs",
-              "blockedWaiters"
+              "blockedWaiters",
+              "preparedTransaction"
             ],
             "additionalProperties": false
           }
@@ -247,6 +352,7 @@
   "required": [
     "visibility",
     "database",
+    "waitTimesUnavailable",
     "maxDepth",
     "waiters",
     "rootBlockers"

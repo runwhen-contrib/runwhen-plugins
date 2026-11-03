@@ -35,6 +35,8 @@ def item(pid, duration, kind="active", **over):
         "backendType": "client backend",
         "queryId": None,
         "blockedBy": [],
+        "blockedByTruncated": False,
+        "preparedTransactions": [],
     }
     base.update(over)
     return base
@@ -102,7 +104,7 @@ def test_the_statement_excludes_the_tasks_own_backend_and_walsenders_and_compute
     assert "now() - a.query_start" in sql and "now() - a.state_change" in sql
     assert "now() - a.xact_start" in sql
     assert "ORDER BY dur DESC" in sql and "LIMIT 200" in sql
-    assert "query_id" in sql and "pg_blocking_pids(pid)" in sql
+    assert "query_id" in sql and "pg_blocking_pids(h.pid)" in sql
     assert "'{" not in sql and "{min_ms}" not in sql and "{limit}" not in sql
 
 
@@ -248,3 +250,64 @@ def test_min_duration_ms_rounds_and_has_a_floor():
     assert lr.min_duration_ms("5m") == 300000
     assert lr.min_duration_ms("1h30m") == 5400000
     assert lr.min_duration_ms("500ms") == 500
+
+
+PREPARED = {"gid": "migrate-7", "prepared": 93000, "owner": "deploy", "database": "orders"}
+
+
+def test_a_session_blocked_by_a_prepared_transaction_lists_it_beside_pid_zero(
+    run_script, fake_psql
+):
+    answer(
+        fake_psql,
+        [
+            item(
+                11,
+                900000,
+                waitEventType="Lock",
+                waitEvent="relation",
+                blockedBy=[0],
+                preparedTransactions=[PREPARED],
+            )
+        ],
+    )
+    out = run_long(run_script).envelope["outputs"]["longRunning"]
+    jsonschema.Draft202012Validator(SCHEMA).validate(out)
+    (blocked,) = out["items"]
+    assert blocked["blockedBy"] == [0] and blocked["preparedTransactions"] == [PREPARED]
+
+
+def test_blocked_by_is_cut_at_50_in_the_statement_and_says_so(run_script, fake_psql):
+    answer(fake_psql, [item(11, 900000, blockedBy=list(range(100, 150)), blockedByTruncated=True)])
+    out = run_long(run_script).envelope["outputs"]["longRunning"]
+    jsonschema.Draft202012Validator(SCHEMA).validate(out)
+    assert out["items"][0]["blockedByTruncated"] is True and len(out["items"][0]["blockedBy"]) == 50
+    sql = sql_of(fake_psql)
+    assert "bp.pids[1:50]" in sql and "cardinality(bp.pids) > 50" in sql
+    assert sql.count("pg_blocking_pids(") == 1  # once, for the capped rows only
+
+
+def test_the_prepared_transactions_are_looked_up_only_for_a_session_blocked_by_pid_zero(
+    run_script, fake_psql
+):
+    answer(fake_psql, [])
+    run_long(run_script)
+    sql = sql_of(fake_psql)
+    assert "CASE WHEN 0 = ANY(bp.pids)" in sql
+    assert "FROM pg_prepared_xacts" in sql and "t.pid IS NULL AND t.granted" in sql
+    assert "t.transactionid = p.transaction" in sql and "hl.pid IS NULL AND hl.granted" in sql
+
+
+def test_the_statement_flags_a_text_the_server_itself_cut(run_script, fake_psql):
+    answer(fake_psql, [item(1, 900000, query="select ?", queryTruncated=True)])
+    run_long(run_script, settings={"includeQueryText": True})
+    sql = sql_of(fake_psql)
+    # the server keeps track_activity_query_size - 1 bytes, in whole characters (up to 3 fewer);
+    # the setting is read from pg_settings in bytes (current_setting returns "1kB")
+    assert "octet_length(a.query) >= (SELECT setting::int FROM pg_settings" in sql
+    assert "WHERE name = 'track_activity_query_size') - 4" in sql
+    assert "OR query_cut_by_server" in sql
+    # off by default: no text, no flag
+    fake_psql.calls.clear()
+    run_long(run_script)
+    assert "query_cut_by_server" not in sql_of(fake_psql)

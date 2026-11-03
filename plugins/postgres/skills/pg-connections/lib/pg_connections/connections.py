@@ -10,11 +10,14 @@ from .pg import psql_json
 SCOPE = "pg_stat_activity"
 IDLE_IN_TRANSACTION = ("idle in transaction", "idle in transaction (aborted)")
 
-# A role without pg_read_all_stats (and not a superuser) sees every row of pg_stat_activity but
-# the rows of other roles have NULL state, query, wait_event and times, and NULL backend_type.
-# `hidden` marks those rows by the same rule the server applies. A hidden row is counted as a
-# client backend when it names a role and a database, which can also match a logical
-# replication worker or a logical walsender; that is the only estimate in a partial result.
+# A role without pg_read_all_stats (and not a superuser) sees every row of pg_stat_activity but the
+# rows of other roles have NULL state, query, wait_event and times, and NULL backend_type, so what
+# they are cannot be known. Only a row whose backend_type is visible as 'client backend' is counted
+# as a client connection (inUse, byState, byDatabase, byUserApplication); a hidden row that names
+# a role and a database is counted apart, as hiddenSessions, by the same rule the server applies to
+# hide it. hiddenSessions can include a logical-replication worker or walsender: it is the only
+# estimate in a partial result, and it is never added to inUse. byBackendType counts every row, so
+# the hidden rows are its NULL backendType.
 CONNECTIONS_SQL = """WITH cfg AS (
   SELECT current_setting('max_connections')::int AS max_connections,
          current_setting('superuser_reserved_connections')::int AS superuser_reserved,
@@ -24,9 +27,9 @@ CONNECTIONS_SQL = """WITH cfg AS (
 ), s AS (
   SELECT a.datname, a.usename, a.application_name, a.state, a.backend_type, a.wait_event_type,
          a.xact_start, a.state_change,
-         (a.backend_type = 'client backend'
-           OR (a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL)) AS is_client,
-         NOT (cfg.full_view OR coalesce(pg_has_role(current_user, a.usesysid, 'USAGE'), false)) AS hidden
+         (a.backend_type = 'client backend') AS is_client,
+         (a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL
+           AND NOT (cfg.full_view OR coalesce(pg_has_role(current_user, a.usesysid, 'USAGE'), false))) AS is_hidden
   FROM pg_stat_activity a CROSS JOIN cfg
   WHERE a.pid <> pg_backend_pid()
 ), by_type AS (
@@ -42,7 +45,7 @@ SELECT json_build_object(
   'superuserReservedConnections', (SELECT superuser_reserved FROM cfg),
   'reservedConnections', (SELECT reserved FROM cfg),
   'inUse', (SELECT count(*) FROM s WHERE is_client),
-  'hiddenSessions', (SELECT count(*) FROM s WHERE is_client AND hidden),
+  'hiddenSessions', (SELECT count(*) FROM s WHERE is_hidden),
   'byState', (SELECT json_build_object(
       'active', count(*) FILTER (WHERE state = 'active'),
       'idle', count(*) FILTER (WHERE state = 'idle'),
@@ -80,9 +83,10 @@ def connections_sql(limit):
 
 
 def listing(block):
-    """A grouped count as {items, total, omitted}."""
-    items = block["items"]
-    return {"items": items, "total": block["total"], "omitted": max(block["total"] - len(items), 0)}
+    """A grouped count as {items, total, omitted, truncated}: the SQL cut it to the cap."""
+    items, total = block["items"], block["total"]
+    omitted = max(total - len(items), 0)
+    return {"items": items, "total": total, "omitted": omitted, "truncated": omitted > 0}
 
 
 def used_percent(in_use, usable):
@@ -90,9 +94,11 @@ def used_percent(in_use, usable):
 
 
 def shape(row):
-    """The `connections` output from the statement's row. Under partial visibility the figures
-    that read other sessions' state (the oldest transaction ages, the lock waiters) are null:
-    the visible sessions alone would understate them."""
+    """The `connections` output from the statement's row. Under partial visibility inUse and
+    usedPercent count the client sessions the role can see only (a lower bound; hiddenSessions
+    says how many more there may be), and the figures that read other sessions' state (the oldest
+    transaction ages, the lock waiters) are null: the visible sessions alone would understate
+    them."""
     if not isinstance(row, dict):
         raise RwError("internal", "the server returned no connection facts")
     full = bool(row["fullView"])
@@ -120,9 +126,9 @@ def shape(row):
 def partial_message(facts):
     return (
         f"the role cannot read other roles' sessions: {facts['hiddenSessions']} session(s) have no "
-        "state, query or wait event (counted under nullState), so inUse is an estimate and "
-        "oldestIdleInTransactionMs, oldestTransactionMs and waitingOnLock are null; "
-        "grant pg_read_all_stats (or pg_monitor) to see them"
+        "state, query or backend type and are not counted in inUse, so inUse and usedPercent are "
+        "lower bounds and oldestIdleInTransactionMs, oldestTransactionMs and waitingOnLock are "
+        "null; grant pg_read_all_stats (or pg_monitor) to see them"
     )
 
 

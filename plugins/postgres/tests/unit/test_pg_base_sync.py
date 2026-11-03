@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pg_base import budget
 from pg_base import discovery as dc
 from pg_base import sync
 from runwhen_capability.contracts import validate
@@ -61,9 +62,11 @@ class Http:
         self.rejected = rejected or []
         self.commit_body = commit_body or {}
         self.raise_on = raise_on or {}
+        self.timeouts = {}
 
     def __call__(self, request, timeout=None):
         path = request.full_url.split("/workspaces/ws")[1]
+        self.timeouts[path] = timeout
         sent = json.loads(request.data)
         self.requests.append((path, request.headers, sent))
         if path in self.raise_on:
@@ -312,3 +315,78 @@ def test_the_commit_carries_the_summary_the_discover_built():
     assert validate("rw.discovery.summary.v1", summary) == []
     assert summary["partitions"]["complete"] == 1
     assert re.fullmatch(r"\d+", summary["root"]["canonicalKey"]["value"])
+
+
+# --- the task's time budget ---------------------------------------------------------------------
+# discover's timeout (600s) covers its queries and the push, and the commit alone may wait 300s:
+# the push is clamped to what is left, through the client's own opener and sleep hooks, so the
+# shared sync.py stays a verbatim copy.
+
+
+def test_the_push_gets_the_full_commit_timeout_while_the_budget_allows_it(
+    run_script, fake_psql, monkeypatch, tmp_path
+):
+    http = Http()
+    credential_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(sync, "default_open", http)
+    answer(fake_psql)
+    assert run_script("discover").envelope["status"] == "ok"
+    assert http.timeouts["/resource-syncs"] == sync.TIMEOUT
+    assert http.timeouts["/resource-syncs/s1/commit"] == pytest.approx(sync.COMMIT_TIMEOUT, abs=1)
+
+
+def test_the_commit_timeout_is_clamped_to_what_is_left_of_the_task_budget(
+    run_script, fake_psql, monkeypatch, tmp_path
+):
+    http = Http()
+    credential_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(sync, "default_open", http)
+    monkeypatch.setattr(budget, "TASK_BUDGET", 100)  # 100s task: the push may use 90s at most
+    answer(fake_psql)
+    assert run_script("discover").envelope["status"] == "ok"
+    assert http.timeouts["/resource-syncs/s1/commit"] <= 90
+    assert http.timeouts["/resource-syncs"] <= 30
+
+
+def test_with_no_budget_left_the_push_fails_as_a_timeout_before_sending_anything(
+    run_script, fake_psql, monkeypatch, tmp_path
+):
+    http = Http()
+    credential_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(sync, "default_open", http)
+    monkeypatch.setattr(budget, "TASK_BUDGET", budget.MARGIN)  # the deadline is the start
+    answer(fake_psql)
+    env = run_script("discover").envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["timeout"]
+    assert "time budget" in env["errors"][0]["message"] and http.requests == []
+
+
+def test_the_budgeted_opener_clamps_each_request_and_refuses_when_nothing_is_left(monkeypatch):
+    seen = []
+    monkeypatch.setattr(sync, "default_open", lambda request, timeout=None: seen.append(timeout))
+    now = [100.0]
+    opener = budget.budgeted_opener(deadline=160.0, clock=lambda: now[0])
+    opener("req", timeout=30)
+    now[0] = 140.0
+    opener("req", timeout=300)  # the commit: 20s left
+    assert seen == [30, 20.0]
+    now[0] = 159.5
+    with pytest.raises(sync.RwError) as exc:
+        opener("req", timeout=30)
+    assert exc.value.code == "timeout" and len(seen) == 2
+
+
+def test_a_retry_never_sleeps_past_the_deadline():
+    slept = []
+    now = [100.0]
+    wait = budget.budgeted_sleep(deadline=105.0, clock=lambda: now[0], sleep=slept.append)
+    wait(4)
+    now[0] = 104.0
+    wait(10)  # the backoff would end after the deadline
+    now[0] = 110.0
+    wait(1)
+    assert slept == [4, 1.0, 0.0]
+
+
+def test_the_deadline_leaves_a_margin_after_the_push():
+    assert budget.deadline_from(1000.0) == 1000.0 + budget.TASK_BUDGET - budget.MARGIN

@@ -7,6 +7,9 @@
 #   rw_noperm    LOGIN only; CONNECT on orders revoked from PUBLIC   (the forbidden identity)
 #   orders       the app database, owned by NOLOGIN role orders_owner
 #
+# max_prepared_transactions is 10 on BOTH (a standby needs at least the primary's value), so the
+# prepared-transaction fixture (hold-prepared.sh) can PREPARE TRANSACTION.
+#
 # Use it:  source plugins/postgres/tests/docker/env.sh; rw_pg_use rw_monitor
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,7 +46,8 @@ else
   docker run -d --name "$PRIMARY" --network "$NET" -p "127.0.0.1:${PRIMARY_PORT}:5432" \
     -e POSTGRES_PASSWORD="$SUPERUSER_PASSWORD" "$IMAGE" \
     -c wal_level=replica -c max_wal_senders=10 -c max_replication_slots=10 \
-    -c hot_standby=on -c listen_addresses='*' >/dev/null
+    -c hot_standby=on -c listen_addresses='*' \
+    -c max_prepared_transactions=10 >/dev/null
 fi
 wait_ready "$PRIMARY" 90
 
@@ -94,7 +98,7 @@ else
     --entrypoint sh "$IMAGE" -c "
       set -e
       pg_basebackup -h ${PRIMARY} -U ${REPLICATOR} -D \"\$PGDATA\" -X stream -R -C -S ${SLOT} --checkpoint=fast
-      exec postgres -c hot_standby=on -c listen_addresses='*'
+      exec postgres -c hot_standby=on -c listen_addresses='*' -c max_prepared_transactions=10
     " >/dev/null
 fi
 wait_ready "$STANDBY" 120

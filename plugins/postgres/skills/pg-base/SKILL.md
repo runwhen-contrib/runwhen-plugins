@@ -28,7 +28,9 @@ the task's own fixed text and cannot write. Nothing is set on the session itself
 that shares server connections (pgbouncer in transaction mode) carries no setting over to
 another client. The `connectTimeout`
 (default 10s) and `statementTimeout` (default 30s) settings bound it; both are clamped to what
-the server accepts (at least 1 ms, at most 2147483647 ms). `discover` has a 180s task timeout.
+the server accepts (at least 1 ms, at most 2147483647 ms). `discover` has a 600s task timeout, which
+covers its queries and the push to the platform: the push is clamped to what is left of the
+budget (less a 10s margin), and a request that would start with nothing left fails with `timeout`.
 
 ## What each task tells you
 

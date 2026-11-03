@@ -29,11 +29,27 @@
           "waitEvent": {"type": ["string", "null"]},
           "backendType": {"type": ["string", "null"]},
           "queryId": {"type": ["string", "null"], "description": "The query_id as text; null unless compute_query_id computes it (on, or auto with a module that uses it) and the server is PostgreSQL 14 or later"},
-          "blockedBy": {"type": "array", "items": {"type": "integer"}, "description": "pg_blocking_pids: the pids this session waits for; empty when it is not blocked"},
-          "query": {"type": ["string", "null"], "description": "Only with includeQueryText: the statement with literals replaced by ?, comments dropped and whitespace collapsed, cut to 1024 bytes"},
-          "queryTruncated": {"type": "boolean", "description": "Only with includeQueryText: query was cut to 1024 bytes"}
+          "blockedBy": {"type": "array", "items": {"type": "integer"}, "description": "pg_blocking_pids: the pids this session waits for (at most 50); empty when it is not blocked. 0 is a prepared transaction, listed in preparedTransactions"},
+          "blockedByTruncated": {"type": "boolean", "description": "true when the session has more than 50 blockers and blockedBy lists the first 50"},
+          "preparedTransactions": {
+            "type": "array",
+            "description": "When blockedBy has 0: the prepared transactions (PREPARE TRANSACTION) that hold a lock on the object this session waits for, at most 50. The conflict of the lock modes is not checked: one that holds a compatible lock on the same object is listed too",
+            "items": {
+              "type": "object",
+              "properties": {
+                "gid": {"type": "string", "description": "The global identifier given to PREPARE TRANSACTION"},
+                "prepared": {"type": "integer", "description": "Milliseconds since PREPARE TRANSACTION"},
+                "owner": {"type": ["string", "null"], "description": "Role that prepared it"},
+                "database": {"type": ["string", "null"], "description": "Database it ran in"}
+              },
+              "required": ["gid", "prepared", "owner", "database"],
+              "additionalProperties": false
+            }
+          },
+          "query": {"type": ["string", "null"], "description": "Only with includeQueryText: the statement with literals replaced by ?, comments dropped and whitespace collapsed, cut to 1024 bytes. Everything after a dollar-quote opener ($$ or $tag$) is replaced by one ?"},
+          "queryTruncated": {"type": "boolean", "description": "Only with includeQueryText: the text is not the whole statement: it was cut to 1024 bytes, or the database read only its first 8192 characters, or the server itself had cut it (a statement of track_activity_query_size - 1 bytes or nearly so)"}
         },
-        "required": ["pid", "database", "user", "applicationName", "clientAddr", "state", "kind", "durationMs", "xactAgeMs", "waitEventType", "waitEvent", "backendType", "queryId", "blockedBy"],
+        "required": ["pid", "database", "user", "applicationName", "clientAddr", "state", "kind", "durationMs", "xactAgeMs", "waitEventType", "waitEvent", "backendType", "queryId", "blockedBy", "blockedByTruncated", "preparedTransactions"],
         "additionalProperties": false
       }
     },

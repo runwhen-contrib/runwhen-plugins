@@ -5,7 +5,7 @@ settings:
   maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
   connectTimeout: { type: duration, default: 10s, description: "How long psql waits for a connection (PGCONNECT_TIMEOUT)" }
   statementTimeout: { type: duration, default: 30s, description: "statement_timeout of the session; a statement that runs longer is cancelled (timeout)" }
-  includeQueryText: { type: boolean, default: false, description: "Return each session's query text, with string and numeric literals replaced by ? and cut to 1024 bytes. Off by default: statements can carry personal data" }
+  includeQueryText: { type: boolean, default: false, description: "Return each session's query text, with string and numeric literals replaced by ? and cut to 1024 bytes. Off by default: statements can carry personal data. The replacing assumes standard_conforming_strings is on (the default since PostgreSQL 9.1): a client that runs with it off writes backslash escapes in plain strings, and its text could leak" }
 tasks:
   - name: long-running
     title: Long-running queries and idle-in-transaction sessions
@@ -14,7 +14,9 @@ tasks:
       been idle in transaction longer than minDuration, longest first, cut to maxItems. Each has
       its pid, database, role, application_name, client address, state, duration, transaction
       age, wait event, backend type, query_id (when compute_query_id is on) and the pids blocking
-      it. Query text only when the includeQueryText setting is on, with literals replaced by ?.
+      it (at most 50; pid 0 is a prepared transaction, listed with its gid, owner and database).
+      Query text only when the includeQueryText setting is on, with literals replaced by ? (and
+      everything after a dollar-quote opener hidden).
       A role without pg_read_all_stats cannot see other roles' sessions: the result is partial
       and says visibility is partial. The task's own connection and walsenders are left out.
       Read-only.

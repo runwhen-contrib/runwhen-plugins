@@ -15,8 +15,13 @@ def run_script(fake_psql):
     return make_runner(SKILL, fake_psql)
 
 
-def role(in_recovery, full=True):
-    return {"inRecovery": in_recovery, "fullView": full, "database": "orders"}
+def role(in_recovery, full=True, version=160015):
+    return {
+        "inRecovery": in_recovery,
+        "fullView": full,
+        "database": "orders",
+        "serverVersionNum": version,
+    }
 
 
 def replica(**kw):
@@ -54,11 +59,18 @@ def slot(name="rw_standby", active=True, retained=0, **kw):
     return row
 
 
-def primary_raw(replicas=None, slots=None):
+def block(items, total=None):
+    """What the statement returns for a list: the rows it kept and the count it found."""
+    return {"total": len(items) if total is None else total, "items": items}
+
+
+def primary_raw(replicas=None, slots=None, replicas_total=None, slots_total=None):
+    replicas = [replica()] if replicas is None else replicas
+    slots = [slot()] if slots is None else slots
     return {
         "currentLsn": "0/3069898",
-        "replicas": [replica()] if replicas is None else replicas,
-        "slots": [slot()] if slots is None else slots,
+        "replicas": block(replicas, replicas_total),
+        "slots": block(slots, slots_total),
     }
 
 
@@ -68,6 +80,8 @@ STANDBY_RAW = {
         "senderHost": "rw-pg-primary",
         "senderPort": 5432,
         "slotName": "rw_standby",
+        "lastMsgReceiptAgeMs": 4200,
+        "latestEndLsn": "0/3069898",
     },
     "receiveLsn": "0/3069898",
     "replayLsn": "0/3069898",
@@ -121,9 +135,13 @@ def test_an_inactive_slot_shows_its_retained_wal(run_script, fake_psql):
     assert idle["active"] is False and idle["retainedWalBytes"] == 16777216
 
 
-def test_replicas_and_slots_are_cut_at_max_items(run_script, fake_psql):
+def test_replicas_and_slots_are_cut_at_max_items_in_the_statement_and_say_so(run_script, fake_psql):
+    # the statement kept the first 2 of 5 replicas and of 4 slots and counted what it found
     raw = primary_raw(
-        replicas=[replica(pid=i) for i in range(5)], slots=[slot(f"s{i}") for i in range(4)]
+        replicas=[replica(pid=i) for i in range(2)],
+        slots=[slot(f"s{i}") for i in range(2)],
+        replicas_total=5,
+        slots_total=4,
     )
     answer(fake_psql, False, raw=raw)
     prim = run_script("replication_status", settings={"maxItems": 2}).envelope["outputs"][
@@ -131,14 +149,26 @@ def test_replicas_and_slots_are_cut_at_max_items(run_script, fake_psql):
     ]["primary"]
     assert (
         len(prim["replicas"]["items"]),
+        prim["replicas"]["total"],
         prim["replicas"]["omitted"],
         prim["replicas"]["truncated"],
-    ) == (
-        2,
-        3,
-        True,
-    )
-    assert prim["slots"]["total"] == 4 and prim["slots"]["truncated"] is True
+    ) == (2, 5, 3, True)
+    assert prim["slots"]["total"] == 4 and prim["slots"]["omitted"] == 2
+    assert prim["slots"]["truncated"] is True
+    sql = fake_psql.calls[-1]["sql"]
+    assert sql.count("LIMIT 2") == 2 and "{limit}" not in sql
+
+
+def test_the_current_lsn_is_taken_once_and_every_distance_uses_it():
+    sql = rp.primary_sql(200)
+    assert sql.count("pg_current_wal_lsn()") == 1
+    assert "cur AS MATERIALIZED" in sql
+    assert "'currentLsn', (SELECT lsn::text FROM cur)" in sql
+    assert sql.count("pg_wal_lsn_diff(cur.lsn,") == 5  # sent, write, flush, replay, retained
+    # the standby's two positions are taken once as well
+    standby = rp.standby_sql(160000)
+    assert standby.count("pg_last_wal_receive_lsn()") == 1
+    assert standby.count("pg_last_wal_replay_lsn()") == 1
 
 
 def test_a_primary_without_pg_monitor_is_partial_scoped_to_pg_stat_replication(
@@ -198,6 +228,40 @@ def test_a_paused_standby_is_reported(run_script, fake_psql):
     assert st["replayPaused"] is True and st["receivedNotReplayedBytes"] == 4096
 
 
+def test_a_standby_reports_how_long_ago_its_receiver_last_heard_from_the_sender(
+    run_script, fake_psql
+):
+    answer(fake_psql, True)
+    out = run_script("replication_status").envelope["outputs"]["replication"]
+    receiver = out["standby"]["receiver"]
+    assert receiver["lastMsgReceiptAgeMs"] == 4200 and receiver["latestEndLsn"] == "0/3069898"
+    sql = rp.standby_sql(160000)
+    assert "clock_timestamp() - w.last_msg_receipt_time" in sql and "w.latest_end_lsn::text" in sql
+
+
+def test_a_cut_off_standby_keeps_its_last_receive_lsn_and_a_stale_last_message(
+    run_script, fake_psql
+):
+    # the receiver is stuck in a retry loop: not streaming, the last message is old, receiveLsn
+    # still has its last value, receive equals replay because it replayed all it ever got
+    raw = {
+        **STANDBY_RAW,
+        "receiver": {
+            **STANDBY_RAW["receiver"],
+            "status": "waiting",
+            "lastMsgReceiptAgeMs": 7200000,
+        },
+    }
+    answer(fake_psql, True, raw=raw)
+    out = run_script("replication_status").envelope["outputs"]["replication"]
+    st = out["standby"]
+    assert (
+        st["receiver"]["status"] == "waiting" and st["receiver"]["lastMsgReceiptAgeMs"] == 7200000
+    )
+    assert st["receiveLsn"] == "0/3069898" and st["receiveEqualsReplay"] is True
+    assert_valid(SKILL, "replication-status", "replication", out)
+
+
 def test_a_standby_without_a_receiver_has_a_null_receiver(run_script, fake_psql):
     raw = {
         **STANDBY_RAW,
@@ -216,7 +280,14 @@ def test_a_standby_without_a_receiver_has_a_null_receiver(run_script, fake_psql)
 def test_a_standby_without_pg_monitor_is_partial_scoped_to_the_wal_receiver(run_script, fake_psql):
     hidden = {
         **STANDBY_RAW,
-        "receiver": {"status": None, "senderHost": None, "senderPort": None, "slotName": None},
+        "receiver": {
+            "status": None,
+            "senderHost": None,
+            "senderPort": None,
+            "slotName": None,
+            "lastMsgReceiptAgeMs": None,
+            "latestEndLsn": None,
+        },
     }
     answer(fake_psql, True, full=False, raw=hidden)
     env = run_script("replication_status").envelope
@@ -266,25 +337,57 @@ def test_a_non_json_answer_is_an_internal_error(run_script, fake_psql):
     assert [e["code"] for e in run_script("replication_status").envelope["errors"]] == ["internal"]
 
 
+# --- server versions ----------------------------------------------------------------------------
+
+
+def test_the_server_version_is_read_once_with_the_role():
+    assert "current_setting('server_version_num')::int" in rp.ROLE_SQL
+    assert "server_version_num" not in rp.primary_sql(5) + rp.standby_sql(140000)
+
+
+def test_a_standby_below_14_leaves_the_pause_state_out_of_its_statement(run_script, fake_psql):
+    fake_psql.on("pg_is_in_recovery()", stdout=json.dumps(role(True, version=130012)))
+    fake_psql.on(
+        "pg_stat_wal_receiver", stdout=json.dumps({**STANDBY_RAW, "replayPauseState": None})
+    )
+    env = run_script("replication_status").envelope
+    assert env["status"] == "ok"
+    st = env["outputs"]["replication"]["standby"]
+    assert st["replayPauseState"] is None and st["replayPaused"] is False
+    assert_valid(SKILL, "replication-status", "replication", env["outputs"]["replication"])
+    standby_sql = fake_psql.calls[-1]["sql"]
+    assert "pg_get_wal_replay_pause_state" not in standby_sql
+    assert "'replayPauseState', NULL" in standby_sql
+    assert "pg_is_wal_replay_paused()" in standby_sql
+
+
+def test_a_standby_on_14_or_later_reads_the_pause_state(run_script, fake_psql):
+    answer(fake_psql, True)
+    run_script("replication_status")
+    assert "'replayPauseState', pg_get_wal_replay_pause_state()" in fake_psql.calls[-1]["sql"]
+
+
+@pytest.mark.parametrize("in_recovery", [False, True])
+def test_below_13_the_run_fails_with_dependency_before_the_second_statement(
+    run_script, fake_psql, in_recovery
+):
+    fake_psql.on("pg_is_in_recovery()", stdout=json.dumps(role(in_recovery, version=120022)))
+    env = run_script("replication_status").envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["dependency"]
+    assert "PostgreSQL 13 or later required" in env["errors"][0]["message"]
+    assert len(fake_psql.calls) == 1
+
+
+def test_a_missing_version_is_an_internal_error(run_script, fake_psql):
+    fake_psql.on("pg_is_in_recovery()", stdout=json.dumps({"inRecovery": False}))
+    assert [e["code"] for e in run_script("replication_status").envelope["errors"]] == ["internal"]
+
+
 # --- the declared permissions ---------------------------------------------------------------
-
-TRACKED = (
-    "pg_current_wal_lsn",
-    "pg_wal_lsn_diff",
-    "pg_last_wal_receive_lsn",
-    "pg_last_wal_replay_lsn",
-    "pg_last_xact_replay_timestamp",
-    "pg_is_wal_replay_paused",
-    "pg_get_wal_replay_pause_state",
-)
+# which functions the task declares is checked against its SQL in test_pg_copies.py
 
 
-def test_replication_status_declares_the_functions_its_sql_calls_and_pg_monitor():
-    declared = {
-        p["function"].split(".")[1]
-        for p in tasks(SKILL)["replication-status"]["permissions"]
-        if "function" in p
-    }
-    sql = rp.PRIMARY_SQL + rp.STANDBY_SQL
-    assert declared == {f for f in TRACKED if f + "(" in sql}
-    assert {"role": "pg_monitor"} in tasks(SKILL)["replication-status"]["permissions"]
+def test_replication_status_declares_pg_read_all_stats_not_pg_monitor():
+    permissions = tasks(SKILL)["replication-status"]["permissions"]
+    assert {"role": "pg_read_all_stats"} in permissions
+    assert {"role": "pg_monitor"} not in permissions

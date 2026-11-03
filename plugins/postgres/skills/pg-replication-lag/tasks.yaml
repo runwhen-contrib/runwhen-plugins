@@ -8,12 +8,14 @@ settings:
 tasks:
   - name: replication-status
     title: Replication status
-    description: Detects whether the instance is a primary or a standby (pg_is_in_recovery). On a primary, each connected replica (state, sync state, write/flush/replay lag in ms, and sent/write/flush/replay LSN distance in bytes) and each replication slot (active, wal_status, WAL retained in bytes, safe_wal_size). On a standby, the WAL receiver (status, sender), received against replayed LSN, replay delay in ms, whether receive equals replay, and whether replay is paused. Read-only.
+    description: Detects whether the instance is a primary or a standby (pg_is_in_recovery). On a primary, each connected replica (state, sync state, write/flush/replay lag in ms, and sent/write/flush/replay LSN distance in bytes) and each replication slot (active, wal_status, WAL retained in bytes, safe_wal_size). On a standby, the WAL receiver (status, sender, age of its last message in ms, latest end LSN), received against replayed LSN, replay delay in ms, whether receive equals replay, and whether replay is paused (the pause state needs PostgreSQL 14). The current WAL position is read once. Replicas and slots are cut to maxItems in the query. Read-only.
     script: scripts/replication_status.py
     tags: [replication]
     readOnly: true
     permissions:
-      - { role: pg_monitor }                                        # without pg_read_all_stats, pg_stat_replication and pg_stat_wal_receiver hide their columns (the run is partial)
+      - { role: pg_read_all_stats }                                 # without it pg_stat_replication and pg_stat_wal_receiver hide their columns (the run is partial); pg_monitor includes it
+      - { function: pg_catalog.pg_is_in_recovery, privilege: EXECUTE }  # primary or standby
+      - { function: pg_catalog.pg_has_role, privilege: EXECUTE }        # decides whether the views are full
       - { function: pg_catalog.pg_current_wal_lsn, privilege: EXECUTE }
       - { function: pg_catalog.pg_wal_lsn_diff, privilege: EXECUTE }
       - { function: pg_catalog.pg_last_wal_receive_lsn, privilege: EXECUTE }

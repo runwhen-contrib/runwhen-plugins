@@ -89,6 +89,7 @@ def test_a_healthy_instance_reports_the_limits_the_percentage_and_the_counts(run
         ],
         "total": 2,
         "omitted": 0,
+        "truncated": False,
     }
     assert (out["oldestIdleInTransactionMs"], out["oldestTransactionMs"]) == (41000, 52000)
     assert out["waitingOnLock"] == 1
@@ -123,7 +124,11 @@ def test_a_role_that_cannot_see_other_sessions_is_partial_and_its_blind_spots_ar
         fake_psql,
         fullView=False,
         hiddenSessions=8,
-        byState={**BY_STATE, "active": 0, "idle": 0, "idleInTransaction": 0, "nullState": 8},
+        inUse=1,  # the visible client sessions only: hidden rows are counted apart
+        byState={**BY_STATE, "active": 1, "idle": 0, "idleInTransaction": 0, "nullState": 0},
+        byBackendType=group(
+            [{"backendType": None, "count": 14}, {"backendType": "client backend", "count": 1}]
+        ),
         oldestIdleInTransactionMs=None,
         oldestTransactionMs=3,  # the role's own session: would understate the real oldest
         waitingOnLock=0,
@@ -137,11 +142,28 @@ def test_a_role_that_cannot_see_other_sessions_is_partial_and_its_blind_spots_ar
     out = env["outputs"]["connections"]
     jsonschema.Draft202012Validator(SCHEMA).validate(out)
     assert out["visibility"] == "partial" and out["hiddenSessions"] == 8
-    assert out["byState"]["nullState"] == 8
+    assert out["byState"]["nullState"] == 0  # hidden rows are not client sessions we can count
     assert out["oldestIdleInTransactionMs"] is None
     assert out["oldestTransactionMs"] is None  # never the visible subset's value
     assert out["waitingOnLock"] is None
-    assert out["inUse"] == 8  # still every client session, hidden ones included
+    # a lower bound from the visible client backends: 1 of 97 usable slots, never inflated by
+    # the 8 hidden rows (which may not be clients at all)
+    assert (out["inUse"], out["usedPercent"]) == (1, 1.0)
+    assert out["byBackendType"]["items"][0] == {"backendType": None, "count": 14}
+    assert "lower bound" in env["errors"][0]["message"]
+
+
+def test_only_a_row_with_a_visible_client_backend_type_counts_as_in_use(run_script, fake_psql):
+    answer(fake_psql)
+    run_connections(run_script)
+    sql = fake_psql.calls[0]["sql"]
+    assert "(a.backend_type = 'client backend') AS is_client" in sql
+    assert (
+        "OR (a.backend_type IS NULL" not in sql
+    )  # a hidden row is no longer guessed to be a client
+    # hidden rows are their own count
+    assert "'hiddenSessions', (SELECT count(*) FROM s WHERE is_hidden)" in sql
+    assert "a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL" in sql
 
 
 def test_the_statement_leaves_out_the_tasks_own_backend_and_reads_only(run_script, fake_psql):
@@ -164,6 +186,7 @@ def test_max_items_cuts_each_group_and_reports_what_was_left_out(run_script, fak
         "items": [{"database": "orders", "count": 7}],
         "total": 40,
         "omitted": 39,
+        "truncated": True,
     }
     assert "LIMIT 1)" in fake_psql.calls[0]["sql"]
 

@@ -8,22 +8,25 @@ settings:
 tasks:
   - name: blocking
     title: Blocking chains
-    description: Every backend waiting for a lock that another session blocks (pg_locks, pg_blocking_pids) with its blockers, the lock type and mode wanted, how long it has waited, the relation as schema.name where it can be resolved, and its depth in the chain; and the root blockers (blockers that are not waiting themselves) with their state and transaction age. Never reads query text. Read-only.
+    description: Every backend waiting for a lock that another session blocks (pg_locks, pg_blocking_pids) with its blockers, the lock type and mode wanted, how long it has waited, the relation as schema.name where it can be resolved, and its depth in the chain; and the root blockers (blockers that are not waiting themselves) with their state and transaction age. A blocker that is a prepared transaction (pid 0) is reported with its gid, owner, database and age. Lists are cut to maxItems in the query. Never reads query text. Read-only.
     script: scripts/blocking.py
     tags: [locks, blocking]
     readOnly: true
     permissions:
-      - { role: pg_monitor }                                        # without pg_read_all_stats, pg_stat_activity hides state and xact_start of other roles' sessions (the run is partial)
+      - { role: pg_read_all_stats }                                 # without it pg_stat_activity hides state and xact_start of other roles' sessions (the run is partial); pg_monitor includes it
       - { function: pg_catalog.pg_blocking_pids, privilege: EXECUTE }
+      - { function: pg_catalog.pg_has_role, privilege: EXECUTE }       # decides whether the view is full
+      - { function: pg_catalog.pg_backend_pid, privilege: EXECUTE }    # leaves the task's own session out
     outputs:
       blocking: { schema: ./schemas/blocking.v1.json, description: "Waiting backends with depth and blockers, and the root blockers, each cut to maxItems; visibility full or partial" }
   - name: lock-summary
     title: Lock summary
-    description: Counts of pg_locks rows by mode and granted, the longest ungranted wait, and an estimate of how full the shared lock table is against max_locks_per_transaction. This task's own backend is left out. Read-only.
+    description: Counts of pg_locks rows by mode and granted, the longest ungranted wait (null before PostgreSQL 14, which has no waitstart), and an estimate of how full the shared lock table is against max_locks_per_transaction. This task's own backend is left out. Read-only.
     script: scripts/lock_summary.py
     tags: [locks]
     readOnly: true
-    permissions: []                                                 # pg_locks and the settings read are open to every role
+    permissions:                                                    # pg_locks and the settings read are open to every role
+      - { function: pg_catalog.pg_backend_pid, privilege: EXECUTE }    # leaves the task's own session out
     outputs:
       locks: { schema: ./schemas/locks.v1.json, description: "Totals, waiting backends, the longest wait, and rows by mode and granted" }
       lockTable: { schema: ./schemas/lock-table.v1.json, description: "max_locks_per_transaction, the table's capacity and the estimated fill" }

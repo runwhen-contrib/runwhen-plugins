@@ -20,6 +20,11 @@ from pg_long_running_queries.sqltext import MAX_QUERY_BYTES, clip, normalize_que
         ("select -7", "select -?"),
         ("select E'a\\'b', e'c'", "select ?, ?"),
         ("select $$he said 'hi' 12$$, $tag$ 99 $$ still inside $tag$", "select ?, ?"),
+        # a tag may hold any non-ASCII character, as in PostgreSQL's lexer
+        ("select $é$ secret $é$, 1", "select ?, ?"),
+        ("select $日本$ secret $日本$, 'x'", "select ?, ?"),
+        ("select $😀$ secret $😀$, 1", "select ?, ?"),
+        ("select $ü9$ secret $ü9$", "select ?"),
         ("select $1, $2 from t where a = $1", "select $1, $2 from t where a = $1"),
         ("select t1.col2, x::int4, a$b from t_9", "select t1.col2, x::int4, a$b from t_9"),
         ('select "Order 5" from "my ""tab"" 7"', 'select "Order 5" from "my ""tab"" 7"'),
@@ -43,6 +48,7 @@ def test_literals_become_placeholders_and_the_rest_is_kept(raw, expected):
     [
         "select 'secret-token-abc",  # string cut off by track_activity_query_size
         "select E'secret\\'rest",  # E-string cut off after an escaped quote
+        "select E'''\\'secret never closed",
         "select $$secret never closed",
         "select $tag$secret $tag",
         "select /* secret never closed",

@@ -42,7 +42,8 @@ with the connection's own libpq environment. It connects to the connection's dat
 - `byState`: client sessions that are `active`, `idle`, `idleInTransaction`,
   `idleInTransactionAborted`, `fastpath`, `disabled` or `nullState`.
 - `byBackendType` (every backend), `byDatabase` and `byUserApplication` (role x
-  application_name), largest first, each `{items, total, omitted}` cut to `maxItems`.
+  application_name), largest first, each `{items, total, omitted, truncated}` cut to `maxItems`
+  in the query; `truncated` is true when groups were left out.
 - `oldestIdleInTransactionMs`: how long the longest idle-in-transaction session (aborted
   included) has been idle; `oldestTransactionMs`: the age of the oldest open transaction.
   Both are `null` when there is none. `waitingOnLock`: sessions waiting on a lock.
@@ -51,11 +52,17 @@ with the connection's own libpq environment. It connects to the connection's dat
 
 - `visibility: partial` with a `permission_denied` error scoped to `pg_stat_activity` and
   a `partial` run: the role is not a superuser and not a member of `pg_read_all_stats` (or
-  `pg_monitor`), so other roles' sessions have no state, wait event or times. They are
-  counted under `nullState` and `hiddenSessions`, `inUse` is an estimate, and
-  `oldestIdleInTransactionMs`, `oldestTransactionMs` and `waitingOnLock` are `null`:
-  they would only describe the sessions the role can see. Do not read `byState` as the real
-  mix then. `byDatabase` and `byUserApplication` are still the sessions' own databases and roles.
+  `pg_monitor`), so other roles' sessions have no state, wait event, times or backend type.
+  Only a row whose `backend_type` is visible as `client backend` counts as a connection, so
+  `inUse`, `usedPercent`, `byState`, `byDatabase` and `byUserApplication` describe the sessions the
+  role can see and are **lower bounds**: the real figures are higher. `hiddenSessions` counts the
+  rows of other roles that name a role and a database (an estimate: it can include a logical
+  replication worker); they are not in `inUse`, so `inUse + hiddenSessions` is the most that may
+  be in use. `oldestIdleInTransactionMs`, `oldestTransactionMs` and `waitingOnLock` are `null`:
+  they would only describe the sessions the role can see. `byBackendType` counts every row, so
+  the rows whose type the role cannot read (other roles' sessions and the background processes)
+  show as one group with `backendType: null`; that group is not a backend type, it is the
+  hidden rows. Do not read `byState` as the real mix then.
 - A pooler (pgbouncer) shows as few sessions of its own role; the application behind it is
   not visible here.
 - Normal states that look alarming: a few `idle` sessions from a pool; `idleInTransaction`
@@ -68,6 +75,8 @@ with the connection's own libpq environment. It connects to the connection's dat
 - Failure is an error, not an empty result: `permission_denied` (authentication,
   `pg_hba.conf`, missing role), `not_found` (the connection's database does not exist),
   `unreachable`, `timeout`, `dependency` (no psql).
+- The task reads `backend_type`, so it needs PostgreSQL 10 or later; `reservedConnections` is
+  null before 16.
 
 ## What to try next
 

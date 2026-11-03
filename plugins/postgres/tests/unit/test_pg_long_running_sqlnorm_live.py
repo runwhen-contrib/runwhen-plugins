@@ -72,7 +72,6 @@ EXACT = [
     ),
     ("select -7", "select -?"),
     ("select E'a\\'b', e'c'", "select ?, ?"),
-    ("select $$he said 'hi' 12$$, $tag$ 99 $$ still inside $tag$", "select ?, ?"),
     ("select $1, $2 from t where a = $1", "select $1, $2 from t where a = $1"),
     ("select t1.col2, x::int4, a$b from t_9", "select t1.col2, x::int4, a$b from t_9"),
     ('select "Order 5" from "my ""tab"" 7"', 'select "Order 5" from "my ""tab"" 7"'),
@@ -97,7 +96,18 @@ COMMENTS = [
 ]
 
 
-@pytest.mark.parametrize("raw, expected", EXACT + COMMENTS)
+# From the first dollar-quote opener the statement hides everything to the end of the text: an
+# opener cannot be told from a `$$` inside a string, comment or identifier before those are lexed.
+DOLLAR = [
+    ("select $$he said 'hi' 12$$, $tag$ 99 $$ still inside $tag$", "select ?"),
+    ("select a, b from t where c = 5 and d = $$x$$", "select a, b from t where c = ? and d = ?"),
+    ("DO $$ BEGIN PERFORM 1; END $$", "DO ?"),
+    ("select 'a', $é$ x $é$", "select ?, ?"),
+    ("select a$b, $1 from t", "select a$b, $1 from t"),  # not openers
+]
+
+
+@pytest.mark.parametrize("raw, expected", EXACT + COMMENTS + DOLLAR)
 def test_the_statement_replaces_literals_and_comments(raw, expected):
     assert normalize_query(sql_normalize(raw)) == expected
 
@@ -122,11 +132,40 @@ def test_the_statement_alone_already_matches_the_python_normalizer(raw, expected
         "select * from t where a = 'x' /* c1 /* c2 /* c3 /* c4 secret */ */ */ */ and b = 5",
         "select /* secret */ 1 -- secret\n, 2",
         "select a from t where b = 'secret' and c = 123456789 and d = $$secret$$",
+        # the engine used to backtrack from an unclosed E'' string to the closed E'' and read the
+        # rest as a new string (found by the fuzzer): a quote that another quote follows never closes
+        " 'ZQXsecret1'  E'''\\'secret2",
+        "select E'''\\'secret3",
+        "select 'a''secret5",
+        "select E'a''\\'secret6 and 7",
     ],
 )
 def test_text_that_is_cut_off_or_hides_a_value_leaks_nothing(raw):
     out = sql_normalize(raw)
     assert "secret" not in out and "123456789" not in out
+
+
+# A `$$` that is only text (in a string, a comment or a quoted identifier) used to pair with a real
+# opener, and what lay between the two was returned: the first three are the review's live probes.
+DOLLAR_LEAKS = [
+    "SELECT '$$', $$x$$, 'SECRET_A'",
+    "SELECT 'cost: $$' AS c, name FROM users WHERE email = 'bob@example.com' AND note = $$free text SECRET_B$$",
+    "SELECT * FROM t WHERE a = '$tag$' AND b = $tag$SECRET_C$tag$ AND c = 'SECRET_D'",
+    "SELECT $é$ SECRET_E $é$",
+    "SELECT $日本$ SECRET_F $日本$",
+    "SELECT $😀$ SECRET_G $😀$, 'SECRET_H'",
+    "SELECT $ü9$ SECRET_I $ü9$",
+    "SELECT 1 /* $$ */ , 'SECRET_J', $$ y $$",
+    "DO $$ BEGIN PERFORM 'SECRET_K'; END $$",
+    "SELECT 'a' || '$$' , 'SECRET_L' , $$q$$",
+    "SELECT \"a$$b\", 'SECRET_M', $$c$$",
+]
+
+
+@pytest.mark.parametrize("raw", DOLLAR_LEAKS)
+def test_a_dollar_pair_that_is_only_text_leaks_nothing_in_the_sql_stage(raw):
+    # the statement's own output, before the Python pass can save it
+    assert "SECRET" not in sql_normalize(raw)
 
 
 def test_the_statement_cuts_nothing_by_itself_and_keeps_a_null_a_null():

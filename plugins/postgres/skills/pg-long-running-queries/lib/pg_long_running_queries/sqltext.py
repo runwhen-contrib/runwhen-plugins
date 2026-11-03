@@ -11,23 +11,31 @@ identifiers ("...") and parameter markers ($1) are kept. Text the scanner cannot
 comment or quoted identifier cut off by track_activity_query_size or by the task) is replaced to
 its end, so a cut-off literal never leaks its beginning.
 
+A dollar-quote tag is read as PostgreSQL's lexer reads it: letters, `_` and any non-ASCII
+character, digits after the first.
+
 The scan assumes standard_conforming_strings = on (the default since PostgreSQL 9.1), where a
-backslash in a plain '...' string is an ordinary character."""
+backslash in a plain '...' string is an ordinary character. A client that runs with it off writes
+backslash escapes in plain strings, and text such as 'a\\' , 'secret' would then not be read as
+the server reads it."""
 
 import re
 
 MAX_QUERY_BYTES = 1024
 PLACEHOLDER = "?"
 
+# A closing quote that another quote follows is not a closing quote (`''` is an escaped quote):
+# without the `(?!')` the engine backtracks from an unclosed E'''\\'secret to the shorter closed E''
+# and reads the rest as a new string.
 _TOKEN = re.compile(
     r"""
       (?P<line>--[^\n]*)
     | (?P<block>/\*)
     | (?P<quoted>"(?:[^"]|"")*")
-    | (?P<estring>[eE]'(?:[^'\\]|\\.|'')*')
+    | (?P<estring>[eE]'(?:[^'\\]|\\.|'')*'(?!'))
     | (?P<unclosed_estring>[eE]'.*)
-    | (?P<string>'(?:[^']|'')*')
-    | (?P<dollar>\$(?:[^\W\d]\w*)?\$)
+    | (?P<string>'(?:[^']|'')*'(?!'))
+    | (?P<dollar>\$(?:[A-Za-z_\u0080-\U0010FFFF][A-Za-z0-9_\u0080-\U0010FFFF]*)?\$)
     | (?P<number>
         (?<![\w$])
         (?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+
