@@ -1,0 +1,106 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-standby
+now: '2026-11-03T21:25:26.389Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    SELECT json_build_object(
+      'version', current_setting('server_version'),
+      'versionNum', current_setting('server_version_num')::int,
+      'inRecovery', pg_is_in_recovery(),
+      'currentUser', current_user::text
+    )
+  rc: 0
+  stdout: |
+    {"version" : "16.15", "versionNum" : 160015, "inRecovery" : true, "currentUser" : "rw_monitor"}
+  stderr: ''
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - SELECT json_build_object('systemIdentifier', system_identifier::text) FROM pg_control_system()
+  rc: 0
+  stdout: |
+    {"systemIdentifier" : "7704057543498637352"}
+  stderr: ''
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    SELECT coalesce(json_agg(json_build_object(
+      'name', d.datname,
+      'owner', pg_get_userbyid(d.datdba)::text,
+      'encoding', pg_encoding_to_char(d.encoding),
+      'sizeAllowed', p.ok,
+      'sizeBytes', CASE WHEN p.ok THEN pg_database_size(d.oid) END
+    ) ORDER BY d.datname), '[]'::json)
+    FROM pg_database d
+    CROSS JOIN LATERAL (
+      SELECT has_database_privilege(d.oid, 'CONNECT')
+          OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AS ok
+    ) p
+    WHERE NOT d.datistemplate AND d.datallowconn
+  rc: 0
+  stdout: |
+    [{"name" : "orders", "owner" : "orders_owner", "encoding" : "UTF8", "sizeAllowed" : true, "sizeBytes" : 7725583}, {"name" : "postgres", "owner" : "postgres", "encoding" : "UTF8", "sizeAllowed" : true, "sizeBytes" : 7699479}]
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    instance:
+      version: '16.15'
+      inRecovery: true
+      systemIdentifier: '7704057543498637352'
+      currentUser: rw_monitor
+    summary:
+      counts:
+        instance: 1
+        database: 2
+      root:
+        canonicalKey:
+          name: systemIdentifier
+          value: '7704057543498637352'
+    databases:
+      total: 2
+      omitted: 0
+      items:
+        $contains:
+        - {name: orders, owner: orders_owner, encoding: UTF8}
+        - {name: postgres, owner: postgres, encoding: UTF8}
+  artifacts:
+    sync:
+      contains:
+      - '"apiVersion": "rw.discovery.v1"'
+      - '"scopePath": "postgres/instances/orders-standby"'
+      - '"type": "database"'
+      - '"name": "orders"'
