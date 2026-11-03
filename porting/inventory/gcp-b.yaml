@@ -1,0 +1,899 @@
+- bundle: gcp-cloud-sql-health
+  displayName: GCP Cloud SQL Health
+  classicResourceTypes: [gcp_sql_instances]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Four 0/1 sub-scores (status, config, access, iam) = 1 if the matching issues JSON has length 0; aggregate is their mean. Discovery/describe failures are written as issues so they score 0 (not false-pass). Residual: score step is int(jq length) on the file the script wrote; a script crash leaves no file so the SLI errors rather than scoring 1."
+  egress: "cloud API (gcloud: sqladmin.googleapis.com, cloudresourcemanager.googleapis.com)"
+  tools: [gcloud, jq, bash]
+  inputs: [GCP_PROJECT_ID, RESOURCES, CONFIG_IMPORTANCE_THRESHOLD, gcp_credentials]
+  tasks:
+    - title: Check Cloud SQL Instance Status in Project
+      at: runbook.robot:19
+      asserts: "A Cloud SQL instance whose state is not RUNNABLE (maintenance, failed, suspended)."
+      reads: ["gcloud sql instances list --project --format=json"]
+      permissions: ["cloudsql.instances.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "check_instance_status.sh checks gcloud rc and emits a discovery_failed issue (sev 2). RESOURCES filter is an unanchored regex (jq test), so name 'db' matches 'db-prod'. gcloud auth activate is '|| true' in Suite Init but a bad auth then surfaces as discovery_failed. Runbook swallows JSON parse failure into an empty list (runbook.robot:30 area), only reachable if the script crashed before writing."
+    - title: Fetch Cloud SQL Instance Configurations in Project
+      at: runbook.robot:52
+      asserts: "Cloud SQL instance has an undersized tier (< CONFIG_IMPORTANCE_THRESHOLD vCPU), automated backups disabled, or PITR / binlog disabled."
+      reads: ["gcloud sql instances list --format=json", "gcloud sql instances describe <name> --format=json"]
+      permissions: ["cloudsql.instances.list", "cloudsql.instances.get"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "list and per-instance describe failures both become issues (discovery_failed, describe_failed). Unknown tier names parse as 999 vCPU and are never flagged as undersized. Read replicas with backups off are flagged as well."
+    - title: Check Cloud SQL Instance Availability and Access in Project
+      at: runbook.robot:85
+      asserts: "Cloud SQL instance is internet-reachable (public IPv4), does not enforce SSL while public, has an authorized network 0.0.0.0/0, or has no IP at all."
+      reads: ["gcloud sql instances list --format=json", "gcloud sql instances describe <name> --format=json"]
+      permissions: ["cloudsql.instances.list", "cloudsql.instances.get"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Mostly a security-posture check, not availability. Public exposure is severity 4. SSL rule fires only when ipv4Enabled."
+    - title: Check Cloud SQL IAM Policies in Project
+      at: runbook.robot:118
+      asserts: "Project IAM policy binds a roles/cloudsql.* role to allUsers or allAuthenticatedUsers."
+      reads: ["gcloud projects get-iam-policy <project> --format=json"]
+      permissions: ["resourcemanager.projects.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Project-level policy only; Cloud SQL has no per-instance IAM, so RESOURCES is ignored. Over-broad roles (e.g. roles/editor, roles/owner) are NOT checked despite the task doc claiming 'over-broad roles'. SLI docs make the same claim."
+  bundleNotes: "Hardened bundle: every gcloud call has its rc checked and failure becomes a discovery_failed/describe_failed/iam_check_failed issue. The only residual idiom is the runbook TRY/EXCEPT that turns an unparsable issues file into an empty list, and Suite Init 'gcloud auth activate-service-account || true'. In a V13 typed-output model the failure issues must become an explicit error/inconclusive output, not a finding."
+
+- bundle: gcp-cloud-sql-performance
+  displayName: GCP Cloud SQL Performance
+  classicResourceTypes: [gcp_sql_instances]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Four 0/1 sub-scores (utilization, performance, long queries, storage) = 1 if the issues JSON length is 0; mean. FALSE-PASS: score step is 'jq length file 2>/dev/null || echo 0', so a missing/unparsable file scores 1. Monitoring API failures inside the scripts also become 0% / no data (see tasks)."
+  egress: "cloud API (gcloud sql/logging, curl monitoring.googleapis.com)"
+  tools: [gcloud, curl, jq, awk, date (GNU -d), bash]
+  inputs: [GCP_PROJECT_ID, RESOURCES, CPU_THRESHOLD_PERCENT, UTILIZATION_HOURS, LONG_QUERY_SECONDS, STORAGE_FILL_THRESHOLD_PERCENT, gcp_credentials]
+  tasks:
+    - title: Review Cloud SQL Instance Utilization in GCP Project
+      at: runbook.robot:18
+      asserts: "A Cloud SQL instance's mean CPU utilization over UTILIZATION_HOURS is above CPU_THRESHOLD_PERCENT (memory and disk are read and reported but never flagged)."
+      reads: ["gcloud sql instances list --format=json (via discover_sql_instances.sh)", "gcloud auth print-access-token", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries cloudsql.googleapis.com/database/{cpu,memory,disk}/utilization"]
+      permissions: ["cloudsql.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "review_utilization.sh query_utilization: curl -s ... 2>/dev/null || echo '{}' then 'jq .timeSeries[].points...' 2>/dev/null | awk printf %.2f -> a 403/401/5xx error body or empty series yields 0.00, i.e. 0% CPU = no issue. Instance listing and token failure ARE raised as issues."
+      notes: "Doc says CPU/memory/disk but only CPU is thresholded. Uses GNU 'date -u -d'. Depends on sql_config.json written by discover_sql_instances.sh into the shared working dir (re-used across tasks in the same run). RESOURCES here is an exact name list (jq index), unlike gcp-cloud-sql-health regex."
+    - title: Identify Cloud SQL Performance Issues in GCP Project
+      at: runbook.robot:51
+      asserts: "An instance's network throughput (received+sent bytes) peak exceeds SPIKE_FACTOR (5x) its average over the window; IOPS read but only reported."
+      reads: ["gcloud sql instances list", "GET monitoring timeSeries network/received_bytes_count, network/sent_bytes_count, disk/read_ops_count, disk/write_ops_count"]
+      permissions: ["cloudsql.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_performance.sh query_series: curl -s 2>/dev/null || echo '{}' ; jq 2>/dev/null || echo '[]' -> empty series. With empty read/write series, 'jq ($r|add)+($w|add) / 1' divides null and the script dies under set -e leaving no performance_issues.json; runbook then json-parse-fails to an empty list and the SLI 'jq length ... || echo 0' scores 1."
+      notes: "Doc mentions 'sustained high traffic' and 'noisy traffic' (NOISE_CV var defined) but only the spike ratio is implemented. Spike on a low-traffic instance fires easily (ratio, not absolute)."
+    - title: Identify Long Running Queries for Cloud SQL Instances in GCP Project
+      at: runbook.robot:84
+      asserts: "A Cloud SQL log entry (textPayload) contains a duration token >= LONG_QUERY_SECONDS."
+      reads: ["gcloud logging read 'resource.type=cloudsql_database AND resource.labels.database_id=<id>' --limit=500"]
+      permissions: ["logging.logEntries.list", "cloudsql.instances.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "find_long_running_queries.sh: 'gcloud logging read ... 2>err.log || echo \"\"'; if err.log is non-empty it sets logging_available=0 and 'continue's, so a permission error on Logging means no issue. Empty entries are likewise skipped with only a stdout note."
+      notes: "Heuristic: first token matching /^[0-9.]+(ms|s)$/ in textPayload is taken as the duration; only works for Postgres/MySQL slow-log text lines, not jsonPayload audit logs. Reads only the latest 500 entries per instance (no time bound), so long queries beyond that are missed. Nested while|pipe subshell appends to a temp file, so it works."
+    - title: Check Cloud SQL Instance Storage Growth in GCP Project
+      at: runbook.robot:117
+      asserts: "Disk fill >= 92% (sev 4), or >= STORAGE_FILL_THRESHOLD_PERCENT with automatic storage increase disabled (sev 3)."
+      reads: ["gcloud sql instances list", "GET monitoring timeSeries cloudsql.googleapis.com/database/disk/bytes_used (last 1h)"]
+      permissions: ["cloudsql.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_storage_growth.sh query_bytes_used: 'curl -s 2>/dev/null || echo {}' and 'jq ... last // 0' -> bytes_used 0 -> fill 0% -> no issue when Monitoring is unreadable or has no point in the last hour."
+      notes: "Despite the name it does not measure growth rate, only current fill. Capacity comes from dataDiskSizeGb in the instance listing."
+  bundleNotes: "Shared helper discover_sql_instances.sh handles list failure well (issue + exit 0) and the three monitoring scripts bubble that up. The weakness is the Monitoring REST calls and the SLI wrapper. discover_sql_instances.sh output (sql_config.json) is a cached shared file; if first task fails mid-write later tasks reuse it. cmd_override and show_in_rwl_cheatsheet set on all runbook tasks."
+
+- bundle: gcp-cloudrun-service-health
+  displayName: GCP Cloud Run Service Health
+  classicResourceTypes: [gcp_run_services, gcp_run_revisions]
+  matchHints: "pattern .+ on property project_id (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Three 0/1 scores (failed revisions, services ready/serving, rollouts) = 1 if issues JSON length 0; aggregate is 1 only if all three are 1 (min, not mean). FALSE-PASS inherited from discover_services (gcloud run services list 2>/dev/null || echo '[]')."
+  egress: "cloud API (gcloud run, logging)"
+  tools: [gcloud, jq, bash]
+  inputs: [GCP_PROJECT_ID, RESOURCES, ERROR_LOG_LOOKBACK, gcp_credentials]
+  tasks:
+    - title: List Failed Cloud Run Revisions in GCP Project
+      at: runbook.robot:19
+      asserts: "A Cloud Run revision whose Ready condition is not True."
+      reads: ["gcloud run services list --platform=managed --format=json", "gcloud run revisions list --service <s> --region <r> --format=json"]
+      permissions: ["run.services.list", "run.revisions.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cloudrun_common.sh:25 'gcloud run services list ... 2>/dev/null || echo \"[]\"' and list_failed_revisions.sh 'gcloud run revisions list ... 2>/dev/null || echo \"[]\"' -> auth/permission/API-disabled errors yield zero services, zero issues."
+      notes: "Checks every historical revision still retained, not just the latest, so old failed revisions raise permanent issues. Region comes from label cloud.googleapis.com/location (fallback 'unknown' would break later calls)."
+    - title: Check Cloud Run Services Ready and Serving Traffic in GCP Project
+      at: runbook.robot:53
+      asserts: "A Cloud Run service whose Ready condition is not True, or whose newest Ready revision receives 0% traffic while an older revision is serving."
+      reads: ["gcloud run services list --format=json", "gcloud run revisions describe <rev> --region <r>"]
+      permissions: ["run.services.list", "run.revisions.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cloudrun_common.sh:25 discover_services swallows list failure into '[]'. revision_ready also returns 'Lookup-Failed' on describe error, which is treated as not-True so the 0%-traffic check is skipped silently."
+      notes: "A deliberate pinned/canary traffic split is reported as a problem. Overlaps heavily with Detect Troubled or Aborted Rollouts (same 0% traffic condition, different severity/title)."
+    - title: Detect Troubled or Aborted Cloud Run Rollouts in GCP Project
+      at: runbook.robot:87
+      asserts: "metadata.generation != status.observedGeneration, latest created revision never Ready, or newest Ready revision serving 0% (rolled back)."
+      reads: ["gcloud run services list --format=json", "gcloud run revisions describe <rev> --region <r>"]
+      permissions: ["run.services.list", "run.revisions.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cloudrun_common.sh:25 list failure -> '[]'; check_rollouts.sh 'Lookup-Failed' branch only echoes WARNING to stderr and skips the assessment, no issue."
+      notes: "Duplicates the 0% traffic check of the serving task."
+    - title: Get Error Logs for Unhealthy Cloud Run Services in GCP Project
+      at: runbook.robot:121
+      asserts: "A Cloud Run service has any ERROR-or-higher log entry in the ERROR_LOG_LOOKBACK window (default 14d)."
+      reads: ["gcloud run services list", "gcloud logging read 'resource.type=cloud_run_revision AND resource.labels.service_name=<s> AND severity>=ERROR' --limit=50 --freshness=<lookback>"]
+      permissions: ["run.services.list", "logging.logEntries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "get_error_logs.sh: 'gcloud logging read ... 2>/dev/null || echo \"[]\"' -> Logging permission error = zero errors; discover_services also swallows list failure."
+      notes: "Title says 'unhealthy' services but it queries ALL services regardless of health. Not in the SLI."
+    - title: Report Cloud Run Service and Revision Configuration in GCP Project
+      at: runbook.robot:155
+      asserts: "Service has no dedicated service account (runs as default compute SA, sev 2) or no maxScale annotation (sev 1)."
+      reads: ["gcloud run services list --format=json"]
+      permissions: ["run.services.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cloudrun_common.sh:25 discover_services swallows list failure -> no services, no issues."
+      notes: "Hygiene/security config, not health. Not in the SLI."
+  bundleNotes: "The one root cause is discover_services in cloudrun_common.sh (2>/dev/null || echo '[]'); fixing it fixes every task and the SLI. Runbook tasks do not check rc of the scripts."
+
+- bundle: gcp-cloudrun-utilization-health
+  displayName: GCP Cloud Run Utilization & Scaling Health
+  classicResourceTypes: [gcp_run_services]
+  matchHints: "pattern .+ on property project_id (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Three 0/1 scores (CPU, memory, scaling config) = 1 if issues JSON length 0; aggregate is 1 only if all three are 1. FALSE-PASS: inherits discover_services 'gcloud run services list 2>/dev/null || echo []' and monitoring_query.sh 'curl ... || echo {}' / 'jq ... || echo 0' -> 0% utilization."
+  egress: "cloud API (gcloud run, curl monitoring.googleapis.com)"
+  tools: [gcloud, curl, jq, awk, date (GNU -d), bash]
+  inputs: [GCP_PROJECT_ID, RESOURCES, METRIC_LOOKBACK_PERIOD, CPU_UTILIZATION_THRESHOLD, MEMORY_UTILIZATION_THRESHOLD, MIN_UTILIZATION_THRESHOLD, gcp_credentials]
+  tasks:
+    - title: Check Cloud Run Service CPU Utilization in GCP Project
+      at: runbook.robot:19
+      asserts: "Peak (max over lookback, cross-series mean) Cloud Run container CPU utilization is >= CPU_UTILIZATION_THRESHOLD (80%)."
+      reads: ["gcloud auth print-access-token", "gcloud run services list --format=json (discover_services.sh)", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries run.googleapis.com/container/cpu/utilizations"]
+      permissions: ["run.services.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "monitoring_query.sh: 'curl -s ... 2>/dev/null || echo {}' then 'jq [.timeSeries[].points[].value.doubleValue // 0] | max // 0' 2>/dev/null || echo 0' -> any Monitoring error or empty series = 0.0% = no issue. discover_services.sh: 'gcloud run services list 2>/dev/null || echo []' -> list failure = no services. Only token failure is raised (sev 4)."
+      notes: "Probable functional bug (not verified live): cpu/utilizations and memory/utilizations are DISTRIBUTION metrics, whose points carry value.distributionValue, not value.doubleValue; with '// 0' this would read 0 even when the API works, so the task may never fire. Reports the max of 60s mean points, so a single spike trips it despite the 'sustained' wording. Uses `gcloud run services list` without --platform=managed."
+    - title: Check Cloud Run Service Memory Utilization in GCP Project
+      at: runbook.robot:52
+      asserts: "Peak Cloud Run container memory utilization is >= MEMORY_UTILIZATION_THRESHOLD (85%), read as OOM risk."
+      reads: ["gcloud auth print-access-token", "gcloud run services list --format=json", "GET monitoring timeSeries run.googleapis.com/container/memory/utilizations"]
+      permissions: ["run.services.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "Same as CPU task: monitoring_query.sh curl/jq '|| echo' swallowing and discover_services.sh '2>/dev/null || echo []'."
+      notes: "Same distribution-metric doubt as CPU task."
+    - title: Check Cloud Run Service Request Concurrency and Instance Scaling in GCP Project
+      at: runbook.robot:85
+      asserts: "Service has no/zero maxScale (sev 3), containerConcurrency set below 10 (sev 2), or minScale > 0 keeping instances warm (sev 2)."
+      reads: ["gcloud run services list --format=json"]
+      permissions: ["run.services.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "discover_services.sh: 'gcloud run services list ... 2>/dev/null || echo []' -> list failure yields an empty discovery file and zero issues."
+      notes: "Config hygiene, no metrics. Hard-coded CONCURRENCY_MIN=10. Flags minScale>0 as a problem, which is a deliberate practice for latency-sensitive services. maxScale check duplicates gcp-cloudrun-service-health capture_config.sh."
+    - title: Identify Under-Utilized Cloud Run Services in GCP Project
+      at: runbook.robot:118
+      asserts: "Peak CPU utilization is below MIN_UTILIZATION_THRESHOLD (10%): over-provisioned or idle service."
+      reads: ["gcloud auth print-access-token", "gcloud run services list --format=json", "GET monitoring timeSeries run.googleapis.com/container/cpu/utilizations"]
+      permissions: ["run.services.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "discover_services.sh swallows list failure -> no services -> no issue. Monitoring failure maps to 0% which here produces a false POSITIVE (every service looks idle)."
+      notes: "Not scored by the SLI. If the distribution-metric doubt on the CPU task holds, every service reports as under-utilized."
+    - title: Report Cloud Run Utilization and Scaling Configuration for GCP Project
+      at: runbook.robot:151
+      asserts: "Nothing is asserted; dumps per-service config plus CPU/memory utilization into the report. No Add Issue call."
+      reads: ["gcloud run services list --format=json", "GET monitoring timeSeries cpu/utilizations and memory/utilizations"]
+      permissions: ["run.services.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Report-only task (data collection for LLM review). Token failure writes an empty report and warns on stdout only. Same 0%-on-error behaviour in the numbers it prints."
+  bundleNotes: "Same discover_services '2>/dev/null || echo []' root cause as gcp-cloudrun-service-health (separate copy of the script). Sourcing discover_services.sh under set -e/-x and writing cloudrun_services.json in the working dir. The SLI does not cover under-utilization or the report task."
+
+- bundle: gcp-cloudspanner-backup-governance
+  displayName: GCP Cloud Spanner Backup & Data Protection
+  classicResourceTypes: [gcp_spanner_instances]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Six 0/1 sub-scores (recency, expiration, pitr, deletion protection, iam, encryption) = 1 if the issues JSON length is 0; aggregate is their mean. FALSE-PASS: inherited from the scripts; 5 of 6 swallow 'gcloud spanner instances list' failure into [] = 0 issues = score 1."
+  egress: "cloud API (gcloud spanner)"
+  tools: [gcloud, jq, python3, awk, bash]
+  inputs: [GCP_PROJECT_ID, BACKUP_RECENCY_THRESHOLD_HOURS, BACKUP_EXPIRY_WARNING_DAYS, PITR_MINIMUM_DAYS, REQUIRE_CMEK, gcp_credentials]
+  tasks:
+    - title: Check Cloud Spanner Backup Existence and Recency
+      at: runbook.robot:19
+      asserts: "A Spanner database has no backup at all (sev 3) or its newest backup is older than BACKUP_RECENCY_THRESHOLD_HOURS (24h, sev 2)."
+      reads: ["gcloud spanner instances list --format=json", "gcloud spanner databases list --instance <i>", "gcloud spanner backups list --instance <i>"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.backups.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_backup_recency.sh: instances list failure IS raised (sev 3), but 'gcloud spanner databases list ... 2>/dev/null || echo []' means a databases-list permission error skips every database, and unparsable age ('-1') is skipped via 'continue'. A backups-list failure creates false 'no backup' issues (false positive)."
+      notes: "Uses /tmp/backup_recency_parts.jsonl, a fixed shared path (collisions between concurrent runs). Matching backups by database full name. Timestamp parse uses python3 datetime.utcnow (deprecated)."
+    - title: Check Cloud Spanner Backup Expiration
+      at: runbook.robot:52
+      asserts: "A Spanner backup has already expired (sev 4) or expires within BACKUP_EXPIRY_WARNING_DAYS (3 days, sev 3)."
+      reads: ["gcloud spanner instances list", "gcloud spanner backups list --instance <i>"]
+      permissions: ["spanner.instances.list", "spanner.backups.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_backup_expiration.sh: 'gcloud spanner instances list 2>/dev/null || echo []' -> 'No Cloud Spanner instances found' -> []; backups list also '2>/dev/null || echo []'."
+      notes: "Expired backups are normally auto-deleted by Spanner, so the 'already expired' branch is rarely reachable. Backups with no expireTime are skipped."
+    - title: Check Cloud Spanner Point-in-Time Recovery Configuration
+      at: runbook.robot:85
+      asserts: "Database versionRetentionPeriod is below PITR_MINIMUM_DAYS (default 1 day)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list --instance <i>", "gcloud spanner databases describe <db> --instance <i>"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_pitr_config.sh: 'gcloud spanner instances list 2>/dev/null || echo []' and databases list '|| echo []' -> nothing checked."
+      notes: "A failed 'databases describe' returns {} and vrp defaults to '1h' so the database is reported as below minimum (false positive on permission errors). Spanner's default retention is 1h, so with default PITR_MINIMUM_DAYS=1 every un-tuned database is flagged."
+    - title: Check Cloud Spanner Deletion Protection
+      at: runbook.robot:118
+      asserts: "Spanner instance enableDropProtection=false (when the field exists) or database enableDropProtection false."
+      reads: ["gcloud spanner instances list", "gcloud spanner instances describe <i>", "gcloud spanner databases list --instance <i>"]
+      permissions: ["spanner.instances.list", "spanner.instances.get", "spanner.databases.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_deletion_protection.sh: instances list '2>/dev/null || echo []'; instances describe '2>/dev/null || echo {}' -> field absent -> 'skipping instance-level check'; databases list '|| echo []'."
+      notes: "Instance-level field is usually absent from the API response, so only database-level is effectively checked. The per-database flag is read from the databases list output, not describe."
+    - title: Check Cloud Spanner IAM Access Configuration
+      at: runbook.robot:151
+      asserts: "Instance or database IAM policy binds allUsers/allAuthenticatedUsers, or grants roles/owner or roles/editor."
+      reads: ["gcloud spanner instances list", "gcloud spanner instances get-iam-policy <i>", "gcloud spanner databases list", "gcloud spanner databases get-iam-policy <db> --instance <i>"]
+      permissions: ["spanner.instances.list", "spanner.instances.getIamPolicy", "spanner.databases.list", "spanner.databases.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_iam_access.sh: get-iam-policy '2>/dev/null || echo {}' (-> no bindings) for instance and database; instances/databases list '|| echo []'."
+      notes: "Resource-level policies only; primitive roles inherited from the project policy are not seen."
+    - title: Check Cloud Spanner Encryption Configuration
+      at: runbook.robot:184
+      asserts: "Only when REQUIRE_CMEK=true: database has no encryptionConfig.kmsKeyName (Google-managed key)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list", "gcloud spanner databases describe <db>"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_encryption_config.sh: instances/databases list '2>/dev/null || echo []'; describe '|| echo {}' -> no kmsKeyName -> reported as Google-managed (false positive when CMEK is required)."
+      notes: "REQUIRE_CMEK defaults to false, so by default the task can never raise an issue and the SLI sub-score is always 1."
+  bundleNotes: "Only the first script raises an issue when 'instances list' fails; the other five silently treat it as 'no instances'. All scripts write to fixed /tmp/*_parts.jsonl files. Asymmetry: describe failures produce false positives while list failures produce false passes."
+
+- bundle: gcp-cloudspanner-instance-health
+  displayName: GCP Cloud Spanner Instance Health
+  classicResourceTypes: [gcp_spanner_instances]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Four 0/1 sub-scores (instance state, high-priority CPU, storage, database state) = 1 if issues JSON length 0; aggregate is the mean. Latency/error task is not in the SLI. FALSE-PASS: 4 of 4 scripts treat 'spanner instances list' failure (except check_instance_state) and missing metric data as healthy."
+  egress: "cloud API (gcloud spanner, curl monitoring.googleapis.com)"
+  tools: [gcloud, curl, jq, python3, awk, bash]
+  inputs: [GCP_PROJECT_ID, CPU_UTILIZATION_THRESHOLD, MULTI_REGION_CPU_UTILIZATION_THRESHOLD, STORAGE_UTILIZATION_THRESHOLD, STORAGE_LIMIT_GB_PER_NODE, LATENCY_THRESHOLD_MS, ERROR_RATE_THRESHOLD_PERCENT, LONG_RUNNING_OPERATION_MINUTES, gcp_credentials]
+  tasks:
+    - title: Check Cloud Spanner Instance State and Configuration
+      at: runbook.robot:19
+      asserts: "A Spanner instance whose state is not READY, or a multi-region instance with 1 or 2 nodes."
+      reads: ["gcloud spanner instances list --project --format=json"]
+      permissions: ["spanner.instances.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "check_instance_state.sh checks the list rc and raises a sev 3 issue. 'Multi-region' is inferred as config not starting with 'regional-', so custom/dual-region configs are all treated as multi-region. Nodes counted only via nodeCount, so processingUnits-only instances (nodeCount 0) are never flagged."
+    - title: Check Cloud Spanner High-Priority CPU Utilization
+      at: runbook.robot:56
+      asserts: "Mean high-priority CPU utilization over the last 10 minutes exceeds 65% (regional) or 45% (multi-region)."
+      reads: ["gcloud spanner instances list", "GET monitoring timeSeries spanner.googleapis.com/instance/cpu/utilization_by_priority priority=high"]
+      permissions: ["spanner.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_cpu_utilization.sh: 'instances list 2>/dev/null || echo []' -> 'No Cloud Spanner instances found'; monitoring_query.sh query_time_series returns '[]' on token or curl failure and 'jq .timeSeries // []' on an error body -> avg -1 -> 'No ... data available; skipping' with no issue."
+      notes: "10 minute window only. 'date -u -v-10M' (BSD) falls back to GNU form."
+    - title: Check Cloud Spanner Storage Utilization
+      at: runbook.robot:90
+      asserts: "Spanner storage used_bytes / (node-equivalents x STORAGE_LIMIT_GB_PER_NODE=4096) exceeds STORAGE_UTILIZATION_THRESHOLD (75%)."
+      reads: ["gcloud spanner instances list", "GET monitoring timeSeries spanner.googleapis.com/instance/storage/used_bytes"]
+      permissions: ["spanner.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_storage_utilization.sh: same swallowed list + monitoring_query.sh '[]' fallback -> 'No storage utilization data available; skipping'."
+      notes: "Hard-coded per-node limit (default 4096 GB, a user input) is the denominator. Uses 1000^3 for GB."
+    - title: Check Cloud Spanner Database State
+      at: runbook.robot:124
+      asserts: "A database is not READY/READY_OPTIMIZING (CREATING raised separately), or an incomplete database operation is older than LONG_RUNNING_OPERATION_MINUTES (60)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list --instance <i>", "gcloud spanner operations list --instance <i> --database <d> --type=DATABASE"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databaseOperations.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_database_state.sh: instances list, databases list and operations list all '2>/dev/null || echo []'."
+      notes: "Operations are listed once per database (N+1 calls)."
+    - title: Analyze Cloud Spanner Request Latency and Errors
+      at: runbook.robot:161
+      asserts: "Mean API request latency over the last 10 minutes exceeds LATENCY_THRESHOLD_MS (100 ms), or non-OK request_count / total exceeds ERROR_RATE_THRESHOLD_PERCENT (1%)."
+      reads: ["gcloud spanner instances list", "GET monitoring timeSeries spanner.googleapis.com/api/request_latencies and api/request_count (all and status!=OK)"]
+      permissions: ["spanner.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_latency_errors.sh: swallowed instances list; missing latency/count data prints 'skipping' and total_count falls back to 0 -> 'No request-count data available; skipping error-rate check'."
+      notes: "Variable is named p99_latency_ms but it is the mean of distribution means, not p99. Not scored by the SLI."
+  bundleNotes: "Only check_instance_state.sh checks the instance-list rc. Others have exit-0 'No Cloud Spanner instances found' on any list error. Metric absence is deliberately skipped (reasonable for idle instances) but is indistinguishable from an API error."
+
+- bundle: gcp-cloudspanner-query-performance
+  displayName: GCP Cloud Spanner Query Performance
+  classicResourceTypes: [gcp_spanner_instances]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Five 0/1 sub-scores (high latency, lock contention, txn aborts, long-running, CPU-heavy) = 1 if issues JSON length 0; aggregate is the mean. Execute-sql failures are issues (score 0); instance/database list failure and empty stats tables score 1."
+  egress: "cloud API (gcloud spanner execute-sql against customer databases)"
+  tools: [gcloud, jq, python3, bash]
+  inputs: [GCP_PROJECT_ID, QUERY_LATENCY_THRESHOLD_MS, LOCK_WAIT_THRESHOLD_MS, ABORT_RATE_THRESHOLD_PERCENT, LONG_RUNNING_QUERY_THRESHOLD_SECONDS, STATS_WINDOW, CPU_TIME_SHARE_THRESHOLD_PERCENT, gcp_credentials]
+  tasks:
+    - title: Check Cloud Spanner High-Latency Queries
+      at: runbook.robot:19
+      asserts: "A top-20 query in SPANNER_SYS.QUERY_STATS_TOP_<window> has AVG_LATENCY_SECONDS x1000 > QUERY_LATENCY_THRESHOLD_MS (100)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list", "gcloud spanner databases execute-sql <db> --sql 'SELECT ... FROM SPANNER_SYS.QUERY_STATS_TOP_<HOUR|10MINUTE|MINUTE> ORDER BY AVG_LATENCY_SECONDS DESC LIMIT 20'"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.select (execute-sql on SPANNER_SYS stats)"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_high_latency_queries.sh: instances list and databases list '2>/dev/null || echo []' -> nothing checked. execute-sql failure IS raised as a sev 3 issue; empty stats rows are skipped as 'no traffic'."
+      notes: "Runs SQL (against system stats tables, but via execute-sql on the customer database) and reads statement text (up to 300 chars) which can contain literals. Fixed /tmp part files."
+    - title: Check Cloud Spanner Lock Contention
+      at: runbook.robot:52
+      asserts: "A SPANNER_SYS.LOCK_STATS_TOP_<window> row has LOCK_WAIT_SECONDS x1000 > LOCK_WAIT_THRESHOLD_MS (1000)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list", "gcloud spanner databases execute-sql <db> --sql 'SELECT ... FROM SPANNER_SYS.LOCK_STATS_TOP_<window>'"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.select"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_lock_contention.sh: instances/databases list '2>/dev/null || echo []'."
+      notes: "execute-sql failures raise issue (not false pass)."
+    - title: Check Cloud Spanner Transaction Abort Rate
+      at: runbook.robot:85
+      asserts: "A SPANNER_SYS.TXN_STATS_TOP_<window> row has COMMIT_ABORT_COUNT/COMMIT_ATTEMPT_COUNT x100 > ABORT_RATE_THRESHOLD_PERCENT (5)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list", "gcloud spanner databases execute-sql <db> --sql 'SELECT ... FROM SPANNER_SYS.TXN_STATS_TOP_<window> WHERE COMMIT_ATTEMPT_COUNT > 0 ORDER BY COMMIT_ABORT_COUNT DESC LIMIT 20'"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.select"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_transaction_aborts.sh: instances/databases list '2>/dev/null || echo []'."
+      notes: "Ranking is by abort count, so a low-volume transaction with a high rate may not appear in the top 20. python float() failure -> 'echo 0' means rate 0."
+    - title: Check Cloud Spanner Long-Running Queries
+      at: runbook.robot:118
+      asserts: "A query in SPANNER_SYS.OLDEST_ACTIVE_QUERIES has been running longer than LONG_RUNNING_QUERY_THRESHOLD_SECONDS (60)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list", "gcloud spanner databases execute-sql <db> --sql 'SELECT ... FROM SPANNER_SYS.OLDEST_ACTIVE_QUERIES ...'"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.select"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_long_running_queries.sh: instances/databases list '2>/dev/null || echo []'."
+      notes: "Point-in-time snapshot of active queries; a run at the wrong moment misses them. Does not use STATS_WINDOW."
+    - title: Check Cloud Spanner CPU-Heavy Queries
+      at: runbook.robot:151
+      asserts: "A top-20 query's share (AVG_CPU_SECONDS x EXECUTION_COUNT) of the summed CPU time of the returned rows exceeds CPU_TIME_SHARE_THRESHOLD_PERCENT (25%)."
+      reads: ["gcloud spanner instances list", "gcloud spanner databases list", "gcloud spanner databases execute-sql <db> --sql 'SELECT ... FROM SPANNER_SYS.QUERY_STATS_TOP_<window> ORDER BY AVG_CPU_SECONDS * EXECUTION_COUNT DESC LIMIT 20'"]
+      permissions: ["spanner.instances.list", "spanner.databases.list", "spanner.databases.select"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_cpu_heavy_queries.sh: instances/databases list '2>/dev/null || echo []'."
+      notes: "Share is relative to the sum of the returned top-20 rows (check_cpu_heavy_queries.sh:97), not total database CPU, so a database with few queries always trips the 25% threshold (false positive by construction)."
+  bundleNotes: "Executes SQL against every database in every instance through gcloud spanner databases execute-sql, restricted to SPANNER_SYS tables by script (not enforced by IAM: spanner.databases.select grants read of all data). The SQL is script-fixed apart from the window-derived table name which is allow-listed. Good execute-sql rc handling; poor list handling."
+
+- bundle: gcp-compute-instancegroup-health
+  displayName: GCP Compute Engine Instance Group Health
+  classicResourceTypes: [gcp_compute_instance_groups, gcp_compute_instance_group_managers]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per instance group (qualifier resource)"
+  sli: true
+  sliAsserts: "Four 0/1 sub-scores (member health, autoscaling, patch, utilization) = 1 if the count of issues with severity <= 3 is exactly 0; aggregate is the mean. Fails closed on unparsable output (score 0) but IGNORES severity-4 issues, which includes 'could not describe managed group', 'could not list patch jobs / none exist', and 'group is low-utilization' -> those score 1."
+  egress: "cloud API (gcloud compute, compute os-config, curl monitoring.googleapis.com)"
+  tools: [gcloud, curl, jq, awk, date (GNU -d), bash]
+  inputs: [GCP_PROJECT_ID, INSTANCE_GROUP_NAME, PATCH_WARNING_DAYS, UTILIZATION_LOW_THRESHOLD, UTILIZATION_HIGH_THRESHOLD, gcp_credentials]
+  tasks:
+    - title: Check Instance Group Member Health
+      at: runbook.robot:19
+      asserts: "A member of the group has currentAction RECREATING/DELETING/ABANDONING (sev 3) or instanceStatus STOPPING/TERMINATED or status STOPPED (sev 2)."
+      reads: ["gcloud compute instance-groups list --filter name=<g> --format value(zone|region)", "gcloud compute instance-groups list-instances <g> --zone|--region --format=json"]
+      permissions: ["compute.instanceGroups.list", "compute.instanceGroups.get"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "EXIT trap writes a sev 2 'check failed' issue on any non-zero exit; unresolvable group or empty member list raises a sev 3 issue. INSTANCE_GROUP_NAME=All skips the check and reports healthy ('[]'), the only residual hole. Unmanaged/managed both supported. The 'status' field is only populated for managed groups."
+    - title: Check Instance Group Autoscaling and Capacity
+      at: runbook.robot:53
+      asserts: "Managed group is unstable with/without in-flight actions (sev 4 / sev 3), autoscaler status ERROR (sev 3), target size >= autoscaler max (sev 4), target 0 below autoscaler min (sev 3), or target 0 with no autoscaler (sev 2)."
+      reads: ["gcloud compute instance-groups managed list --filter name=<g>", "gcloud compute instance-groups managed describe <g> --zone|--region --format=json"]
+      permissions: ["compute.instanceGroupManagers.list", "compute.instanceGroupManagers.get", "compute.autoscalers.get"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Runbook raises an issue on describe failure (sev 4 'Failed to describe managed instance group'), but the SLI counts only severity <= 3, so the same failure scores 1 in the SLI (false-pass in the SLI path, check_autoscaling.sh:~91 sev 4). Unmanaged groups return [] ('autoscaling does not apply'). 'At autoscaler max' is sev 4 and does not check for actual load. Skips with [] when INSTANCE_GROUP_NAME=All."
+    - title: Check Instance Group OS Patch Compliance
+      at: runbook.robot:87
+      asserts: "An instance in the group has FAILED / TIMED_OUT / NO_AGENT_DETECTED state in a patch job older than PATCH_WARNING_DAYS (30), from the last 10 completed project patch jobs."
+      reads: ["gcloud compute instance-groups list-instances <g> --format value(instance)", "gcloud compute os-config patch-jobs list --filter state:(SUCCEEDED FAILED TIMED_OUT) --limit=10", "gcloud compute os-config patch-jobs list-instance-details <job>"]
+      permissions: ["compute.instanceGroups.list", "osconfig.patchJobs.list", "osconfig.patchJobs.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_group_patch_status.sh: 'list-instances ... 2>/dev/null || true' then 'No member instances found for patch compliance. Skipping.' -> []; 'list-instance-details ... 2>/dev/null || echo []' -> empty patch_state -> 'continue' per member."
+      notes: "Patch-jobs list failure and zero jobs raise a sev 4 issue (ignored by the SLI). Patch jobs are project-wide, not per group; only the 10 newest are considered, so a group not covered by recent jobs shows no issue. Newer jobs (< 30 days) are skipped entirely, so a failure in the last 30 days is NOT reported (inverted semantics vs. the task docs). Uses `contains` on instance name (substring match)."
+    - title: Check Instance Group Utilization
+      at: runbook.robot:121
+      asserts: "Average CPU utilization over the last hour across members is >= UTILIZATION_HIGH_THRESHOLD (90%, sev 3) or <= UTILIZATION_LOW_THRESHOLD (5%, sev 4)."
+      reads: ["gcloud compute instance-groups list-instances <g>", "gcloud compute instances list --filter name=(...) --format value(id)", "gcloud auth print-access-token", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries compute.googleapis.com/instance/cpu/utilization (1h, ALIGN_MEAN 300s)"]
+      permissions: ["compute.instanceGroups.list", "compute.instances.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Monitoring API error body is raised as a sev 2 issue; no time series raises sev 2; set -e plus EXIT trap covers other failures. Averages all members into one number, so one pegged VM among idle ones is hidden. Reports nothing if numeric values are missing ('Skipping utilization check') with [] -- narrow hole."
+  bundleNotes: "Best-hardened bundle in the group: EXIT trap converts any script crash into an issue and absent resources raise issues rather than []. Remaining gaps: INSTANCE_GROUP_NAME=All is a silent skip, SLI drops severity 4, patch check swallows member listing and has inverted recency logic. SLI uses 'jq select(.severity <= 3)'."
+
+- bundle: gcp-compute-vm-health
+  displayName: GCP Compute Engine VM Health
+  classicResourceTypes: [gcp_compute_instances]
+  matchHints: "pattern .+ on name (substring) AND NOT pattern /instanceGroupManagers/ on metadata/items/value (excludes MIG members, incl. GKE nodes); level of detail basic; one SLX per VM+project (qualifiers resource, project). Unmanaged-group members cannot be excluded by the rule, scripts exclude them at runtime."
+  sli: true
+  sliAsserts: "Five 0/1 sub-scores (uptime/status, patch, disk, network, console) = 1 if issues JSON length 0; aggregate is the mean. Target-resolution/enumeration failure and a missing named VM are raised as issues (score 0). False-pass only through the per-VM sub-checks listed below (the scripts print 'unknown' but write no issue)."
+  egress: "cloud API (gcloud compute, gcloud monitoring, curl osconfig.googleapis.com)"
+  tools: [gcloud, curl, jq, awk, grep, date (GNU -d), bash]
+  inputs: [GCP_PROJECT_ID, VM_NAME, UPTIME_WARNING_DAYS, PATCH_WARNING_DAYS, DISK_USAGE_THRESHOLD, gcp_credentials]
+  tasks:
+    - title: Check VM Uptime and Operational Status
+      at: runbook.robot:19
+      asserts: "Standalone VM status is not RUNNING (sev 3), or it has been running >= UPTIME_WARNING_DAYS (90) since last start (sev 2)."
+      reads: ["gcloud compute instances list --format=json", "gcloud compute instance-groups list", "gcloud compute instance-groups list-instances <g> --zone"]
+      permissions: ["compute.instances.list", "compute.instanceGroups.list", "compute.instanceGroups.get"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "gcp_vm_common.sh gcloud_reported_failure greps stderr (exit code 0 with 'Some requests did not succeed') and enumeration failure becomes a verification_failed issue (sev 2); named VM missing becomes sev 3. VM_NAME=All with zero standalone VMs returns [] (correct, nothing to check). Long uptime is flagged as a problem, which is opinionated."
+    - title: Check VM OS Patch Status via OS Config
+      at: runbook.robot:51
+      asserts: "OS Config vulnerability report has AFFECTED vulnerabilities (sev 2), or instanceOSPoliciesCompliance state is VIOLATED (sev 3)."
+      reads: ["gcloud compute instances list / instance-groups list (target resolution)", "gcloud auth print-access-token", "GET osconfig.googleapis.com/v1/projects/<p>/locations/<zone>/instances/<vm>/vulnerabilityReport", "GET osconfig.googleapis.com/v1/projects/<p>/locations/<zone>/instanceOSPoliciesCompliance/<vm>"]
+      permissions: ["compute.instances.list", "compute.instanceGroups.list", "osconfig.vulnerabilityReports.get", "osconfig.instanceOSPoliciesCompliances.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_patch_status.sh: 'curl -s -f ... 2>/dev/null || echo \"\"' for vulnerabilityReport and instanceOSPoliciesCompliance; empty response only prints '-- ... patch state unknown' and adds no issue, so 403/404/agent-missing = healthy. Token failure IS raised (sev 3)."
+      notes: "Token cached once. Uses curl, not gcloud. Treats 'agent not installed' (404) the same as an API error."
+    - title: Check VM Disk Utilization
+      at: runbook.robot:83
+      asserts: "A disk attached to the VM has status != READY (sev 3), or Ops-Agent metric agent.googleapis.com/disk/percent_used is >= DISK_USAGE_THRESHOLD (85) (sev 4)."
+      reads: ["gcloud compute instances describe <vm> --zone --format=json", "gcloud monitoring time-series list --filter metric.type=agent.googleapis.com/disk/percent_used AND resource.labels.instance_id=<id> --limit=100"]
+      permissions: ["compute.instances.get", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_disk_utilization.sh: 'instances describe ... 2>/dev/null || echo {}' (degraded=0 -> prints 'OK all attached disks are READY') and 'gcloud monitoring time-series list ... 2>/dev/null || echo []' -> max 0% -> '-- no Ops Agent disk metrics available; utilization unknown' with no issue."
+      notes: "Disk-full finding is sev 4 (lowest). Only reports if the Ops Agent is installed. 'disks[].status' is a rarely-populated field on instance describe."
+    - title: Check VM Network Health
+      at: runbook.robot:115
+      asserts: "VM has no network interfaces (sev 3), has network tags but no firewall rule targets them (sev 3), or the VM transmitted any dropped packets (agent tx_dropped_packets > 0, sev 3)."
+      reads: ["gcloud compute instances describe <vm>", "gcloud compute firewall-rules list --format=json", "gcloud monitoring time-series list --filter metric.type=agent.googleapis.com/interface/tx_dropped_packets"]
+      permissions: ["compute.instances.get", "compute.firewalls.list", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_network_health.sh: 'gcloud monitoring time-series list ... 2>/dev/null || echo []' -> total_drops 0 -> 'OK no dropped packets reported'. (The describe/firewall failures flip the other way: describe '|| echo {}' reports 'no network interfaces', firewall list '|| echo 0' reports 'no matching firewall rules', both false positives.)"
+      notes: "Any single dropped packet in the last point triggers an issue; packet drops are not a rate. The tags-without-firewall check ignores firewall rules that target by service account or all instances."
+    - title: Check VM Guest and Serial Console Health
+      at: runbook.robot:147
+      asserts: "Serial port output matches any of: Kernel panic, BUG:, Oops: (sev 3), out of memory, guest agent.*fail, no job control (sev 2)."
+      reads: ["gcloud compute instances get-serial-port-output <vm> --zone", "gcloud compute instances describe <vm> --format value(metadata.items[enable-guest-attributes])"]
+      permissions: ["compute.instances.getSerialPortOutput", "compute.instances.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_console_health.sh: 'get-serial-port-output ... 2>/dev/null || echo \"\"' -> no patterns match -> 'OK ... no console error patterns found' (it notes 'no serial console output retrieved' but raises no issue)."
+      notes: "Grep over up to the 1 MB serial buffer; old matches persist until reboot so a past panic keeps firing, and 'out of memory' can match benign boot lines. 'no job control' is a normal boot message reported as sev 2. Serial output may contain secrets."
+  bundleNotes: "Already hardened after an earlier false-pass pass (gcloud_reported_failure, resolve_target_vms, verification_failed issues). All remaining holes are per-VM sub-queries that print 'unknown' instead of adding an issue. The common helper writes issues with ISSUES_FILE set per script; each run does 'rm -f' of its output first."
+
+- bundle: gcp-dms-migration-health
+  displayName: GCP Database Migration Service (DMS) Health
+  classicResourceTypes: [gcp_databasemigration_migration_jobs]
+  matchHints: "pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project). Resource is CAI-only (generic tier): needs the Cloud Asset Inventory accelerator enabled for discovery."
+  sli: true
+  sliAsserts: "One task, three 0/1 dimensions averaged: job_score=0 if any job FAILED or CANCELLED; ops_score=0 if an operation with an error was created in the last DMS_OPERATION_LOOKBACK_MINUTES (60) or the list failed; lag_score=0 if any CDC job lag > REPLICATION_LAG_SEC_THRESHOLD (300) or the Monitoring query failed. Fails closed: list failure scores all zeros and an unparsable score file scores 0. Narrow holes: PAUSED/stuck states do not affect job_score; 'no lag samples yet' scores 1."
+  egress: "cloud API (gcloud database-migration, gcloud logging, curl monitoring.googleapis.com)"
+  tools: [gcloud, curl, jq, awk, date (GNU -d, BSD fallback), bash]
+  inputs: [GCP_PROJECT_ID, GCP_DMS_LOCATION, DMS_JOB_NAMES, REPLICATION_LAG_SEC_THRESHOLD, REPLICATION_LAG_BYTES_THRESHOLD, DMS_STUCK_MINUTES, DMS_OPERATION_STUCK_MINUTES, DMS_OPERATION_LIMIT, DMS_LOG_LOOKBACK, gcp_credentials]
+  tasks:
+    - title: List DMS Migration Jobs and Flag Unhealthy States
+      at: runbook.robot:20
+      asserts: "A migration job is FAILED (sev 4), PAUSED (sev 2), CANCELLED (sev 3), stuck in CREATING/UPDATING/DELETING/STARTING/RESTARTING/VERIFYING longer than DMS_STUCK_MINUTES (120, sev 3), or RUNNING in a non-CDC phase longer than that (sev 2)."
+      reads: ["gcloud database-migration migration-jobs list --project --region --format=json"]
+      permissions: ["datamigration.migrationjobs.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "List rc is checked; failure becomes a sev 4 issue. Side effect: writes migration_jobs_list.json and dms_flagged_jobs.txt used by the later tasks (cross-task coupling through the working directory). 'Stuck' is judged from updateTime, which advances on any update. Severity scale in the script is inverted from its usual use (FAILED = 4). Single region only (GCP_DMS_LOCATION)."
+    - title: List Recent DMS Operations and Flag Failures
+      at: runbook.robot:60
+      asserts: "A recent DMS operation (last DMS_OPERATION_LIMIT=50) has an error payload (sev 3), or an operation is not done and started more than DMS_OPERATION_STUCK_MINUTES (45) ago (sev 2)."
+      reads: ["gcloud database-migration operations list --region --limit=50 --format=json"]
+      permissions: ["datamigration.operations.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "List rc checked (sev 3 issue on failure). No time window on the runbook version: any error among the last 50 operations is reported forever (the SLI uses a 60-minute window), so the runbook and SLI disagree. Also appends to the shared flagged-jobs file."
+    - title: Report DMS Replication Lag from Cloud Monitoring
+      at: runbook.robot:100
+      asserts: "For RUNNING jobs in CDC phase, max_replica_sec_lag > REPLICATION_LAG_SEC_THRESHOLD (300 s, sev 3); optionally max_replica_bytes_lag > REPLICATION_LAG_BYTES_THRESHOLD (sev 2, off by default)."
+      reads: ["migration_jobs_list.json written by the first task", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries datamigration.googleapis.com/migration_job/max_replica_sec_lag (2h) with retries on 5xx"]
+      permissions: ["monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "fetch-dms-replication-lag-metrics.sh derives the CDC job list from migration_jobs_list.json (a file the first task writes). If that task failed to list jobs it writes '[]', and if this task runs alone the file is created as '[]'; either way: 'No RUNNING jobs in CDC phase; skipping replication lag checks' -> [] -> no issue. Monitoring failure itself IS raised (sev 3); no samples yet is treated as not an issue."
+      notes: "HTTP code captured with curl -w and retried 3x on 5xx; token written to a 0600 header file and set +x around it (good). Filter is location=GCP_DMS_LOCATION only, so metrics for jobs in other projects' resource labels are unfiltered except by the job id match."
+    - title: Summarize DMS Migration Job Details for Flagged Jobs
+      at: runbook.robot:140
+      asserts: "A described migration job has a non-empty .error block (sev 4); jobs are those in DMS_JOB_NAMES or flagged by the earlier tasks."
+      reads: ["dms_flagged_jobs.txt from earlier tasks", "gcloud database-migration migration-jobs describe <job> --region --format=json"]
+      permissions: ["datamigration.migrationjobs.get"]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "describe-migration-jobs.sh: with DMS_JOB_NAMES=All and no entries in dms_flagged_jobs.txt (e.g. run in isolation, or earlier tasks failed) it prints 'nothing to describe ... expected when every job is healthy' and writes []. Describe failures are raised (sev 3)."
+      notes: "Report/triage task, not an independent check. Its result depends entirely on files written by other tasks."
+    - title: Optional Error Log Correlation for DMS
+      at: runbook.robot:180
+      asserts: "When any job was flagged, Cloud Logging has >= 1 ERROR-or-worse entry for datamigration.googleapis.com in the last DMS_LOG_LOOKBACK (1h) (sev 2)."
+      reads: ["dms_flagged_jobs.txt", "gcloud logging read '(protoPayload.serviceName=\"datamigration.googleapis.com\" OR resource.type=\"datamigration.googleapis.com/MigrationJob\") AND severity>=ERROR' --freshness --limit=50"]
+      permissions: ["logging.logEntries.list"]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "fetch-dms-error-logs.sh: if the flagged-jobs file is empty/missing it exits with 'No flagged DMS jobs; skipping' and []. Logging rc is checked (sev 2 on failure)."
+      notes: "Filter is not scoped to flagged jobs or region, so it returns every DMS error in the project."
+  bundleNotes: "Hardened (rc checked everywhere, SLI fails closed). The structural issue for V13 is that tasks 3-5 depend on working-directory files written by task 1/2 (migration_jobs_list.json, dms_flagged_jobs.txt), so they are not independently runnable. Auth uses GOOGLE_APPLICATION_CREDENTIALS (not the gcp_credentials.key file path used by the other GCP bundles), with '|| true'. Single region per SLX."
+
+- bundle: gcp-iam-role-query
+  displayName: GCP IAM Role Query
+  classicResourceTypes: [project]
+  matchHints: "resourceType 'project' (generic), pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project). No SLI output item."
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "cloud API (gcloud iam/projects/run/container, gsutil, bq)"
+  tools: [gcloud, gsutil, bq, jq, bash]
+  inputs: [GCP_PROJECT_ID, SERVICE_ACCOUNT, RESOURCE_NAME, SERVICE_TYPE, gcp_credentials]
+  tasks:
+    - title: Query IAM Roles for Service Account in Project
+      at: runbook.robot:19
+      asserts: "Nothing about health; prints project-level roles granted to SERVICE_ACCOUNT and the IAM policy on the SA itself. Issues are raised only for missing input or when a policy could not be read."
+      reads: ["gcloud projects get-iam-policy <project> --format=json", "gcloud iam service-accounts get-iam-policy <sa> --project <p> --format=json"]
+      permissions: ["resourcemanager.projects.getIamPolicy", "iam.serviceAccounts.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Query task, not a check. Doc claims 'including inherited project and resource bindings' but only the project policy is read (no folder/org). Direct member match only (group membership not expanded). Missing SERVICE_ACCOUNT raises a sev 4 issue. The project-policy read failure is collected in project_issues and merged."
+    - title: Query IAM Roles Assigned to Resource in Project
+      at: runbook.robot:52
+      asserts: "Nothing about health; prints the IAM policy for the named resource (project, bucket, Cloud Run service, GKE cluster) selected by SERVICE_TYPE. Raises an issue when the policy cannot be read."
+      reads: ["gcloud projects get-iam-policy", "gsutil iam get gs://<bucket>", "gcloud run services get-iam-policy <svc> --platform=managed", "gcloud container clusters get-iam-policy <cluster>"]
+      permissions: ["resourcemanager.projects.getIamPolicy", "storage.buckets.getIamPolicy", "run.services.getIamPolicy", "container.clusters.getIamPolicy (as inferred; GKE has no per-cluster IAM policy API)"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "SECURITY: builds the command as a string with RESOURCE_NAME interpolated and runs it via eval (query_resource_roles.sh), so a crafted RESOURCE_NAME is shell injection. bigquery/dataset and any unknown SERVICE_TYPE silently fall back to the PROJECT policy and report that as if it were the resource's policy. 'gcloud container clusters get-iam-policy' does not exist, so the gke branch always errors into the issue path."
+    - title: List IAM Roles for GCP Service in Project
+      at: runbook.robot:85
+      asserts: "Nothing about health; enumerates resources of SERVICE_TYPE (storage, bigquery, run, gke) in the project (optionally filtered by RESOURCE_NAME) and prints each one's IAM bindings. Raises an issue when SERVICE_TYPE is unset/unsupported, listing fails, nothing matches, or a policy read fails."
+      reads: ["gsutil ls -p <p>", "bq ls --project_id <p> --format=json", "gcloud run services list", "gcloud container clusters list", "per-resource: gsutil iam get / bq show / gcloud run services get-iam-policy / gcloud container clusters get-iam-policy"]
+      permissions: ["storage.buckets.list", "storage.buckets.getIamPolicy", "bigquery.datasets.get", "run.services.list", "run.services.getIamPolicy", "container.clusters.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Uses eval on a list command built from SERVICE_TYPE-driven constants (project id interpolated). 'Not found' and API errors both write issues. Sev for all issues is 1."
+    - title: Generate IAM Policy Report for Project
+      at: runbook.robot:118
+      asserts: "Nothing about health; reports every member and its roles in the project IAM policy, plus a summary and a project_iam_policy.json dump. Issue only when the policy cannot be read."
+      reads: ["gcloud projects get-iam-policy <project> --format=json"]
+      permissions: ["resourcemanager.projects.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Pure report. Excellent candidate for a typed output (principal -> roles). Does not flag any risky binding (owner, allUsers); that lives in gcp-iam-serviceaccount-health and gcp-cloud-sql-health."
+  bundleNotes: "On-demand query bundle driven by runtime variables; no SLI. 'Issues' are only 'could not query' conditions (sev 1 in query scripts, 4 for missing SERVICE_ACCOUNT). Two of four scripts use eval on strings containing user variables. Runbook JSON parse failure still defaults to an empty list."
+
+- bundle: gcp-iam-serviceaccount-health
+  displayName: GCP IAM Service Account Health
+  classicResourceTypes: [project]
+  matchHints: "resourceType 'project' (generic), pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: false
+  sliAsserts: "n/a (generation rule lists an sli output item but no sli.robot exists in the bundle directory)"
+  egress: "cloud API (gcloud iam, cloudresourcemanager)"
+  tools: [gcloud, jq, xargs, mapfile (bash 4+), date (GNU -d), bash]
+  inputs: [GCP_PROJECT_ID, SERVICE_ACCOUNT, KEY_ROTATION_DAYS, MAX_KEYS_PER_SA, PRIVILEGED_ROLES, gcp_credentials]
+  tasks:
+    - title: Check Service Account Privileged Role Assignments
+      at: runbook.robot:20
+      asserts: "A service account holds any role listed in PRIVILEGED_ROLES (default roles/owner, roles/editor) in the project IAM policy (sev 3) or on its own SA-level IAM policy (sev 3)."
+      reads: ["gcloud iam service-accounts list --project --format value(email)", "gcloud projects get-iam-policy <p> --format=json", "gcloud iam service-accounts get-iam-policy <sa> --format=json"]
+      permissions: ["iam.serviceAccounts.list", "resourcemanager.projects.getIamPolicy", "iam.serviceAccounts.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_privileged_roles.sh: 'gcloud iam service-accounts list ... 2>/dev/null || true' (no SAs -> loop never runs), 'gcloud projects get-iam-policy ... 2>/dev/null || echo {\"bindings\":[]}' (no privileged bindings), and per-SA 'get-iam-policy ... || echo {\"bindings\":[]}'."
+      notes: "Security check: the failure that matters most (cannot read project policy) is reported as 'no privileged roles'. Only direct serviceAccount: member matches; roles inherited from folder/org are not seen. SERVICE_ACCOUNT narrows to a single SA. SA-level 'privileged role' check flags e.g. roles/editor on the SA's own policy, which is rare."
+    - title: Check Service Account Key Rotation
+      at: runbook.robot:53
+      asserts: "A USER_MANAGED key has validAfterTime older than KEY_ROTATION_DAYS (90) (sev 2; sev 3 over 2x)."
+      reads: ["gcloud iam service-accounts list", "gcloud iam service-accounts keys list --iam-account <sa> --format=json"]
+      permissions: ["iam.serviceAccounts.list", "iam.serviceAccountKeys.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_key_rotation.sh: SA list '2>/dev/null || true'; 'keys list ... 2>/dev/null || echo []' -> no keys -> no issue; unparsable validAfterTime is 'continue'd."
+      notes: "Uses GNU 'date -d'. Per-SA keys list is N+1 calls."
+    - title: Identify Service Accounts with Excessive Keys
+      at: runbook.robot:86
+      asserts: "A service account has more than MAX_KEYS_PER_SA (5) USER_MANAGED keys (sev 3)."
+      reads: ["gcloud iam service-accounts list", "gcloud iam service-accounts keys list --iam-account <sa> --format=json"]
+      permissions: ["iam.serviceAccounts.list", "iam.serviceAccountKeys.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_key_count.sh: SA list '2>/dev/null || true' and 'keys list ... 2>/dev/null || echo []' -> count 0."
+      notes: "Same data as the key rotation task; the 5-key threshold is arbitrary (GCP hard limit is 10)."
+    - title: Identify Disabled Service Accounts in Use
+      at: runbook.robot:119
+      asserts: "A disabled service account is still referenced by a project-level IAM binding or by any member in its own SA-level policy (sev 2)."
+      reads: ["gcloud iam service-accounts list|describe --format=json", "gcloud projects get-iam-policy", "gcloud iam service-accounts get-iam-policy <sa>"]
+      permissions: ["iam.serviceAccounts.list", "iam.serviceAccounts.get", "resourcemanager.projects.getIamPolicy", "iam.serviceAccounts.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_disabled_service_accounts.sh: 'service-accounts list ... 2>/dev/null || echo []' and 'describe ... || echo []', project policy '|| echo {bindings:[]}'."
+      notes: "'In use' is approximated as 'still bound in IAM'; it does not check actual use by resources or recent auth."
+    - title: Analyze Service Account IAM Policy for Project
+      at: runbook.robot:152
+      asserts: "A service account's own IAM policy has zero bindings (sev 2), taken as 'unused drift'; also writes a per-SA binding summary."
+      reads: ["gcloud iam service-accounts list|describe --format=json", "gcloud projects get-iam-policy", "gcloud iam service-accounts get-iam-policy <sa>"]
+      permissions: ["iam.serviceAccounts.list", "iam.serviceAccounts.get", "iam.serviceAccounts.getIamPolicy", "resourcemanager.projects.getIamPolicy"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_service_account_policy.sh: SA list '2>/dev/null || echo []'; per-SA get-iam-policy '|| echo {bindings:[]}' -> failure looks like 'no bindings', which here is raised as an issue (false positive on error)."
+      notes: "Semantically off: an SA-level policy lists who may impersonate/act as the SA, so zero bindings is the normal state and says nothing about whether the SA is unused. project_policy is fetched but not used by the check. PRIVILEGED_ROLES read but unused."
+  bundleNotes: "No SLI. Five tasks, every one swallows SA-list and policy errors with '2>/dev/null || true / echo []'. Highest-impact false negatives of the group since they are security checks. Duplicated add_issue helper per script. Runbook again defaults an unparsable issues file to an empty list. The SA credential needs roles/iam.securityReviewer (or equivalent) to be reliable."
+
+- bundle: gcp-project-cost-health
+  displayName: GCP Project Cost Health & Reporting
+  classicResourceTypes: [project]
+  matchHints: "resourceType 'project' (generic), pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project). Generation rule lists an sli output item (gcp-project-cost-health-sli.yaml) but the bundle has no sli.robot."
+  sli: false
+  sliAsserts: "n/a (no sli.robot in the bundle; generation rule references an sli template that has no robot behind it)"
+  egress: "cloud API (bq / BigQuery billing export, gcloud projects/billing/recommender/services/organizations)"
+  tools: [bq, gcloud, python3 (google-cloud-bigquery fallback), jq, bc, awk, xargs, date (GNU -d, BSD fallback), bash]
+  inputs: [GCP_PROJECT_IDS, GCP_BILLING_EXPORT_TABLE, COST_ANALYSIS_LOOKBACK_DAYS, GCP_COST_BUDGET, GCP_PROJECT_COST_THRESHOLD_PERCENT, NETWORK_COST_THRESHOLD_MONTHLY, COST_INCREASE_THRESHOLD, gcp_credentials]
+  tasks:
+    - title: Generate GCP Cost Report By Service and Project
+      at: runbook.robot:19
+      asserts: "Spend vs GCP_COST_BUDGET (default 10000), a project above GCP_PROJECT_COST_THRESHOLD_PERCENT (25%) of total, daily cost anomalies (z-score style, 2.0), and month-over-month cost increases above COST_INCREASE_THRESHOLD (10%) per project/service; severities 2-4."
+      reads: ["bq ls / bq show (billing table auto-discovery across datasets/projects)", "bq query ... FROM <billing export table> (cost by project/service/day/month)", "gcloud projects describe / list", "python google-cloud-bigquery fallback"]
+      permissions: ["bigquery.jobs.create", "bigquery.datasets.get", "bigquery.tables.list", "bigquery.tables.get", "bigquery.tables.getData (billing export table)", "resourcemanager.projects.get", "resourcemanager.projects.list"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:50: issues are read with 'if [ -f gcp_cost_issues.json ]; then cat ...; else echo \"[]\"' and the bash file rc is never checked. gcp_cost_historical_report.sh exits 1 (no bq/python, no billing table, no projects) or exits 0 'no cost data' before writing the issues file, so every failure path yields zero issues. Query errors inside the script are logged and 'return 1', leaving $ISSUES_FILE unwritten."
+      notes: "~2700-line script, no 'set -e'. Scope is the billing account / billing-export dataset, not one project, even though the SLX is per project (GCP_PROJECT_IDS empty = every project in the export). Auto-discovery scans datasets/tables in up to the first 5 projects from 'gcloud projects list'. Cost-increase threshold issue is a business-level finding, not a service-health signal. Suite Initialization validates BigQuery access but only logs the result."
+    - title: Analyze GCP Network Costs By SKU
+      at: runbook.robot:74
+      asserts: "A network SKU has monthly cost >= NETWORK_COST_THRESHOLD_MONTHLY (200, sev 3), or its last-7-day run rate projects to that, or shows a daily cost spike/anomaly versus its average."
+      reads: ["bq ls (billing table discovery)", "bq query ... FROM <billing export table> WHERE service/SKU is network egress/ingress/CDN/etc."]
+      permissions: ["bigquery.jobs.create", "bigquery.datasets.get", "bigquery.tables.list", "bigquery.tables.getData (billing export table)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:97: same 'if [ -f gcp_network_cost_issues.json ] ... else echo []' pattern with bash rc unchecked. gcp_network_cost_analysis.sh 'exit 1' on query failure/missing table, and 'exit 0' with 'ALL NETWORK COSTS BELOW THRESHOLD' when the summary query returns zero rows (also what an error-swallowed empty result looks like)."
+      notes: "Sources common functions from the main cost script (second 1170-line script). 'set -euo pipefail' set here but not in the main script. NETWORK_COST_THRESHOLD_MONTHLY defaults differ: 200 in the bundle input, 50 in the script on invalid input."
+    - title: Get GCP Cost Optimization Recommendations
+      at: runbook.robot:121
+      asserts: "GCP Recommender has ACTIVE cost recommendations (idle resources, rightsizing, committed use discounts, etc.) for the listed or all accessible projects and billing accounts; each recommendation becomes an issue."
+      reads: ["gcloud projects list", "gcloud services list --enabled --filter recommender.googleapis.com", "gcloud recommender recommenders list", "gcloud recommender recommendations list --recommender=<type> --location=<loc>", "gcloud billing accounts list", "gcloud organizations list", "gcloud compute instances list (to pick active regions)"]
+      permissions: ["resourcemanager.projects.list", "serviceusage.services.list", "recommender.*.list (per recommender type, e.g. recommender.computeInstanceIdleResourceRecommendations.list)", "billing.accounts.list", "resourcemanager.organizations.get", "compute.instances.list"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "gcp_recommendations.sh: per-recommender errors (denied, API disabled, timeout) are only 'log'ged and 'continue'd (:~88, :~273); recommender API not enabled -> 'continue' (:372). End state 'No active cost optimization recommendations found. All resources appear to be optimized' is written to the report. The runbook also defaults to [] when the issues file is absent."
+      notes: "Bug: 'local recommendations=$(timeout 10 gcloud ...)' followed by 'local exit_code=$?' reads the exit status of `local` (always 0), so the timeout/error branches (:81-:90) never trigger; an error string is then run through jq with '|| echo \"$recommendations\"' and may be treated as data (not traced to the end). 10 s timeout per call. Not a health check; produces advisory findings."
+  bundleNotes: "Billing-account-level cost reporting, not resource health; a poor fit for a per-project skill (credential needs BigQuery access to the billing export plus org/billing visibility). The runbook never inspects the bash file rc; absent issues files map to []. The generation rule requests an SLI that the bundle does not provide. Emoji-heavy report output. Depends on bq CLI or python google-cloud-bigquery being present in the runner image."
+
+- bundle: gcp-project-quota-health
+  displayName: GCP Project Quota Health
+  classicResourceTypes: [project]
+  matchHints: "resourceType 'project' (generic), pattern .+ on name (substring); level of detail basic; one SLX per project (qualifier project)"
+  sli: true
+  sliAsserts: "Four 0/1 sub-scores (allocation quota, rate quota, quotas above warning threshold, rejection events) = 1 if the issues JSON length is 0; aggregate is the mean. FALSE-PASS: every script writes [] when it cannot get a token, list services, or reach Monitoring/Logging, so no data scores 1."
+  egress: "cloud API (serviceusage.googleapis.com, cloudquotas.googleapis.com, monitoring.googleapis.com, logging.googleapis.com via curl)"
+  tools: [gcloud (print-access-token only), curl, jq, python3, bash]
+  inputs: [GCP_PROJECT_ID, QUOTA_WARNING_THRESHOLD, LOOKBACK_MINUTES, SERVICES, REJECTION_THRESHOLD, gcp_credentials]
+  tasks:
+    - title: Check Allocation Quota Usage vs Limit
+      at: runbook.robot:19
+      asserts: "An allocation quota's peak usage (last 1 h of serviceruntime quota/allocation/usage) is >= QUOTA_WARNING_THRESHOLD (80%) of its effective limit (sev 3; >= 95% sev 4)."
+      reads: ["GET serviceusage.googleapis.com/v1/projects/<p>/services?filter=state:ENABLED", "GET serviceusage .../services/<svc>/consumerQuotaMetrics?view=FULL", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries serviceruntime.googleapis.com/quota/allocation/usage"]
+      permissions: ["serviceusage.services.list", "serviceusage.quotas.get", "monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_allocation_quotas.sh: token '2>/dev/null || echo \"\"' -> 'no allocation quota checked' -> []; services list 'curl -s ... || echo {}' without .services -> []; per-service consumerQuotaMetrics failure -> 'continue'; Monitoring failure -> usage {} -> pct 0. All write [] / exit 0."
+      notes: "One curl per enabled service (up to 200 services, N+1). Limit is max over all nested effectiveLimit values, which can pick a different dimension's limit than the usage series."
+    - title: Check Rate Quota Consumption and Throttling Events
+      at: runbook.robot:52
+      asserts: "A rate quota's peak net_usage over LOOKBACK_MINUTES (1440) is >= 80% of its limit, or any quota/throttled_time > 0 (sev 4)."
+      reads: ["GET monitoring timeSeries serviceruntime.googleapis.com/quota/rate/net_usage", "GET monitoring timeSeries serviceruntime.googleapis.com/quota/throttled_time", "GET serviceusage .../services/<svc>/consumerQuotaMetrics"]
+      permissions: ["monitoring.timeSeries.list", "serviceusage.quotas.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_rate_quotas.sh: token failure -> []; fetch_series 'curl -s ... 2>/dev/null || echo {}' -> empty series; limit lookup failure -> limit 0 -> 'continue'."
+      notes: "Peak per-minute usage compared against a limit that is per-minute or per-day depending on the metric; unit mismatch not handled. SERVICES filter is exact service name match against resource label."
+    - title: Identify Quotas Above Warning Threshold
+      at: runbook.robot:85
+      asserts: "Any quota (allocation or rate) with peak usage over LOOKBACK_MINUTES >= QUOTA_WARNING_THRESHOLD of its limit (sev 3)."
+      reads: ["GET serviceusage services list", "GET monitoring timeSeries quota/allocation/usage and quota/rate/net_usage", "GET cloudquotas.googleapis.com/v1/projects/<p>/locations/global/services/<svc>/quotaInfos", "GET serviceusage consumerQuotaMetrics (fallback)"]
+      permissions: ["serviceusage.services.list", "monitoring.timeSeries.list", "cloudquotas.quotaInfos.get", "serviceusage.quotas.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "identify_quotas_above_threshold.sh: same swallow set (token, services list, fetch_series '|| echo {}', quotaInfos '|| echo {}' -> limit 0 -> 'continue') all exit 0 with []."
+      notes: "Largely duplicates the first two tasks (same metrics, different limit source). One of the two 'quota/allocation/usage' metrics is a per-region series and the lookup key includes region, so a global limit may not match a regional series."
+    - title: Analyze Quota Rejection Events from Cloud Logging
+      at: runbook.robot:118
+      asserts: "Cloud Logging has >= REJECTION_THRESHOLD (1) entries matching protoPayload.status.code=8, httpRequest.status=429, 'RESOURCE_EXHAUSTED' or 'quota exceeded' in the last LOOKBACK_MINUTES, grouped by service+message (sev 2 -> 4 at 20/100)."
+      reads: ["POST logging.googleapis.com/v2/entries:list (filter above, pageSize 500, orderBy timestamp desc)"]
+      permissions: ["logging.logEntries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_quota_rejections.sh: 'curl -s -X POST ... 2>/dev/null || echo {}' then 'if ! jq -e .entries' -> 'Cloud Logging returned no entries (no quota rejections in window, or insufficient permission)' -> [] (explicitly conflates error with healthy). Token failure -> []."
+      notes: "Free-text search for 'quota exceeded' across all logs is broad and can match unrelated application logs; only the first page (500) is read. start_rfc3339 computed with deprecated utcfromtimestamp."
+  bundleNotes: "Uniform 'write [] and exit 0' on every failure path in all four scripts; the SLI cannot distinguish 'quota fine' from 'no access'. Uses raw curl REST rather than gcloud, so no gcloud rc to rely on and no HTTP status inspection. serviceusage + monitoring + logging + cloudquotas APIs all need to be enabled and readable by the credential."
+
+- bundle: gcp-vertex-modelgarden-health
+  displayName: GCP Vertex AI Model Garden Health
+  classicResourceTypes: []
+  matchHints: "none: the bundle has no .runwhen/generation-rules directory, so it is never auto-generated; it can only be created manually with GCP_PROJECT_ID"
+  sli: true
+  sliAsserts: "Mean of five 0-1 sub-scores: log health (error-count buckets 1.0/0.8/0.6/0.4/0.2 over SLI_LOG_LOOKBACK), error rate (from monitoring ERROR_COUNT), latency (always 1.0: unimplemented), throughput (1.0 usage data, 0.5 none, 0.7 none-but-models), service availability. FALSE-PASS: log count parse failure defaults to 0 errors (score 1.0); python wrapper prints ERROR_COUNT:0 on any exception; latency is a constant 1.0; discovery scores 0.0 on any failure so is the only fail-closed dimension."
+  egress: "cloud API (gcloud ai/logging/services, requests -> monitoring.googleapis.com)"
+  tools: [gcloud, python3 + requests, jq, bash]
+  inputs: [GCP_PROJECT_ID, LOG_FRESHNESS, SLI_LOG_LOOKBACK, VERTEX_AI_REGIONS, gcp_credentials]
+  tasks:
+    - title: Discover All Deployed Vertex AI Models
+      at: runbook.robot:19
+      asserts: "Zero deployed models/endpoints are found across the scanned regions (sev 2); otherwise it just inventories them."
+      reads: ["python3 vertex_ai_monitoring.py discover [--regions ..]", "gcloud ai endpoints list --region <r> --project <p> --format json (up to 24 regions)", "gcloud ai endpoints describe <id> --region <r>"]
+      permissions: ["aiplatform.endpoints.list", "aiplatform.endpoints.get"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Failure direction is a false positive: every region error is swallowed (silent unless VERTEX_AI_DEBUG) so a permission/API-disabled failure reports 'No Vertex AI models discovered'. Sweeps 24 regions sequentially with a 60 s timeout each. Inventories only deployed endpoint models (self-hosted/MaaS), not Model Garden publisher (Gemini etc.) usage. Sets global DISCOVERED_MODELS/ENDPOINTS used by later tasks."
+    - title: Analyze Vertex AI Model Garden Error Patterns and Response Codes
+      at: runbook.robot:77
+      asserts: "Over the last 2 h the publisher model_invocation_count metric shows non-2xx response codes: error rate > 5% (HIGH_ERROR_RATE:true, sev 1) or any error count > 0 (sev 2)."
+      reads: ["python3 vertex_ai_monitoring.py errors --hours 2 --no-discovery", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries aiplatform.googleapis.com/publisher/online_serving/model_invocation_count"]
+      permissions: ["monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vertex_ai_monitoring.py analyze_error_patterns: both 'except Exception' blocks print 'HIGH_ERROR_RATE:false' and 'ERROR_COUNT:0' (and the script exits 0); no invocation data also prints ERROR_COUNT:0. The runbook only greps those markers and never checks rc."
+      notes: "Metric is aiplatform publisher serving (Model Garden MaaS), not deployed endpoint metrics, so it sees nothing for self-hosted endpoints. Reads only the first page of time series (no pagination). requests.get has no timeout."
+    - title: Investigate Vertex AI Model Latency Performance Issues
+      at: runbook.robot:134
+      asserts: "Nothing: the python 'latency' command prints 'Latency analysis not yet implemented in REST API version'. The task would raise sev 1/2 issues if HIGH_LATENCY_MODELS / ELEVATED_LATENCY_MODELS markers were printed, which they never are."
+      reads: ["python3 vertex_ai_monitoring.py latency --hours 2 --no-discovery (prints a stub message)"]
+      permissions: []
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vertex_ai_monitoring.py main(): elif args.command == 'latency': print('Latency analysis not yet implemented'). Markers absent -> counts stay 0 -> no issue; SLI latency score defaults to 1.0 (sli.robot:~207)."
+      notes: "Dead task. Documentation claims latency is analyzed."
+    - title: Monitor Vertex AI Throughput and Token Consumption Patterns
+      at: runbook.robot:194
+      asserts: "Nothing is asserted: it reports token_count per model over 2 h. No Add Issue call."
+      reads: ["python3 vertex_ai_monitoring.py throughput --hours 2 --no-discovery", "GET monitoring timeSeries aiplatform.googleapis.com/publisher/online_serving/token_count"]
+      permissions: ["monitoring.timeSeries.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Report-only. Errors print HAS_USAGE_DATA:false and exit 0. In the SLI, 'no usage data' scores 0.5 (0.7 if models were discovered), i.e. an idle or unreadable project is partial credit."
+    - title: Check Vertex AI Model Garden API Logs for Issues
+      at: runbook.robot:217
+      asserts: "Audit-log ERROR entries for aiplatform.googleapis.com in LOG_FRESHNESS (2h): total/ChatCompletions/Predict counts; auth errors (status 7/16) and quota errors (status 8) each raise a sev 2 issue; permission denied on the log read raises a sev 2 issue."
+      reads: ["gcloud logging read 'resource.type=\"audited_resource\" AND resource.labels.service=\"aiplatform.googleapis.com\" AND severity=\"ERROR\"' --freshness --limit=50 --format=json", "jq over a temp JSON file"]
+      permissions: ["logging.privateLogEntries.list (Data Access audit logs; roles/logging.privateLogViewer)", "logging.logEntries.list"]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "runbook.robot:~226-235: only stderr matching 'permission|denied|PERMISSION_DENIED|not authorized' is treated as an error; any other gcloud failure (network, API disabled, bad project) leaves stdout empty, which is then handled as 'No errors / system appears healthy' or as count 0. rc is not checked. Generic ERROR entries (non auth/quota) are only counted in the report, not raised as issues."
+      notes: "Only status 7/16 (auth) and 8 (quota) become issues; code 14 (unavailable) is counted but not raised. Limit 50, so counts saturate. Several jq calls use '2>/dev/null || echo \"Error ...\"'."
+    - title: Check Vertex AI Model Garden Service Health and Quotas
+      at: runbook.robot:452
+      asserts: "Nothing is asserted: reports how many aiplatform publisher/online_serving metric descriptors exist. No Add Issue call, despite the title mentioning quotas."
+      reads: ["python3 vertex_ai_monitoring.py health", "GET monitoring.googleapis.com/v3/projects/<p>/metricDescriptors?pageSize=500"]
+      permissions: ["monitoring.metricDescriptors.list"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Report-only; no quota check exists. Metric descriptors list is page size 500 with no pagination, so the aiplatform descriptors may be missed on projects with many custom metrics."
+    - title: Generate Vertex AI Model Garden Health Summary and Next Steps
+      at: runbook.robot:474
+      asserts: "Nothing: prints a static summary with documentation links."
+      reads: []
+      permissions: []
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No source system call."
+    - title: Generate Normalized Health Report Table
+      at: runbook.robot:495
+      asserts: "Intended: LLAMA model health table; issues for critical (sev 1) / warning (sev 3) models and 'No models found for health monitoring' (sev 2). In practice the python 'report' command prints 'Report generation not yet implemented', so TOTAL_MODELS stays 0."
+      reads: ["python3 vertex_ai_monitoring.py report --hours 2 [region args] (prints a stub message)"]
+      permissions: []
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Dead task; not a false pass but a permanent false positive: it always raises the sev 2 'No models found' issue because the report command is unimplemented. Also --fast / --us-only / --priority-regions are generated for VERTEX_AI_REGIONS=fast|us-only|priority but vertex_ai_monitoring.py defines only --regions, so those settings make argparse exit 2 on discover/errors/throughput/report and (via the swallowed output) produce 0 models."
+  bundleNotes: "Weakest bundle in the group: the Python wrapper converts every exception into a clean-looking marker line, two of the eight tasks are stubs (latency, report), two raise no issues (throughput, health), and one is a static text blob. No generation rule, so no auto-discovery. Region shortcut options in the runbook do not exist in the script's CLI. Cross-task state via Set Global Variable DISCOVERED_MODELS. The SLI mixes log counts, a 0.5 'no data' default and a constant 1.0 latency so 0.6-0.9 is the normal range for a healthy project."

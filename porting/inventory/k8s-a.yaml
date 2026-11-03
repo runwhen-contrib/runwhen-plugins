@@ -1,0 +1,1097 @@
+# CNT-1 inventory, group k8s-a (16 bundles). rw-cli-codecollection origin/main @ 49ab483.
+# Scope values: ns:target | secondary-ns | cluster | all-namespaces. 'cluster' used where node/event reads span the cluster.
+# falsePass policy: confirmed = line where error becomes empty/zero/healthy; likely = rc ignored and empty means healthy (or action outcome never checked); none = loud failure, rc checked, or report-only dump with no assertion.
+# Report-only tasks (no assertion, no issue, no metric) are marked falsePass none and noted as informational.
+
+- bundle: k8s-app-troubleshoot
+  displayName: "Kubernetes Application Troubleshoot"
+  classicResourceTypes: [deployment]
+  matchHints: "annotations contain 'gitApplication' AND 'gitTokenName' AND labels contain 'app' (substring); level of detail detailed"
+  sli: true
+  sliAsserts: "sli.robot:18 pushes the raw COUNT of parsed stacktraces in recent container logs (0 = healthy, not a 0-1 score). false-pass confirmed: sli.robot:24-25 appends '| grep -Eiv EXCLUDE_PATTERN || true' (default pattern non-empty) so a failed kubectl logs yields empty logs -> 0 exceptions. SLI does not run Verify Cluster Connectivity."
+  egress: "public internet: git clone of REPO_URI (github.com) in env_check.sh and RW.K8sApplications.Clone Repo (always, even if CREATE_ISSUES=NO); GitHub REST API (list/create issues) when CREATE_ISSUES=YES"
+  tools: [kubectl, oc, git, grep, sed, xargs, bash]
+  inputs: [kubeconfig, NAMESPACE, CONTEXT, KUBERNETES_DISTRIBUTION_BINARY, REPO_URI, REPO_AUTH_TOKEN, LABELS, NUM_OF_COMMITS, CREATE_ISSUES, LOGS_SINCE, EXCLUDE_PATTERN, CONTAINER_NAME, WORKLOAD_NAME, MAX_LOG_LINES]
+  tasks:
+    - title: "Get Application Logs from Workload"
+      at: runbook.robot:20
+      asserts: "None; attaches up to MAX_LOG_LINES / 256KB of logs for pods matching LABELS (container CONTAINER_NAME) to the report. No issue raised."
+      reads: ["kubectl logs -l LABELS --container=C --tail=N --since=LOGS_SINCE --limit-bytes=256000"]
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational dump; rc/stderr ignored but nothing is asserted. -l selector may match several pods; --container fails on pods lacking it."
+    - title: "Scan Application For Misconfigured Environment"
+      at: runbook.robot:32
+      asserts: "None; report-only. Greps first deployment/statefulset's last 50 log lines for 'env', maps tokens to env-var-like names in a cloned repo and lists files changed in last NUM_OF_COMMITS commits. No issue raised."
+      reads: ["kubectl get deployment,statefulset -l LABELS -oname | head -1", "kubectl logs <that> --all-containers --tail=50", "git clone REPO_URI /tmp/app_repo (unauthenticated)", "git diff HEAD~N HEAD --name-only -S word", "grep -rin over repo"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "env_check.sh:34 '... | grep -i env || true' turns a failed kubectl logs into empty APPLOGS; env_check.sh:77 then prints 'No potential environment variable issues were found'. env_check.sh:36 'git clone ... || true' also masks clone failure (then cd fails and greps run in cwd)."
+      notes: "Hard-coded kubectl (ignores KUBERNETES_DISTRIBUTION_BINARY). Clone ignores REPO_AUTH_TOKEN, so private repos silently fail. Writes /tmp/app_repo and node-local temp files only. Heuristic word-splitting of log text; output is a free-text report, not structured."
+    - title: "Tail Application Logs For Stacktraces in Workload"
+      at: runbook.robot:43
+      asserts: "Sev3 issue when RW.K8sApplications.Parse Stacktraces finds >=1 exception/stacktrace in recent container logs (after EXCLUDE_PATTERN filtering); optionally opens/links a GitHub issue."
+      reads: ["kubectl logs -l LABELS --container=C --tail --since --limit-bytes | grep -Eiv EXCLUDE_PATTERN || true", "kubectl get all -l LABELS -oname | grep -iE 'deploy|stateful' | head -1", "kubectl exec <that> --container=C -- ps -eo command --no-header", "git clone REPO_URI with REPO_AUTH_TOKEN", "GitHub REST: list issues, create issue"]
+      permissions:
+        - {apiGroups: ["", apps, batch, autoscaling], resources: [pods, services, replicationcontrollers, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:62 '${cmd} | grep -Eiv \"${EXCLUDE_PATTERN}\" || true': pipeline rc is grep's and '|| true' swallows it, so a failed/forbidden kubectl logs -> empty stdout -> zero parsed exceptions -> no issue (line 117 only fires when exceptions > 0). exec ps failure also silently yields empty process list."
+      notes: "Writes to GitHub (creates an issue) when CREATE_ISSUES=YES (default), so not read-only. The issue 'details' always say a GitHub issue was created even if CREATE_ISSUES=NO. exec target is the first deployment/statefulset from 'get all', not necessarily the pod set selected by LABELS. 'get all' implies reading many kinds. Default EXCLUDE_PATTERN 'FalseError|SecondErrorToSkip' is a placeholder."
+  bundleNotes: "Only task 3 raises an issue; tasks 1-2 are informational dumps. Generation rule requires gitApplication+gitTokenName annotations, so it only attaches to a narrow set of git-annotated Deployments. Runbook Suite Init runs Verify Cluster Connectivity; SLI does not. Hard-coded kubectl in env_check.sh."
+
+- bundle: k8s-argocd-application-health
+  displayName: "Kubernetes ArgoCD Application Health & Troubleshoot"
+  classicResourceTypes: [applications.argoproj.io]
+  matchHints: "pattern '.+' on name (substring, matches every Application); level of detail detailed"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, oc, jq, grep]
+  inputs: [kubeconfig, binary_name, CONTEXT, ERROR_PATTERN, APPLICATION, APPLICATION_TARGET_NAMESPACE, APPLICATION_APP_NAMESPACE]
+  tasks:
+    - title: "Fetch ArgoCD Application Sync Status & Health"
+      at: runbook.robot:74
+      asserts: "None; report-only. Prints .status.sync.status, .status.health.status and the first condition message of the Application."
+      reads: ["kubectl get applications.argoproj.io APP -n APP_NS -o jsonpath=..."]
+      permissions:
+        - {apiGroups: [argoproj.io], resources: [applications], verbs: [get]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Namespace is APPLICATION_APP_NAMESPACE (where the Application CR lives, usually argocd). Informational: no issue even if Degraded/OutOfSync. Description says blank APPLICATION queries all apps but the command always passes the name (default is the literal two-quote string)."
+    - title: "Fetch ArgoCD Application Last Sync Operation Details"
+      at: runbook.robot:88
+      asserts: "None; report-only. Prints last operationState phase/message and timestamps."
+      reads: ["kubectl get applications.argoproj.io APP -n APP_NS -o json | jq"]
+      permissions:
+        - {apiGroups: [argoproj.io], resources: [applications], verbs: [get]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Bug: labels 'Last Sync Start Time' and 'Last Sync Finish Time' are swapped (start prints finishedAt, finish prints startedAt). A failed sync is never raised as an issue."
+    - title: "Fetch Unhealthy ArgoCD Application Resources"
+      at: runbook.robot:103
+      asserts: "Sev2 issue per entry in .status.resources[] whose health.status is set and != Healthy, plus per Application condition whose type matches Error|Warning|Degraded."
+      reads: ["kubectl get applications.argoproj.io APP -n APP_NS -o json | jq"]
+      permissions:
+        - {apiGroups: [argoproj.io], resources: [applications], verbs: [get]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Empty stdout (kubectl failed or app missing) makes json.loads raise at runbook.robot:112, so the task errors instead of passing (inconclusive, no issue). Does NOT check sync status (OutOfSync) and skips resources with null health. One issue per resource (no dedupe). Issue text uses APPLICATION_TARGET_NAMESPACE."
+    - title: "Scan For Errors in Pod Logs Related to ArgoCD Application"
+      at: runbook.robot:132
+      asserts: "None; report-only. Greps last 50 log lines of each Deployment labelled argocd.argoproj.io/instance=<TARGET_NS>_<APP> for ERROR_PATTERN."
+      reads: ["kubectl get deployments -l argocd.argoproj.io/instance=NS_APP -n TARGET_NS", "kubectl logs deployment/X --tail=50 -n TARGET_NS | grep -E ERROR_PATTERN (in a for loop)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "runbook.robot:136 for-loop with 'kubectl logs ... | grep -E'; no pipefail/rc check, failed logs or an empty deployment list produce empty output that is indistinguishable from a clean scan; no issue is ever raised."
+      notes: "Neither kubectl call passes --context (uses kubeconfig current-context) and logs call hard-codes kubectl. Label value '<ns>_<app>' is a guess; under ArgoCD default label tracking the value is the app name, so selector can match nothing. Only Deployments (no StatefulSets/DaemonSets)."
+    - title: "Fully Describe ArgoCD Application"
+      at: runbook.robot:146
+      asserts: "None; report-only kubectl describe of the Application."
+      reads: ["kubectl describe applications.argoproj.io APP -n APP_NS"]
+      permissions:
+        - {apiGroups: [argoproj.io], resources: [applications], verbs: [get]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "describe also lists events in the Application namespace."
+  bundleNotes: "Suite Init calls Verify Cluster Connectivity with ${KUBERNETES_DISTRIBUTION_BINARY}, which this file never imports or sets (it imports binary_name instead); likely an undefined-variable failure in Suite Setup unless the runtime injects it (verify). 4 of 5 tasks are report dumps; only task 3 asserts. Split across two namespaces (APPLICATION_APP_NAMESPACE vs APPLICATION_TARGET_NAMESPACE)."
+
+- bundle: k8s-argocd-helm-health
+  displayName: "Kubernetes ArgoCD HelmRelease TaskSet"
+  classicResourceTypes: [applications.argoproj.io]
+  matchHints: "pattern '.+' on name (substring, matches every Application); level of detail detailed"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, oc, jq]
+  inputs: [kubeconfig, DISTRIBUTION, KUBERNETES_DISTRIBUTION_BINARY, NAMESPACE, RESOURCE_NAME, CONTEXT]
+  tasks:
+    - title: "Fetch all available ArgoCD Helm releases"
+      at: runbook.robot:16
+      asserts: "None; report-only list of Applications that have .spec.source.helm with sync and health status."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o json | jq (select .spec.source.helm != null)"]
+      permissions:
+        - {apiGroups: [argoproj.io], resources: [applications], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational. kubectl|jq without pipefail: a failed list prints an empty 'available' list. Multi-source Applications (.spec.sources[]) are excluded by the .spec.source.helm filter."
+    - title: "Fetch Installed ArgoCD Helm release versions"
+      at: runbook.robot:29
+      asserts: "None; report-only. Prints target revision, attempted revision, sync status and operation message for Helm-sourced Applications."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o json | jq"]
+      permissions:
+        - {apiGroups: [argoproj.io], resources: [applications], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational; never raises an issue for mismatched or failed syncs."
+  bundleNotes: "Pure inventory/report bundle, no assertion anywhere. Tasks reference ${KUBECONFIG} and ${CONTEXT} while Suite Init only sets KUBERNETES_DISTRIBUTION_BINARY, RESOURCE_NAME, NAMESPACE and env as suite variables (kubeconfig and CONTEXT are keyword-local); may be undefined at runtime (verify). NAMESPACE description says it accepts '--all-namespaces' but commands use '-n ${NAMESPACE}'. Overlaps k8s-argocd-application-health."
+
+- bundle: k8s-artifactory-health
+  displayName: "Kubernetes Artifactory Triage"
+  classicResourceTypes: [stateful_set]
+  matchHints: "pattern 'artifactory' on name (substring); level of detail basic"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, oc, curl (must exist inside the Artifactory container image)]
+  inputs: [kubeconfig, STATEFULSET_NAME, NAMESPACE, CONTEXT, LABELS, EXPECTED_AVAILABILITY, KUBERNETES_DISTRIBUTION_BINARY]
+  tasks:
+    - title: "Check Artifactory Liveness and Readiness Endpoints"
+      at: runbook.robot:78
+      asserts: "Sev2 issue per endpoint when stdout of an in-pod curl to localhost:8091/artifactory/api/v1/system/liveness (resp. readiness) does not contain the substring 'OK'."
+      reads: ["kubectl exec statefulset/NAME -n NS -- curl -k --max-time 10 http://localhost:8091/artifactory/api/v1/system/liveness", "same for .../readiness"]
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Fails closed: exec/curl failure leaves empty stdout, which does not contain 'OK', so an issue is raised (but mislabelled as an endpoint failure; forbidden exec, missing curl and unhealthy app are indistinguishable). exec statefulset/NAME targets pod-0 only. Substring 'OK' match. LABELS and EXPECTED_AVAILABILITY are imported but unused. Task title has literal NAMESPACE (no ${}). Needs pods/exec, which is not in a view-only role."
+  bundleNotes: "Single task. Open-source Artifactory only. Hard-coded port 8091 and path. Commented-out topology/health task needs auth secrets (TODO)."
+
+- bundle: k8s-certmanager-healthcheck
+  displayName: "Kubernetes cert-manager Healthcheck"
+  classicResourceTypes: [certificates.cert-manager.io]
+  matchHints: "pattern '.' on name (substring, any Certificate); qualifiers namespace+cluster so one SLX per namespace; level of detail detailed; outputs slx, sli, slo, runbook"
+  sli: true
+  sliAsserts: "sli.robot:17 pushes COUNT = (certificates with status.notAfter < now) + (certificates with Ready=False) in NAMESPACE (0 = healthy, raw count). False-pass none: empty/failed kubectl makes Convert To Number raise (no metric emitted); a Certificate lacking status.conditions makes jq abort so the SLI emits nothing rather than 0. No Verify Cluster Connectivity in SLI."
+  egress: none
+  tools: [kubectl, oc, jq, awk, sed, grep, date]
+  inputs: [kubeconfig, KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE]
+  tasks:
+    - title: "Get Namespace Certificate Summary"
+      at: runbook.robot:21
+      asserts: "Sev3 issue when stdout contains 'Namespace', i.e. >=1 Certificate that is Ready=True, has status.renewalTime and status.notAfter <= now (expired but still reported Ready)."
+      reads: ["kubectl get certificates.cert-manager.io -n NS -ojson | jq (select Ready True, renewalTime set, notAfter <= now)"]
+      permissions:
+        - {apiGroups: [cert-manager.io], resources: [certificates], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:25 'kubectl get ... | jq' has no pipefail; failed kubectl (CRD absent, forbidden, unreachable) -> empty stdout -> line 31 'Should Contain Namespace' is False -> no issue. Also jq iterates .status.conditions[] without a guard: a freshly created Certificate (no conditions) aborts jq mid-stream and later items are dropped silently."
+      notes: "Only catches already-expired certs; expiring-soon and Ready=False certs are not covered here (Ready=False is the next task). Title/doc say 'due for renewal' but logic is notAfter <= now. Commands use -n ${NAMESPACE} although the SLI description claims csv lists."
+    - title: "Find Unhealthy Certificates"
+      at: runbook.robot:45
+      asserts: "Sev3 issue per Certificate with a Ready condition of status False."
+      reads: ["kubectl get certificates.cert-manager.io -n NS -ojson | jq (Ready False + observedAt)"]
+      permissions:
+        - {apiGroups: [cert-manager.io], resources: [certificates], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Empty stdout makes json.loads raise (runbook.robot:54): task errors, no pass. Same jq abort on a Certificate without status.conditions errors the whole task (loud). Ready=Unknown (issuing) is not flagged."
+    - title: "Find Failed Certificate Requests and Identify Issues"
+      at: runbook.robot:73
+      asserts: "Sev2 issue per CertificateRequest whose Ready condition status != True (message, issuer, owning Certificate extracted via grep/sed)."
+      reads: ["kubectl get certificaterequests.cert-manager.io -n NS -o json | jq -r (ownerReferences, Ready, Approved)", "local grep/sed on the text; certificate_next_steps.sh (pure text)"]
+      permissions:
+        - {apiGroups: [cert-manager.io], resources: [certificaterequests], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:86 kubectl|jq emits nothing on kubectl failure; line 91 Split String on '' gives [''] and line 94 skips blank items -> loop body never runs -> no issue. jq also emits nothing for any CertificateRequest lacking an Approved condition or ownerReferences (object construction over an empty generator), so those are silently dropped."
+      notes: "Shell-quoting: items are passed via echo '${item}' so apostrophes in cert-manager messages break extraction. Next-step script only recognises 2 message strings ('Referenced Issuer not found', 'Waiting on certificate issuance'). Issue observed_at taken from a subshell result."
+  bundleNotes: "Only Certificates/CertificateRequests in one namespace; no Issuer/ClusterIssuer checks or cert-manager controller health despite next-step text referencing logs of the cert-manager deployment."
+
+- bundle: k8s-chaos-flux
+  displayName: "Kubernetes Flux Choas Testing"
+  classicResourceTypes: []
+  matchHints: "none: bundle has no .runwhen/generation-rules (not auto-generated; manual deployment only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, oc, "shell inside target container (CHAOS_COMMAND)"]
+  inputs: [kubeconfig, "kubectl service (RW.Core.Import Service)", KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, RANDOMIZE, FLUX_RESOURCE_TYPE, FLUX_RESOURCE_NAME, FLUX_RESOURCE_NAMESPACE, TARGET_NAMESPACE, TARGET_RESOURCE, CHAOS_COMMAND, CHAOS_COMMAND_LOOP, ADDNL_COMMAND]
+  tasks:
+    - title: "Suspend the Flux Resource Reconciliation"
+      at: runbook.robot:115
+      asserts: "None (action). Sets spec.suspend=true on a Flux resource so chaos is not reverted by GitOps."
+      reads: []
+      permissions:
+        - {apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io], resources: [kustomizations, helmreleases], verbs: [get, patch]}
+      scope: secondary-ns
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:118-123 patch result is never inspected (rc/stderr/stdout ignored; report prints only the command history), so a failed suspend looks like success."
+      notes: "kubectl patch FLUX_RESOURCE_TYPE NAME -n FLUX_RESOURCE_NAMESPACE --type=json add /spec/suspend. Namespace is FLUX_RESOURCE_NAMESPACE (default flux-system). Action, not a check."
+    - title: "Select Random FluxCD Workload for Chaos Target"
+      at: runbook.robot:125
+      asserts: "None (selection). When RANDOMIZE=Yes, picks a random Deployment labelled kustomize.toolkit.fluxcd.io/name=FLUX_RESOURCE_NAME and sets TARGET_RESOURCE."
+      reads: ["kubectl get deployments -l kustomize.toolkit.fluxcd.io/name=NAME -n TARGET_NS -o json"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Tagged access:read-write but only reads. Bug: random.sample(range(1, N), 1) never selects index 0 and raises ValueError when N=1. Only works for Kustomization-managed Deployments (label), not HelmReleases."
+    - title: "Execute Chaos Command on target resource"
+      at: runbook.robot:149
+      asserts: "None (action). Runs CHAOS_COMMAND inside TARGET_RESOURCE CHAOS_COMMAND_LOOP times via kubectl exec (default: a CPU-burning 'while true; do yes > /dev/null & done')."
+      reads: []
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:153-156 exec result unchecked inside the loop; report shows only command history."
+      notes: "Destructive by design (resource exhaustion). Arbitrary command execution in a pod."
+    - title: "Execute Additional Chaos Command"
+      at: runbook.robot:161
+      asserts: "None (action). Runs ADDNL_COMMAND verbatim with ' -n TARGET_NAMESPACE --context CONTEXT' appended (default 'kubectl get pods')."
+      reads: []
+      permissions:
+        - {apiGroups: ["*"], resources: ["*"], verbs: ["*"]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:164-169 result unchecked."
+      notes: "Arbitrary user-supplied shell command; RBAC is whatever the command needs (wildcard shown as upper bound). Command injection surface by design."
+    - title: "Resume Flux Resource Reconciliation"
+      at: runbook.robot:171
+      asserts: "None (action). Removes spec.suspend via JSON patch."
+      reads: []
+      permissions:
+        - {apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io], resources: [kustomizations, helmreleases], verbs: [get, patch]}
+      scope: secondary-ns
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:174-179 patch result unchecked; a failed resume leaves Flux suspended with no signal."
+      notes: "Task title uses TARGET_NAMESPACE but the patch uses FLUX_RESOURCE_NAMESPACE. JSON-patch 'remove' fails if /spec/suspend is absent (rc ignored). Must be run manually after chaos; no automatic cleanup."
+  bundleNotes: "Chaos/action bundle: no assertions, no issues, no SLI, no generation rule. All five tasks write or exec. Imports a legacy RW.Core.Import Service kubectl. Candidate to exclude from V13 health skills or model as explicit action-only."
+
+- bundle: k8s-chaos-namespace
+  displayName: "Kubernetes Namespace Chaos Engineering"
+  classicResourceTypes: []
+  matchHints: "none: bundle has no .runwhen/generation-rules (not auto-generated; manual deployment only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, jq, shuf, bash]
+  inputs: [kubeconfig, CONTEXT, NAMESPACE]
+  tasks:
+    - title: "Kill Random Pods In Namespace"
+      at: runbook.robot:20
+      asserts: "None (action). Deletes up to 10 random pods (50% coin flip per pod, 3s apart) in NAMESPACE to test HA."
+      reads: ["kubectl get pods -oname -n NS"]
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list, delete]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "delete_random_pods.sh:15 'kubectl delete' errors go to stderr and script exit is the last command's (kubectl get pods) so rc is 0; report prints stdout only."
+      notes: "Destructive; any pod in the namespace including singletons and system pods. No tags for access level."
+    - title: "OOMKill Pods In Namespace"
+      at: runbook.robot:29
+      asserts: "None (action). Execs a memory-hog loop (dd bs=2GiB x5 background loops) into one random Running pod to trigger an OOMKill, then describes it."
+      reads: ["kubectl get pods -oname --field-selector=status.phase=Running", "kubectl describe pod/X"]
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "oomkill_pod.sh:16 exec failure (no /bin/sh, forbidden) is not checked; script ends with kubectl get pods (rc 0) and report shows stdout only."
+      notes: "MAX_KILL=1. Exec runs arbitrary workload-affecting commands."
+    - title: "Mangle Service Selector In Namespace"
+      at: runbook.robot:49
+      asserts: "None (action). Picks a random Service and rewrites its first selector key's value to 'chaos' so it selects no pods."
+      reads: ["kubectl get services -o jsonpath", "kubectl get service X -o jsonpath={.spec.selector}"]
+      permissions:
+        - {apiGroups: [""], resources: [services], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "change_service_selector.sh:19 patch result unchecked; script ends with echo (rc 0)."
+      notes: "No guard for Services without a selector (ExternalName) -> patches an empty key. Destructive network disruption; expected to be healed by GitOps."
+    - title: "Mangle Service Port In Namespace"
+      at: runbook.robot:58
+      asserts: "None (action). Replaces ports[0] of a random Service with port 9999 (keeps name/protocol/targetPort)."
+      reads: ["kubectl get services -o jsonpath", "kubectl get service X -o jsonpath={.spec.ports[0]}"]
+      permissions:
+        - {apiGroups: [""], resources: [services], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "change_service_port.sh:22 patch unchecked; final line is a grep (rc 1 if no match, but report prints stdout only)."
+      notes: "targetPort is spliced into JSON unquoted, so a named targetPort breaks the patch."
+    - title: "Fill Random Pod Tmp Directory In Namespace"
+      at: runbook.robot:67
+      asserts: "None (action). In a random pod, touch /tmp/chaos and dd 1 GiB of zeros into it."
+      reads: ["kubectl get pods -o jsonpath"]
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "expand_tmp.sh:13 and :16 exec results unchecked."
+      notes: "Writes to the container filesystem; any pod in the namespace."
+  bundleNotes: "Chaos/action bundle: no assertions or issues, no SLI, no generation rule. Verify Cluster Connectivity is called without binary= (defaults kubectl). drain_node.sh and auth.sh are dead (task commented out / unreferenced). Doc says to heal via GitOps reconcile."
+
+- bundle: k8s-chaos-workload
+  displayName: "Kubernetes Workload Chaos Engineering"
+  classicResourceTypes: []
+  matchHints: "none: bundle has no .runwhen/generation-rules (not auto-generated; manual deployment only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, jq, shuf, bash]
+  inputs: [kubeconfig, CONTEXT, NAMESPACE, WORKLOAD_NAME]
+  tasks:
+    - title: "Test Workload High Availability"
+      at: runbook.robot:20
+      asserts: "None (action). Deletes one pod of WORKLOAD_NAME (selected via spec.selector.matchLabels) to test HA."
+      reads: ["kubectl get WORKLOAD_NAME -o jsonpath={.spec.selector.matchLabels}", "kubectl get pods -l SELECTORS"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list, delete]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "kill_workload_pod.sh:8-18 outcome unchecked; script ends with kubectl get pods (rc 0)."
+      notes: "SAFETY: if the workload lookup fails (typo, kind missing from WORKLOAD_NAME, forbidden) the selector is empty and line 11 'kubectl get pods -l \"\"' lists ALL pods in the namespace, so line 18 deletes an unrelated pod. WORKLOAD_NAME must be kind/name."
+    - title: "OOMKill Workload Pod"
+      at: runbook.robot:29
+      asserts: "None (action). Execs a memory-hog loop into the first Running pod of the workload, then describes it."
+      reads: ["kubectl get WORKLOAD -o jsonpath", "kubectl get pods -l SELECTORS --field-selector=status.phase=Running", "kubectl describe POD"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "oomkill_workload_pod.sh:19 exec unchecked; same empty-selector fallthrough as above."
+      notes: "Same empty-selector hazard (hits an arbitrary Running pod in the namespace). Line 22 'kubectl describe $pod_name' passes a bare name without 'pod/', so describe errors."
+    - title: "Mangle Service Selector For Workload"
+      at: runbook.robot:38
+      asserts: "None (action). Finds a Service whose selector is a substring of the workload's pod-template labels and rewrites its first selector key to 'chaos'."
+      reads: ["kubectl get WORKLOAD -o jsonpath={.spec.template.metadata.labels}", "kubectl get services -oname", "kubectl get SERVICE -o jsonpath={.spec.selector}"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [services], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "change_service_selector.sh:44 patch unchecked; script ends with echo (rc 0)."
+      notes: "MIS-TAGGED access:read-only although it patches a Service. Substring match of selector strings is heuristic; last matching service wins. Guards exit 1 when no workload labels or no matching service."
+    - title: "Mangle Service Port For Workload"
+      at: runbook.robot:47
+      asserts: "None (action). Same service discovery, then replaces ports[0] with port 9999."
+      reads: ["kubectl get WORKLOAD / services / service ports via jsonpath"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [services], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "change_service_port.sh:47 patch unchecked; final grep rc not surfaced."
+      notes: "Unquoted targetPort splice breaks for named ports."
+    - title: "Fill Tmp Directory Of Pod From Workload"
+      at: runbook.robot:56
+      asserts: "None (action). In a random pod of the workload, touch /tmp/chaos and dd 1 GiB into it."
+      reads: ["kubectl get WORKLOAD -o jsonpath={.spec.selector.matchLabels}", "kubectl get pods -l SELECTORS"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "expand_tmp.sh:19-22 exec results unchecked."
+      notes: "Same empty-selector hazard: exec into a random pod of the whole namespace when the workload lookup fails."
+  bundleNotes: "Chaos/action bundle, no assertions/issues/SLI/generation rule. Empty-selector fallthrough in kill/oomkill/expand_tmp scripts can hit unrelated pods. Only 'Mangle Service Selector' is mis-tagged read-only. Verify Cluster Connectivity is called without binary=."
+
+- bundle: k8s-cluster-node-health
+  displayName: "Kubernetes Cluster Node Health"
+  classicResourceTypes: [cluster]
+  matchHints: "pattern '.+' on name (one per cluster); qualifiers cluster; level of detail basic; outputs slx, sli, runbook"
+  sli: true
+  sliAsserts: "sli.robot:16-35 scores 1 if zero node start/stop events in RW_LOOKBACK_WINDOW else 0 (0-1). false-pass confirmed: node_restart_check.sh:15-20 'kubectl get events -A | awk | grep | sort > node_events.txt' (no pipefail); any kubectl failure -> empty file -> 'Total start/stop events: 0' -> score 1. SLI has no Verify Cluster Connectivity."
+  egress: none
+  tools: [kubectl, oc, awk, grep, sort, "GNU date (date -d)", "bash 4 (declare -A)"]
+  inputs: [kubeconfig, KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, "INTERVAL (imported as RW_LOOKBACK_WINDOW, default 10 minutes)"]
+  tasks:
+    - title: "Check for Node Restarts in Cluster within Interval"
+      at: runbook.robot:18
+      asserts: "Sev4 issue when (unique nodes with NodeReady/RegisteredNode events) + (unique nodes with Shutdown/Preempt/Termination/Removed events) > 0 within the lookback window, from cluster-wide Node events."
+      reads: ["kubectl get events -A --field-selector involvedObject.kind=Node -o jsonpath", "kubectl get node NAME -o jsonpath (preemptible/spot labels, 2>/dev/null)"]
+      permissions:
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+        - {apiGroups: [""], resources: [nodes], verbs: [get]}
+      scope: cluster
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "node_restart_check.sh:15-20 pipeline with no pipefail and no rc check: failed/forbidden 'get events -A' -> empty node_events.txt -> summary prints 'Total start/stop events: 0' (line 82) -> runbook.robot:30-32 events=0 -> no issue."
+      notes: "Needs cluster-wide events list (-A) and node get. Events default retention ~1h so longer windows are silently capped. Events using only eventTime (events.k8s.io, empty lastTimestamp) are dropped by the awk date compare. Node kubectl calls omit --context. Writes node_events.txt in cwd. A cluster-wide NodeReady on any join counts as an 'event'. Severity 4 only."
+  bundleNotes: "One task + SLI (runbook and SLI both call the same script). Matches prior-audit finding F1 (SLI 1.0 on zero events). Runbook Suite Init verifies connectivity; SLI does not, so a dead cluster scores 1 in the SLI."
+
+- bundle: k8s-cluster-resource-health
+  displayName: "Kubernetes Cluster Resource Health"
+  classicResourceTypes: [cluster]
+  matchHints: "pattern '.+' on name (one per cluster); qualifiers cluster; level of detail basic; outputs slx and runbook only (NO sli output item although sli.robot exists)"
+  sli: true
+  sliAsserts: "sli.robot:13-49 pushes node_utilization (0 if any node >=90% CPU/mem via kubectl top else 1), resource_limits (0 if any pod's summed limits exceed MAX_LIMIT_PERCENTAGE of node else 1) and their average. false-pass confirmed for both: get_high_use_nodes.sh:19 awk wraps empty 'kubectl top nodes' output into '[]' (metrics-server missing/forbidden -> no high nodes -> 1); overlimit_check.sh:7 and :85 redirect kubectl failures with 2>/dev/null into empty json -> 'Total pods flagged: 0' -> 1. Not generated by the generation rule."
+  egress: none
+  tools: [kubectl, oc, jq, awk, sed, grep, "bash 4 (declare -A)", column]
+  inputs: [kubeconfig, KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, MAX_LIMIT_PERCENTAGE, MEM_USAGE_MIN, CPU_USAGE_MIN]
+  tasks:
+    - title: "Identify High Utilization Nodes"
+      at: runbook.robot:18
+      asserts: "Single sev2 issue when any node's kubectl-top CPU or memory usage is >= 90% of allocatable (threshold hard-coded)."
+      reads: ["kubectl get nodes --context C -o json | jq (allocatable cpu/memory)", "kubectl top nodes --context C | awk | jq"]
+      permissions:
+        - {apiGroups: [""], resources: [nodes], verbs: [get, list]}
+        - {apiGroups: [metrics.k8s.io], resources: [nodes], verbs: [get, list]}
+      scope: cluster
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "get_high_use_nodes.sh:19 'kubectl top nodes | awk ... | jq .' prints '[]' when top fails; usage[] empty -> line 35 map yields [] -> runbook.robot:29 len==0 -> no issue. awk line 19 also maps '<unknown>' usage to 0, so a node with no metrics reads as idle. (If 'get nodes' fails the jq --argjson errors and json.loads fails loudly.)"
+      notes: "BUG: cpu_allocatable uses rtrimstr('m')|tonumber, so a node reporting whole cores (e.g. '8') is read as 8 millicores and always flagged >=90%. Assumes allocatable memory in Ki and top memory in Mi. MAX_LIMIT_PERCENTAGE is not used here (90 hard-coded). Writes high_use_nodes.json in cwd."
+    - title: "Identify Pods Causing High Node Utilization"
+      at: runbook.robot:43
+      asserts: "Intended: sev2 issue per namespace whose pods use more CPU/memory than their requests on high-use nodes. Actual: broken, see notes."
+      reads: ["none from the cluster: pods_impacting_high_use_nodes.sh only runs jq over pod_usage.json and pod_requests.json, which no script in the bundle creates"]
+      permissions: []
+      scope: cluster
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "BROKEN: pods_impacting_high_use_nodes.sh:94 reads pod_usage.json/pod_requests.json that nothing produces (grep across codebundles finds no writer); jq fails, pods_exceeding_requests.json is empty, runbook.robot:55 json.loads('') raises, so the task errors every run. README says it should use kubectl top pods + pod requests (would need pods get/list all namespaces and metrics.k8s.io pods)."
+    - title: "Identify Pods with Resource Limits Exceeding Node Capacity"
+      at: runbook.robot:75
+      asserts: "Sev4 issue when the number of pods whose summed container CPU or memory limits exceed MAX_LIMIT_PERCENTAGE (default 90) of their node's allocatable is > 0. Pods without limits count as 0."
+      reads: ["kubectl get nodes -o json > nodes.json 2>/dev/null", "kubectl get pods --all-namespaces -o json > allpods.json 2>/dev/null"]
+      permissions:
+        - {apiGroups: [""], resources: [nodes], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+      scope: all-namespaces
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "overlimit_check.sh:7 and :85 '> file 2>/dev/null' with no rc check: failed kubectl leaves empty nodes.json/allpods.json; node map empty -> every pod skipped at line 119-121 -> line 175 'Total pods flagged: 0' -> runbook.robot:87-89 events=0 -> no issue."
+      notes: "Hard-coded kubectl (ignores KUBERNETES_DISTRIBUTION_BINARY). Needs cluster-wide pod list. Script default percentage is 80 but runbook passes 90. Name says 'limits exceeding node capacity' but threshold is a percent of one node's allocatable. Writes several temp json/txt files in cwd."
+  bundleNotes: "Task 2 is dead (inputs never produced). Generation emits no SLI even though sli.robot exists. CPU_USAGE_MIN/MEM_USAGE_MIN only feed the broken task. Runbook calls Verify Cluster Connectivity; SLI does not."
+
+- bundle: k8s-daemonset-healthcheck
+  displayName: "Kubernetes DaemonSet Triage"
+  classicResourceTypes: [daemonset]
+  matchHints: "pattern '.+' on name (substring, all DaemonSets); qualifiers resource, namespace, cluster; level of detail detailed"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, oc, jq, awk, grep, tee, "GNU date", bash]
+  inputs: [kubeconfig, KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, DAEMONSET_NAME, LOG_AGE, LOG_ANALYSIS_DEPTH, LOG_SEVERITY_THRESHOLD, LOG_PATTERN_CATEGORIES, ANOMALY_THRESHOLD, CONTAINER_RESTART_AGE, CONTAINER_RESTART_THRESHOLD, EXCLUDED_CONTAINER_NAMES]
+  tasks:
+    - title: "Analyze Application Log Patterns for DaemonSet"
+      at: runbook.robot:23
+      asserts: "Issue (severity <= LOG_SEVERITY_THRESHOLD, default 3) per log-pattern finding (GenericError, AppFailure, StackTrace, Connection, Timeout, Auth, Exceptions, Resource) in current and previous container logs of the DaemonSet's pods over LOG_AGE (default 3h)."
+      reads: ["kubectl get daemonset NAME -o json", "kubectl get pods -n NS -o json (client-side ownerReference filter)", "kubectl logs POD -c C --since --timestamps (current and --previous)"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "libraries/RW/K8sLog/k8s_log.py:759 and :770 _fetch_container_logs only appends stdout when returncode == 0 (failure just logs a warning), so forbidden/failed pods/log -> empty logs -> no findings -> health score 1.0. (Pod-list failure raises RuntimeError and fails the task loudly.)"
+      notes: "Library hard-codes kubectl. Lists every pod in the namespace. EXCLUDED_CONTAINER_NAMES defaults to service-mesh sidecars. Severity filter is <= threshold."
+    - title: "Detect Log Anomalies for DaemonSet"
+      at: runbook.robot:85
+      asserts: "Issue per anomaly from RW.K8sLog.Analyze Log Anomalies (repeating patterns, unusual log volume) in DaemonSet pod logs."
+      reads: ["same as Analyze Application Log Patterns (daemonset get, pods list, pods/log)"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "same swallow in k8s_log.py:759/:770: log fetch failure -> empty log set -> no anomalies."
+      notes: "ANOMALY_THRESHOLD is imported but this task does not pass it; thresholds live in the library."
+    - title: "Identify Recent Configuration Changes for DaemonSet"
+      at: runbook.robot:138
+      asserts: "Change-tracking, not fault: when the newest ControllerRevision was created within 24h, issues for image change (sev3), env change (sev4), resource change (sev4), nodeSelector/toleration change (sev3), hostNetwork/securityContext change (sev2); also sev2 rollback, sev4 recent kubectl apply and sev4 generation drift."
+      reads: ["kubectl get daemonset NAME", "kubectl get controllerrevisions -o json | jq", "kubectl get controllerrevision NAME -o json", "kubectl get events -o json (2>/dev/null)"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets, controllerrevisions], verbs: [get, list]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "track_daemonset_config_changes.sh:43-45 'kubectl get daemonset ... >/dev/null 2>&1' failure (forbidden/unreachable) prints 'ERROR: DaemonSet ... not found' and 'exit 0' (same for the context check at :37-39); runbook.robot parses stdout markers only and never checks returncode, so no issue."
+      notes: "Fixed 24h window (not configurable). Events sub-check uses 2>/dev/null. Depends on GNU date -d. Output-parsing in Robot is by substring of emoji-decorated text."
+    - title: "Check Liveness Probe Configuration for DaemonSet"
+      at: runbook.robot:361
+      asserts: "Sev2 issue when validate_probes.sh emits 'Recommended Next Steps': a probe port is not among the container's declared ports, or an exec-probe command references an undeclared port. A missing probe is only echoed, not flagged."
+      reads: ["kubectl get daemonset NAME -o json", "kubectl auth can-i create pods/exec", "kubectl get pods -l app=NAME", "kubectl exec POD -- <probe exec command> (+ port-substituted retries)"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:377 cmd_override './validate_probes.sh livenessProbe | tee liveness_probe_output': rc is tee's (0) without pipefail, so validate_probes.sh:18-21 'exit 1' (kubectl get daemonset failed) is hidden; the ELSE branch greps the output file for 'Recommended Next Steps', finds none -> no issue."
+      notes: "exec is conditional on auth can-i (EXEC-GUARDED) and re-runs the container's own probe command in the pod. Pod lookup guesses label app=DAEMONSET_NAME; exec/get pods lack --context; fallback exec uses bare kubectl. Port checks only, does not test whether the probe actually passes."
+    - title: "Check Readiness Probe Configuration for DaemonSet"
+      at: runbook.robot:419
+      asserts: "Same as the liveness task for readinessProbe: sev2 when a probe port or exec-command port is not declared by the container."
+      reads: ["same as liveness (validate_probes.sh readinessProbe)"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:435 same '| tee readiness_probe_output' masks the script's exit code."
+      notes: "Duplicate of the liveness task apart from probe type."
+    - title: "Check for Container Restarts in DaemonSet"
+      at: runbook.robot:477
+      asserts: "Issues from container_restarts.sh for containers whose restartCount is strictly greater than CONTAINER_RESTART_THRESHOLD (default 1) and whose last termination finished within CONTAINER_RESTART_AGE (default 10m): sev2 for error/misconfiguration/SIGABRT/OOM/liveness-failure/unclear SIGKILL, sev3 for system termination or unknown exit code, sev4 for SIGINT/SIGTERM/node shutdown."
+      reads: ["kubectl get daemonset NAME -o json | jq (selector)", "kubectl get pods -l SELECTOR -o json", "kubectl get pod X -o json; kubectl get events --field-selector involvedObject.name=X (2>/dev/null)", "kubectl get events --all-namespaces --field-selector reason=NodeHasDiskPressure,... (2>/dev/null)", "kubectl logs -p POD --all-containers"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "container_restarts.sh:194 'pods_json=$(kubectl get pods -l ...)' has no rc check; on failure the jq/while pipeline is empty and the script falls through to line 360 'echo \"[]\"' (rc 0) -> runbook.robot:498 parses [] -> no issues."
+      notes: "Node-pressure sub-check uses --all-namespaces events with 2>/dev/null and a comma in --field-selector (AND semantics, can never match); needs cluster-wide events only for that best-effort sub-check. BUG on the healthy path: script prints plain text 'No containers with restarts found...' (line 220) and exits 0, then runbook.robot:498 json.loads() raises, so the task errors when nothing restarted. Threshold uses -gt so default 1 requires >=2 restarts."
+    - title: "Inspect DaemonSet Warning Events"
+      at: runbook.robot:513
+      asserts: "Issues from Warning events in the last 60 min for DaemonSet or Pod objects whose name contains DAEMONSET_NAME, classified by workload_issues.sh message patterns; consolidated Multiple Pod Issues plus per-title DaemonSet issues."
+      reads: ["kubectl get events -n NS -o json | jq (Warning, last 60m)", "kubectl get daemonset NAME -o json"]
+      permissions:
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "runbook.robot:517 'kubectl get events | jq' rc is jq's; failure -> empty stdout -> json.loads fails -> EXCEPT (line 563) -> 'Warning' in empty stdout is False -> no issue. Mitigation: the next call 'get daemonset' (rc-checked, raises 'Unable to Fetch DaemonSet Details') acts as a canary, so only a transient/partial failure of the events call slips through."
+      notes: "Name matching is substring (contains), so DaemonSets whose names contain this one are included. Event window 60 min fixed. Pod events not filtered for deleted pods."
+    - title: "Fetch DaemonSet Workload Details"
+      at: runbook.robot:679
+      asserts: "Sev2 issue only if the DaemonSet manifest cannot be fetched (rc != 0); otherwise attaches the YAML snapshot to the report."
+      reads: ["kubectl get daemonset/NAME -o yaml"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "rc is checked. Issue for a failed fetch lumps NotFound, forbidden and unreachable together."
+    - title: "Inspect DaemonSet Status"
+      at: runbook.robot:707
+      asserts: "First matching branch only: sev1 numberReady==0 with desired>0; sev3 numberReady<desired; sev3 numberUnavailable>0; sev3 numberMisscheduled>0."
+      reads: ["kubectl get daemonset/NAME -o json | jq '.status | {...}'"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot kubectl|jq: rc is jq's, so the returncode != 0 check at runbook.robot:729 never fires for kubectl errors; empty stdout -> line 743 'json.loads(...) if stdout.strip() else {}' -> all counters default 0 -> desired 0 -> no branch fires. A missing or forbidden DaemonSet is reported healthy ('Ready=0/0')."
+      notes: "Branches are an if/elif chain so only the first problem is reported. A DaemonSet with desired=0 (no schedulable nodes) is never flagged."
+    - title: "Check Node Affinity and Tolerations for DaemonSet"
+      at: runbook.robot:807
+      asserts: "Sev4 issue when the DaemonSet has no tolerations; node selector and affinity are only echoed into the report."
+      reads: ["kubectl get daemonset NAME -o json | jq '{nodeSelector, tolerations, affinity}'"]
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Fails toward noise rather than passing: kubectl|jq rc masked, empty stdout -> {} -> 'no tolerations' sev4 issue is raised for a failed fetch. The assertion is stylistic (many DaemonSets legitimately have no tolerations)."
+  bundleNotes: "Strongest failure handling of the group (rc checks on most direct calls), but kubectl|jq pipelines mask kubectl rc, and the probe tasks mask the script rc with '| tee'. Healthy path of the restarts task crashes json.loads. All pod-log tasks use the K8sLog library, which swallows per-container log failures. Runbook only; no SLI. Hard-coded 'kubectl' inside the library and some scripts."
+
+- bundle: k8s-deployment-healthcheck
+  displayName: "Kubernetes Deployment Triage"
+  classicResourceTypes: [deployment]
+  matchHints: "pattern '.+' on name (substring, all Deployments); qualifiers resource, namespace, cluster; level of detail detailed; outputs slx, sli, runbook"
+  sli: true
+  sliAsserts: "sli.robot:216-435 pushes a 0-1 composite = mean of 5 sub-scores: container restarts <= CONTAINER_RESTART_THRESHOLD in window, critical log errors (GenericError/AppFailure via K8sLog), no NotReady pods, ready>=1 and Available=True, recent Warning events (Failed*/BackOff-type reasons) <= EVENT_THRESHOLD. A Deployment scaled to 0 scores 1.0 by design. false-pass confirmed on three components: pod-readiness (sli.robot:321 'get pods -l app=NAME | jq ... | jq -s length | tr' prints 0 when kubectl fails), warning events (sli.robot:394-399 EXCEPT sets score 1 and empty stdout -> 0 events), logs (K8sLog swallows per-container log failures). restarts and readiness also use hard-coded -l app=<DEPLOYMENT_NAME>, which scores 1 when pods are labelled differently. SLI has no Verify Cluster Connectivity; scores are initialised to 0 so a crashed sub-task drags the composite down instead of up."
+  egress: none
+  tools: [kubectl, oc, jq, awk, grep, tee, "GNU date", bash]
+  inputs: [kubeconfig, KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, DEPLOYMENT_NAME, LOG_LINES, LOG_AGE, LOG_ANALYSIS_DEPTH, LOG_SEVERITY_THRESHOLD, LOG_PATTERN_CATEGORIES, ANOMALY_THRESHOLD, LOGS_ERROR_PATTERN, LOGS_EXCLUDE_PATTERN, LOG_SCAN_TIMEOUT, EXCLUDED_CONTAINER_NAMES, CONTAINER_NAME, CONTAINER_RESTART_AGE, CONTAINER_RESTART_THRESHOLD]
+  tasks:
+    - title: "Analyze Application Log Patterns for Deployment"
+      at: runbook.robot:225
+      asserts: "Issue (severity <= LOG_SEVERITY_THRESHOLD, default 3) per log-pattern finding (incl. runbook_patterns.json custom patterns) in current/previous logs of the Deployment's pods over LOG_AGE (default 10m), after LOGS_EXCLUDE_PATTERN filtering."
+      reads: ["kubectl get deployment NAME -o json", "kubectl get replicaset -n NS -o json", "kubectl get pods -n NS -o json", "kubectl logs POD -c C --since --timestamps (and --previous)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:248-252 TRY/EXCEPT around Fetch Workload Logs sets log_dir empty and 'No logs available for analysis' (even a pod/RS list failure is swallowed here), line 267 builds empty scan results -> no issue; k8s_log.py:759/:770 additionally drop per-container log failures."
+      notes: "Skipped entirely (SKIP_POD_CHECKS) when the Deployment is scaled to 0. LOGS_EXCLUDE_PATTERN is injected into a Python re.search expression (quoting risk). Library uses hard-coded kubectl."
+    - title: "Detect Event Anomalies for Deployment"
+      at: runbook.robot:325
+      asserts: "Issue (severity from item, default 3) per Deployment/ReplicaSet/Pod object whose non-Warning event rate exceeds ANOMALY_THRESHOLD events/minute and whose reasons are not routine (Created/Started/Pulled/SuccessfulCreate/...)."
+      reads: ["kubectl get events -n NS -o json | jq (via event_anomalies.sh)"]
+      permissions:
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "event_anomalies.sh:6 EVENTS_JSON=$(kubectl get events ...) has no rc check; failure -> empty -> 'echo | jq' prints nothing -> line 57 echoes empty, rc 0 -> runbook.robot:357 'json.loads(...) if stdout.strip() else []' -> no anomalies ('No significant anomalies detected')."
+      notes: "Operates on Normal events only (.type != Warning). Events with null first/lastTimestamp dropped. Rate = count / duration of one event object."
+    - title: "Fetch Deployment Logs"
+      at: runbook.robot:400
+      asserts: "None; report-only dump of recent logs (LOG_LINES per container, LOG_AGE) across all pods; no issue raised."
+      reads: ["kubectl get deployment/NAME -o jsonpath={.spec.template.spec.containers[*].name} (only if CONTAINER_NAME set)", "pods list + kubectl logs via K8sLog"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational. On fetch failure the report prints an 'Unable to fetch deployment logs' block, so it does not claim health. deployment_logs.sh is NOT used by this task (dead script)."
+    - title: "Check Liveness Probe Configuration for Deployment"
+      at: runbook.robot:481
+      asserts: "Sev4 issue when validate_probes.sh emits 'Recommended Next Steps' (probe port or exec-command port not declared by the container). Missing probe only echoed."
+      reads: ["kubectl get deployment NAME -o json", "kubectl auth can-i create pods/exec", "kubectl exec deployment/NAME -- <probe exec command>"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:499 cmd_override './validate_probes.sh livenessProbe | tee liveness_probe_output' hides the script exit code (rc is tee's, no pipefail); validate_probes.sh:16-20 'exit 1' on a failed 'get deployment' is lost and the ELSE branch finds no recommendations."
+      notes: "Exec is guarded by auth can-i and re-runs the container's own probe command (EXEC-GUARDED); fallback exec uses bare kubectl without --context. Port-declaration check only; does not evaluate actual probe results."
+    - title: "Check Readiness Probe Configuration for Deployment"
+      at: runbook.robot:542
+      asserts: "Same as liveness for readinessProbe: sev4 on undeclared probe port."
+      reads: ["same as liveness (validate_probes.sh readinessProbe)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:560 same '| tee readiness_probe_output' masks the script exit code."
+      notes: "Duplicate of the liveness task apart from probe type."
+    - title: "Inspect Deployment Warning Events"
+      at: runbook.robot:603
+      asserts: "Issues from Warning events in the last 15 min for Deployment/ReplicaSet/Pod objects whose name contains DEPLOYMENT_NAME, classified by workload_issues.sh patterns and consolidated by title; severity lowered to 4 for probe failures on a healthy Deployment."
+      reads: ["kubectl get events -n NS -o json | jq (Warning, 15m)", "kubectl get events | jq (all types, 15m)", "kubectl get deployment NAME -o json | jq (selector, health)", "kubectl get pods -l SELECTOR -o json | jq"]
+      permissions:
+        - {apiGroups: [""], resources: [events, pods], verbs: [get, list]}
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:605 'get events | jq' rc is jq's; failure -> empty -> the second events call (line ~629) also empty -> line 637 json.loads(...) if stdout.strip() else {} -> warning_count 0 -> 'No Warning Events: Clean event history'; the EXCEPT at line 954 only reports 'parsing failed'. Additionally lines 665-672 ELSE says 'skipping pod existence filtering' but leaves existing_pod_names empty, so line 727 treats every Pod event as stale and skips it whenever the selector or pod list cannot be fetched."
+      notes: "Unlike the DaemonSet bundle there is no rc-checked canary call. 15 min window only. Name matching is substring. Stale-pod filtering also drops events for pods that no longer exist (intended)."
+    - title: "Check Deployment Replica Status"
+      at: runbook.robot:962
+      asserts: "Sev1 ready==0 with desired>0; sev2 ready<desired (desired>0); scaled-to-0 is informational (no issue)."
+      reads: ["kubectl get deployment/NAME -o json | jq (spec/status replicas, conditions)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "kubectl|jq masks kubectl rc (the returncode check at line 972 is jq's), but empty stdout makes json.loads raise inside TRY and the EXCEPT raises sev3 'Replica Status Parsing Failed' - fails toward an issue, though mislabelled (NotFound/forbidden reported as parse failure)."
+    - title: "Inspect Container Restarts for Deployment"
+      at: runbook.robot:1052
+      asserts: "Issues from container_restarts.sh for containers with restartCount > CONTAINER_RESTART_THRESHOLD and last termination within CONTAINER_RESTART_AGE: sev2 error/misconfig/SIGABRT/OOM/liveness-failure/unclear SIGKILL, sev3 system termination/unknown exit, sev4 SIGINT/SIGTERM/node shutdown and GitOps-owned restarts."
+      reads: ["kubectl get deployment NAME -o json | jq (selector)", "kubectl get pods -l SELECTOR -o json", "kubectl get pod X; kubectl get events --field-selector involvedObject.name=X (2>/dev/null)", "kubectl get events --all-namespaces --field-selector reason=NodeHas... (2>/dev/null)", "kubectl logs -p POD"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "container_restarts.sh:226 'pods_json=$(kubectl get pods ...)' unchecked; on failure the chain is empty and the script prints nothing (final block at :424-429 only echoes when issues is non-empty), rc 0 -> runbook.robot:1074-1090 treats empty stdout (no JSON match) as plain text 'no restarts found' -> no issue."
+      notes: "Handles the no-restart text path gracefully (unlike the DaemonSet twin). Node-pressure sub-check uses --all-namespaces events with 2>/dev/null and a comma field-selector that cannot match; best-effort only. Threshold uses -gt."
+    - title: "Identify Recent Configuration Changes for Deployment"
+      at: runbook.robot:1125
+      asserts: "Change-tracking, not fault: when the newest ReplicaSet was created within 24h, issues for image change (sev3), env change (sev4), resource change (sev4); sev2 rollback; sev4 recent kubectl apply; sev4 generation drift."
+      reads: ["kubectl get deployment NAME", "kubectl get rs -o json | jq", "kubectl get rs/events (2>/dev/null sub-checks)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "track_deployment_config_changes.sh:37-39 'kubectl get deployment ... >/dev/null 2>&1' failure prints 'ERROR: Deployment ... not found' and 'exit 0'; runbook.robot:1139-1160 parses stdout markers and never checks returncode -> no issue."
+      notes: "Fixed 24h window. Depends on GNU date -d and 'set -eo pipefail' inside the script (unlike most scripts here). Substring-driven parsing of emoji-decorated output."
+    - title: "Check HPA Health for Deployment"
+      at: runbook.robot:1324
+      asserts: "Sev4 'No HPA found'; for an existing HPA: sev2 resource-metric HPA without resource requests, sev2 missing metrics, sev2 at max replicas and resource constrained, sev2 cannot scale, sev3 at max / scaling limited, sev4 minReplicas=1, narrow range, aggressive/conservative CPU target, missing behavior, at min replicas; and sev4 'HPA is Healthy' when nothing else fires."
+      reads: ["kubectl get hpa -n NS -o json | jq (scaleTargetRef == DEPLOYMENT)", "kubectl get hpa NAME -o json", "kubectl get deployment NAME -o json | jq (container requests)", "many echo HPA-json | jq field extractions (no further cluster calls)"]
+      permissions:
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Fails toward noise: a failed 'get hpa | jq' (stderr non-empty) raises 'No HPA Found' (false positive). Many findings are advisory sev4 design opinions, and a 'Healthy' sev4 issue is raised for the good case. Missing HPA is an issue for every Deployment without one."
+  bundleNotes: "Mixed: the Suite Init scale check (get deployment | jq) decides SKIP_POD_CHECKS; scaled-to-0 gives a sev4 informational issue and skips every pod-related task. check_replicaset.sh and deployment_logs.sh are unreferenced dead scripts. Warning events and SLI components assume pods carry label app=<DEPLOYMENT_NAME> in places. The kubectl|jq / '| tee' / '|| true' idioms mask rc across the bundle; direct-call tasks (replica status, fetch details) fail toward an issue. Runbook calls Verify Cluster Connectivity; SLI does not."
+
+- bundle: k8s-deployment-ops
+  displayName: "Kubernetes Deployment Operations"
+  classicResourceTypes: [deployment]
+  matchHints: "pattern '.+' on name (substring, all Deployments); qualifiers resource, namespace, cluster; level of detail detailed; outputs slx and runbook (no sli)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: none
+  tools: [kubectl, oc, jq, tr, bash]
+  inputs: [kubeconfig, DEPLOYMENT_NAME, NAMESPACE, CONTEXT, KUBERNETES_DISTRIBUTION_BINARY, SCALE_UP_FACTOR, MAX_REPLICAS, ALLOW_SCALE_TO_ZERO, HPA_SCALE_FACTOR, HPA_MAX_REPLICAS, HPA_MIN_REPLICAS, RESOURCE_SCALE_DOWN_FACTOR]
+  tasks:
+    - title: "Restart Deployment"
+      at: runbook.robot:21
+      asserts: "None (action). Rollout-restarts the Deployment; sev3 issue when the restart command writes to stderr."
+      reads: ["kubectl logs deployment/NAME --tail 50 --all-containers (pre-restart capture)", "kubectl rollout status deployment/NAME (loop until 'successfully rolled out')"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch]}
+        - {apiGroups: [apps], resources: [replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:48-57 rollout-status output is only attached to the report and never evaluated; if the 180s CLI timeout hits or the rollout never succeeds there is no issue. Only $rollout.stderr (line 59) raises one."
+      notes: "kubectl rollout restart patches the pod template annotation, causing GitOps drift. Success/failure is judged purely by stderr being empty."
+    - title: "Force Delete Pods in Deployment"
+      at: runbook.robot:72
+      asserts: "None (action). Deletes all pods matching the Deployment's pod-template labels; sev3 issue on stderr."
+      reads: ["kubectl get deployment NAME -o jsonpath={.spec.template.metadata.labels} (via bare kubectl in $(...))", "kubectl get pods -l LABELS (status afterwards)", "kubectl logs deployment/NAME --tail 50"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list, delete]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Name says 'force' but no --force/--grace-period is passed. Deletes ALL replicas at once (outage). Selector is built from pod-template labels, so it can also match other workloads sharing those labels. Inner command hard-codes kubectl."
+    - title: "Rollback Deployment to Previous Version"
+      at: runbook.robot:123
+      asserts: "None (action). kubectl rollout undo; sev3 issue on stderr."
+      reads: ["kubectl logs deployment/NAME --tail 50", "kubectl rollout status deployment/NAME (loop)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch]}
+        - {apiGroups: [apps], resources: [replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:150-160 rollout-status result only added to the report, never evaluated; only rollback.stderr (line 161) raises an issue."
+      notes: "Rolls back to the immediately previous revision (not a known-good one) despite the docstring. GitOps will re-apply the bad revision."
+    - title: "Scale Down Deployment"
+      at: runbook.robot:174
+      asserts: "None (action). Scales to 0 if ALLOW_SCALE_TO_ZERO=true, else to 1 (with a sev4 'not permitted to scale to 0' issue); sev3 issue on stderr."
+      reads: ["kubectl logs deployment/NAME --tail 50", "kubectl get deployment NAME"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch]}
+        - {apiGroups: [apps], resources: [deployments/scale], verbs: [get, patch, update]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Issues are used as policy/info notices (sev4) as well as failures. Scale is overridden by an HPA or GitOps controller."
+    - title: "Scale Up Deployment by factor"
+      at: runbook.robot:240
+      asserts: "None (action). Scales to max(1, current*SCALE_UP_FACTOR) if <= MAX_REPLICAS, else sev3 'Can not Scale Up beyond MAX_REPLICAS'; sev3 on stderr."
+      reads: ["kubectl get deployment NAME -o jsonpath={.spec.replicas}", "kubectl get deployment NAME"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch]}
+        - {apiGroups: [apps], resources: [deployments/scale], verbs: [get, patch, update]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Failed replica read leaves empty stdout and Convert To Integer raises (loud). Task title embeds SCALE_UP_FACTOR."
+    - title: "Clean Up Stale ReplicaSets"
+      at: runbook.robot:301
+      asserts: "None (action). Deletes every ReplicaSet matching the Deployment selector with status.replicas == 0; sev3 on stderr."
+      reads: ["kubectl get rs --selector=<from deployment matchLabels> -o json | jq"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [apps], resources: [replicasets], verbs: [get, list, delete]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Destroys rollout history (breaks rollout undo beyond current). Issue title on failure is copy-pasted 'did not scale down properly'. Inner selector kubectl is hard-coded when binary=oc."
+    - title: "Scale Down Stale ReplicaSets"
+      at: runbook.robot:333
+      asserts: "None (action). kubectl scale rs -l <deployment selector> --replicas=0; sev3 on stderr."
+      reads: ["kubectl get deployment NAME -o jsonpath={.spec.selector.matchLabels}"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [apps], resources: [replicasets, replicasets/scale], verbs: [get, list, patch, update]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "BUG/SAFETY: the selector matches ALL ReplicaSets of the Deployment including the active one, and there is no filter for 'stale/old', so it scales the live ReplicaSet to 0 as well (the Deployment controller then re-scales it). Docstring says only old RS with active pods."
+    - title: "Scale Up HPA by factor"
+      at: runbook.robot:366
+      asserts: "None (action). Multiplies HPA min/max by HPA_SCALE_FACTOR (max capped at HPA_MAX_REPLICAS, with sev4 cap notice) unless GitOps-managed (then sev4 suggestion only); sev3 on stderr; sev4 'Scaled Up Successfully' on success; sev3 'No HPA Found' when none or on any stderr."
+      reads: ["kubectl get hpa -n NS -o json | jq | head -1", "kubectl get hpa NAME -o json | jq (GitOps labels/annotations)", "kubectl get hpa NAME -o jsonpath (min, max)"]
+      permissions:
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "GitOps detection is a regex over label/annotation KEYS (flux|argocd|gitops), weak heuristic. A failed HPA lookup (forbidden) is reported as 'No HPA Found'. Issues double as success notifications."
+    - title: "Scale Down HPA to Min"
+      at: runbook.robot:498
+      asserts: "None (action). Sets both minReplicas and maxReplicas to HPA_MIN_REPLICAS unless GitOps-managed (sev4 suggestion); sev3 on stderr; sev4 success notice."
+      reads: ["same HPA lookups as Scale Up HPA"]
+      permissions:
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Pins max = min = HPA_MIN_REPLICAS (effectively disables autoscaling), contrary to 'decrease min and max by factor' wording."
+    - title: "Increase CPU Resources for Deployment"
+      at: runbook.robot:616
+      asserts: "None (action). Raises container[0] CPU request (and limit if set) using VPA upperBound, else doubles current, via kubectl set resources; suggestion-only (sev4 issue) when GitOps-managed or an HPA exists; sev2 'Cannot Access Deployment' when the access probe writes stderr; sev3 on update failure; sev3 when no requests are set."
+      reads: ["kubectl get deployment NAME -o name", "kubectl get deployment NAME -o json | jq (GitOps check)", "kubectl get hpa -o json | jq | head -1 || echo ''", "kubectl get vpa -o json | jq 2>/dev/null || echo ''", "kubectl get deployment -o jsonpath (cpu request/limit of containers[0])"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch, update]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot GitOps/HPA/VPA guards are 'kubectl | jq | head || echo \"\"' (HPA, VPA with 2>/dev/null): a failed or forbidden lookup yields '' = 'no GitOps / no HPA / no VPA', so the safety guard is bypassed and the Deployment is still mutated. Also the 'Cannot Access Deployment' issue does not stop the task."
+      notes: "Only containers[0]; assumes request/limit units. Changes pod template (triggers rollout and GitOps drift). VPA lookup needs the VPA CRD (soft-fails)."
+    - title: "Increase Memory Resources for Deployment"
+      at: runbook.robot:820
+      asserts: "Same as Increase CPU but for memory (VPA upperBound else doubled)."
+      reads: ["same lookups as Increase CPU with memory fields"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch, update]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "same guard-bypass: failed GitOps/HPA/VPA lookups read as 'absent' and the update proceeds."
+      notes: "Same notes as Increase CPU."
+    - title: "Decrease CPU Resources for Deployment"
+      at: runbook.robot:1024
+      asserts: "Same as Increase CPU but divides current CPU request/limit by RESOURCE_SCALE_DOWN_FACTOR (default 2)."
+      reads: ["same lookups as Increase CPU"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch, update]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "same guard-bypass on failed GitOps/HPA/VPA lookups."
+      notes: "Risk of throttling or OOM after decrease; no floor check."
+    - title: "Decrease Memory Resources for Deployment"
+      at: runbook.robot:1212
+      asserts: "Same as Increase Memory but divides current memory request/limit by RESOURCE_SCALE_DOWN_FACTOR."
+      reads: ["same lookups as Increase Memory"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, patch, update]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "same guard-bypass on failed GitOps/HPA/VPA lookups."
+      notes: "Risk of OOMKill after decrease; no floor check."
+  bundleNotes: "Remediation/action bundle: 13 write tasks (all access:read-write), no SLI, no health assertions; issues are used for failure AND for informational/success notices (sev4). Success is inferred from empty stderr only. Several inner commands hard-code kubectl inside $(...) despite KUBERNETES_DISTRIBUTION_BINARY. Task 'Scale Down Stale ReplicaSets' scales the active ReplicaSet too. Resource-change tasks assume containers[0]. 1487-line file is largely repetition."
+
+- bundle: k8s-fluxcd-helm-health
+  displayName: "Kubernetes FluxCD HelmRelease TaskSet"
+  classicResourceTypes: [helmreleases.helm.toolkit.fluxcd.io]
+  matchHints: "pattern '.+' on name (substring); qualifiers namespace, cluster (one SLX per namespace); level of detail detailed; outputs slx and runbook"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "task 5: helm repo add / helm search repo against each HelmRepository spec.url (public or private chart repos from the runner); other tasks none"
+  tools: [kubectl, oc, jq, helm, sort, tr, bash]
+  inputs: [kubeconfig, DISTRIBUTION, KUBERNETES_DISTRIBUTION_BINARY, NAMESPACE, RESOURCE_NAME, CONTEXT]
+  tasks:
+    - title: "List all available FluxCD Helmreleases"
+      at: runbook.robot:15
+      asserts: "None; report-only kubectl table of HelmReleases."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE"]
+      permissions:
+        - {apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational; stderr is not reported, so a failed list shows an empty table."
+    - title: "Fetch Installed FluxCD Helmrelease Versions"
+      at: runbook.robot:28
+      asserts: "None; report-only lastAppliedRevision / lastAttemptedRevision per HelmRelease."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o jsonpath=... || true"]
+      permissions:
+        - {apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational. Ends with '|| true' (runbook.robot:32), so failure is blank output, but nothing is asserted."
+    - title: "Fetch Mismatched FluxCD HelmRelease Version"
+      at: runbook.robot:41
+      asserts: "Sev2 issue when stdout contains 'Name', i.e. >=1 HelmRelease with status.lastAppliedRevision != status.lastAttemptedRevision."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o json | jq (select lastApplied != lastAttempted)"]
+      permissions:
+        - {apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:45 'kubectl get | jq' without pipefail: failed kubectl -> empty stdout -> line 53 'Should Contain Name' False -> no issue. Also a release that never applied anything (both revisions null) compares equal and is not flagged."
+      notes: "The 'Name' substring test would also match any stdout containing 'Name'. Detects stuck upgrades only, not Ready=False installs."
+    - title: "Fetch FluxCD HelmRelease Error Messages"
+      at: runbook.robot:68
+      asserts: "Intended: sev2 issue when HelmReleases are not Ready. Actual: sev2 issue whenever the namespace contains ANY HelmRelease (see notes)."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o jsonpath=... || true"]
+      permissions:
+        - {apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:72 trailing '|| true' turns a failed kubectl into empty stdout; line 80 'Should Contain Name' False -> no issue."
+      notes: "BUG (reproduced against a fake API server): the '[?(@.status.conditions[?(@.type==Ready)].status==False)]' text sits outside {} so kubectl jsonpath prints it literally and does NOT filter. Every HelmRelease is printed with 'Name:', so the Should Contain check is true for any non-empty namespace and the issue (sev2, 'in an errored state') fires even when all releases are Ready. High false-positive rate."
+    - title: "Check for Available Helm Chart Updates"
+      at: runbook.robot:95
+      asserts: "None; report-only per-release line 'Installed Version / Available Update / Available Version' computed with helm search repo."
+      reads: ["kubectl get RESOURCE_NAME -o json | jq (per release .spec.chart.spec)", "kubectl get helmrepositories.source.toolkit.fluxcd.io SRC -n SRC_NS -o json | jq .spec.url", "helm repo add TEMP URL; helm search repo TEMP/CHART --version '>V' --output json; helm repo remove TEMP"]
+      permissions:
+        - {apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, list]}
+        - {apiGroups: [source.toolkit.fluxcd.io], resources: [helmrepositories], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "inline script (runbook.robot:99): a failed 'helm repo add' or 'helm search' leaves available_chart_version empty, so the line prints 'Available Update: False / Available Version: N/A', indistinguishable from 'up to date'. No issue is raised either way."
+      notes: "Cluster-read-only, but mutates local Helm repo config on the runner (repo add/remove with a temp name). HelmRepository may live in another namespace (secondary-ns read). OCI/Git sources and private repos needing creds are skipped (N/A). \\${...} bash escapes inside Robot string are fragile."
+  bundleNotes: "Mostly report-only; the two assertion tasks rely on a substring test of 'Name'. Task 4's jsonpath filter is inert (always-fires bug). NAMESPACE default is '--all-namespaces' (example '-n my-namespace') but commands use '-n ${NAMESPACE}', so defaults produce invalid commands; the generation template presumably sets a plain namespace. Suite Init sets kubeconfig as suite var, so ${KUBECONFIG} in tasks resolves (case-insensitive). DISTRIBUTION imported but unused."
+
+- bundle: k8s-fluxcd-kustomization-health
+  displayName: "Kubernetes FluxCD Kustomization TaskSet"
+  classicResourceTypes: [kustomizations.kustomize.toolkit.fluxcd.io]
+  matchHints: "pattern '.+' on name (substring); qualifiers namespace, cluster (one SLX per namespace); level of detail detailed; outputs slx, sli, runbook"
+  sli: true
+  sliAsserts: "sli.robot:16-56 scores mean of two binary scores: no suspended Kustomizations (0 if any) and no Ready=False Kustomizations (0 if any); 0-1 pushed with sub_names. False-pass none for command failure (empty stdout -> json.loads raises -> no metric). Likely false-pass for the dropped-object case: the Unready jq (sli.robot:42) requires both a Ready=False and a Reconciling condition, otherwise the object is omitted (e.g. a Stalled Kustomization may drop Reconciling) -> score 1. SLI has no Verify Cluster Connectivity; ${CONTEXT} is not set as a suite variable in the SLI Suite Init."
+  egress: none
+  tools: [kubectl, oc, jq, date, grep, bash]
+  inputs: [kubeconfig, DISTRIBUTION, KUBERNETES_DISTRIBUTION_BINARY, NAMESPACE, RESOURCE_NAME, CONTEXT]
+  tasks:
+    - title: "List All FluxCD Kustomization objects"
+      at: runbook.robot:17
+      asserts: "None; report-only kubectl table of Kustomizations."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE"]
+      permissions:
+        - {apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational; a failed list shows as an empty table."
+    - title: "List Suspended FluxCD Kustomization objects"
+      at: runbook.robot:30
+      asserts: "Single sev4 issue when any Kustomization has spec.suspend == true; lists name, suspended-since (Ready condition lastTransitionTime) and duration."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o json | jq (suspend==true, Ready condition time)"]
+      permissions:
+        - {apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Empty stdout (kubectl failed) makes json.loads raise at runbook.robot:40 (task errors, inconclusive). Edge: a suspended Kustomization lacking a Ready condition is dropped by the jq object construction, and one with null status.conditions aborts jq (loud). Severity 4 only."
+    - title: "List Unready FluxCD Kustomizations"
+      at: runbook.robot:58
+      asserts: "Sev2 issue per Kustomization whose Ready condition is False (message, reason, last transition, Reconciling status included)."
+      reads: ["kubectl get RESOURCE_NAME -n NAMESPACE -o json | jq (Ready=False)", "workload_next_steps.sh (pure text)"]
+      permissions:
+        - {apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "runbook.robot:62 jq object construction includes (.status.conditions[] | select(.type == 'Reconciling')...); when a Ready=False Kustomization has no Reconciling condition the generator is empty and the whole object is silently omitted, so it is never reported. (Command failure itself is loud: empty stdout -> json.loads raises.)"
+      notes: "Unverified assumption: Flux removes Reconciling once a Kustomization is Stalled. A Kustomization with null status.conditions aborts jq and errors the task. Next-steps script only recognises 'Health check failed'."
+  bundleNotes: "Runbook has two assertions, one inventory dump. SLI mirrors the same two jq filters. ${CONTEXT} is a keyword-local variable in both Suite Inits yet used in task commands (works only if the runtime exposes imported variables; verify). DISTRIBUTION unused."
+
+- bundle: k8s-fluxcd-reconcile
+  displayName: "Kubernetes Fluxcd Reconciliation Report"
+  classicResourceTypes: [namespace]
+  matchHints: "pattern 'flux-system' on name (substring; matches the flux-system namespace); qualifiers namespace, cluster; level of detail basic; outputs slx, sli, slo, runbook"
+  sli: true
+  sliAsserts: "sli.robot:19-31 pushes 1 if flux_reconcile_report.sh exits 0 (0 error-level log lines in the last 1h across Flux controller deployments) else 0. false-pass confirmed: flux_reconcile_report.sh:10 'controllers=$(kubectl get deploy -oname ... | grep -i controller)' and :20 'kubectl logs' have no rc checks; failure -> no controllers/empty logs -> total_errors=0 -> exit 0 -> score 1. SLI has no Verify Cluster Connectivity."
+  egress: none
+  tools: [kubectl, jq, grep, wc, sort, "GNU date", bash]
+  inputs: [kubeconfig, CONTEXT, FLUX_NAMESPACE]
+  tasks:
+    - title: "Check FluxCD Reconciliation Health in Kubernetes Namespace"
+      at: runbook.robot:21
+      asserts: "Sev3 issue when the script exits non-zero, i.e. at least one line with level=error appears in the last 1h (max 500 lines per controller) of any Deployment in FLUX_NAMESPACE whose name contains 'controller'."
+      reads: ["kubectl get deploy -oname --no-headers -n FLUX_NAMESPACE | grep -i controller", "kubectl logs deploy/X -n FLUX_NAMESPACE --tail=500 --since=1h (per controller)"]
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "flux_reconcile_report.sh:10 failed 'get deploy' (or a missing/renamed flux namespace) -> empty controllers -> loop at :18 never runs -> :53 total_errors=0 -> exit 0 -> runbook.robot:28 no issue. :20 'kubectl logs' failure -> empty recent_logs -> error_count 0."
+      notes: "Hard-coded kubectl. Matches JSON log lines containing '\"level\":\"error\"' (Flux controller format); a log-format change makes it silent. 1h window and 500-line tail may miss older/busy errors. Reports errors from the controllers' own logs, not object-level reconcile status (Kustomization/HelmRelease Ready conditions are not read). Issue details are the whole report text."
+  bundleNotes: "Tied to the flux-system namespace resource type rather than Flux objects. Runbook and SLI share one script. Overlaps in intent with the Kustomization and HelmRelease bundles but reads controller logs instead of CR status."

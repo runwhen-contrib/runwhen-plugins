@@ -1,0 +1,79 @@
+# Classic rw-cli-codecollection bundle -> V13 skill coverage (CNT-1, CNT-5).
+# Source: rw-cli-codecollection origin/main @ 49ab483. Per-task detail: porting/inventory/*.yaml.
+# status: planned | ported | dropped. A bundle may map to several skills; a skill may absorb several bundles.
+# Porters fill `tasks:` (classic task title -> <skill>/<task> or "dropped: <reason>") when they port (CONTRIBUTING.md step 11).
+# Grouping rule: one skill per V13 type set + symptom an engineer would page on; tasks touch only the target and
+# objects inside it (namespace -> its pods; workload -> its pods, ReplicaSets, PVCs, events).
+# App-on-Kubernetes skills target kubernetes types narrowed by `labels` (D70); database-level checks belong to the
+# postgres plugin, not to kubernetes skills (D53, D72).
+
+kubernetes:
+  # --- pilot (CNT-3) -----------------------------------------------------------------------------------------
+  - { bundle: k8s-deployment-healthcheck,  skills: [k8s-workload-health, k8s-workload-logs], status: planned, pilot: true }
+  - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: planned, pilot: true,
+      note: "classic restarts/log-pattern/anomaly/PVC tasks never produce output on main (json.loads on text, undefined var, list vs string, comma-less jq); re-derived, not fixed" }
+  - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: planned, pilot: true }
+  - { bundle: k8s-namespace-healthcheck,   skills: [k8s-namespace-health], status: planned, pilot: true }
+  - { bundle: k8s-tail-logs-dynamic,       skills: [k8s-workload-logs], status: planned, pilot: true }
+  - { bundle: k8s-app-troubleshoot,        skills: [k8s-workload-logs], status: planned, pilot: true,
+      note: "'misconfigured environment' grep task dropped: asserts nothing (report-only grep for 'env')" }
+  - { bundle: k8s-pvc-healthcheck,         skills: [k8s-pvc-health], status: planned, pilot: true }
+  - { bundle: k8s-cluster-node-health,     skills: [k8s-node-health], status: planned, pilot: true }
+  - { bundle: k8s-ingress-healthcheck,     skills: [k8s-ingress-health], status: planned, pilot: true }
+  - { bundle: k8s-deployment-ops,          skills: [k8s-workload-ops], status: planned, pilot: true,
+      note: "classic 'Scale Down Stale ReplicaSets' scales the active RS to 0; not ported as written" }
+
+  # --- workloads ---------------------------------------------------------------------------------------------
+  - { bundle: k8s-statefulset-ops,         skills: [k8s-workload-ops], status: planned }
+  - { bundle: k8s-restart-resource,        skills: [k8s-workload-ops], status: planned, note: "label-selected restart becomes rollout-restart on the target workload" }
+  - { bundle: k8s-stacktrace-health,       skills: [k8s-workload-logs], status: planned }
+  - { bundle: k8s-labeledpods-healthcheck, skills: [k8s-workload-health], status: planned, note: "running-pod count is part of rollout-status" }
+  - { bundle: k8s-cluster-resource-health, skills: [k8s-node-health], status: planned,
+      note: "classic task 2 reads files nothing creates; task 1 misreads whole-core CPU as millicores" }
+
+  # --- namespace ---------------------------------------------------------------------------------------------
+  - { bundle: k8s-podresources-health,     skills: [k8s-namespace-resources], status: planned }
+  - { bundle: k8s-image-check,             skills: [k8s-namespace-resources], status: planned }
+  - { bundle: k8s-serviceaccount-check,    skills: [k8s-namespace-resources], status: planned,
+      note: "classic creates a pod; re-derived as a SubjectAccessReview (read-only)" }
+  - { bundle: k8s-job-namespace-health,    skills: [k8s-namespace-health, k8s-cronjob-health], status: planned }
+  - { bundle: k8s-chaos-namespace,         skills: [k8s-chaos], status: planned }
+  - { bundle: k8s-chaos-workload,          skills: [k8s-chaos], status: planned }
+
+  # --- networking ----------------------------------------------------------------------------------------------
+  - { bundle: k8s-ingress-gce-healthcheck, skills: [k8s-ingress-health], status: planned,
+      note: "backends annotation check ported; Cloud Logging and LB-config tasks need a GCP credential -> gcp plugin (D72)" }
+  - { bundle: k8s-istio-system-health,     skills: [k8s-istio-health], status: planned }
+
+  # --- GitOps CRDs ---------------------------------------------------------------------------------------------
+  - { bundle: k8s-fluxcd-helm-health,          skills: [k8s-flux-health], status: planned, note: "classic error-messages task always fires (jsonpath outside {})" }
+  - { bundle: k8s-fluxcd-kustomization-health, skills: [k8s-flux-health], status: planned }
+  - { bundle: k8s-fluxcd-reconcile,            skills: [k8s-flux-health], status: planned }
+  - { bundle: k8s-chaos-flux,                  skills: [k8s-chaos], status: planned, note: "suspend/resume become flux write tasks; arbitrary CHAOS_COMMAND exec dropped" }
+  - { bundle: k8s-argocd-application-health,   skills: [k8s-argocd-health], status: planned }
+  - { bundle: k8s-argocd-helm-health,          skills: [k8s-argocd-health], status: planned }
+  - { bundle: k8s-gitops-gh-remediate,         skills: [], status: dropped,
+      note: "D72: needs a GitHub credential on a kubernetes target; re-home as github plugin skills later" }
+
+  # --- cluster add-ons -----------------------------------------------------------------------------------------
+  - { bundle: k8s-certmanager-healthcheck,        skills: [k8s-certmanager-health], status: planned }
+  - { bundle: k8s-karpenter-autoscaling-health,   skills: [k8s-karpenter-health], status: planned }
+  - { bundle: k8s-karpenter-control-plane-health, skills: [k8s-karpenter-health], status: planned }
+
+  # --- apps on kubernetes (labels-scoped) ------------------------------------------------------------------------
+  - { bundle: k8s-postgres-healthcheck,  skills: [k8s-postgres-operator-health], status: planned,
+      note: "pod/Patroni/backup-CR checks stay here; connection, config and query checks move to the postgres plugin (D53)" }
+  - { bundle: k8s-postgres-operations,   skills: [k8s-postgres-operator-ops], status: planned, note: "classic reports a failed restart as Completed" }
+  - { bundle: k8s-redis-healthcheck,     skills: [k8s-redis-health], status: planned, note: "SET/INCR test is a write: separate write task" }
+  - { bundle: k8s-vault-healthcheck,     skills: [k8s-vault-health], status: planned }
+  - { bundle: k8s-prometheus-healthcheck, skills: [k8s-prometheus-health], status: planned, note: "classic ServiceMonitor task always fires" }
+  - { bundle: k8s-loki-healthcheck,      skills: [k8s-loki-health], status: planned }
+  - { bundle: k8s-seaweedfs-healthcheck, skills: [k8s-seaweedfs-health], status: planned, note: "S3 put/delete test is a write: separate write task" }
+  - { bundle: k8s-artifactory-health,    skills: [k8s-artifactory-health], status: planned }
+  - { bundle: k8s-jenkins-healthcheck,   skills: [k8s-jenkins-health], status: planned }
+  - { bundle: k8s-otelcollector,         skills: [k8s-otelcollector-health], status: planned }
+  - { bundle: k8s-jaeger-http-query,     skills: [k8s-jaeger-health], status: planned }
+  - { bundle: k8s-litellm-proxy-health,  skills: [k8s-litellm-health], status: planned,
+      note: "unauthenticated health endpoints only; master-key reads (secrets, printenv) are not ported" }
+  - { bundle: k8s-litellm-spend-governance, skills: [], status: planned, plugin: misc,
+      note: "needs the LiteLLM master key: misc plugin skill on a generic/bearer connection (D72), M4" }
