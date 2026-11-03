@@ -12,13 +12,14 @@ tasks:
   - name: rollout-restart
     title: Rolling restart
     description: >-
-      Restarts every pod of the workload by changing its pod template
-      (kubectl rollout restart), then reports the revision before and after and
-      whether the rollout finished within the timeout input. A rollout that is
-      slow or stuck is reported as completed false with a reason, not as a task
-      failure. The reason input is recorded on the workload as the annotation
-      runwhen.com/restart-reason. A dry run sends the same template change as a
-      server-side dry run and does not wait.
+      Restarts every pod of the workload by changing its pod template (the
+      restartedAt annotation, as kubectl rollout restart does) in one patch that
+      also records the reason input as the workload annotation
+      runwhen.com/restart-reason, or clears an older reason when none is given.
+      Then reports the revision before and after and whether the rollout
+      finished within the timeout input. A rollout that is slow or stuck is
+      reported as completed false with a reason, not as a task failure. A dry
+      run sends the identical patch as a server-side dry run and does not wait.
     script: scripts/rollout_restart.py
     tags: [restart, rollout]
     readOnly: false
@@ -29,7 +30,8 @@ tasks:
     effects:
       - "Changes the pod template annotation kubectl.kubernetes.io/restartedAt, which makes the controller replace every pod of the workload (a rolling restart)."
       - "Adds a new revision to the workload's history."
-      - "Sets the annotation runwhen.com/restart-reason on the workload when a reason is given."
+      - "Sets the annotation runwhen.com/restart-reason on the workload to the reason, or removes an earlier reason annotation when no reason is given."
+      - "With the Recreate strategy every pod stops at once, so the workload is down until the new pods start; with OnDelete no pod is replaced until it is deleted."
       - "A GitOps controller (Flux, Argo CD) managing the workload may report drift because the template differs from git."
     permissions:
       - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, list, watch, patch] }
@@ -60,6 +62,7 @@ tasks:
     effects:
       - "Replaces the workload's pod template with the one from the chosen revision (images, env, resources), which makes the controller replace its pods."
       - "The workload's current template becomes a past revision; the chosen revision becomes the newest one."
+      - "With the Recreate strategy every pod stops at once; with OnDelete no pod is replaced until it is deleted."
       - "A GitOps controller (Flux, Argo CD) managing the workload will re-apply the template from git and undo the rollback."
     permissions:
       - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, patch] }
@@ -136,7 +139,8 @@ tasks:
       template (kubectl set resources) and reports before and after for each of
       the four fields. Values are explicit quantities; nothing is guessed from
       usage. At least one of the four is required, and a request above its
-      limit is refused. The container defaults to the only container.
+      limit is refused. The container defaults to the only container. Reports
+      whether an autoscaler targets the workload (hpaPresent).
     script: scripts/set_resources.py
     tags: [resources, requests, limits]
     readOnly: false
@@ -146,9 +150,12 @@ tasks:
     effects:
       - "Changes the pod template's resource requests and limits for one container, which makes the controller replace every pod of the workload."
       - "Lower limits can throttle CPU or OOM-kill the container; higher requests can leave pods unschedulable."
+      - "With the Recreate strategy every pod stops at once; with OnDelete no pod is replaced until it is deleted."
+      - "An autoscaler measures utilization against the requests: changing a request shifts the point at which it scales."
       - "A GitOps controller (Flux, Argo CD) managing the workload may revert the change."
     permissions:
       - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, patch] }
+      - { apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [list] }
     inputs:
       container: { type: string, required: false, description: "Container to change; the only container when the pod template has one" }
       cpuRequest: { type: string, required: false, description: "CPU request, e.g. 100m or 0.5" }

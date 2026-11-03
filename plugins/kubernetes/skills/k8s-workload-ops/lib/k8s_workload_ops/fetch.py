@@ -4,7 +4,7 @@ only I/O besides k8s.py)."""
 import time
 
 from k8s_workload_ops.errors import RwError
-from k8s_workload_ops.k8s import MESSAGE_LIMIT, classify, kubectl_json
+from k8s_workload_ops.k8s import MESSAGE_LIMIT, classify, kubectl_json, run_unchecked
 from k8s_workload_ops.workload import (
     DEPLOYMENT,
     RESOURCE,
@@ -94,7 +94,8 @@ def wait_for_rollout(ctx, kind_ref, seconds, kubectl_timeout):
     write already happened and its result must not be lost.
     """
     started = time.monotonic()
-    result = ctx.run(
+    result = run_unchecked(
+        ctx,
         [
             "kubectl",
             "-n",

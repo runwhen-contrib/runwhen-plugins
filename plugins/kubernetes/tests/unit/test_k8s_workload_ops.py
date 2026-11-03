@@ -45,6 +45,15 @@ TARGETS = {
 STATUS_OK = (0, 'deployment "web" successfully rolled out\n', "")
 
 
+class FakeCommandError(RwError):
+    """What the v13 runner raises for a non-zero exit when check is true."""
+
+    def __init__(self, argv, returncode, stderr):
+        super().__init__("internal", f"{argv[0]} exited {returncode}: {stderr}")
+        self.returncode = returncode
+        self.stderr = stderr
+
+
 class FakeCtx:
     """What a script sees: resource, settings, dry_run, error(), run().
 
@@ -87,16 +96,20 @@ class FakeCtx:
         )
         return [x for x in self.lines() if any(v in x for v in verbs)]
 
-    def run(self, argv, **kwargs):
+    def run(self, argv, check=True, **kwargs):
+        """Like the v13 runner: a non-zero exit raises unless the caller passes check=False."""
         self.calls.append(argv)
         line = " ".join(argv[1:])
-        for needle, answer in self.answers:
+        answer = None
+        for needle, candidate in self.answers:
             if needle in line:
+                answer = candidate
                 if isinstance(answer, list):
                     answer = answer.pop(0) if len(answer) > 1 else answer[0]
-                rc, out, err = answer
-                return SimpleNamespace(returncode=rc, stdout=out, stderr=err)
-        rc, out, err = self.default(argv, line)
+                break
+        rc, out, err = answer if answer is not None else self.default(argv, line)
+        if rc and check:
+            raise FakeCommandError(argv, rc, err)
         return SimpleNamespace(returncode=rc, stdout=out, stderr=err)
 
     def default(self, argv, line):
@@ -561,17 +574,17 @@ def test_resource_plan_reports_before_and_after_for_each_field():
         "before": "64Mi",
         "after": "96Mi",
         "requested": True,
-        "changed": True,
+        "differs": True,
     }
     assert fields["cpuLimit"]["before"] is None and fields["cpuLimit"]["after"] == "250m"
     assert fields["cpuRequest"]["before"] == "5m" and fields["cpuRequest"]["requested"] is False
-    assert fields["cpuRequest"]["changed"] is False
+    assert fields["cpuRequest"]["differs"] is False
     assert p["limits"] == "cpu=250m,memory=96Mi" and p["requests"] == ""
 
 
 def test_equivalent_quantities_are_not_a_change():
     p = w.resource_plan(WEB, None, {"cpuRequest": "0.005", "memoryRequest": "8192Ki"})
-    assert [f["changed"] for f in p["fields"]] == [False, False, False, False]
+    assert [f["differs"] for f in p["fields"]] == [False, False, False, False]
 
 
 def test_container_choice_with_one_several_unknown_and_init_containers():
@@ -661,7 +674,7 @@ def test_a_failed_read_of_the_target_raises_with_its_code_and_writes_nothing(tas
 @pytest.mark.parametrize(
     "task,needle",
     [
-        ("rollout-restart", "rollout restart"),
+        ("rollout-restart", "patch"),
         ("rollback", "rollout undo"),
         ("scale", "scale deployment.apps/web"),
         ("delete-pods", "delete pod"),
@@ -670,8 +683,6 @@ def test_a_failed_read_of_the_target_raises_with_its_code_and_writes_nothing(tas
 )
 @pytest.mark.parametrize("dry", [False, True])
 def test_a_forbidden_write_raises_permission_denied_and_never_returns_a_result(task, needle, dry):
-    # restart's dry run sends a patch, not "rollout restart"
-    needle = "patch" if (task == "rollout-restart" and dry) else needle
     ctx = FakeCtx(
         answers=[(needle, (1, "", STDERR["permission_denied"].replace("get", "patch")))],
         dry_run=dry,
@@ -684,7 +695,7 @@ def test_a_forbidden_write_raises_permission_denied_and_never_returns_a_result(t
 # ------------------------------------------------------- rollout-restart ----
 
 
-def test_restart_runs_the_restart_waits_and_reports_the_new_revision():
+def test_restart_is_one_patch_then_waits_and_reports_the_new_revision():
     bumped = copy.deepcopy(WEB)
     bumped["metadata"]["annotations"]["deployment.kubernetes.io/revision"] = "8"
     # the first read is before the restart, the second after it
@@ -698,35 +709,83 @@ def test_restart_runs_the_restart_waits_and_reports_the_new_revision():
     r = out["restart"]
     assert r["applied"] is True and r["completed"] is True and r["completionReason"] == "rolled_out"
     assert (r["revisionBefore"], r["revisionAfter"]) == (7, 8)
-    assert r["reason"] == "bad config" and r["reasonRecorded"] is True
-    lines = ctx.lines()
-    assert "-n rw-healthy rollout restart deployment.apps/web" in lines
     assert (
-        "-n rw-healthy annotate deployment.apps/web runwhen.com/restart-reason=bad config --overwrite"
-        in lines
+        r["reason"] == "bad config" and r["reasonRecorded"] is True and r["reasonCleared"] is False
     )
-    assert "-n rw-healthy rollout status deployment.apps/web --timeout=90s" in lines
-    assert lines.index("-n rw-healthy rollout restart deployment.apps/web") < lines.index(
-        "-n rw-healthy rollout status deployment.apps/web --timeout=90s"
-    )
+    assert r["restartedAt"] is not None and r["updateStrategy"] == "RollingUpdate"
+    lines = ctx.lines()
+    patches = [c for c in ctx.calls if "patch" in c]
+    assert len(patches) == 1  # reason and restart annotation in one write: no half-done state
+    assert not any(" annotate " in x or "rollout restart" in x for x in lines)
+    body = json.loads(patches[0][patches[0].index("-p") + 1])
+    assert body["metadata"]["annotations"] == {"runwhen.com/restart-reason": "bad config"}
+    template = body["spec"]["template"]["metadata"]["annotations"]
+    assert template["kubectl.kubernetes.io/restartedAt"] == r["restartedAt"]
+    assert "--type=merge" in patches[0] and "--dry-run=server" not in patches[0]
+    status = "-n rw-healthy rollout status deployment.apps/web --timeout=90s"
+    assert lines.index(status) > lines.index(" ".join(patches[0][1:]))
     assert ctx.errors == []
     # a Deployment keeps its revision on itself: no ReplicaSet list needed
     assert not any("replicasets" in x for x in lines)
 
 
-def test_restart_dry_run_sends_the_template_patch_as_a_server_dry_run_and_does_not_wait():
+def test_restart_dry_run_sends_the_same_patch_as_a_server_dry_run_and_does_not_wait():
     ctx = FakeCtx(dry_run=True)
     out = run_script("rollout-restart", ctx, reason="why")
     check_outputs("rollout-restart", out)
     r = out["restart"]
     assert r["applied"] is False and r["completed"] is None and r["revisionAfter"] is None
-    assert r["reasonRecorded"] is False  # a dry run records nothing
-    lines = ctx.lines()
-    patch = next(x for x in lines if " patch " in x)
-    assert patch.endswith("--dry-run=server") and "kubectl.kubernetes.io/restartedAt" in patch
-    annotate = next(x for x in lines if " annotate " in x)
-    assert annotate.endswith("--dry-run=server")
-    assert not any("rollout restart" in x or "rollout status" in x for x in lines)
+    # a dry run reports nothing as done, and still shows the strategy the approver needs
+    assert r["reasonRecorded"] is False and r["reasonCleared"] is False and r["restartedAt"] is None
+    assert (
+        r["updateStrategy"] == "RollingUpdate"
+        and out["target"]["updateStrategy"] == "RollingUpdate"
+    )
+    patch = next(c for c in ctx.calls if "patch" in c)
+    assert patch[-1] == "--dry-run=server"
+    assert "kubectl.kubernetes.io/restartedAt" in patch[patch.index("-p") + 1]
+    assert not any("rollout status" in x for x in ctx.lines())
+    assert ctx.writes() == [" ".join(patch[1:])]
+
+
+def test_restart_without_a_reason_clears_an_older_reason_annotation():
+    old = copy.deepcopy(WEB)
+    old["metadata"]["annotations"]["runwhen.com/restart-reason"] = "last week"
+    ctx = FakeCtx(doc=old)
+    r = run_script("rollout-restart", ctx)["restart"]
+    patch = next(c for c in ctx.calls if "patch" in c)
+    body = json.loads(patch[patch.index("-p") + 1])
+    assert body["metadata"]["annotations"] == {
+        "runwhen.com/restart-reason": None
+    }  # merge patch: delete
+    assert (r["reasonPresentBefore"], r["reasonCleared"], r["reasonRecorded"]) == (
+        True,
+        True,
+        False,
+    )
+    dry = FakeCtx(doc=old, dry_run=True)
+    r = run_script("rollout-restart", dry)["restart"]
+    assert (r["reasonPresentBefore"], r["reasonCleared"]) == (True, False)  # visible, not yet done
+
+
+def test_restart_without_a_reason_and_none_before_clears_nothing():
+    r = run_script("rollout-restart", FakeCtx())["restart"]
+    assert (r["reasonPresentBefore"], r["reasonCleared"], r["reasonRecorded"]) == (
+        False,
+        False,
+        False,
+    )
+
+
+@pytest.mark.parametrize("strategy", ["Recreate", "OnDelete"])
+def test_restart_reports_the_update_strategy_so_the_approver_sees_what_it_will_do(strategy):
+    doc = copy.deepcopy(DB)
+    doc["spec"]["updateStrategy"] = {"type": strategy}
+    ctx = FakeCtx("db", doc=doc, dry_run=True)
+    out = run_script("rollout-restart", ctx)
+    assert (
+        out["restart"]["updateStrategy"] == strategy and out["target"]["updateStrategy"] == strategy
+    )
 
 
 def test_a_slow_rollout_is_reported_not_failed():
@@ -776,13 +835,12 @@ def test_a_long_status_message_is_truncated_with_a_flag():
     assert len(r["message"]) == 1024 and r["truncated"] is True
 
 
-def test_restart_that_cannot_record_the_reason_keeps_its_result_and_says_so():
-    ctx = FakeCtx(answers=[("annotate", (1, "", STDERR["permission_denied"]))])
-    out = run_script("rollout-restart", ctx, reason="r")
-    assert out["restart"]["applied"] is True and out["restart"]["reasonRecorded"] is False
-    assert [(e["code"], e["scope"]) for e in ctx.errors] == [
-        ("permission_denied", "reason-annotation")
-    ]
+def test_a_failed_patch_fails_the_task_with_nothing_half_done():
+    ctx = FakeCtx(answers=[("patch", (1, "", STDERR["permission_denied"]))])
+    with pytest.raises(RwError) as exc:
+        run_script("rollout-restart", ctx, reason="r")
+    assert exc.value.code == "permission_denied"
+    assert not any("rollout status" in x for x in ctx.lines())
 
 
 def test_restart_that_cannot_read_the_new_revision_keeps_its_result():
@@ -803,9 +861,8 @@ def test_restart_statefulset_and_daemonset_read_their_controller_revisions():
         check_outputs("rollout-restart", out)
         assert out["restart"]["revisionBefore"] == expect
         assert any("controllerrevisions" in x for x in ctx.lines())
-        assert (
-            f"-n rw-healthy rollout restart {w.SHORT[out['target']['kind']]}/{name}" in ctx.lines()
-        )
+        ref = f"{w.SHORT[out['target']['kind']]}/{name}"
+        assert any(c[1:5] == ["-n", "rw-healthy", "patch", ref] for c in ctx.calls)
 
 
 def test_restart_refuses_a_paused_deployment_before_writing():
@@ -850,15 +907,18 @@ def test_rollback_names_the_revision_it_shows_the_approver():
     assert r["revisionHistoryLimit"] == 10
 
 
-def test_rollback_dry_run_adds_the_server_dry_run_flag():
+def test_rollback_dry_run_adds_the_server_dry_run_flag_and_reports_would_change():
     ctx = FakeCtx(dry_run=True)
     out = run_script("rollback", ctx, to_revision=4)
     r = out["rollback"]
-    assert r["applied"] is False and r["changed"] is True and r["to"]["revision"] == 4
+    assert (r["applied"], r["changed"], r["wouldChange"]) == (False, False, True)
+    assert r["to"]["revision"] == 4
     assert (
         ctx.line(-1)
         == "-n rw-healthy rollout undo deployment.apps/web --to-revision=4 --dry-run=server"
     )
+    real = run_script("rollback", FakeCtx(), to_revision=4)["rollback"]
+    assert (real["applied"], real["changed"], real["wouldChange"]) == (True, True, False)
 
 
 def test_rollback_to_the_current_revision_writes_nothing():
@@ -927,8 +987,12 @@ def test_scale_sets_replicas_and_reports_from_and_to():
 def test_scale_dry_run_flag_and_statefulset():
     ctx = FakeCtx("db", dry_run=True)
     out = run_script("scale", ctx, replicas=3)
-    assert out["scale"]["applied"] is False and out["scale"]["changed"] is True
+    s = out["scale"]
+    assert (s["applied"], s["changed"], s["wouldChange"]) == (False, False, True)
+    assert (s["from"], s["to"]) == (1, 3)
     assert ctx.line(-1) == "-n rw-healthy scale statefulset.apps/db --replicas=3 --dry-run=server"
+    real = run_script("scale", FakeCtx("db"), replicas=3)["scale"]
+    assert (real["applied"], real["changed"], real["wouldChange"]) == (True, True, False)
 
 
 def test_scale_to_the_current_count_writes_nothing():
@@ -1012,15 +1076,14 @@ def test_delete_all_pods_by_name_not_by_selector():
     assert "-l" not in delete.split() and "--wait=false" in delete and "-o name" in delete
 
 
-def test_delete_some_pods_and_dry_run():
+def test_delete_some_pods_and_dry_run_names_would_delete_not_deleted():
     ctx = FakeCtx(dry_run=True)
     out = run_script("delete-pods", ctx, pod_names=["web-7cb4d5696c-n4xwc"])
+    check_outputs("delete-pods", out)
     d = out["deletion"]
-    assert (
-        d["applied"] is False
-        and d["deleted"] == ["web-7cb4d5696c-n4xwc"]
-        and d["deletesAll"] is False
-    )
+    assert d["applied"] is False and d["deletesAll"] is False
+    assert d["deleted"] == [] and d["deletedCount"] == 0  # nothing was deleted
+    assert d["wouldDelete"] == ["web-7cb4d5696c-n4xwc"] and d["wouldDeleteCount"] == 1
     assert ctx.line(-1).endswith("--dry-run=server")
 
 
@@ -1101,7 +1164,8 @@ def test_set_resources_builds_the_kubectl_call_and_reads_the_result_back():
 def test_set_resources_dry_run_and_the_request_flag():
     ctx = FakeCtx("db", dry_run=True)
     out = script("set_resources")(ctx, cpu_request="10m")
-    assert out["resources"]["applied"] is False and out["resources"]["changed"] is True
+    r = out["resources"]
+    assert (r["applied"], r["changed"], r["wouldChange"]) == (False, False, True)
     assert (
         ctx.line(-1)
         == "-n rw-healthy set resources statefulset.apps/db --containers=db --requests=cpu=10m --dry-run=server -o json"
@@ -1239,3 +1303,206 @@ def test_skill_md_is_short_and_has_the_sections():
         "## What to try next",
     ):
         assert heading in text
+
+
+# ------------------------------------------------------- review fixes ----
+
+
+def test_scripts_never_depend_on_the_runner_raising_for_a_non_zero_exit():
+    # the v13 runner raises on a non-zero exit unless check=False; every call must opt out so the
+    # return code, stdout and stderr stay in this skill's hands
+    ctx = FakeCtx(
+        answers=[("rollout status", (1, "", "error: timed out waiting for the condition"))]
+    )
+    run_script("rollout-restart", ctx)
+    seen = []
+    real_run = ctx.run
+
+    def spy(argv, check=True, **kw):
+        seen.append(check)
+        return real_run(argv, check=check, **kw)
+
+    ctx.run = spy
+    run_script("rollout-restart", ctx)
+    assert seen and not any(seen)
+
+
+def test_delete_reports_pods_deleted_before_a_failure_in_the_same_batch():
+    # kubectl deleted one pod, then failed on the other: the name is on stdout and must not be lost
+    one, two = "web-7cb4d5696c-mgbh9", "web-7cb4d5696c-n4xwc"
+    ctx = FakeCtx(answers=[(" delete pod ", (1, f"pod/{one}\n", STDERR["unreachable"]))])
+    out = run_script("delete-pods", ctx)
+    check_outputs("delete-pods", out)
+    d = out["deletion"]
+    assert d["deleted"] == [one] and d["deletedCount"] == 1 and d["applied"] is True
+    assert d["remainingCount"] == 1 and d["requestedCount"] == 2
+    [error] = ctx.errors
+    assert error["code"] == "unreachable" and error["scope"] == "delete"
+    assert "1 of 2" in error["message"] and "1 requested pods remain" in error["message"]
+    assert two not in d["deleted"]
+
+
+def test_delete_says_how_many_requested_pods_remain_after_a_later_batch_fails():
+    main = script("delete_pods")
+    main.__globals__["BATCH"] = 1
+    ctx = FakeCtx(answers=[("delete pod web-7cb4d5696c-n4xwc", (1, "", STDERR["unreachable"]))])
+    d = main(ctx)["deletion"]
+    assert d["deletedCount"] == 1 and d["remainingCount"] == 1
+    assert "1 requested pods remain" in ctx.errors[0]["message"]
+
+
+def test_a_failure_that_deleted_nothing_raises():
+    ctx = FakeCtx(answers=[(" delete pod ", (1, "", STDERR["permission_denied"]))])
+    with pytest.raises(RwError) as exc:
+        run_script("delete-pods", ctx)
+    assert exc.value.code == "permission_denied"
+
+
+def test_pods_already_gone_are_reported_separately_not_as_deleted():
+    one, two = "web-7cb4d5696c-mgbh9", "web-7cb4d5696c-n4xwc"
+    ctx = FakeCtx(
+        answers=[(" delete pod ", (0, f"pod/{one}\n", ""))]
+    )  # --ignore-not-found: two is silent
+    d = run_script("delete-pods", ctx)["deletion"]
+    assert d["deleted"] == [one] and d["alreadyGone"] == [two] and d["alreadyGoneCount"] == 1
+    assert d["remainingCount"] == 0 and ctx.errors == []
+    assert "--ignore-not-found" in next(c for c in ctx.calls if "delete" in c)
+
+
+def test_dry_run_outputs_never_read_as_a_done_change():
+    for task, inputs in (
+        ("scale", {}),
+        ("rollback", {}),
+        ("set-resources", {}),
+        ("delete-pods", {}),
+        ("rollout-restart", {}),
+    ):
+        ctx = FakeCtx(dry_run=True)
+        out = run_script(task, ctx, **inputs)
+        check_outputs(task, out)
+        body = next(v for k, v in out.items() if k != "target")
+        assert body["applied"] is False, task
+        assert body.get("changed", False) is False, task
+        assert body.get("deleted", []) == [] and body.get("deletedCount", 0) == 0, task
+        assert body.get("reasonRecorded", False) is False and body.get("restartedAt") is None, task
+    assert run_script("scale", FakeCtx(dry_run=True))["scale"]["wouldChange"] is True
+    assert run_script("rollback", FakeCtx(dry_run=True))["rollback"]["wouldChange"] is True
+    assert run_script("set-resources", FakeCtx(dry_run=True))["resources"]["wouldChange"] is True
+
+
+def test_target_carries_the_update_strategy_for_every_kind():
+    assert w.target_view(w.DEPLOYMENT, WEB)["updateStrategy"] == "RollingUpdate"
+    assert w.target_view(w.STATEFULSET, DB)["updateStrategy"] == "RollingUpdate"
+    assert w.target_view(w.DAEMONSET, AGENT)["updateStrategy"] == "RollingUpdate"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["1e999999999999", "1E31", "1e-31", "9" * 40, "1e" + "9" * 400],
+)
+def test_parse_quantity_caps_the_exponent_and_digits(text):
+    with pytest.raises(ValueError):
+        w.parse_quantity(text)
+
+
+def test_an_absurd_quantity_is_invalid_input_not_a_crash():
+    for text in ("1e999999999999", "1e99999"):
+        with pytest.raises(RwError) as exc:
+            w.check_resource_input({"cpuLimit": text})
+        assert exc.value.code == "invalid_input"
+    assert w.check_resource_input({"cpuLimit": "1e3"}) == {"cpuLimit": "1e3"}
+
+
+@pytest.mark.parametrize("text", ["512", "1000", "500m", "1e3", "100000"])
+def test_a_memory_value_under_1mi_without_a_byte_unit_asks_for_mi(text):
+    for field in ("memoryRequest", "memoryLimit"):
+        with pytest.raises(RwError) as exc:
+            w.check_resource_input({field: text})
+        assert exc.value.code == "invalid_input" and "Mi" in exc.value.message
+
+
+@pytest.mark.parametrize("text", ["512Ki", "64Mi", "1Mi", "1048576", "2G", "1e9", "128974848"])
+def test_memory_with_a_unit_or_at_least_1mi_is_accepted(text):
+    assert w.check_resource_input({"memoryLimit": text}) == {"memoryLimit": text}
+
+
+def test_the_unitless_rule_is_for_memory_only():
+    assert w.check_resource_input({"cpuLimit": "1", "cpuRequest": "500m"})["cpuRequest"] == "500m"
+
+
+@pytest.mark.parametrize(
+    "reason",
+    ["a b", "a b", "a‮b", "a‪b", "a⁦b", "a⁩b", "a‎b", "a​b", "a\x85b"],
+)
+def test_reason_rejects_unicode_line_separators_and_bidi_controls(reason):
+    with pytest.raises(RwError) as exc:
+        w.clean_reason(reason)
+    assert exc.value.code == "invalid_input"
+
+
+def test_reason_allows_ordinary_unicode():
+    assert (
+        w.clean_reason("déploiement échoué – retour arrière")
+        == "déploiement échoué – retour arrière"
+    )
+
+
+def test_images_are_capped_at_50_in_code():
+    spec = {"containers": [{"name": f"c{i}", "image": "i"} for i in range(60)]}
+    assert len(w.images(spec)) == 50
+    spec["containers"] = spec["containers"][:49]
+    spec["initContainers"] = [{"name": f"i{i}", "image": "i"} for i in range(5)]
+    got = w.images(spec)
+    assert len(got) == 50 and got[-1]["init"] is True
+
+
+def test_scale_reports_at_most_50_autoscalers():
+    hpas = [{"name": f"h{i}"} for i in range(60)]
+    plan = w.scale_plan(w.DEPLOYMENT, WEB, 3, hpas, True)
+    assert len(plan["hpas"]) == 50
+
+
+def test_set_resources_reports_whether_an_autoscaler_targets_the_workload():
+    ctx = FakeCtx(with_hpa=True)
+    out = script("set_resources")(ctx, cpu_request="10m")
+    check_outputs("set-resources", out)
+    assert out["resources"]["hpaPresent"] is True and out["resources"]["hpaNames"] == ["web"]
+    out = script("set_resources")(FakeCtx(), cpu_request="10m")
+    assert out["resources"]["hpaPresent"] is False and out["resources"]["hpaNames"] == []
+
+
+def test_set_resources_still_changes_when_autoscalers_cannot_be_listed():
+    ctx = FakeCtx(answers=[("get horizontalpodautoscalers", (1, "", STDERR["permission_denied"]))])
+    out = script("set_resources")(ctx, cpu_request="10m")
+    assert out["resources"]["hpaPresent"] is None and out["resources"]["applied"] is True
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "hpa")]
+
+
+def test_set_resources_hpa_list_permission_is_declared():
+    rules = TASKS["set-resources"]["permissions"]
+    assert any("horizontalpodautoscalers" in r["resources"] and "list" in r["verbs"] for r in rules)
+
+
+def test_schema_caps_match_the_code_caps():
+    def schema(name):
+        return json.loads((SKILL / "schemas" / f"{name}.v1.json").read_text())
+
+    target = schema("target")["properties"]["gitops"]["properties"]["signals"]
+    assert target["maxItems"] == 50
+    assert schema("restart")["properties"]["message"]["maxLength"] == 1024
+    assert schema("restart")["properties"]["reason"]["maxLength"] == 256
+    rollback = schema("rollback")["properties"]
+    assert rollback["available"]["maxItems"] == 50
+    assert rollback["from"]["properties"]["images"]["maxItems"] == 50
+    assert rollback["to"]["properties"]["images"]["maxItems"] == 50
+    assert rollback["available"]["items"]["properties"]["images"]["maxItems"] == 50
+    assert schema("scale")["properties"]["hpas"]["maxItems"] == 50
+    assert schema("resources")["properties"]["hpaNames"]["maxItems"] == 50
+    assert schema("resources")["properties"]["fields"]["maxItems"] == 4
+
+
+def test_effects_name_the_recreate_and_ondelete_strategies():
+    for task in ("rollout-restart", "rollback", "set-resources"):
+        text = " ".join(TASKS[task]["effects"])
+        assert "Recreate" in text and "OnDelete" in text, task
+    assert "removes an earlier reason" in " ".join(TASKS["rollout-restart"]["effects"])

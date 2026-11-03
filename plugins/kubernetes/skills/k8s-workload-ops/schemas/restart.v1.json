@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Rollout restart result",
-  "description": "applied is false on a dry run. completed is null when no wait happened (dry run); false with a completionReason when the rollout was slow, stuck or not observable.",
+  "description": "Rollout restart result. applied is false on a dry run; then restartedAt is null and reasonRecorded, reasonCleared and completed say nothing happened. reasonPresentBefore true with no reason given means a real run clears the old reason annotation. completed is false with a completionReason when the rollout was slow, stuck or not observable. updateStrategy OnDelete means no pod is replaced by the restart; Recreate stops all pods at once.",
   "type": "object",
   "properties": {
     "applied": {
@@ -11,13 +11,23 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "maxLength": 256
     },
     "reasonRecorded": {
       "type": "boolean"
     },
+    "reasonPresentBefore": {
+      "type": "boolean"
+    },
+    "reasonCleared": {
+      "type": "boolean"
+    },
     "restartedAt": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "updateStrategy": {
       "type": [
@@ -57,7 +67,8 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "maxLength": 1024
     },
     "truncated": {
       "type": "boolean"
@@ -73,6 +84,8 @@
     "applied",
     "reason",
     "reasonRecorded",
+    "reasonPresentBefore",
+    "reasonCleared",
     "restartedAt",
     "updateStrategy",
     "revisionBefore",

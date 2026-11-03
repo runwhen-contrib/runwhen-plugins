@@ -1,10 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Scale result",
-  "description": "hpas is the autoscalers targeting the workload; null when they could not be listed and overrideHpa was true.",
+  "description": "applied and changed are true only after a real scale; on a dry run both are false and wouldChange says whether the count would change. from/to are the count before and the count asked for. hpas is the autoscalers targeting the workload; null when they could not be listed and overrideHpa was true.",
   "type": "object",
   "properties": {
     "applied": {
+      "type": "boolean"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "wouldChange": {
       "type": "boolean"
     },
     "from": {
@@ -12,9 +18,6 @@
     },
     "to": {
       "type": "integer"
-    },
-    "changed": {
-      "type": "boolean"
     },
     "readyBefore": {
       "type": "integer"
@@ -69,9 +72,10 @@
   },
   "required": [
     "applied",
+    "changed",
+    "wouldChange",
     "from",
     "to",
-    "changed",
     "readyBefore",
     "overrodeHpa",
     "hpas"

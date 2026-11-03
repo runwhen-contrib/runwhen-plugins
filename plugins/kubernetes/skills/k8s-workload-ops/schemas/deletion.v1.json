@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Pod deletion result",
-  "description": "deleted lists the pods kubectl confirmed (on a dry run, the server confirmed it would delete them; applied is false). Lists stop at maxItems; the counts are not capped.",
+  "description": "deleted lists pods kubectl confirmed deleted on a real run; on a dry run it is empty and wouldDelete lists the pods the server confirmed it would delete (applied is false). alreadyGone are requested pods that no longer existed. remainingCount is requested pods neither deleted nor gone because a later batch failed (the failure is also an error on the result). Lists stop at maxItems; counts are not capped.",
   "type": "object",
   "properties": {
     "applied": {
@@ -16,10 +16,31 @@
     "deletedCount": {
       "type": "integer"
     },
+    "wouldDeleteCount": {
+      "type": "integer"
+    },
+    "alreadyGoneCount": {
+      "type": "integer"
+    },
+    "remainingCount": {
+      "type": "integer"
+    },
     "deletesAll": {
       "type": "boolean"
     },
     "deleted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "wouldDelete": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "alreadyGone": {
       "type": "array",
       "items": {
         "type": "string"
@@ -68,8 +89,13 @@
     "ownedCount",
     "requestedCount",
     "deletedCount",
+    "wouldDeleteCount",
+    "alreadyGoneCount",
+    "remainingCount",
     "deletesAll",
     "deleted",
+    "wouldDelete",
+    "alreadyGone",
     "pods"
   ],
   "additionalProperties": false

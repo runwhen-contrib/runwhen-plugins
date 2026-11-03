@@ -25,11 +25,13 @@ def main(ctx, to_revision=None):
         ]
         output = kubectl_text(ctx, *undo, *(["--dry-run=server"] if dry else []))
         skipped = undo_was_skipped(output)
+    effective = plan["changed"] and not skipped
     return {
         "target": target_view(kind, workload),
         "rollback": {
-            "applied": plan["changed"] and not skipped and not dry,
-            "changed": plan["changed"] and not skipped,
+            "applied": effective and not dry,
+            "changed": effective and not dry,
+            "wouldChange": effective and dry,
             "skipped": skipped,
             "from": plan["from"],
             "to": plan["to"],

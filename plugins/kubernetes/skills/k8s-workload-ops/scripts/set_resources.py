@@ -1,8 +1,10 @@
-from k8s_workload_ops.fetch import load_workload, target_kind
+from k8s_workload_ops.fetch import load_hpas, load_workload, target_kind
 from k8s_workload_ops.k8s import kubectl_json
 from k8s_workload_ops.workload import (
+    NESTED_LIMIT,
     SHORT,
     check_resource_input,
+    hpas_targeting,
     resource_plan,
     resources_after,
     target_view,
@@ -25,7 +27,11 @@ def main(
     plan = resource_plan(workload, container, wanted)
     dry = bool(ctx.dry_run)
     fields = plan["fields"]
-    if any(f["changed"] for f in fields):
+    # An autoscaler measures utilisation against the requests: a fact for the approver. A failed
+    # list is reported (hpaPresent null) and does not block the change.
+    all_hpas = load_hpas(ctx, True)
+    hpas = None if all_hpas is None else hpas_targeting(kind, ctx.resource.name, all_hpas)
+    if any(f["differs"] for f in fields):
         args = [
             "-n",
             ctx.resource.namespace,
@@ -42,13 +48,17 @@ def main(
             args.append("--dry-run=server")
         # -o json: kubectl prints the object the server holds after the change
         fields = resources_after(kubectl_json(ctx, *args), plan)
+    differs = any(f["differs"] for f in fields)
     return {
         "target": target_view(kind, workload),
         "resources": {
-            "applied": any(f["changed"] for f in plan["fields"]) and not dry,
-            "changed": any(f["changed"] for f in fields),
+            "applied": differs and not dry,
+            "changed": differs and not dry,
+            "wouldChange": differs and dry,
             "container": plan["container"],
             "init": plan["init"],
+            "hpaPresent": None if hpas is None else bool(hpas),
+            "hpaNames": [h["name"] for h in (hpas or [])][:NESTED_LIMIT],
             "fields": fields,
         },
     }

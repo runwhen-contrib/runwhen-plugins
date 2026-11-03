@@ -1,13 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Rollback result",
-  "description": "applied is false on a dry run or when nothing needed to change. skipped is true when kubectl found the template already matched the revision.",
+  "description": "applied and changed are true only after a real rollback; on a dry run both are false and wouldChange says whether the rollback would change the workload. skipped is true when kubectl found the template already matched the revision.",
   "type": "object",
   "properties": {
     "applied": {
       "type": "boolean"
     },
     "changed": {
+      "type": "boolean"
+    },
+    "wouldChange": {
       "type": "boolean"
     },
     "skipped": {
@@ -161,6 +164,7 @@
   "required": [
     "applied",
     "changed",
+    "wouldChange",
     "skipped",
     "from",
     "to",

@@ -21,7 +21,13 @@ def main(ctx, replicas, override_hpa=False):
     if plan["changed"]:
         scale = ["-n", ns, "scale", f"{SHORT[kind]}/{ctx.resource.name}", f"--replicas={replicas}"]
         kubectl_text(ctx, *scale, *(["--dry-run=server"] if dry else []))
+    changed = plan.pop("changed")
     return {
         "target": target_view(kind, workload),
-        "scale": {"applied": plan["changed"] and not dry, **plan},
+        "scale": {
+            "applied": changed and not dry,
+            "changed": changed and not dry,
+            "wouldChange": changed and dry,
+            **plan,
+        },
     }

@@ -44,23 +44,32 @@ def classify(returncode, stderr):
     return "internal"
 
 
-def run_checked(ctx, argv, **run_kwargs):
-    """`ctx.run(argv)`, raising RwError with a D64 code when the command failed.
+def failure(argv, result):
+    """The RwError for a failed command result, with a D64 code from its stderr."""
+    stderr = (result.stderr or "").strip()
+    # kubectl prints "Warning: ..." lines before the error; the error is what the message is for
+    lines = [x for x in stderr.splitlines() if not x.startswith("Warning:")]
+    shown = "\n".join(lines).strip() or stderr
+    return RwError(
+        classify(result.returncode, stderr),
+        f"{argv[0]} exited {result.returncode}: {shown[:MESSAGE_LIMIT]}",
+    )
 
-    The installed SDK's `ctx.run` returns the CompletedProcess without
-    raising, so the return code is checked here; an SDK that raises instead
-    has its exception passed through unchanged.
+
+def run_unchecked(ctx, argv, **run_kwargs):
+    """`ctx.run(argv)` that returns the finished process whatever its exit code.
+
+    The v13 runner raises on a non-zero exit by default; `check=False` keeps
+    the return-code path, which this skill classifies itself.
     """
-    result = ctx.run(argv, **run_kwargs)
+    return ctx.run(argv, check=False, **run_kwargs)
+
+
+def run_checked(ctx, argv, **run_kwargs):
+    """`run_unchecked`, raising RwError with a D64 code when the command failed."""
+    result = run_unchecked(ctx, argv, **run_kwargs)
     if result.returncode:
-        stderr = (result.stderr or "").strip()
-        # kubectl prints "Warning: ..." lines before the error; the error is what the message is for
-        lines = [x for x in stderr.splitlines() if not x.startswith("Warning:")]
-        shown = "\n".join(lines).strip() or stderr
-        raise RwError(
-            classify(result.returncode, stderr),
-            f"{argv[0]} exited {result.returncode}: {shown[:MESSAGE_LIMIT]}",
-        )
+        raise failure(argv, result)
     return result
 
 

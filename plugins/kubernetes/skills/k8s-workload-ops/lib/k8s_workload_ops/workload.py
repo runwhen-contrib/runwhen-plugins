@@ -8,6 +8,7 @@ refuse a write lives here so a unit test can show it.
 
 import math
 import re
+import unicodedata
 from decimal import Decimal, InvalidOperation
 
 from k8s_workload_ops.errors import RwError
@@ -95,7 +96,8 @@ def kubectl_duration(seconds):
 
 def clean_reason(reason):
     """The restart reason, trimmed; None when absent or blank. Over 256
-    characters or containing control characters raises RwError('invalid_input')."""
+    characters, or containing control, line/paragraph-separator or bidi/format
+    characters, raises RwError('invalid_input')."""
     if reason is None:
         return None
     text = str(reason).strip()
@@ -105,8 +107,13 @@ def clean_reason(reason):
         raise RwError(
             "invalid_input", f"reason is {len(text)} characters; the limit is {REASON_LIMIT}"
         )
-    if any(ord(c) < 32 or ord(c) == 127 for c in text):
-        raise RwError("invalid_input", "reason must not contain control characters or newlines")
+    # Cc control, Cf format (bidi marks and overrides U+200E/F, U+202A-E, U+2066-9, zero-width),
+    # Zl/Zp line and paragraph separators (U+2028, U+2029)
+    if any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in text):
+        raise RwError(
+            "invalid_input",
+            "reason must not contain control, line-separator or bidirectional-format characters",
+        )
     return text
 
 
@@ -152,6 +159,7 @@ def target_view(kind, workload):
         "namespace": meta.get("namespace"),
         "generation": meta.get("generation"),
         "paused": bool(spec.get("paused", False)) if kind == DEPLOYMENT else None,
+        "updateStrategy": update_strategy(kind, workload),
         "gitopsManaged": g["managed"],
         "gitops": g,
     }
@@ -239,8 +247,8 @@ def owned_pods(kind, workload, replicasets, pods):
 
 
 def images(pod_spec):
-    """Every container image of a pod spec; init containers (native sidecars
-    included) carry init: true."""
+    """Every container image of a pod spec (at most 50); init containers
+    (native sidecars included) carry init: true."""
     out = [
         {"container": c["name"], "image": c.get("image"), "init": False}
         for c in pod_spec.get("containers") or []
@@ -249,7 +257,7 @@ def images(pod_spec):
         {"container": c["name"], "image": c.get("image"), "init": True}
         for c in pod_spec.get("initContainers") or []
     ]
-    return out
+    return out[:NESTED_LIMIT]
 
 
 def revision_views(kind, items):
@@ -329,6 +337,25 @@ def check_restartable(kind, workload):
         raise RwError(
             "invalid_input", "the Deployment is paused; resume the rollout before restarting it"
         )
+
+
+def restart_patch(restarted_at, reason):
+    """The one merge patch a restart sends: the pod template's restartedAt
+    annotation (what `kubectl rollout restart` sets) and the reason annotation
+    on the workload, so there is no half-done state. No reason clears an older
+    one (a null in a merge patch deletes the key, and is a no-op when absent)."""
+    return {
+        "metadata": {"annotations": {RESTART_REASON_ANNOTATION: reason}},
+        "spec": {
+            "template": {
+                "metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": restarted_at}}
+            }
+        },
+    }
+
+
+def has_restart_reason(workload):
+    return RESTART_REASON_ANNOTATION in (workload["metadata"].get("annotations") or {})
 
 
 def classify_rollout_failure(stderr):
@@ -475,7 +502,7 @@ def scale_plan(kind, workload, replicas, hpas, override_hpa):
         "to": replicas,
         "changed": current != replicas,
         "readyBefore": workload.get("status", {}).get("readyReplicas", 0),
-        "hpas": hpas,
+        "hpas": None if hpas is None else hpas[:NESTED_LIMIT],
         "overrodeHpa": bool(hpas) and bool(override_hpa),
     }
 
@@ -551,6 +578,7 @@ FIELDS = {
 _QUANTITY = re.compile(
     r"^\+?(\d+(?:\.\d*)?|\.\d+)(Ki|Mi|Gi|Ti|Pi|Ei|n|u|m|k|M|G|T|P|E|[eE][+-]?\d+)?$"
 )
+MAX_EXPONENT = 30  # 1e30 is far beyond any real CPU or memory value
 _SCALE = {
     "": Decimal(1),
     "n": Decimal("1e-9"),
@@ -578,12 +606,22 @@ def parse_quantity(text):
     if not match:
         raise ValueError(f"not a quantity: {text!r}")
     number, suffix = match.group(1), match.group(2) or ""
+    if len(number) > 30:
+        raise ValueError(f"quantity is too long: {text!r}")
     try:
         if suffix[:1] in ("e", "E") and len(suffix) > 1:
-            return Decimal(number) * Decimal(10) ** int(suffix[1:])
+            exponent = int(suffix[1:])
+            if abs(exponent) > MAX_EXPONENT:
+                raise ValueError(f"exponent out of range in {text!r}")
+            return Decimal(number) * Decimal(10) ** exponent
         return Decimal(number) * _SCALE[suffix]
-    except InvalidOperation:
+    except (InvalidOperation, ArithmeticError):  # Overflow, Underflow, ...
         raise ValueError(f"not a quantity: {text!r}") from None
+
+
+def _unit_suffix(text):
+    match = _QUANTITY.match(str(text).strip())
+    return (match.group(2) or "") if match else ""
 
 
 def _container(workload, name):
@@ -643,6 +681,22 @@ def check_resource_input(values):
         if quantity <= 0:
             # kubectl set resources treats a zero value as "remove it"
             raise RwError("invalid_input", f"{field} must be greater than zero, got {text!r}")
+        suffix = _unit_suffix(text)
+        if (
+            field.startswith("memory")
+            and quantity < 2**20
+            and (
+                suffix == ""
+                or suffix[:1] in ("e", "E")
+                and len(suffix) > 1
+                or suffix in ("n", "u", "m")
+            )
+        ):
+            raise RwError(
+                "invalid_input",
+                f"{field} {text!r} is under 1Mi with no byte unit (a bare number is bytes, "
+                "m is milli): did you mean Mi?",
+            )
     return wanted
 
 
@@ -690,14 +744,14 @@ def _same(a, b):
 
 
 def resource_fields(before, after, wanted):
-    """Per field: {field, before, after, requested, changed}."""
+    """Per field: {field, before, after, requested, differs} (differs: after is not before)."""
     return [
         {
             "field": f,
             "before": before[f],
             "after": after[f],
             "requested": f in wanted,
-            "changed": not _same(before[f], after[f]),
+            "differs": not _same(before[f], after[f]),
         }
         for f in FIELDS
     ]

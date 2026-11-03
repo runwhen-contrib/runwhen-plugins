@@ -22,9 +22,12 @@ the cause first, use `kubernetes:k8s-workload-health/rollout-status`,
 `kubernetes:k8s-workload-logs/error-patterns`.
 
 Every task writes (`readOnly: false`) and needs approval. Run it as a dry run
-first: the server validates the change and the result shows what would change,
-with `applied: false`. Permissions are namespace-scoped RBAC on the target's
-own namespace; the task list shows exactly which verbs each one uses.
+first: the server validates the change and the result says what would change.
+Under a dry run `applied` is false and every "done" field is empty or false:
+`changed` stays false and `wouldChange` says whether a real run would change
+something; `deleted` is empty and `wouldDelete` lists the pods; `restartedAt`
+is null. Permissions are namespace-scoped RBAC on the target's own namespace;
+the task list shows exactly which verbs each one uses.
 
 ## What each task tells you
 
@@ -33,12 +36,17 @@ Every task returns `target`: the workload, its `generation`, and
 with the keys in `gitops.signals`). Nothing is refused for being GitOps
 managed: the approver decides, knowing the controller may revert the change.
 
-- `rollout-restart`: `revisionBefore` and `revisionAfter`, and whether the
-  rollout finished within `timeout` (default 120s, at most 240s). `completed:
-  false` with `completionReason` `timeout`, `progress_deadline_exceeded` or
-  `update_strategy_on_delete` means the restart was sent but the rollout was
-  slow, stuck, or (OnDelete) will not replace pods by itself; the task still
-  succeeds. `reason` is recorded as the annotation `runwhen.com/restart-reason`.
+- `rollout-restart`: one patch sets the pod template's restart annotation and
+  the workload annotation `runwhen.com/restart-reason` to `reason`; with no
+  `reason` an earlier reason annotation is removed (`reasonPresentBefore` says
+  whether there was one, `reasonCleared` that it went). Then `revisionBefore`,
+  `revisionAfter`, and whether the rollout finished within `timeout` (default
+  120s, at most 240s). `completed: false` with `completionReason` `timeout`,
+  `progress_deadline_exceeded` or `update_strategy_on_delete` means the restart
+  was sent but the rollout was slow or stuck; the task still succeeds.
+  `updateStrategy` matters: `Recreate` stops all pods at once, and `OnDelete`
+  replaces nothing until pods are deleted (also true of rollback and
+  set-resources).
 - `rollback`: `from` and `to` (revision number and images, init containers
   flagged `init: true`), `available` revisions, and `revisionHistoryLimit`. No
   previous revision, or a `toRevision` that is not in the history, is refused.
@@ -46,20 +54,30 @@ managed: the approver decides, knowing the controller may revert the change.
 - `scale`: `from`, `to`, `readyBefore`, and the autoscalers targeting the
   workload. A DaemonSet is refused. Scaling to 0 is refused unless the
   `allowScaleToZero` setting is true. An autoscaler targeting the workload
-  refuses the scale unless `overrideHpa` is true.
-- `delete-pods`: the pods deleted (`deleted`), `deletedCount` of `ownedCount`,
-  and `deletesAll`. Only pods the workload owns (selector plus ownerReferences)
+  refuses the scale unless `overrideHpa` is true. Autoscaler bounds
+  (min/max) cannot be changed by this skill.
+- `delete-pods`: the pods deleted (`deleted`; `wouldDelete` on a dry run),
+  `alreadyGone` for requested pods that no longer existed, `ownedCount`, and
+  `deletesAll`. Only pods the workload owns (selector plus ownerReferences)
   are touched; a name in `podNames` that is not one of them fails the task and
-  nothing is deleted. Destructive: the controller makes replacements.
+  nothing is deleted. If a later batch fails, the pods already deleted are
+  still reported, `remainingCount` says how many requested pods were not
+  deleted, and the result is partial with an error naming the failure.
+  Destructive: the controller makes replacements.
 - `set-resources`: `fields` with `before` and `after` for `cpuRequest`,
-  `cpuLimit`, `memoryRequest`, `memoryLimit`. Give at least one explicit
-  quantity; a request above its limit and a zero value are refused.
+  `cpuLimit`, `memoryRequest`, `memoryLimit` (`differs` per field). Give at
+  least one explicit quantity; a request above its limit, a zero value, an
+  absurd exponent, and a memory value under 1Mi with no unit (a bare number is
+  bytes; did you mean `Mi`?) are refused. `hpaPresent: true` means an
+  autoscaler targets the workload: changing a CPU or memory request shifts
+  the utilization at which it scales, so review its target; `null` means the
+  autoscalers could not be listed (an error on the result says why).
 
 ## How to read the result
 
 A result with `applied: false` changed nothing: either a dry run, or the
-workload already had the requested state (`changed: false`). `applied: true`
-means the API server accepted the write. A failure (forbidden, target missing,
+workload already had the requested state (`changed: false`, `wouldChange:
+false`). `applied: true` means the API server accepted the write. A failure (forbidden, target missing,
 API unreachable) is an error on the result and never an empty success; a
 refused guard is `invalid_input` and tells you which input to change.
 

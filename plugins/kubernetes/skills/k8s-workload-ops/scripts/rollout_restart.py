@@ -2,15 +2,22 @@ import json
 from datetime import datetime, timezone
 
 from k8s_workload_ops.errors import RwError
-from k8s_workload_ops.fetch import load_revision_state, load_workload, target_kind, wait_for_rollout
+from k8s_workload_ops.fetch import (
+    load_revision_state,
+    load_workload,
+    target_kind,
+    wait_for_rollout,
+)
 from k8s_workload_ops.k8s import MESSAGE_LIMIT, kubectl_text
 from k8s_workload_ops.workload import (
-    RESTART_REASON_ANNOTATION,
     SHORT,
     check_restartable,
     clean_reason,
+    has_restart_reason,
     kubectl_duration,
+    limit_text,
     parse_duration,
+    restart_patch,
     target_view,
     update_strategy,
 )
@@ -32,46 +39,25 @@ def main(ctx, timeout="120s", reason=None):
     check_restartable(kind, workload)
     before = load_revision_state(ctx, kind, workload)
     ref = f"{SHORT[kind]}/{ctx.resource.name}"
-    restarted_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     dry = bool(ctx.dry_run)
+    reason_before = has_restart_reason(workload)
 
-    if dry:
-        # `kubectl rollout restart` has no --dry-run: send the patch it sends, as a server-side dry run
-        patch = {
-            "spec": {
-                "template": {
-                    "metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": restarted_at}}
-                }
-            }
-        }
-        kubectl_text(
-            ctx, "-n", ns, "patch", ref, "--type=merge", "-p", json.dumps(patch), "--dry-run=server"
-        )
-    else:
-        kubectl_text(ctx, "-n", ns, "rollout", "restart", ref)
-
-    recorded = False
-    if reason is not None:
-        annotate = [
-            "-n",
-            ns,
-            "annotate",
-            ref,
-            f"{RESTART_REASON_ANNOTATION}={reason}",
-            "--overwrite",
-        ]
-        try:
-            kubectl_text(ctx, *annotate, *(["--dry-run=server"] if dry else []))
-            recorded = not dry
-        except RwError as exc:
-            if dry:
-                raise
-            # the restart is done; keep its result and say the reason was not recorded
-            ctx.error(
-                exc.code,
-                f"restarted, but could not record the reason: {exc.message}"[:MESSAGE_LIMIT],
-                scope="reason-annotation",
-            )
+    # One merge patch sets the pod template's restartedAt (what `kubectl rollout restart` sets) and
+    # the reason annotation together (or clears an older reason), so no half-done state is possible.
+    # The dry run sends the identical patch with --dry-run=server.
+    restarted_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    patch = restart_patch(restarted_at, reason)
+    kubectl_text(
+        ctx,
+        "-n",
+        ns,
+        "patch",
+        ref,
+        "--type=merge",
+        "-p",
+        json.dumps(patch),
+        *(["--dry-run=server"] if dry else []),
+    )
 
     outcome = {
         "completed": None,
@@ -97,7 +83,9 @@ def main(ctx, timeout="120s", reason=None):
         except RwError as exc:
             ctx.error(
                 exc.code,
-                f"restarted, but could not read the new revision: {exc.message}"[:MESSAGE_LIMIT],
+                limit_text(
+                    f"restarted, but could not read the new revision: {exc.message}", MESSAGE_LIMIT
+                )[0],
                 scope="revision",
             )
 
@@ -106,8 +94,10 @@ def main(ctx, timeout="120s", reason=None):
         "restart": {
             "applied": not dry,
             "reason": reason,
-            "reasonRecorded": recorded,
-            "restartedAt": restarted_at,
+            "reasonRecorded": reason is not None and not dry,
+            "reasonPresentBefore": reason_before,
+            "reasonCleared": reason is None and reason_before and not dry,
+            "restartedAt": None if dry else restarted_at,
             "updateStrategy": update_strategy(kind, workload),
             "revisionBefore": before["revision"],
             "revisionAfter": after["revision"] if after else None,

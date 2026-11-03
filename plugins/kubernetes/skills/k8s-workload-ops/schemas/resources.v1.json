@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Resource change result",
-  "description": "One entry per field, before and after. after is what the API server returned (on a dry run, what it would hold).",
+  "description": "applied and changed are true only after a real change; on a dry run both are false and wouldChange says whether any field would differ. Per field, after is the value the API server returned (on a dry run, what it would hold) and differs says after is not before. hpaPresent true means an autoscaler targets the workload: changing a request shifts its utilization target; null when they could not be listed.",
   "type": "object",
   "properties": {
     "applied": {
@@ -10,11 +10,27 @@
     "changed": {
       "type": "boolean"
     },
+    "wouldChange": {
+      "type": "boolean"
+    },
     "container": {
       "type": "string"
     },
     "init": {
       "type": "boolean"
+    },
+    "hpaPresent": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "hpaNames": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string"
+      }
     },
     "fields": {
       "type": "array",
@@ -44,7 +60,7 @@
           "requested": {
             "type": "boolean"
           },
-          "changed": {
+          "differs": {
             "type": "boolean"
           }
         },
@@ -53,17 +69,21 @@
           "before",
           "after",
           "requested",
-          "changed"
+          "differs"
         ],
         "additionalProperties": false
-      }
+      },
+      "maxItems": 4
     }
   },
   "required": [
     "applied",
     "changed",
+    "wouldChange",
     "container",
     "init",
+    "hpaPresent",
+    "hpaNames",
     "fields"
   ],
   "additionalProperties": false
