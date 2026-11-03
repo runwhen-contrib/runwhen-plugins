@@ -19,6 +19,7 @@ def test_multiple_plugins_sorted():
 
 def test_ci_tooling_change_selects_all_plugins():
     assert changed_plugins(["ci/changed_plugins.py"], ALL) == sorted(ALL)
+    assert changed_plugins(["ci/papi_register_check.py"], ALL) == sorted(ALL)
     assert changed_plugins([".github/workflows/plugins.yml"], ALL) == sorted(ALL)
 
 

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 # Changes to these paths can affect every plugin's CI result.
-ALL_TRIGGERS = ("ci/changed_plugins.py", ".github/workflows/plugins.yml")
+ALL_TRIGGERS = ("ci/changed_plugins.py", "ci/papi_register_check.py", ".github/workflows/plugins.yml")
 
 
 def changed_plugins(paths: list[str], all_plugins: list[str]) -> list[str]:

@@ -57,6 +57,13 @@ jobs:
       - name: Validate
         if: env.SDK_REF != ''
         run: rwtask validate "plugins/${{ matrix.plugin }}"
+      - name: Integration registers through papi's pack validator
+        if: env.SDK_REF != ''
+        run: |
+          set -euo pipefail
+          out="$(mktemp -d)"
+          rwtask compile "plugins/${{ matrix.plugin }}" --out "$out"
+          python3 ci/papi_register_check.py "$out"/*.compiled.json
       - name: Test (replay recorded fixtures)
         if: env.SDK_REF != ''
         run: |
