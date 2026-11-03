@@ -1,0 +1,111 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/expiring-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - expiring-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"expiring-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"expiring.rw.example\"],\"duration\":\"2160h\",\"issuerRef\":{\"group\":\"cert-manager.io\",\"kind\":\"ClusterIssuer\",\"name\":\"rw-cluster-issuer\"},\"renewBefore\":\"360h\",\"secretName\":\"expiring-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:12Z",
+            "generation": 1,
+            "name": "expiring-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "14834",
+            "uid": "74c93ff6-fe9e-4def-bd18-80bfc9f5b964"
+        },
+        "spec": {
+            "dnsNames": [
+                "expiring.rw.example"
+            ],
+            "duration": "2160h",
+            "issuerRef": {
+                "group": "cert-manager.io",
+                "kind": "ClusterIssuer",
+                "name": "rw-cluster-issuer"
+            },
+            "renewBefore": "360h",
+            "secretName": "expiring-cert-tls"
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Certificate is up to date and has not expired",
+                    "observedGeneration": 1,
+                    "reason": "Ready",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ],
+            "notAfter": "2026-11-08T19:49:13Z",
+            "notBefore": "2026-08-10T19:49:13Z",
+            "renewalTime": "2026-10-24T19:49:13Z",
+            "revision": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - clusterissuers.cert-manager.io
+  - rw-cluster-issuer
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "ClusterIssuer",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"ClusterIssuer\",\"metadata\":{\"annotations\":{},\"name\":\"rw-cluster-issuer\"},\"spec\":{\"selfSigned\":{}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:12Z",
+            "generation": 1,
+            "name": "rw-cluster-issuer",
+            "resourceVersion": "14832",
+            "uid": "f6af38bc-275b-4e02-9a54-391d33468177"
+        },
+        "spec": {
+            "selfSigned": {}
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Signing CA verified",
+                    "observedGeneration": 1,
+                    "reason": "IsReady",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ]
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    certificate:
+      ready: {type: Ready, status: 'True', reason: Ready}
+      expiringSoon: true
+      renewalTimePassed: true
+      expiryWarningDays: 14.0
+      secretName: expiring-cert-tls
+    issuer: {name: rw-cluster-issuer, kind: ClusterIssuer, scope: cluster, exists: true, ready: true}

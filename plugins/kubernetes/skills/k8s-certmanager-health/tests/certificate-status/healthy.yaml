@@ -1,0 +1,117 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/ready-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - ready-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"ready-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"ready.rw.example\",\"www.ready.rw.example\"],\"issuerRef\":{\"group\":\"cert-manager.io\",\"kind\":\"Issuer\",\"name\":\"ca-ready\"},\"secretName\":\"ready-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:12Z",
+            "generation": 1,
+            "name": "ready-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "14833",
+            "uid": "785bbdde-d675-470f-b599-1d81687fe1af"
+        },
+        "spec": {
+            "dnsNames": [
+                "ready.rw.example",
+                "www.ready.rw.example"
+            ],
+            "issuerRef": {
+                "group": "cert-manager.io",
+                "kind": "Issuer",
+                "name": "ca-ready"
+            },
+            "secretName": "ready-cert-tls"
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Certificate is up to date and has not expired",
+                    "observedGeneration": 1,
+                    "reason": "Ready",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ],
+            "notAfter": "2035-01-20T19:49:13Z",
+            "notBefore": "2026-10-04T19:49:13Z",
+            "renewalTime": "2034-10-12T19:49:13Z",
+            "revision": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - issuers.cert-manager.io
+  - ca-ready
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Issuer",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Issuer\",\"metadata\":{\"annotations\":{},\"name\":\"ca-ready\",\"namespace\":\"rw-certs\"},\"spec\":{\"ca\":{\"secretName\":\"ca-key-pair\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:10Z",
+            "generation": 1,
+            "name": "ca-ready",
+            "namespace": "rw-certs",
+            "resourceVersion": "14830",
+            "uid": "23fa8d2b-d036-4b27-8aed-d9027e0fa8ec"
+        },
+        "spec": {
+            "ca": {
+                "secretName": "ca-key-pair"
+            }
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Signing CA verified",
+                    "observedGeneration": 1,
+                    "reason": "KeyPairVerified",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ]
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    certificate:
+      ready: {type: Ready, status: 'True', reason: Ready}
+      issuing: null
+      expired: false
+      expiringSoon: false
+      renewalTimePassed: false
+      dnsNameCount: 2
+      secretName: ready-cert-tls
+    issuer: {name: ca-ready, kind: Issuer, scope: namespace, lookedUp: true, exists: true, ready: true}

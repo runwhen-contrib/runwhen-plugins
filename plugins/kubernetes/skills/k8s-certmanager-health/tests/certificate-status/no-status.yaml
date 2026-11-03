@@ -1,0 +1,99 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/new-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - new-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"new-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"new.rw.example\"],\"issuerRef\":{\"kind\":\"Issuer\",\"name\":\"ca-ready\"},\"secretName\":\"new-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:12Z",
+            "generation": 1,
+            "name": "new-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "14829",
+            "uid": "8a576710-d236-404b-b6d5-e4b4ba2b0b43"
+        },
+        "spec": {
+            "dnsNames": [
+                "new.rw.example"
+            ],
+            "issuerRef": {
+                "kind": "Issuer",
+                "name": "ca-ready"
+            },
+            "secretName": "new-cert-tls"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - issuers.cert-manager.io
+  - ca-ready
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Issuer",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Issuer\",\"metadata\":{\"annotations\":{},\"name\":\"ca-ready\",\"namespace\":\"rw-certs\"},\"spec\":{\"ca\":{\"secretName\":\"ca-key-pair\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:10Z",
+            "generation": 1,
+            "name": "ca-ready",
+            "namespace": "rw-certs",
+            "resourceVersion": "14830",
+            "uid": "23fa8d2b-d036-4b27-8aed-d9027e0fa8ec"
+        },
+        "spec": {
+            "ca": {
+                "secretName": "ca-key-pair"
+            }
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Signing CA verified",
+                    "observedGeneration": 1,
+                    "reason": "KeyPairVerified",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ]
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    certificate:
+      ready: null
+      issuing: null
+      conditions: []
+      notAfter: null
+      expiresInDays: null
+      expired: null
+      expiringSoon: null
+    issuer: {name: ca-ready, exists: true, ready: true}

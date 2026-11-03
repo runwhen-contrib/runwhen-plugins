@@ -1,0 +1,122 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/failed-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - failed-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"failed-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"failed.rw.example\"],\"issuerRef\":{\"name\":\"broken-issuer\"},\"secretName\":\"failed-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:12Z",
+            "generation": 1,
+            "name": "failed-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "14835",
+            "uid": "cbc99fda-bc9d-49f0-949e-af81639ab055"
+        },
+        "spec": {
+            "dnsNames": [
+                "failed.rw.example"
+            ],
+            "issuerRef": {
+                "name": "broken-issuer"
+            },
+            "secretName": "failed-cert-tls"
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "The certificate request has failed to complete and will be retried: Failed to wait for order resource",
+                    "observedGeneration": 1,
+                    "reason": "Failed",
+                    "status": "False",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "The certificate request has failed to complete and will be retried",
+                    "observedGeneration": 1,
+                    "reason": "Failed",
+                    "status": "True",
+                    "type": "Issuing"
+                }
+            ],
+            "lastFailureTime": "2026-11-03T19:34:49Z",
+            "revision": 0
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - issuers.cert-manager.io
+  - broken-issuer
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Issuer",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Issuer\",\"metadata\":{\"annotations\":{},\"name\":\"broken-issuer\",\"namespace\":\"rw-certs\"},\"spec\":{\"ca\":{\"secretName\":\"missing-key-pair\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:10Z",
+            "generation": 1,
+            "name": "broken-issuer",
+            "namespace": "rw-certs",
+            "resourceVersion": "14831",
+            "uid": "889effb0-d1b1-40e8-9ba9-a10e745f3b75"
+        },
+        "spec": {
+            "ca": {
+                "secretName": "missing-key-pair"
+            }
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Error getting keypair for CA issuer: secret missing-key-pair not found",
+                    "observedGeneration": 1,
+                    "reason": "ErrGetKeyPair",
+                    "status": "False",
+                    "type": "Ready"
+                }
+            ]
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    certificate:
+      ready: {type: Ready, status: 'False', reason: Failed}
+      issuing: {type: Issuing, status: 'True', reason: Failed}
+      expired: null
+      expiringSoon: null
+      revision: 0
+    issuer:
+      name: broken-issuer
+      exists: true
+      ready: false
+      readyCondition: {status: 'False', reason: ErrGetKeyPair}
