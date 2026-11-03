@@ -1,0 +1,56 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T21:41:59.959Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    WITH l AS MATERIALIZED (
+      SELECT pid, locktype, database, relation, page, tuple, virtualxid, transactionid, classid,
+             objid, objsubid, mode, granted, fastpath, waitstart
+      FROM pg_locks
+      WHERE pid IS DISTINCT FROM pg_backend_pid()
+    ), s AS (
+      SELECT current_setting('max_locks_per_transaction')::int AS per_xact,
+             current_setting('max_connections')::int AS conns,
+             current_setting('max_prepared_transactions')::int AS prepared
+    )
+    SELECT json_build_object(
+      'total', (SELECT count(*) FROM l),
+      'granted', (SELECT count(*) FROM l WHERE granted),
+      'waiting', (SELECT count(*) FROM l WHERE NOT granted),
+      'waitingBackends', (SELECT count(DISTINCT pid) FROM l WHERE NOT granted),
+      'longestWaitMs', (SELECT floor(extract(epoch FROM clock_timestamp() - min(waitstart)) * 1000)::bigint
+                        FROM l WHERE NOT granted),
+      'byMode', coalesce((SELECT json_agg(json_build_object('mode', t.mode, 'granted', t.granted, 'count', t.n)
+                                          ORDER BY t.mode, t.granted DESC)
+                          FROM (SELECT mode, granted, count(*) AS n FROM l GROUP BY mode, granted) t), '[]'::json),
+      'maxLocksPerTransaction', (SELECT per_xact FROM s),
+      'maxConnections', (SELECT conns FROM s),
+      'maxPreparedTransactions', (SELECT prepared FROM s),
+      'capacity', (SELECT per_xact::bigint * (conns + prepared) FROM s),
+      'tableEntries', (SELECT count(*) FROM (SELECT DISTINCT locktype, database, relation, page, tuple,
+                         virtualxid, transactionid, classid, objid, objsubid FROM l WHERE NOT fastpath) d),
+      'fastPathLocks', (SELECT count(*) FROM l WHERE fastpath)
+    )
+  rc: 2
+  stdout: ''
+  stderr: "psql: error: connection to server at \"127.0.0.1\", port 55439 failed: Connection refused\n\
+    \tIs the server running on that host and accepting TCP/IP connections?\n"
+expect:
+  status: failed
+  errorCodes:
+  - unreachable

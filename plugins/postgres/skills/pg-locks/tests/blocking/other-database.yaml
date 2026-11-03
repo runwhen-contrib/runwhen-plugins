@@ -1,0 +1,84 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T21:41:41.669Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    WITH waits AS (
+      SELECT DISTINCT ON (l.pid) l.pid, l.locktype, l.mode, l.database, l.relation,
+             pg_blocking_pids(l.pid) AS blockers,
+             floor(extract(epoch FROM clock_timestamp() - l.waitstart) * 1000)::bigint AS wait_ms
+      FROM pg_locks l
+      WHERE NOT l.granted AND l.pid IS NOT NULL AND l.pid <> pg_backend_pid()
+      ORDER BY l.pid, l.waitstart
+    ), edges AS (
+      SELECT * FROM waits WHERE cardinality(blockers) > 0
+    ), involved AS (
+      SELECT pid FROM edges UNION SELECT unnest(blockers) FROM edges
+    )
+    SELECT json_build_object(
+      'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
+      'database', current_database(),
+      'waiters', coalesce((SELECT json_agg(json_build_object(
+          'pid', e.pid,
+          'datname', a.datname::text,
+          'usename', a.usename::text,
+          'applicationName', a.application_name,
+          'state', a.state,
+          'waitMs', e.wait_ms,
+          'lockType', e.locktype,
+          'lockMode', e.mode,
+          'lockDatabase', (SELECT d.datname FROM pg_database d WHERE d.oid = e.database)::text,
+          'relationOid', e.relation::bigint,
+          'relation', CASE WHEN e.database = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())
+                           THEN (SELECT n.nspname || '.' || c.relname FROM pg_class c
+                                 JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = e.relation) END,
+          'blockedBy', to_json(e.blockers)
+        ) ORDER BY e.wait_ms DESC NULLS LAST, e.pid)
+        FROM edges e LEFT JOIN pg_stat_activity a ON a.pid = e.pid), '[]'::json),
+      'blockers', coalesce((SELECT json_agg(json_build_object(
+          'pid', i.pid,
+          'datname', a.datname::text,
+          'usename', a.usename::text,
+          'applicationName', a.application_name,
+          'state', a.state,
+          'xactAgeMs', floor(extract(epoch FROM clock_timestamp() - a.xact_start) * 1000)::bigint
+        ) ORDER BY i.pid)
+        FROM involved i LEFT JOIN pg_stat_activity a ON a.pid = i.pid
+        WHERE i.pid NOT IN (SELECT pid FROM edges)), '[]'::json)
+    )
+  rc: 0
+  stdout: |
+    {"fullView" : true, "database" : "postgres", "waiters" : [{"pid" : 702, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "active", "waitMs" : 5225, "lockType" : "relation", "lockMode" : "AccessExclusiveLock", "lockDatabase" : "orders", "relationOid" : 16403, "relation" : null, "blockedBy" : [689]}, {"pid" : 716, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "active", "waitMs" : 5177, "lockType" : "relation", "lockMode" : "AccessExclusiveLock", "lockDatabase" : "orders", "relationOid" : 16403, "relation" : null, "blockedBy" : [689,702]}], "blockers" : [{"pid" : 689, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "idle in transaction", "xactAgeMs" : 5291}]}
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    blocking:
+      visibility: full
+      database: postgres
+      waiters:
+        total: 2
+        items:
+          $contains:
+          - {datname: orders, lockDatabase: orders, relation: null, lockType: relation, depth: 1}
+          - {datname: orders, lockDatabase: orders, relation: null, lockType: relation, depth: 2}
+      rootBlockers:
+        items:
+          $contains:
+          - {applicationName: rw-fixture-locks, state: idle in transaction}

@@ -1,0 +1,72 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T21:42:07.467Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    SELECT json_build_object(
+      'inRecovery', pg_is_in_recovery(),
+      'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
+      'database', current_database()
+    )
+  rc: 0
+  stdout: |
+    {"inRecovery" : true, "fullView" : false, "database" : "postgres"}
+  stderr: ''
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    SELECT json_build_object(
+      'receiver', (SELECT json_build_object(
+          'status', w.status,
+          'senderHost', w.sender_host,
+          'senderPort', w.sender_port,
+          'slotName', w.slot_name::text
+        ) FROM pg_stat_wal_receiver w LIMIT 1),
+      'receiveLsn', pg_last_wal_receive_lsn()::text,
+      'replayLsn', pg_last_wal_replay_lsn()::text,
+      'receivedNotReplayedBytes', pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())::bigint,
+      'receiveEqualsReplay', pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn(),
+      'replayDelayMs', floor(extract(epoch FROM clock_timestamp() - pg_last_xact_replay_timestamp()) * 1000)::bigint,
+      'replayPaused', pg_is_wal_replay_paused(),
+      'replayPauseState', pg_get_wal_replay_pause_state()
+    )
+  rc: 0
+  stdout: |
+    {"receiver" : {"status" : null, "senderHost" : null, "senderPort" : null, "slotName" : null}, "receiveLsn" : "0/3188F10", "replayLsn" : "0/3188F10", "receivedNotReplayedBytes" : 0, "receiveEqualsReplay" : true, "replayDelayMs" : 22556, "replayPaused" : false, "replayPauseState" : "not paused"}
+  stderr: ''
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    replication:
+      role: standby
+      visibility: partial
+      standby:
+        receiver: {status: null, senderHost: null, senderPort: null, slotName: null}
+        receiveEqualsReplay: true
+        replayPaused: false

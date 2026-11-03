@@ -1,0 +1,33 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T21:42:04.079Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - SET statement_timeout = 30000; SET default_transaction_read_only = on
+  - -c
+  - |-
+    SELECT json_build_object(
+      'inRecovery', pg_is_in_recovery(),
+      'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
+      'database', current_database()
+    )
+  rc: 2
+  stdout: ''
+  stderr: |
+    psql: error: connection to server at "127.0.0.1", port 55432 failed: FATAL:  database "nope" does not exist
+expect:
+  status: failed
+  errorCodes:
+  - not_found
