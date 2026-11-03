@@ -10,6 +10,7 @@ from k8s_flux_health.flux import (
     dependency_refs,
     dependency_view,
     handled,
+    is_reconciling,
     limit_text,
     resolve_kind,
     state_view,
@@ -85,12 +86,16 @@ def load_dependencies(ctx, kind, obj):
     return views, len(refs)
 
 
-def wait_for_handled(ctx, kind, requested_at, seconds):
-    """Poll the target until it reports the request handled or `seconds` pass.
+def wait_for_handled(ctx, kind, requested_at, seconds, reset_at=None):
+    """Poll the target until the controller has handled the request and is no longer Reconciling,
+    or `seconds` pass.
 
-    Returns (object, reason, waited): reason is 'handled', 'timeout' or 'not_observed' (a read
-    failed while waiting; reported with ctx.error scope `wait`, object is the last one read).
-    Running out of time is a result, not a failure.
+    The controller records lastHandledReconcileAt when it starts on the request, so the Ready
+    condition read at that moment can still be the old one; polling goes on until Reconciling is
+    not True. Returns (object, reason, waited): reason is 'handled' (handled and finished),
+    'reconciling' (handled, still Reconciling when time ran out), 'timeout' (not handled), or
+    'not_observed' (a read failed while waiting; reported with ctx.error scope `wait`, object is the
+    last one read). Running out of time is a result, not a failure.
     """
     start = time.monotonic()
     obj = None
@@ -104,11 +109,12 @@ def wait_for_handled(ctx, kind, requested_at, seconds):
                 scope="wait",
             )
             return obj, "not_observed", round(time.monotonic() - start, 1)
-        if handled(obj, requested_at):
+        seen = handled(obj, requested_at, reset_at)
+        if seen and not is_reconciling(obj):
             return obj, "handled", round(time.monotonic() - start, 1)
         remaining = seconds - (time.monotonic() - start)
         if remaining <= 0:
-            return obj, "timeout", round(time.monotonic() - start, 1)
+            return obj, "reconciling" if seen else "timeout", round(time.monotonic() - start, 1)
         time.sleep(min(POLL_SECONDS, remaining))
 
 
@@ -137,6 +143,22 @@ def set_suspend(ctx, suspend):
             json.dumps(suspend_patch(suspend)),
             *(["--dry-run=server"] if dry else []),
         )
+    after = before
+    if change and not dry:
+        # Read the object back instead of assuming the patch stuck: a webhook or a parent
+        # Flux object may have changed it again. The write already happened, so a failed read is
+        # reported (scope verify) and suspendedAfter is null.
+        try:
+            after = state_view(kind, load_object(ctx, kind))["suspended"]
+        except RwError as exc:
+            ctx.error(
+                exc.code,
+                limit_text(
+                    f"patched, but could not read spec.suspend back: {exc.message}", MESSAGE_LIMIT
+                )[0],
+                scope="verify",
+            )
+            after = None
     return {
         "target": target_view(kind, obj),
         "suspension": {
@@ -144,6 +166,6 @@ def set_suspend(ctx, suspend):
             "changed": change and not dry,
             "wouldChange": change and dry,
             "suspendedBefore": before,
-            "suspendedAfter": suspend if change and not dry else before,
+            "suspendedAfter": after,
         },
     }

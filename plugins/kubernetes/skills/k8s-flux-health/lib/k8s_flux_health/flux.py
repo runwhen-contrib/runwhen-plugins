@@ -28,6 +28,8 @@ _BY_TYPE = {v["type"]: k for k, v in KINDS.items()}
 _BY_PLURAL = {v["plural"]: k for k, v in KINDS.items()}
 
 REQUESTED_AT = "reconcile.fluxcd.io/requestedAt"
+RESET_AT = "reconcile.fluxcd.io/resetAt"  # HelmRelease: also reset the retry counters
+FORCE_AT = "reconcile.fluxcd.io/forceAt"  # HelmRelease: force a one-off upgrade
 # A Flux object created from another Flux object carries that parent's name and namespace in these labels.
 _OWNER_LABELS = (
     (KUSTOMIZATION, "kustomize.toolkit.fluxcd.io/name", "kustomize.toolkit.fluxcd.io/namespace"),
@@ -146,6 +148,11 @@ def state_view(kind, obj):
         "reconciling": (by_type.get("Reconciling") or {}).get("status"),
         "stalled": stalled.get("status"),
         "stalledReason": stalled.get("reason"),
+        # Kustomization: whether what it applied passed its health checks
+        "healthy": (by_type.get("Healthy") or {}).get("status"),
+        # HelmRelease: whether the Helm release was installed or upgraded, and its tests
+        "released": (by_type.get("Released") or {}).get("status"),
+        "testSuccess": (by_type.get("TestSuccess") or {}).get("status"),
         "conditions": conditions,
         "conditionCount": len(_status(obj).get("conditions") or []),
     }
@@ -223,6 +230,12 @@ def kustomization_view(obj):
     }
 
 
+def _without_build(revision):
+    """A chart version without its `+<build>` metadata: an OCI chartRef reports the attempted
+    revision as 6.5.1+abc123 while the release history holds 6.5.1 (semver ignores build metadata)."""
+    return None if revision is None else str(revision).split("+", 1)[0]
+
+
 def revisions_view(kind, obj):
     """Applied versus attempted revision.
 
@@ -236,11 +249,15 @@ def revisions_view(kind, obj):
     else:
         applied = status.get("lastAppliedRevision") or None
         source = "status.lastAppliedRevision" if applied else None
+    if kind == HELMRELEASE:
+        differs = _without_build(attempted) != _without_build(applied)
+    else:
+        differs = attempted != applied
     return {
         "lastAppliedRevision": applied,
         "appliedSource": source,
         "lastAttemptedRevision": attempted,
-        "revisionsDiffer": attempted is not None and attempted != applied,
+        "revisionsDiffer": attempted is not None and differs,
         "neverApplied": applied is None,
         "lastHandledReconcileAt": status.get("lastHandledReconcileAt"),
         "helm": helm_view(obj) if kind == HELMRELEASE else None,
@@ -320,29 +337,36 @@ def reconcile_annotation(obj):
     return ((obj.get("metadata") or {}).get("annotations") or {}).get(REQUESTED_AT)
 
 
-def handled(obj, requested_at):
-    """True once the controller reports having handled this request."""
-    return _status(obj).get("lastHandledReconcileAt") == requested_at
+def handled(obj, requested_at, reset_at=None):
+    """True once the controller reports having handled this request (and, when a reset was
+    asked for, that reset)."""
+    status = _status(obj)
+    return status.get("lastHandledReconcileAt") == requested_at and (
+        reset_at is None or status.get("lastHandledResetAt") == reset_at
+    )
+
+
+def is_reconciling(obj):
+    return condition_status(obj, "Reconciling") == "True"
 
 
 def reconcile_after(kind, obj):
-    """Where the object stands after the reconcile request: Ready and the two revisions."""
+    """Where the object stands after the reconcile request: Ready, Reconciling and the two revisions."""
     state = state_view(kind, obj)
     rev = revisions_view(kind, obj)
-    message = next(
-        (c["message"] for c in state["conditions"] if c["type"] == "Ready"),
-        None,
-    )
     ready = next((c for c in state["conditions"] if c["type"] == "Ready"), None) or {}
     return {
         "ready": state["ready"],
         "readyReason": state["readyReason"],
-        "readyMessage": message,
+        "readyMessage": ready.get("message"),
         "readyMessageTruncated": bool(ready.get("truncated")),
+        "reconciling": state["reconciling"],
         "stalled": state["stalled"],
+        "generationObserved": state["generationObserved"],
         "lastAppliedRevision": rev["lastAppliedRevision"],
         "lastAttemptedRevision": rev["lastAttemptedRevision"],
         "lastHandledReconcileAt": rev["lastHandledReconcileAt"],
+        "lastHandledResetAt": _status(obj).get("lastHandledResetAt"),
     }
 
 

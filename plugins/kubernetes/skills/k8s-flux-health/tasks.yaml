@@ -13,7 +13,8 @@ tasks:
     title: Flux object readiness
     description: >-
       Whether the Flux HelmRelease or Kustomization is Ready, Reconciling or
-      Stalled, each with its reason and message; whether it is suspended; whether
+      Stalled, each with its reason and message (and Healthy for a Kustomization,
+      Released and TestSuccess for a HelmRelease); whether it is suspended; whether
       the controller has seen the latest spec (observedGeneration against
       generation); the last applied against the last attempted revision (for a
       HelmRelease from status.lastAppliedRevision, else the newest deployed entry
@@ -37,15 +38,15 @@ tasks:
     title: Request a reconcile
     description: >-
       Asks the Flux controller to reconcile the object now by setting the
-      annotation reconcile.fluxcd.io/requestedAt to the current time (what flux
-      reconcile does; the source is not reconciled first). Then waits up to the
-      timeout input for status.lastHandledReconcileAt to show the controller
-      handled that request, and reports completed true or false with the object's
-      Ready condition and revisions as last read. Handled is not succeeded: read
-      after.ready. Running out of time is completed false, not a failure; a
-      timeout of 0s sends the request and does not wait. A suspended object is
-      refused, since Flux ignores the request until it is resumed. A dry run
-      sends the identical annotate as a server-side dry run and does not wait.
+      annotation reconcile.fluxcd.io/requestedAt (what flux reconcile does; the
+      source is not reconciled first). For a HelmRelease, reset also sets resetAt
+      (clears an exhausted retry budget) and force sets forceAt (a one-off forced
+      upgrade). Waits up to the timeout input for the controller to take the
+      request and for Reconciling to clear, then reports completed with the Ready
+      and Reconciling conditions and revisions as last read. Handled is not
+      succeeded: read after.ready. Running out of time is completed false, not a
+      failure; timeout 0s does not wait. A suspended object is refused. A dry run
+      sends the identical annotate as a server-side dry run.
     script: scripts/reconcile.py
     tags: [flux, gitops, reconcile]
     readOnly: false
@@ -56,15 +57,19 @@ tasks:
     effects:
       - "Sets the annotation reconcile.fluxcd.io/requestedAt on the Flux object to the current time, which makes the controller reconcile it now instead of at its next interval."
       - "The reconcile applies whatever the source holds at that moment: a chart upgrade, manifests or drift correction for the objects this one manages, including changes in git that were not looked at yet."
-      - "The annotation stays on the object; repeating the task only changes its value."
+      - "With reset (HelmRelease only) it also sets reconcile.fluxcd.io/resetAt: the failure counters are cleared and a release that gave up after exhausting its retries (Stalled) tries again."
+      - "With force (HelmRelease only) it also sets reconcile.fluxcd.io/forceAt: the controller forces a Helm upgrade of the release (resources are replaced if needed), which can restart workloads even when nothing changed."
+      - "The annotations stay on the object; repeating the task only changes their values."
     permissions:
       - { apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, patch] }
       - { apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [get, patch] }
     inputs:
-      timeout: { type: duration, default: 60s, description: "How long to wait for the controller to handle the request (0s to 240s; 0s does not wait). Running out of time is reported as completed false, not as a failure" }
+      timeout: { type: duration, default: 60s, description: "How long to wait for the controller to take the request and finish (0s to 240s; 0s does not wait). Running out of time is reported as completed false, not as a failure" }
+      reset: { type: boolean, default: false, description: "HelmRelease only: also reset the retry counters (resetAt), for a release that is Stalled with RetriesExceeded" }
+      force: { type: boolean, default: false, description: "HelmRelease only: also force a one-off upgrade (forceAt)" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The object acted on and the Flux object that manages it, if any" }
-      reconcile: { schema: ./schemas/reconcile.v1.json, description: "The request, whether the controller handled it within the timeout, and the object as last read" }
+      reconcile: { schema: ./schemas/reconcile.v1.json, description: "The request, whether the controller handled it and finished within the timeout, and the object as last read" }
 
   - name: suspend
     title: Suspend reconciliation
@@ -106,7 +111,7 @@ tasks:
     effects:
       - "Sets spec.suspend to false: GitOps starts reconciling the object again, so the controller reconciles it at once and then at each interval."
       - "Everything the source gained while it was suspended (new commits, a new chart version, edits made in git) is applied on that reconcile, including changes that nobody reviewed during the pause."
-      - "Changes made to the live objects by hand while it was suspended are overwritten with what git holds."
+      - "On resume the controller may overwrite, with what git holds, changes made by hand to the live objects while it was suspended: a Kustomization always corrects drift, a HelmRelease only with driftDetection enabled or when the chart or values changed."
     permissions:
       - { apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [get, patch] }
       - { apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [get, patch] }

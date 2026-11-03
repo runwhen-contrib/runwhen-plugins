@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Flux readiness state",
-  "description": "Readiness of the Flux object. ready, reconciling and stalled are the status ('True', 'False', 'Unknown') of the condition of that type, or null when the object has no such condition: null is not 'False' (a Stalled Kustomization may have no Reconciling condition, and a new object has no conditions). generationObserved is false while the controller has not yet seen the latest spec. conditions lists every condition (at most 50; conditionCount is the real number), messages cut at 1024 characters.",
+  "description": "Readiness of the Flux object. ready, reconciling and stalled are the status ('True', 'False', 'Unknown') of the condition of that type, or null when the object has no such condition: null is not 'False' (a Stalled Kustomization may have no Reconciling condition, and a new object has no conditions). generationObserved is false while the controller has not yet seen the latest spec. conditions lists every condition (at most 50; conditionCount is the real number), messages cut at 1024 characters. healthy is the status of the Healthy condition (a Kustomization's health checks on what it applied); released and testSuccess are the Released and TestSuccess conditions of a HelmRelease (whether Helm installed or upgraded the release, and its tests). All three are null when the object has no such condition.",
   "type": "object",
   "properties": {
     "kind": {
@@ -68,6 +68,24 @@
       ]
     },
     "stalledReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "healthy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "released": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "testSuccess": {
       "type": [
         "string",
         "null"
@@ -149,6 +167,9 @@
     "reconciling",
     "stalled",
     "stalledReason",
+    "healthy",
+    "released",
+    "testSuccess",
     "conditions",
     "conditionCount"
   ],

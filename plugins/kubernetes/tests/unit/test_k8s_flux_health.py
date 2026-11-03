@@ -124,8 +124,10 @@ class FakeCtx:
         dry = "--dry-run=server" in argv
         doc = self.docs[(kind, name)]
         if verb == "annotate" and not dry:
-            key, _, value = next(a for a in argv if "=" in a and "/" in a).partition("=")
-            doc["metadata"].setdefault("annotations", {})[key] = value
+            for arg in argv:
+                if "=" in arg and "/" in arg and not arg.startswith("-"):
+                    key, _, value = arg.partition("=")
+                    doc["metadata"].setdefault("annotations", {})[key] = value
         if verb == "patch" and not dry:
             patch = json.loads(argv[argv.index("-p") + 1])
             doc["spec"].update(patch["spec"])
@@ -438,6 +440,11 @@ def test_max_items_caps_the_dependency_list():
     ctx = FakeCtx(HR_FAILED, max_items=2)
     out = script("ready_status")(ctx)
     assert len(out["dependencies"]["items"]) == 2 and out["dependencies"]["count"] == 3
+    assert out["dependencies"]["truncated"] is True  # cut by maxItems, not only by the 50 cap
+    assert (
+        script("ready_status")(FakeCtx(HR_FAILED, max_items=3))["dependencies"]["truncated"]
+        is False
+    )
 
 
 # ------------------------------------------------------ error handling ----
@@ -887,3 +894,189 @@ def test_read_task_is_read_only_and_writes_declare_dry_run():
         t = tasks[name]
         assert t["readOnly"] is False and t["dryRun"] is True
         assert t["idempotent"] is True and t["destructive"] is False and t["effects"]
+
+
+# ------------------------------------------------------- review fixes 2 ----
+
+
+def test_build_metadata_is_ignored_when_comparing_revisions():
+    # An OCI chartRef reports lastAttemptedRevision "6.5.1+abc"; history holds chartVersion "6.5.1".
+    obj = copy.deepcopy(HR_OK)
+    obj["status"]["lastAttemptedRevision"] = "6.5.1+abc123"
+    r = f.revisions_view("HelmRelease", obj)
+    assert r["lastAttemptedRevision"] == "6.5.1+abc123" and r["lastAppliedRevision"] == "6.5.1"
+    assert r["revisionsDiffer"] is False
+    obj["status"]["lastAttemptedRevision"] = "6.5.2+abc123"
+    assert f.revisions_view("HelmRelease", obj)["revisionsDiffer"] is True
+    obj["status"]["lastAttemptedRevision"] = "6.5.1+abc"
+    obj["status"]["lastAppliedRevision"] = "6.5.1+def"  # both sides stripped
+    assert f.revisions_view("HelmRelease", obj)["revisionsDiffer"] is False
+
+
+def test_healthy_released_and_test_success_are_first_class():
+    s = f.state_view("HelmRelease", HR_OK)
+    assert s["released"] == "True" and s["testSuccess"] is None and s["healthy"] is None
+    assert f.state_view("HelmRelease", HR_FAILED)["released"] == "False"
+    obj = copy.deepcopy(KS_OK)
+    obj["status"]["conditions"] += [
+        {"type": "Healthy", "status": "Unknown", "reason": "Progressing", "message": "waiting"}
+    ]
+    assert f.state_view("Kustomization", obj)["healthy"] == "Unknown"
+    obj = copy.deepcopy(HR_OK)
+    obj["status"]["conditions"] += [
+        {"type": "TestSuccess", "status": "False", "reason": "TestFailed"}
+    ]
+    assert f.state_view("HelmRelease", obj)["testSuccess"] == "False"
+
+
+def reconciling_until(handled_at, done_at):
+    """A controller: handles the request at look `handled_at`, and is Reconciling until look `done_at`."""
+
+    def controller(doc, n):
+        ann = (doc["metadata"].get("annotations") or {}).get("reconcile.fluxcd.io/requestedAt")
+        if ann is None:  # the first look, before the request
+            return
+        conds = [c for c in doc["status"]["conditions"] if c["type"] != "Reconciling"]
+        if n >= handled_at:
+            doc["status"]["lastHandledReconcileAt"] = ann
+        if handled_at <= n < done_at:
+            conds.append({"type": "Reconciling", "status": "True", "reason": "Progressing"})
+        doc["status"]["conditions"] = conds
+
+    return controller
+
+
+def test_reconcile_keeps_polling_after_handled_until_reconciling_is_done(clock):
+    ctx = FakeCtx(KS_OK, on_get=reconciling_until(handled_at=2, done_at=5))
+    out = script("reconcile")(ctx, timeout="60s")
+    check(out)
+    r = out["reconcile"]
+    assert r["completed"] is True and r["completionReason"] == "handled"
+    assert r["after"]["reconciling"] is None and r["after"]["generationObserved"] is True
+    assert r["after"]["lastHandledReconcileAt"] == r["requestedAt"]
+    assert ctx.gets[("Kustomization", "apps-ok")] == 5
+
+
+def test_reconcile_still_reconciling_at_timeout_is_not_completed(clock):
+    ctx = FakeCtx(KS_OK, on_get=reconciling_until(handled_at=2, done_at=10_000))
+    out = script("reconcile")(ctx, timeout="6s")
+    check(out)
+    r = out["reconcile"]
+    assert r["completed"] is False and r["completionReason"] == "reconciling"
+    assert r["after"]["reconciling"] == "True"
+    assert r["after"]["lastHandledReconcileAt"] == r["requestedAt"]  # handled, just not finished
+
+
+# reset and force ------------------------------------------------------------
+
+
+def test_reset_sets_the_reset_annotation_to_the_same_timestamp_and_waits_for_it(clock):
+    def controller(doc, n):
+        ann = doc["metadata"]["annotations"]
+        if n >= 2:
+            doc["status"]["lastHandledReconcileAt"] = ann["reconcile.fluxcd.io/requestedAt"]
+        if n >= 4:  # the reset is handled after the request
+            doc["status"]["lastHandledResetAt"] = ann["reconcile.fluxcd.io/resetAt"]
+
+    ctx = FakeCtx(HR_FAILED, on_get=controller)
+    out = script("reconcile")(ctx, timeout="60s", reset=True)
+    check(out)
+    (call,) = annotate_calls(ctx)
+    ann = {a.split("=")[0]: a.split("=")[1] for a in call if "/" in a and "=" in a}
+    assert ann["reconcile.fluxcd.io/resetAt"] == ann["reconcile.fluxcd.io/requestedAt"]
+    assert "reconcile.fluxcd.io/forceAt" not in ann
+    r = out["reconcile"]
+    assert r["reset"] is True and r["force"] is False and r["completed"] is True
+    assert r["after"]["lastHandledResetAt"] == r["requestedAt"]
+    assert ctx.gets[("HelmRelease", "podinfo-failed")] == 4
+
+
+def test_force_sets_the_force_annotation_on_a_helmrelease():
+    ctx = FakeCtx(HR_OK)
+    out = script("reconcile")(ctx, timeout="0s", force=True)
+    (call,) = annotate_calls(ctx)
+    keys = {a.split("=")[0] for a in call if "/" in a and "=" in a}
+    assert keys == {"reconcile.fluxcd.io/requestedAt", "reconcile.fluxcd.io/forceAt"}
+    assert out["reconcile"]["force"] is True and out["reconcile"]["reset"] is False
+
+
+def test_plain_reconcile_sets_only_requested_at_and_reports_no_reset_or_force():
+    ctx = FakeCtx(HR_OK)
+    out = script("reconcile")(ctx, timeout="0s")
+    (call,) = annotate_calls(ctx)
+    assert [a for a in call if "/" in a and "=" in a][0].startswith(
+        "reconcile.fluxcd.io/requestedAt="
+    )
+    assert sum("fluxcd.io/" in a for a in call) == 1
+    assert (out["reconcile"]["reset"], out["reconcile"]["force"]) == (False, False)
+
+
+@pytest.mark.parametrize("flag", ["force", "reset"])
+def test_force_and_reset_are_refused_on_a_kustomization_before_any_write(flag):
+    ctx = FakeCtx(KS_OK)
+    with pytest.raises(RwError) as exc:
+        script("reconcile")(ctx, timeout="0s", **{flag: True})
+    assert exc.value.code == "invalid_input" and "HelmRelease" in exc.value.message
+    assert annotate_calls(ctx) == []
+
+
+def test_reconcile_dry_run_with_reset_and_force_sends_all_annotations_as_a_dry_run():
+    ctx = FakeCtx(HR_FAILED, dry_run=True)
+    out = script("reconcile")(ctx, reset=True, force=True)
+    (call,) = annotate_calls(ctx)
+    assert "--dry-run=server" in call and sum("fluxcd.io/" in a for a in call) == 3
+    assert "reconcile.fluxcd.io/resetAt" not in (ctx.obj()["metadata"].get("annotations") or {})
+    assert out["reconcile"]["wouldApply"] is True
+
+
+def test_tasks_yaml_declares_reset_force_and_the_effects():
+    t = SCRIPT_FOR_TASK["reconcile"]
+    assert t["inputs"]["reset"]["type"] == "boolean" and t["inputs"]["reset"]["default"] is False
+    assert t["inputs"]["force"]["type"] == "boolean" and t["inputs"]["force"]["default"] is False
+    effects = " ".join(t["effects"])
+    assert "resetAt" in effects and "forceAt" in effects
+    assert "may overwrite" in " ".join(SCRIPT_FOR_TASK["resume"]["effects"])
+
+
+# suspendedAfter is read back ---------------------------------------------------
+
+
+def test_suspended_after_is_read_back_from_the_cluster():
+    # The API accepted the patch but the object still says suspend false (a webhook, a controller)
+    ctx = FakeCtx(HR_OK, answers=[("patch", (0, "patched\n", ""))])
+    out = script("suspend")(ctx)
+    check(out)
+    assert out["suspension"]["applied"] is True and out["suspension"]["suspendedAfter"] is False
+    assert sum("get" in c for c in ctx.calls) == 2  # before and after the patch
+
+
+def test_suspended_after_in_the_normal_case_matches_the_patch():
+    ctx = FakeCtx(KS_SUSPENDED)
+    out = script("resume")(ctx)
+    assert out["suspension"]["suspendedAfter"] is False and sum("get" in c for c in ctx.calls) == 2
+
+
+def test_dry_run_and_no_op_do_not_read_back():
+    for dry, doc, name in ((True, HR_OK, "suspend"), (False, HR_SUSPENDED, "suspend")):
+        ctx = FakeCtx(doc, dry_run=dry)
+        script(name)(ctx)
+        assert sum("get" in c for c in ctx.calls) == 1
+
+
+def test_failed_read_back_is_an_error_not_a_guess():
+    ctx = FakeCtx(HR_OK)
+    seen = {"gets": 0}
+    orig = ctx._answer
+
+    def flaky(argv, joined):
+        if "get" in argv:
+            seen["gets"] += 1
+            if seen["gets"] == 2:
+                return 1, "", "Unable to connect to the server: dial tcp: i/o timeout"
+        return orig(argv, joined)
+
+    ctx._answer = flaky
+    out = script("suspend")(ctx)
+    check(out)
+    assert out["suspension"]["applied"] is True and out["suspension"]["suspendedAfter"] is None
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("unreachable", "verify")]

@@ -6,12 +6,13 @@ def main(ctx):
     kind = target_kind(ctx)
     obj = load_object(ctx, kind)
     dependencies, total = load_dependencies(ctx, kind, obj)
+    items = cap(dependencies, ctx.settings.max_items)
     return {
         "state": state_view(kind, obj),
         "revisions": revisions_view(kind, obj),
         "dependencies": {
             "count": total,
-            "truncated": total > len(dependencies),
-            "items": cap(dependencies, ctx.settings.max_items),
+            "truncated": total > len(items),
+            "items": items,
         },
     }
