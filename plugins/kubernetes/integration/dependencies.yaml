@@ -1,8 +1,7 @@
 # Converted from rw-discovery packs/kubernetes/pack.yaml `dependencyRules` (origin/main f7f03c4).
 # Changes: from/to `platform: kubernetes` dropped (the default); CRD types use this integration's short
 # names (types.yaml). Edge types are all in the platform's core set, so no `edgeTypes` block.
-# Types without a static entry in types.yaml (issuer, clusterissuer, httproute, gateway) keep their
-# discovered `<kind>.<group>` names and activate only when discovery finds those CRDs.
+# Rules on CRD types match only once discovery finds those CRDs in a cluster.
 rules:
   # --- ownership ---------------------------------------------------------
   - id: k8s.owner-owned
@@ -404,7 +403,7 @@ rules:
     from: {types: [httproute]}
     to: {types: [service]}
     strategy: reference
-    params: {values: "rules[].backendRefs[].name", scope: sameParent}
+    params: {values: "spec.rules[].backendRefs[].name", scope: sameParent}  # pack.yaml lacked `spec.`: never matched
     direction: forward
     confidence: 1.0
 

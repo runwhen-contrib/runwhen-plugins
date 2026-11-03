@@ -47,18 +47,46 @@
   "required": [
     "verbs"
   ],
-  "anyOf": [
+  "additionalProperties": false,
+  "oneOf": [
     {
       "required": [
         "apiGroups",
         "resources"
-      ]
+      ],
+      "not": {
+        "required": [
+          "nonResourceURLs"
+        ]
+      }
     },
     {
       "required": [
         "nonResourceURLs"
+      ],
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "apiGroups"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "resources"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "resourceNames"
+            ]
+          }
+        }
       ]
     }
-  ],
-  "additionalProperties": false
+  ]
 }

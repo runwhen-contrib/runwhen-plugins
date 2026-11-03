@@ -14,13 +14,14 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-DEFAULT_REPO = Path("/Users/samirpatil/Documents/runwhen-auto/envs/resources-design/rw-discovery-codecollection")
+DEFAULT_REPO = Path(os.environ["RW_DISCOVERY_REPO"]) if os.environ.get("RW_DISCOVERY_REPO") else None  # a rw-discovery-codecollection checkout
 DEFAULT_REF = "origin/main"
 CHAIN_PATH_IN_REPO = "rwdiscovery/chain.py"
 
@@ -120,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.chain is not None:
         chain = load_chain(args.chain)
+    elif args.repo is None:
+        ap.error("pass a chain.py path, or --repo (or RW_DISCOVERY_REPO) pointing at a rw-discovery-codecollection checkout")
     else:
         with tempfile.TemporaryDirectory() as tmp:
             chain = load_chain(fetch_chain(args.repo, args.ref, Path(tmp)))

@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import textwrap
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import gen_k8s_types as gen  # noqa: E402
 
-DISCOVERY_REPO = Path("/Users/samirpatil/Documents/runwhen-auto/envs/resources-design/rw-discovery-codecollection")
+DISCOVERY_REPO = Path(os.environ.get("RW_DISCOVERY_REPO", "/nonexistent"))  # rw-discovery-codecollection checkout
 
 MINI_CHAIN = textwrap.dedent(
     '''
