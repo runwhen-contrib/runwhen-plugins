@@ -4,7 +4,7 @@ from k8s_namespace_resources.fetch import (
     list_optional,
     load_namespace,
 )
-from k8s_namespace_resources.vpa import target_resources, vpa_entries
+from k8s_namespace_resources.vpa import intermediate_resources, target_resources, vpa_entries
 
 
 def main(ctx):
@@ -19,8 +19,25 @@ def main(ctx):
         items = list_optional(ctx, ns, resource.split(".")[0], resource)
         if items is not None:
             workloads[resource] = items
-    return {
-        "vpas": vpa_entries(
-            vpas, workloads, ctx.settings.vpa_difference_percent, ctx.settings.max_items
-        )
-    }
+    # The live pods' requests (`currentLive`): the pods, and the ReplicaSets / Jobs that say which are
+    # the target's. If any of them cannot be read, currentLive is null rather than a wrong zero.
+    pods = list_optional(ctx, ns, "pods", "pods") if vpas else None
+    owners = {}
+    for resource in intermediate_resources(vpas) if pods is not None else []:
+        items = workloads.get(resource)
+        if items is None:
+            items = list_optional(ctx, ns, resource.split(".")[0], resource)
+        if items is None:
+            pods = None
+            break
+        owners[resource] = items
+    entries = vpa_entries(
+        vpas,
+        workloads,
+        ctx.settings.vpa_difference_percent,
+        ctx.settings.max_items,
+        pods=pods,
+        replicasets=owners.get("replicasets.apps"),
+        jobs=owners.get("jobs.batch"),
+    )
+    return {"vpas": entries, "inspected": {"vpas": len(vpas)}}

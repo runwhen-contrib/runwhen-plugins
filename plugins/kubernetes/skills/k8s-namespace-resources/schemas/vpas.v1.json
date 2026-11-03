@@ -41,6 +41,45 @@
           "null"
         ]
       },
+      "conditions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "status",
+            "reason",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
       "containers": {
         "type": "array",
         "items": {
@@ -73,6 +112,45 @@
                 "memory"
               ],
               "additionalProperties": false
+            },
+            "currentLive": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "pods": {
+                      "type": "integer"
+                    },
+                    "cpu": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "memory": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "pods",
+                    "cpu",
+                    "memory"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             },
             "target": {
               "type": "object",
@@ -157,18 +235,33 @@
                 "boolean",
                 "null"
               ]
+            },
+            "belowLowerBound": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "aboveUpperBound": {
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           },
           "required": [
             "container",
             "init",
             "current",
+            "currentLive",
             "target",
             "lowerBound",
             "upperBound",
             "cpuDifferencePercent",
             "memoryDifferencePercent",
-            "differs"
+            "differs",
+            "belowLowerBound",
+            "aboveUpperBound"
           ],
           "additionalProperties": false
         }
@@ -185,6 +278,7 @@
       "targetFound",
       "updateMode",
       "recommendationProvided",
+      "conditions",
       "containers",
       "truncated"
     ],

@@ -1,6 +1,8 @@
 # Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
 # tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
-# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-nsres
 inputs:
   serviceAccount: reader
@@ -40,7 +42,7 @@ calls:
   rc: 1
   stdout: ''
   stderr: |
-    Error from server (Forbidden): error when creating "sar-0.json": subjectaccessreviews.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot create resource "subjectaccessreviews" in API group "authorization.k8s.io" at the cluster scope
+    Error from server (Forbidden): error when creating "sar-0.json": localsubjectaccessreviews.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot create resource "localsubjectaccessreviews" in API group "authorization.k8s.io" in the namespace "rw-nsres"
 expect:
   status: failed
   errorCodes:

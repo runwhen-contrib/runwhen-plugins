@@ -480,7 +480,9 @@ def test_review_asks_about_the_service_account_with_its_groups():
     m = access.review_manifest(
         "rw-nsres", "reader", {"verb": "get", "resource": "pods", "subresource": "log", "group": ""}
     )
-    assert m["kind"] == "SubjectAccessReview"
+    assert m["kind"] == "LocalSubjectAccessReview"
+    assert m["apiVersion"] == "authorization.k8s.io/v1"
+    assert m["metadata"] == {"namespace": "rw-nsres"}
     assert m["spec"]["user"] == "system:serviceaccount:rw-nsres:reader"
     assert "system:serviceaccounts:rw-nsres" in m["spec"]["groups"]
     assert m["spec"]["resourceAttributes"] == {
@@ -664,8 +666,9 @@ class FakeCtx:
 
     def _review(self, argv, cwd):
         manifest = json.loads((Path(cwd) / argv[argv.index("-f") + 1]).read_text())
-        assert manifest["kind"] == "SubjectAccessReview"
+        assert manifest["kind"] == "LocalSubjectAccessReview"
         attrs = manifest["spec"]["resourceAttributes"]
+        assert manifest["metadata"]["namespace"] == attrs["namespace"]
         # The Role in the scenario: get/list pods and get configmaps, for the "reader" account only.
         rules = {("get", "pods"), ("list", "pods"), ("get", "configmaps")}
         allowed = (
@@ -704,7 +707,7 @@ ALL_TASKS = {
 
 def ctx_for(task, **kw):
     if task == "resource_usage" and "metrics" not in kw:
-        kw["metrics"] = metrics_list()
+        kw["metrics"] = metrics_list(podmetrics("sized-9d6fb4dcb-bcf2w", app=("1m", "1Mi")))
     return FakeCtx(**kw)
 
 
@@ -1007,8 +1010,10 @@ def test_serviceaccount_read_forbidden_leaves_exists_unknown():
 
 
 def test_forbidden_review_creation_raises_instead_of_answering_denied():
-    # An identity that may not create SubjectAccessReviews must not read as "the account may do nothing".
-    ctx = FakeCtx(fail={"create": FORBIDDEN % ("subjectaccessreviews.authorization.k8s.io", "x")})
+    # An identity that may not create LocalSubjectAccessReviews must not read as "the account may do nothing".
+    ctx = FakeCtx(
+        fail={"create": FORBIDDEN % ("localsubjectaccessreviews.authorization.k8s.io", "x")}
+    )
     with pytest.raises(RwError) as exc:
         script("serviceaccount_permissions")(ctx, service_account="reader")
     assert exc.value.code == "permission_denied"
@@ -1175,7 +1180,7 @@ def rbac_needs(argv, cwd=None):
     """The (apiGroup, resource, verb) triples one kubectl argv needs.
 
     get <kind> <name> -> get; get <kind> (no name, or -l / --field-selector) -> list;
-    create -f <SubjectAccessReview file> -> create subjectaccessreviews; logs -> pods/log get;
+    create -f <LocalSubjectAccessReview file> -> create localsubjectaccessreviews; logs -> pods/log get;
     exec -> pods get + pods/exec create. Raises on anything else, so a skill that issues a new verb
     has to extend this mapping.
     """
@@ -1195,8 +1200,8 @@ def rbac_needs(argv, cwd=None):
     if verb == "create":
         manifest = json.loads((Path(cwd) / flags["-f"]).read_text())
         group = manifest["apiVersion"].split("/")[0]
-        assert manifest["kind"] == "SubjectAccessReview"
-        return {(group, "subjectaccessreviews", "create")}
+        assert manifest["kind"] == "LocalSubjectAccessReview"
+        return {(group, "localsubjectaccessreviews", "create")}
     if verb == "logs":
         return {("", "pods/log", "get")}
     if verb == "exec":
@@ -1240,7 +1245,7 @@ def test_declared_permissions_cover_every_kubectl_call_the_script_makes(
 
 def test_every_declared_read_is_one_a_script_can_make():
     # No permission is declared that no call needs: namespaces get, and the lists a task uses.
-    assert ("authorization.k8s.io", "subjectaccessreviews", "create") in declared(
+    assert ("authorization.k8s.io", "localsubjectaccessreviews", "create") in declared(
         TASKS["serviceaccount-permissions"]
     )
     assert all(("", "namespaces", "get") in declared(t) for t in TASKS.values())
@@ -1258,3 +1263,271 @@ def test_rbac_needs_maps_the_verbs():
     assert rbac_needs(["kubectl", "-n", "x", "get", "pods.metrics.k8s.io", "-o", "json"]) == {
         ("metrics.k8s.io", "pods", "list")
     }
+
+
+# ------------------------------------------------------ review fixes ----
+
+
+def container(**resources):
+    return {"name": "c", "resources": resources}
+
+
+def test_template_limit_without_request_counts_as_the_request():
+    # The API server copies the limit into the request when it creates the pod, so a template
+    # with only a limit is not "missing a request".
+    dep = {
+        "metadata": {"name": "d"},
+        "spec": {
+            "template": {
+                "spec": {
+                    "containers": [
+                        {"name": "c", "resources": {"limits": {"cpu": "100m", "memory": "64Mi"}}}
+                    ]
+                }
+            }
+        },
+    }
+    assert s.workload_entries("Deployment", [dep]) == []
+    dep["spec"]["template"]["spec"]["containers"][0]["resources"] = {"limits": {"cpu": "100m"}}
+    (e,) = s.workload_entries("Deployment", [dep])
+    assert e["cpuRequest"] == "100m" and e["cpuLimit"] == "100m"
+    assert e["missing"] == ["memoryRequest", "memoryLimit"]
+
+
+def test_a_request_beats_the_limit_in_the_template_and_pods_are_read_as_they_are():
+    dep = {
+        "metadata": {"name": "d"},
+        "spec": {
+            "template": {
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "c",
+                            "resources": {"requests": {"cpu": "10m"}, "limits": {"cpu": "1"}},
+                        }
+                    ]
+                }
+            }
+        },
+    }
+    (e,) = s.workload_entries("Deployment", [dep])
+    assert e["cpuRequest"] == "10m"
+
+
+def vpa_with(workload_resources, rec, kind="Deployment"):
+    workload = {
+        "metadata": {"name": "w"},
+        "spec": {
+            "template": {"spec": {"containers": [{"name": "c", "resources": workload_resources}]}}
+        },
+    }
+    v = {
+        "metadata": {"name": "v"},
+        "spec": {"targetRef": {"kind": kind, "name": "w"}},
+        "status": {"recommendation": {"containerRecommendations": [{"containerName": "c", **rec}]}},
+    }
+    return v, {"deployments.apps": [workload]}
+
+
+def test_vpa_current_is_the_limit_when_the_template_sets_no_request():
+    v, workloads = vpa_with(
+        {"limits": {"cpu": "100m"}}, {"target": {"cpu": "200m"}, "lowerBound": {}, "upperBound": {}}
+    )
+    (e,) = vpa.vpa_entries([v], workloads, 20, 200)
+    (c,) = e["containers"]
+    assert c["current"] == {"cpu": "100m", "memory": None}
+    assert c["cpuDifferencePercent"] == 100.0
+
+
+def test_vpa_current_live_is_what_the_live_pods_request():
+    workloads = {"deployments.apps": load("nsres_deployments")["items"]}
+    pods = load("nsres_pods")["items"]
+    rs = load("nsres_replicasets")["items"]
+    out = {v["name"]: v for v in vpa.vpa_entries(vpas(), workloads, 20, 200, pods, rs, None)}
+    (c,) = out["sized"]["containers"]
+    assert c["currentLive"] == {"pods": 1, "cpu": ["10m"], "memory": ["8Mi"]}
+    (c,) = out["unsized"]["containers"]
+    assert c["currentLive"] == {"pods": 1, "cpu": [None], "memory": [None]}
+
+
+def test_live_pods_can_differ_from_the_template_after_the_vpa_resized_them():
+    workloads = {"deployments.apps": load("nsres_deployments")["items"]}
+    pods = copy.deepcopy(load("nsres_pods")["items"])
+    sized = next(p for p in pods if p["metadata"]["name"].startswith("sized-"))
+    sized["spec"]["containers"][0]["resources"]["requests"] = {"cpu": "25m", "memory": "16Mi"}
+    twin = copy.deepcopy(sized)
+    twin["metadata"]["name"] = "sized-9d6fb4dcb-twin"
+    twin["spec"]["containers"][0]["resources"]["requests"] = {"cpu": "10m", "memory": "8Mi"}
+    out = {
+        v["name"]: v
+        for v in vpa.vpa_entries(
+            vpas(), workloads, 20, 200, [*pods, twin], load("nsres_replicasets")["items"], None
+        )
+    }
+    (c,) = out["sized"]["containers"]
+    assert c["current"] == {"cpu": "10m", "memory": "8Mi"}  # the template
+    assert c["currentLive"] == {"pods": 2, "cpu": ["25m", "10m"], "memory": ["16Mi", "8Mi"]}
+
+
+def test_current_live_is_null_without_pods_and_zero_pods_when_none_match():
+    workloads = {"deployments.apps": load("nsres_deployments")["items"]}
+    out = vpa.vpa_entries(vpas(), workloads, 20, 200)
+    assert all(c["currentLive"] is None for v in out for c in v["containers"])
+    # Pods read, but the ReplicaSets list is empty: no pod can be tied to the Deployment, a fact
+    # (the script reads the ReplicaSets and leaves currentLive null if it cannot).
+    zero = {
+        v["name"]: v
+        for v in vpa.vpa_entries(vpas(), workloads, 20, 200, load("nsres_pods")["items"], [], None)
+    }
+    assert zero["sized"]["containers"][0]["currentLive"] == {"pods": 0, "cpu": [], "memory": []}
+
+
+def test_target_kinds_whose_pods_need_an_intermediate_list():
+    assert vpa.intermediate_resources(vpas()) == ["replicasets.apps"]
+    cron = copy.deepcopy(vpas()[0])
+    cron["spec"]["targetRef"] = {"kind": "CronJob", "name": "n"}
+    assert vpa.intermediate_resources([cron]) == ["jobs.batch"]
+
+
+def test_vpa_script_reports_live_requests_and_the_count_before_the_cut():
+    ctx = FakeCtx()
+    ctx.settings.max_items = 1
+    out = script("vpa_recommendations")(ctx)
+    assert out["inspected"] == {"vpas": 3} and len(out["vpas"]) == 1
+    full = script("vpa_recommendations")(FakeCtx())
+    sized = next(v for v in full["vpas"] if v["name"] == "sized")
+    assert sized["containers"][0]["currentLive"] == {"pods": 1, "cpu": ["10m"], "memory": ["8Mi"]}
+
+
+def test_vpa_script_forbidden_pods_leave_current_live_null_and_keep_the_rest():
+    ctx = FakeCtx(fail=forbid("pods"))
+    out = script("vpa_recommendations")(ctx)
+    sized = next(v for v in out["vpas"] if v["name"] == "sized")
+    assert sized["containers"][0]["currentLive"] is None
+    assert sized["containers"][0]["current"] == {"cpu": "10m", "memory": "8Mi"}
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "pods")]
+
+
+def test_vpa_script_forbidden_replicasets_leave_current_live_null():
+    ctx = FakeCtx(fail=forbid("replicasets.apps"))
+    out = script("vpa_recommendations")(ctx)
+    sized = next(v for v in out["vpas"] if v["name"] == "sized")
+    assert sized["containers"][0]["currentLive"] is None
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "replicasets")]
+
+
+def test_vpa_with_no_vpas_reads_no_pods():
+    class NoVpas(FakeCtx):
+        def run(self, argv, **kw):
+            res = super().run(argv, **kw)
+            if "verticalpodautoscalers.autoscaling.k8s.io" in argv:
+                res.stdout = json.dumps({"items": []})
+            return res
+
+    ctx = NoVpas()
+    out = script("vpa_recommendations")(ctx)
+    assert out == {"vpas": [], "inspected": {"vpas": 0}}
+    assert not any("pods" in c for c in ctx.calls)
+
+
+def test_current_outside_the_recommended_bounds():
+    v, workloads = vpa_with(
+        {"requests": {"cpu": "5m", "memory": "100Mi"}},
+        {
+            "target": {"cpu": "20m", "memory": "64Mi"},
+            "lowerBound": {"cpu": "10m", "memory": "32Mi"},
+            "upperBound": {"cpu": "50m", "memory": "80Mi"},
+        },
+    )
+    (c,) = vpa.vpa_entries([v], workloads, 20, 200)[0]["containers"]
+    assert c["belowLowerBound"] is True  # cpu 5m < 10m
+    assert c["aboveUpperBound"] is True  # memory 100Mi > 80Mi
+
+
+def test_current_inside_the_bounds_is_false_and_unknown_is_null():
+    v, workloads = vpa_with(
+        {"requests": {"cpu": "20m"}},
+        {"target": {"cpu": "20m"}, "lowerBound": {"cpu": "10m"}, "upperBound": {"cpu": "50m"}},
+    )
+    (c,) = vpa.vpa_entries([v], workloads, 20, 200)[0]["containers"]
+    assert c["belowLowerBound"] is False and c["aboveUpperBound"] is False
+    v, workloads = vpa_with({}, {"target": {"cpu": "20m"}, "lowerBound": {"cpu": "10m"}})
+    (c,) = vpa.vpa_entries([v], workloads, 20, 200)[0]["containers"]
+    assert c["belowLowerBound"] is None and c["aboveUpperBound"] is None
+
+
+def test_vpa_conditions_are_reported_and_bounded():
+    v, workloads = vpa_with({}, {"target": {"cpu": "1m"}})
+    v["status"]["conditions"] = [
+        {"type": "RecommendationProvided", "status": "True"},
+        {"type": "LowConfidence", "status": "True", "reason": "Early", "message": "m" * 3000},
+        {"type": "NoPodsMatched", "status": "False"},
+    ]
+    (e,) = vpa.vpa_entries([v], workloads, 20, 200)
+    assert [(c["type"], c["status"]) for c in e["conditions"]] == [
+        ("RecommendationProvided", "True"),
+        ("LowConfidence", "True"),
+        ("NoPodsMatched", "False"),
+    ]
+    assert len(e["conditions"][1]["message"]) == 1024 and e["truncated"] is True
+    assert e["recommendationProvided"] is True
+    v["status"]["conditions"] = [{"type": f"T{i}", "status": "True"} for i in range(60)]
+    (e,) = vpa.vpa_entries([v], workloads, 20, 200)
+    assert len(e["conditions"]) == 50 and e["truncated"] is True
+
+
+def test_vpa_without_status_has_no_conditions():
+    out = {v["name"]: v for v in vpa.vpa_entries(vpas(), {}, 20, 200)}
+    assert out["rollout"]["conditions"] == []
+
+
+def test_resource_with_a_dot_is_refused_with_a_hint_to_use_group():
+    for resource in ("deployments.apps", "pods/log.x"):
+        with pytest.raises(RwError) as exc:
+            access.normalize_checks([{"verb": "get", "resource": resource}])
+        assert exc.value.code == "invalid_input" and "group" in exc.value.message
+    ctx = FakeCtx()
+    with pytest.raises(RwError):
+        script("serviceaccount_permissions")(
+            ctx, checks=[{"verb": "list", "resource": "deployments.apps"}]
+        )
+    assert ctx.calls == []
+
+
+def test_usage_entries_carry_the_sample_timestamp_and_window():
+    sized = pod("sized-9d6fb4dcb-bcf2w")
+    entries, _ = usage.usage_entries(
+        [podmetrics("sized-9d6fb4dcb-bcf2w", app=("1m", "1Mi"))], [sized], 90
+    )
+    assert {(e["timestamp"], e["window"]) for e in entries} == {("2026-11-03T20:00:00Z", "15s")}
+
+
+def test_running_pods_and_no_samples_is_a_partial_dependency_result():
+    ctx = FakeCtx(metrics=metrics_list())
+    out = script("resource_usage")(ctx)
+    assert out["usage"] == []
+    assert out["inspected"]["podsWithMetrics"] == 0 and out["inspected"]["podsWithoutMetrics"] == 3
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("dependency", "pods.metrics.k8s.io")]
+    assert ctx.messages == ["metrics-server has no samples for these pods yet"]
+
+
+def test_no_samples_and_no_running_pods_is_not_an_error():
+    class NoRunning(FakeCtx):
+        def run(self, argv, **kw):
+            res = super().run(argv, **kw)
+            if "pods" in argv:
+                doc = json.loads(res.stdout)
+                for p in doc["items"]:
+                    p["status"]["phase"] = "Pending"
+                res.stdout = json.dumps(doc)
+            return res
+
+    ctx = NoRunning(metrics=metrics_list())
+    out = script("resource_usage")(ctx)
+    assert out["usage"] == [] and ctx.errors == []
+
+
+def test_some_samples_is_not_an_error_even_if_other_pods_have_none():
+    ctx = FakeCtx(metrics=metrics_list(podmetrics("sized-9d6fb4dcb-bcf2w", app=("1m", "1Mi"))))
+    script("resource_usage")(ctx)
+    assert ctx.errors == []

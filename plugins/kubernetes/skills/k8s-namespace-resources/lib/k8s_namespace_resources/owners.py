@@ -41,3 +41,16 @@ def resolve_owner(obj, index):
             return {"kind": kind, "name": name, "resolved": True}
         ref = up
     raise ValueError(f"ownerReferences chain of {obj['metadata']['name']!r} is too deep")
+
+
+def owner_chain(obj, index):
+    """[(kind, name)] of every controller above `obj`, nearest first (Pod ->
+    ReplicaSet -> Deployment); it ends where an owner is not in `index`."""
+    chain, ref = [], controller_ref(obj)
+    for _ in range(8):
+        if ref is None:
+            break
+        chain.append((ref["kind"], ref["name"]))
+        parent = index.get((ref["kind"], ref["name"]))
+        ref = controller_ref(parent) if parent is not None else None
+    return chain

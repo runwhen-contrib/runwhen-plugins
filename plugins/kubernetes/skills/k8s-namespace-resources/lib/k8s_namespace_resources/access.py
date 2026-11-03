@@ -1,4 +1,4 @@
-"""What a ServiceAccount may do in the namespace, asked as SubjectAccessReviews."""
+"""What a ServiceAccount may do in the namespace, asked as LocalSubjectAccessReviews."""
 
 import re
 
@@ -14,7 +14,7 @@ DEFAULT_CHECKS = (
 
 _NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
 _VERB = re.compile(r"^[a-z*][a-z-]{0,62}$")
-_RESOURCE = re.compile(r"^(\*|[a-z0-9][a-z0-9.-]{0,62})(/[a-z0-9][a-z0-9.-]{0,62})?$")
+_RESOURCE = re.compile(r"^(\*|[a-z0-9][a-z0-9-]{0,62})(/[a-z0-9][a-z0-9-]{0,62})?$")
 _GROUP = re.compile(r"^(\*|[a-z0-9][a-z0-9.-]{0,252})?$")
 
 
@@ -41,6 +41,12 @@ def normalize_checks(checks):
         group = _get(check, "group") or ""
         if not isinstance(verb, str) or not _VERB.match(verb):
             raise RwError("invalid_input", f"checks[{i}].verb is not a verb: {verb!r}")
+        if isinstance(resource, str) and "." in resource:
+            raise RwError(
+                "invalid_input",
+                f"checks[{i}].resource {resource!r} has a dot: name the API group in group "
+                "(for example resource: deployments, group: apps), not in resource",
+            )
         if not isinstance(resource, str) or not _RESOURCE.match(resource):
             raise RwError("invalid_input", f"checks[{i}].resource is not a resource: {resource!r}")
         if not isinstance(group, str) or not _GROUP.match(group):
@@ -63,8 +69,10 @@ def user_of(namespace, service_account):
 
 
 def review_manifest(namespace, service_account, check):
-    """The SubjectAccessReview asking whether the ServiceAccount, with the groups
-    the API server gives it, may do `check` in the namespace."""
+    """The LocalSubjectAccessReview asking whether the ServiceAccount, with the groups
+    the API server gives it, may do `check` in the namespace. A local review is
+    namespaced (`create localsubjectaccessreviews` in the namespace), so a namespace
+    admin can ask it; the cluster-scoped SubjectAccessReview needs a ClusterRole."""
     attributes = {
         "namespace": namespace,
         "verb": check["verb"],
@@ -75,7 +83,8 @@ def review_manifest(namespace, service_account, check):
         attributes["subresource"] = check["subresource"]
     return {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {"namespace": namespace},
         "spec": {
             "user": user_of(namespace, service_account),
             "groups": [
@@ -89,7 +98,7 @@ def review_manifest(namespace, service_account, check):
 
 
 def access_entry(check, review):
-    """One output entry from the SubjectAccessReview the API server answered."""
+    """One output entry from the review the API server answered."""
     status = review.get("status") or {}
     reason, cut_reason = trunc(status.get("reason"))
     evaluation, cut_eval = trunc(status.get("evaluationError"))

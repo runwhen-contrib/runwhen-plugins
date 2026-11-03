@@ -31,7 +31,7 @@ def main(ctx, service_account="default", checks=None):
     if denied is not None:
         report_denied(ctx, "serviceaccounts", denied)
 
-    # Reviews are created, not stored: `kubectl create -f` of a SubjectAccessReview returns the
+    # Reviews are created, not stored: `kubectl create -f` of a LocalSubjectAccessReview returns the
     # API server's answer and persists nothing. ctx.run has no stdin, so each goes through a file
     # in the task's scratch directory (cwd, so the argv is the same on every run).
     with tempfile.TemporaryDirectory() as fallback:

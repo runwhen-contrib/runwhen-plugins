@@ -29,8 +29,11 @@ tasks:
       missing. Init containers (native sidecars included) are listed with init
       true. For a pod the workload that owns it (a Deployment through its
       ReplicaSet, a CronJob through its Job, a StatefulSet or DaemonSet) and
-      whether the chain resolved. Only containers with something missing are
-      listed; inspected counts what was looked at. When the pods list is
+      whether the chain resolved. A template that sets a limit and no request
+      counts the limit as the request, as the API server does when it creates
+      the pod; LimitRange defaults apply to pods, not to templates, so a
+      template entry can still differ from its pods. Only containers with
+      something missing are listed; inspected counts what was looked at. When the pods list is
       forbidden, pods is null and the templates are still returned (and the
       reverse); when the ReplicaSet or Job list is forbidden the owner stops at
       the ReplicaSet or Job with resolved false.
@@ -55,7 +58,10 @@ tasks:
       and the percent of each used. atOrAbove is true when usage is at or above
       the utilizationPercent setting of the limit, null when the container has
       no limit. Needs metrics-server (or any metrics.k8s.io provider): without
-      it the task fails with a dependency error, never with an empty list. When
+      it the task fails with a dependency error, never with an empty list. Each
+      entry carries the timestamp and window of its sample; Running pods and no
+      sample at all is a partial result with a dependency error (metrics-server
+      has not scraped them yet). When
       the pods list is forbidden, usage is still returned with request and limit
       null and a permission_denied error.
     script: scripts/resource_usage.py
@@ -72,26 +78,29 @@ tasks:
   - name: vpa-recommendations
     title: VPA recommendations against current requests
     description: >-
-      VerticalPodAutoscalers (autoscaling.k8s.io) in the namespace: the workload
-      each targets, its update mode, and for each container the recommended
-      target, lower and upper bound beside the workload's current requests, the
-      percent difference for CPU and memory, and differs against the
-      vpaDifferencePercent setting. Targets of kind Deployment, StatefulSet,
-      DaemonSet, ReplicaSet, Job and CronJob are looked up; any other kind is
-      listed with targetSupported false. Without the VerticalPodAutoscaler CRD
-      the task fails with a dependency error, never with an empty list. When a
-      workload list is forbidden the VPAs are still returned with targetFound
-      null and current requests null.
+      VerticalPodAutoscalers (autoscaling.k8s.io) in the namespace: target
+      workload, update mode, status conditions (RecommendationProvided,
+      LowConfidence, NoPodsMatched, ...), and per container the recommended
+      target and lower/upper bounds beside current (the pod template's requests;
+      a limit with no request counts as the request) and currentLive (the live
+      pods' requests, which differ from the template under Auto, Recreate or
+      Initial), the percent difference, differs against vpaDifferencePercent, and
+      belowLowerBound / aboveUpperBound. Kinds Deployment, StatefulSet, DaemonSet,
+      ReplicaSet, Job and CronJob are looked up; others get targetSupported false.
+      Without the CRD: dependency error, never an empty list. A forbidden
+      workload list gives targetFound null; unreadable pods give currentLive null.
     script: scripts/vpa_recommendations.py
     tags: [vpa, autoscaling, recommendations]
     readOnly: true
     permissions:
       - { apiGroups: [""], resources: [namespaces], verbs: [get] }
       - { apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
       - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets, replicasets], verbs: [list] }
       - { apiGroups: [batch], resources: [jobs, cronjobs], verbs: [list] }
     outputs:
-      vpas: { schema: ./schemas/vpas.v1.json, description: "Each VPA with its target and per-container recommendation against current requests" }
+      vpas: { schema: ./schemas/vpas.v1.json, description: "Each VPA with its target, conditions and per-container recommendation against the template's and the live pods' requests" }
+      inspected: { schema: ./schemas/vpa-inspected.v1.json, description: "How many VPAs there were before the maxItems cap" }
 
   - name: images
     title: Images and pull failures
@@ -117,19 +126,21 @@ tasks:
     title: ServiceAccount permissions
     description: >-
       Whether a ServiceAccount of the namespace may do each of a list of actions
-      in it, asked as SubjectAccessReviews (the account is not impersonated and
+      in it, asked as LocalSubjectAccessReviews (the account is not impersonated and
       no pod is created): allowed, denied (an explicit deny from an authorizer),
       the authorizer's reason and any evaluation error. Also whether the
       ServiceAccount exists. The default checks are get and list pods, get
-      configmaps and list services. Creating a SubjectAccessReview needs the
-      cluster-scoped create on subjectaccessreviews.authorization.k8s.io, which a
-      Role cannot grant; it changes nothing in the cluster.
+      configmaps and list services. Creating a LocalSubjectAccessReview needs
+      create on localsubjectaccessreviews.authorization.k8s.io in the namespace,
+      which a namespace admin has and a view role does not; it changes nothing in
+      the cluster. resource names a resource or resource/subresource without a
+      dot; the API group goes in group (resource deployments, group apps).
     script: scripts/serviceaccount_permissions.py
     tags: [serviceaccount, rbac, access]
     readOnly: true
     permissions:
       - { apiGroups: [""], resources: [namespaces, serviceaccounts], verbs: [get] }
-      - { apiGroups: [authorization.k8s.io], resources: [subjectaccessreviews], verbs: [create] }
+      - { apiGroups: [authorization.k8s.io], resources: [localsubjectaccessreviews], verbs: [create] }
     inputs:
       serviceAccount: { type: string, default: default, description: "ServiceAccount in the target namespace to ask about" }
       checks:
@@ -138,7 +149,7 @@ tasks:
           type: object
           properties:
             verb: { type: string }
-            resource: { type: string, description: "A resource, or resource/subresource such as pods/log" }
+            resource: { type: string, description: "A resource, or resource/subresource such as pods/log; no dots, the API group goes in group" }
             group: { type: string, description: "API group; empty for the core group" }
           required: [verb, resource]
           additionalProperties: false

@@ -17,11 +17,25 @@ def containers_of(spec):
         yield False, c
 
 
-def resource_settings(container):
+def resource_settings(container, effective=False):
     """The four settings (cpu/memory request/limit) as the quantity strings the
-    API holds, None when not set."""
+    API holds, None when not set.
+
+    With `effective`, a request that is unset is the limit, which is what the API
+    server does when it creates a pod from a template that sets a limit only.
+    """
     resources = container.get("resources") or {}
-    return {key: (resources.get(kind) or {}).get(name) or None for key, kind, name in SETTINGS}
+    out = {key: (resources.get(kind) or {}).get(name) or None for key, kind, name in SETTINGS}
+    if effective:
+        for name in ("cpu", "memory"):
+            out[f"{name}Request"] = out[f"{name}Request"] or out[f"{name}Limit"]
+    return out
+
+
+def effective_requests(container):
+    """{cpu, memory}: the request, or the limit when no request is set (see `resource_settings`)."""
+    s = resource_settings(container, effective=True)
+    return {"cpu": s["cpuRequest"], "memory": s["memoryRequest"]}
 
 
 def missing_settings(settings):

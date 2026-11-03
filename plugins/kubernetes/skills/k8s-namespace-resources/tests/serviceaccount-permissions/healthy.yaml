@@ -1,6 +1,8 @@
 # Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
 # tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
-# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-healthy
 calls:
 - argv:
@@ -72,8 +74,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-healthy"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",
@@ -104,8 +108,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-healthy"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",
@@ -136,8 +142,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-healthy"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",
@@ -168,8 +176,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-healthy"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",

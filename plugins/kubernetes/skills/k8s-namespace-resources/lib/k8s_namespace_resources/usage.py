@@ -67,6 +67,8 @@ def usage_entries(metrics, pods, threshold):
                         "percentOfLimit": of_limit,
                         "percentOfRequest": percent(used, request),
                         "atOrAbove": None if of_limit is None else of_limit >= threshold,
+                        "timestamp": item.get("timestamp"),
+                        "window": item.get("window"),
                     }
                 )
     entries.sort(key=_sort_key)

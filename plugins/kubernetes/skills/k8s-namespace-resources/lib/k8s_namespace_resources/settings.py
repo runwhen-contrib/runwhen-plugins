@@ -9,8 +9,8 @@ from k8s_namespace_resources.containers import (
 from k8s_namespace_resources.owners import controller_ref, index_objects, resolve_owner
 
 
-def _entry(init, container):
-    settings = resource_settings(container)
+def _entry(init, container, effective=False):
+    settings = resource_settings(container, effective)
     return {"container": container["name"], "init": init, **settings}, missing_settings(settings)
 
 
@@ -58,12 +58,14 @@ def pod_entries(flagged, replicasets, jobs):
 
 def workload_entries(kind, workloads):
     """Entries for the containers of each workload's pod template that leave a
-    cpu/memory request or limit unset."""
+    cpu/memory request or limit unset. A template that sets a limit only counts
+    the limit as the request, as the API server does when it creates the pod.
+    LimitRange defaults are applied to pods at admission, not to templates."""
     out = []
     for w in workloads:
         template = (w.get("spec") or {}).get("template") or {}
         for init, container in containers_of(template.get("spec") or {}):
-            entry, missing = _entry(init, container)
+            entry, missing = _entry(init, container, effective=True)
             if missing:
                 out.append(
                     {

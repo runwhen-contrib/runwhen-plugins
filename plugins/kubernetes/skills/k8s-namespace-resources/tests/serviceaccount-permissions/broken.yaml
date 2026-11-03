@@ -1,6 +1,8 @@
 # Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
 # tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
-# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-nsres
 inputs:
   serviceAccount: reader
@@ -21,13 +23,13 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-nsres\"}}\n"
             },
-            "creationTimestamp": "2026-11-03T19:49:47Z",
+            "creationTimestamp": "2026-11-03T20:08:45Z",
             "labels": {
                 "kubernetes.io/metadata.name": "rw-nsres"
             },
             "name": "rw-nsres",
-            "resourceVersion": "14898",
-            "uid": "21375dd9-1038-4d1d-822c-a5f05b16c7f6"
+            "resourceVersion": "18181",
+            "uid": "bd54bdd2-941e-48ad-9a8d-17aab015fd15"
         },
         "spec": {
             "finalizers": [
@@ -57,11 +59,11 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"ServiceAccount\",\"metadata\":{\"annotations\":{},\"name\":\"reader\",\"namespace\":\"rw-nsres\"}}\n"
             },
-            "creationTimestamp": "2026-11-03T19:49:47Z",
+            "creationTimestamp": "2026-11-03T20:08:46Z",
             "name": "reader",
             "namespace": "rw-nsres",
-            "resourceVersion": "14920",
-            "uid": "537b23cd-9b0f-4dfe-bb89-a1f1a976291c"
+            "resourceVersion": "18217",
+            "uid": "c63f5fc3-2c20-42a7-b752-f4880dfd5f76"
         }
     }
   stderr: ''
@@ -77,8 +79,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-nsres"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",
@@ -110,8 +114,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-nsres"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",
@@ -143,8 +149,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-nsres"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",
@@ -176,8 +184,10 @@ calls:
   stdout: |
     {
         "apiVersion": "authorization.k8s.io/v1",
-        "kind": "SubjectAccessReview",
-        "metadata": {},
+        "kind": "LocalSubjectAccessReview",
+        "metadata": {
+            "namespace": "rw-nsres"
+        },
         "spec": {
             "groups": [
                 "system:serviceaccounts",

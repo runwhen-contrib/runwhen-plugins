@@ -25,6 +25,14 @@ def main(ctx):
     # Requests and limits come from the pods; without them the usage is still reported.
     pods = list_optional(ctx, ns, "pods", "pods")
     entries, counts = usage_entries(metrics, pods, ctx.settings.utilization_percent)
+    if counts["podsWithMetrics"] == 0 and (counts["podsWithoutMetrics"] or 0) > 0:
+        # Running pods and not one sample: metrics-server is up but has not scraped them yet.
+        ctx.error(
+            "dependency",
+            "metrics-server has no samples for these pods yet",
+            scope="pods.metrics.k8s.io",
+            hint="metrics appear about a minute after a pod starts, or metrics-server is not scraping",
+        )
     return {
         "usage": cap(entries, ctx.settings.max_items),
         "inspected": {**counts, "entries": len(entries)},
