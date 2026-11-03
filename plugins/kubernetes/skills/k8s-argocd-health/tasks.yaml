@@ -28,9 +28,9 @@ tasks:
       application: { schema: ./schemas/application.v1.json, description: "Name, project, destination, sync policy, operation in progress" }
       sync: { schema: ./schemas/sync.v1.json, description: "Sync status and the revision(s) compared" }
       health: { schema: ./schemas/health.v1.json, description: "Health status and message" }
-      conditions: { schema: ./schemas/conditions.v1.json, description: "Application conditions" }
+      conditions: { schema: ./schemas/conditions.v1.json, description: "Application conditions, with the total before the maxItems cut" }
       operation: { schema: ./schemas/operation.v1.json, description: "The last sync operation; null when none ever ran" }
-      sources: { schema: ./schemas/sources.v1.json, description: "Repository, path or chart and tracked revision of each source" }
+      sources: { schema: ./schemas/sources.v1.json, description: "Repository, path or chart, tracked revision and detected source type of each source" }
 
   - name: unhealthy-resources
     title: Unhealthy or out-of-sync resources
@@ -45,7 +45,7 @@ tasks:
     permissions:
       - { apiGroups: [argoproj.io], resources: [applications], verbs: [get] }
     outputs:
-      resources: { schema: ./schemas/resources.v1.json, description: "Counts and the unhealthy or OutOfSync resources" }
+      resources: { schema: ./schemas/resources.v1.json, description: "Counts and the unhealthy or OutOfSync resources, with truncated when cut at maxItems" }
 
   - name: helm-source
     title: Helm source
@@ -53,7 +53,8 @@ tasks:
       For the Application's Helm sources: chart or path, tracked revision,
       release name, the names of value files and parameters (never their
       values; inline values are reported only as present), and the last
-      deployed revision from status.history.
+      deployed revision from status.history (which keeps only the newest
+      revisionHistoryLimit entries, default 10).
     script: scripts/helm_source.py
     tags: [helm, revision, history]
     readOnly: true
@@ -61,4 +62,4 @@ tasks:
       - { apiGroups: [argoproj.io], resources: [applications], verbs: [get] }
     outputs:
       helm: { schema: ./schemas/helm.v1.json, description: "Whether the Application uses Helm and each Helm source" }
-      lastDeployed: { schema: ./schemas/last-deployed.v1.json, description: "The latest status.history entry and how many there are" }
+      lastDeployed: { schema: ./schemas/last-deployed.v1.json, description: "The latest status.history entry and how many entries are kept (Argo CD keeps only revisionHistoryLimit, default 10)" }

@@ -31,7 +31,7 @@ def test_healthy_application_is_synced_and_healthy_with_nothing_wrong():
     app = load("web")
     assert a.sync_view(app)["status"] == "Synced"
     assert a.health_view(app)["status"] == "Healthy"
-    assert a.conditions_view(app, 200) == []
+    assert a.conditions_view(app, 200) == {"total": 0, "truncated": False, "items": []}
     op = a.operation_view(app)
     assert op["phase"] == "Succeeded" and op["retryCount"] == 0 and op["failures"] == []
     view = a.application_view(app)
@@ -50,7 +50,7 @@ def test_failed_application_reports_conditions_operation_and_failed_resources():
     assert a.sync_view(app)["status"] == "OutOfSync"
     assert a.sync_view(app)["revisions"] == ["3.1.0", "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"]
     assert a.health_view(app)["status"] == "Missing"
-    conds = a.conditions_view(app, 200)
+    conds = a.conditions_view(app, 200)["items"]
     assert [c["type"] for c in conds] == ["ComparisonError", "SyncError"]
     assert "values file" in conds[0]["message"]
     op = a.operation_view(app)
@@ -74,18 +74,18 @@ def test_start_and_finish_are_not_swapped():
 
 def test_multi_source_application_lists_every_source():
     app = load("failed-sync")
-    sources = a.source_views(app)
+    sources = a.source_views(app, 200)["items"]
     assert [(s["index"], s["chart"], s["ref"], s["targetRevision"]) for s in sources] == [
         (0, "api", None, "3.x"),
         (1, None, "values", "main"),
     ]
     assert sources[0]["hasHelm"] is True and sources[1]["hasHelm"] is False
     # a single `source` is a list of one
-    assert [s["path"] for s in a.source_views(load("web"))] == ["deploy/web"]
+    assert [s["path"] for s in a.source_views(load("web"), 200)["items"]] == ["deploy/web"]
     # `sources` wins over `source` when both are set, as in Argo CD
     both = copy.deepcopy(load("web"))
     both["spec"]["sources"] = [{"repoURL": "https://x.test/r.git", "targetRevision": "v2"}]
-    assert [s["targetRevision"] for s in a.source_views(both)] == ["v2"]
+    assert [s["targetRevision"] for s in a.source_views(both, 200)["items"]] == ["v2"]
 
 
 def test_manual_sync_policy_has_no_prune_or_self_heal():
@@ -105,8 +105,8 @@ def test_application_without_status_is_all_null_not_an_error():
     assert a.sync_view(bare)["status"] is None
     assert a.health_view(bare)["status"] is None
     assert a.operation_view(bare) is None
-    assert a.conditions_view(bare, 200) == []
-    assert a.source_views(bare) == []
+    assert a.conditions_view(bare, 200)["items"] == []
+    assert a.source_views(bare, 200)["items"] == []
     assert a.unhealthy_resources(bare, 200)["total"] == 0
 
 
@@ -123,7 +123,7 @@ def test_repo_url_credentials_are_stripped():
     assert a.clean_url("git@github.com:org/x.git") == "git@github.com:org/x.git"
     app = copy.deepcopy(load("web"))
     app["spec"]["source"]["repoURL"] = "https://ci-bot:fake@git.example.test/org/x.git"
-    assert "fake" not in json.dumps(a.source_views(app))
+    assert "fake" not in json.dumps(a.source_views(app, 200))
 
 
 def test_free_text_is_cut_at_1024_and_flagged():
@@ -132,7 +132,7 @@ def test_free_text_is_cut_at_1024_and_flagged():
     app["status"]["conditions"][0]["message"] = "y" * 5000
     health = a.health_view(app)
     assert len(health["message"]) == 1024 and health["truncated"] is True
-    cond = a.conditions_view(app, 200)[0]
+    cond = a.conditions_view(app, 200)["items"][0]
     assert len(cond["message"]) == 1024 and cond["truncated"] is True
     assert a.health_view(load("drifted"))["truncated"] is False
 
@@ -140,7 +140,7 @@ def test_free_text_is_cut_at_1024_and_flagged():
 def test_lists_are_capped():
     app = copy.deepcopy(load("web"))
     app["status"]["conditions"] = [{"type": f"C{i}", "message": "m"} for i in range(10)]
-    assert len(a.conditions_view(app, 3)) == 3
+    assert len(a.conditions_view(app, 3)["items"]) == 3
     app["status"]["operationState"]["syncResult"]["resources"] = [
         {"kind": "ConfigMap", "name": f"c{i}", "status": "SyncFailed"} for i in range(80)
     ]
@@ -175,7 +175,14 @@ def test_out_of_sync_resource_with_no_health_is_listed_unlike_classic():
 
 def test_healthy_application_has_no_unhealthy_resources_but_a_nonzero_total():
     res = a.unhealthy_resources(load("web"), 200)
-    assert res == {"total": 3, "matched": 0, "unhealthyCount": 0, "outOfSyncCount": 0, "items": []}
+    assert res == {
+        "total": 3,
+        "matched": 0,
+        "truncated": False,
+        "unhealthyCount": 0,
+        "outOfSyncCount": 0,
+        "items": [],
+    }
 
 
 def test_unhealthy_resources_are_capped_but_counted():
@@ -236,11 +243,11 @@ def test_chart_without_a_helm_block_is_a_helm_source():
     assert src["chart"] == "nginx" and src["valueFiles"] == [] and src["releaseName"] is None
 
 
-def test_path_source_rendered_as_helm_is_helm_by_source_type():
+def test_path_source_rendered_as_helm_by_source_type_is_helm():
     app = copy.deepcopy(load("web"))
     app["status"]["sourceType"] = "Helm"
     view = a.helm_view(app)
-    assert view["isHelm"] is True and view["sources"] == []
+    assert view["isHelm"] is True and [x["path"] for x in view["sources"]] == ["deploy/web"]
 
 
 def test_last_deployed_is_the_newest_history_entry():
@@ -393,7 +400,7 @@ def test_broken_application_through_the_script():
     env, errors, calls = run("sync_status", "failed-sync")
     out = env["outputs"]
     assert out["sync"]["status"] == "OutOfSync" and out["health"]["status"] == "Missing"
-    assert [c["type"] for c in out["conditions"]] == ["ComparisonError", "SyncError"]
+    assert [c["type"] for c in out["conditions"]["items"]] == ["ComparisonError", "SyncError"]
     assert out["operation"]["phase"] == "Failed"
     assert calls == [argv("failed-sync")]
 
@@ -402,7 +409,7 @@ def test_healthy_application_through_the_script():
     out = run("unhealthy_resources", "web")[0]["outputs"]
     assert out["resources"]["matched"] == 0 and out["resources"]["total"] == 3
     out = run("sync_status", "web")[0]["outputs"]
-    assert out["sync"]["status"] == "Synced" and out["conditions"] == []
+    assert out["sync"]["status"] == "Synced" and out["conditions"]["items"] == []
 
 
 def test_max_items_caps_the_lists_in_the_script():
@@ -513,3 +520,139 @@ def test_contracts_validate():
 
 def test_rw_error_is_importable_from_the_sdk():
     assert issubclass(RwError, Exception) and RwError("not_found", "x").code == "not_found"
+
+
+# ------------------------------------------------------------ review fixes ----
+
+
+def test_automated_enabled_false_is_not_automated():
+    app = copy.deepcopy(load("web"))
+    app["spec"]["syncPolicy"]["automated"] = {"enabled": False, "prune": True, "selfHeal": True}
+    policy = a.application_view(app)["syncPolicy"]
+    assert policy["automated"] is False and policy["prune"] is None and policy["selfHeal"] is None
+    app["spec"]["syncPolicy"]["automated"] = {"enabled": True, "prune": True}
+    policy = a.application_view(app)["syncPolicy"]
+    assert policy["automated"] is True and policy["prune"] is True and policy["selfHeal"] is False
+
+
+@pytest.mark.parametrize(
+    "url,clean",
+    [
+        ("https://u:p@[::1/r", "https://[::1/r"),  # urlsplit raises: the regex fallback
+        ("https://u:tok@h/v.yaml", "https://h/v.yaml"),
+        ("https://h/r.git?token=abc#frag", "https://h/r.git"),
+        ("https://u:tok@h/r.git?x=1", "https://h/r.git"),
+        ("https://u:p@[::1/r?token=abc", "https://[::1/r"),
+        ("git@github.com:org/x.git", "git@github.com:org/x.git"),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_clean_url_probes(url, clean):
+    assert a.clean_url(url) == clean
+
+
+def test_value_file_names_are_scrubbed_and_bounded():
+    app = copy.deepcopy(load("helm-web"))
+    app["spec"]["source"]["helm"]["valueFiles"] = ["https://u:tok@h/v.yaml", "x" * 5000]
+    files = a.helm_view(app)["sources"][0]["valueFiles"]
+    assert files[0] == "https://h/v.yaml" and len(files[1]) == 1024
+
+
+def test_free_text_is_scrubbed_of_userinfo():
+    leak = "pull https://ci:s3cret@git.example.test/org/x.git failed"
+    app = copy.deepcopy(load("failed-sync"))
+    app["status"]["health"]["message"] = leak
+    app["status"]["conditions"][0]["message"] = leak
+    app["status"]["operationState"]["message"] = leak
+    app["status"]["operationState"]["syncResult"]["resources"][0]["message"] = leak
+    app["status"]["resources"][0]["health"] = {"status": "Degraded", "message": leak}
+    out = json.dumps(
+        [
+            a.health_view(app),
+            a.conditions_view(app, 200),
+            a.operation_view(app),
+            a.unhealthy_resources(app, 200),
+        ]
+    )
+    assert "s3cret" not in out and "https://git.example.test/org/x.git" in out
+
+
+def test_identifier_strings_are_bounded_and_validate_against_the_schema():
+    app = copy.deepcopy(load("drifted"))
+    app["status"]["resources"][0]["name"] = "n" * 5000
+    app["status"]["sync"]["revision"] = "r" * 5000
+    item = a.unhealthy_resources(app, 200)["items"][0]
+    assert len(item["name"]) == 1024
+    assert len(a.sync_view(app)["revision"]) == 1024
+    schema = json.loads((SKILL / "schemas" / "resources.v1.json").read_text())
+    assert validate_schema(schema, a.unhealthy_resources(app, 200)) == []
+
+
+def test_lists_report_total_and_truncated_when_cut():
+    app = copy.deepcopy(load("web"))
+    app["status"]["conditions"] = [{"type": f"C{i}", "message": "m"} for i in range(10)]
+    cut = a.conditions_view(app, 3)
+    assert (cut["total"], cut["truncated"], len(cut["items"])) == (10, True, 3)
+    whole = a.conditions_view(app, 200)
+    assert (whole["total"], whole["truncated"]) == (10, False)
+    drifted = a.unhealthy_resources(load("drifted"), 2)
+    assert drifted["truncated"] is True and drifted["matched"] == 4
+    assert a.unhealthy_resources(load("drifted"), 200)["truncated"] is False
+    sources = a.source_views(load("failed-sync"), 1)
+    assert (sources["total"], sources["truncated"], len(sources["items"])) == (2, True, 1)
+
+
+def test_max_items_has_a_hard_ceiling():
+    assert len(a.cap(range(5000), 10**6)) == 1000
+
+
+def test_value_file_and_parameter_counts_survive_the_nested_cut():
+    app = copy.deepcopy(load("helm-web"))
+    app["spec"]["source"]["helm"]["valueFiles"] = [f"v{i}.yaml" for i in range(80)]
+    src = a.helm_view(app)["sources"][0]
+    assert len(src["valueFiles"]) == 50 and src["valueFileCount"] == 80
+    assert src["parameterCount"] == 1
+
+
+@pytest.mark.parametrize(
+    "rc,text,code",
+    [
+        (1, "error: You must be logged in to the server (Unauthorized)", "permission_denied"),
+        (
+            1,
+            "Error from server (Unauthorized): the server has asked for the client to provide credentials",
+            "permission_denied",
+        ),
+        (1, "the server could not find the requested resource", "not_found"),
+        (1, 'error: the server doesn\'t have a resource type "applications"', "dependency"),
+    ],
+)
+def test_classify_more(rc, text, code):
+    assert k8s.classify(rc, text) == code
+
+
+@pytest.mark.parametrize("task", TASKS)
+def test_unauthenticated_fails_with_permission_denied(task):
+    stub = (1, "", "error: You must be logged in to the server (Unauthorized)")
+    assert [e["code"] for e in failed(task, "web", stub)] == ["permission_denied"]
+
+
+def test_each_source_carries_its_own_source_type_by_index():
+    items = a.source_views(load("failed-sync"), 200)["items"]
+    assert [(s["index"], s["sourceType"]) for s in items] == [(0, "Helm"), (1, "Directory")]
+    assert [s["sourceType"] for s in a.source_views(load("web"), 200)["items"]] == ["Directory"]
+    app = copy.deepcopy(load("failed-sync"))
+    app["status"]["sourceTypes"] = ["Helm"]  # not index-aligned: unknown, not guessed
+    assert [s["sourceType"] for s in a.source_views(app, 200)["items"]] == [None, None]
+
+
+def test_path_source_rendered_as_helm_is_listed_as_a_helm_source():
+    app = copy.deepcopy(load("failed-sync"))
+    # source 1 (a git directory) is rendered by Helm according to Argo CD; source 0 is not
+    app["status"]["sourceTypes"] = ["Directory", "Helm"]
+    app["spec"]["sources"][0].pop("helm")
+    app["spec"]["sources"][0].pop("chart")
+    view = a.helm_view(app)
+    assert view["isHelm"] is True
+    assert [(s["index"], s["sourceType"]) for s in view["sources"]] == [(1, "Helm")]

@@ -10,10 +10,18 @@ MESSAGE_LIMIT = 1024
 _CLASSES = (
     (
         "permission_denied",
-        ("forbidden", "cannot get", "cannot list", "cannot watch", "cannot create"),
+        (
+            "forbidden",
+            "cannot get",
+            "cannot list",
+            "cannot watch",
+            "cannot create",
+            "unauthorized",
+            "you must be logged in",
+        ),
     ),
     ("dependency", ("the server doesn't have a resource type", "executable file not found")),
-    ("not_found", ("notfound", "not found")),
+    ("not_found", ("notfound", "not found", "could not find the requested resource")),
     (
         "unreachable",
         (
