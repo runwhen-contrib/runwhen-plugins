@@ -1,0 +1,164 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    min: 1
+    description: Most entries any list output returns (most relevant first); the inspected outputs say how many there were before the cut
+  utilizationPercent:
+    type: number
+    default: 90
+    min: 0
+    description: A container using at least this percent of its limit has atOrAbove true in resource-usage
+  vpaDifferencePercent:
+    type: number
+    default: 20
+    min: 0
+    description: A VPA recommendation at least this many percent above or below the current CPU or memory request has differs true in vpa-recommendations
+tasks:
+  - name: resource-settings
+    title: Containers without requests or limits
+    description: >-
+      Containers of Running pods, and of the pod templates of Deployments,
+      StatefulSets and DaemonSets, that leave a CPU or memory request or limit
+      unset: the four settings as the API holds them and which of them are
+      missing. Init containers (native sidecars included) are listed with init
+      true. For a pod the workload that owns it (a Deployment through its
+      ReplicaSet, a CronJob through its Job, a StatefulSet or DaemonSet) and
+      whether the chain resolved. A template that sets a limit and no request
+      counts the limit as the request, as the API server does when it creates
+      the pod; LimitRange defaults apply to pods, not to templates, so a
+      template entry can still differ from its pods. Only containers with
+      something missing are listed; inspected counts what was looked at. When the pods list is
+      forbidden, pods is null and the templates are still returned (and the
+      reverse); when the ReplicaSet or Job list is forbidden the owner stops at
+      the ReplicaSet or Job with resolved false.
+    script: scripts/resource_settings.py
+    tags: [requests, limits, resources, sizing]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets, replicasets], verbs: [list] }
+      - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+    outputs:
+      pods: { schema: ./schemas/pods.v1.json, description: "Containers of Running pods with a request or limit unset; null when the pods could not be read" }
+      workloads: { schema: ./schemas/workloads.v1.json, description: "Containers of workload pod templates with a request or limit unset; null when no workload list could be read" }
+      inspected: { schema: ./schemas/settings-inspected.v1.json, description: "Pods, running pods, containers and templates looked at, and entries before the maxItems cap" }
+
+  - name: resource-usage
+    title: Container usage against requests and limits
+    description: >-
+      Current CPU (millicores) and memory (bytes) usage of each container from
+      the metrics.k8s.io PodMetrics, beside the container's request and limit
+      and the percent of each used. atOrAbove is true when usage is at or above
+      the utilizationPercent setting of the limit, null when the container has
+      no limit. Needs metrics-server (or any metrics.k8s.io provider): without
+      it the task fails with a dependency error, never with an empty list. Each
+      entry carries the timestamp and window of its sample; Running pods and no
+      sample at all is a partial result with a dependency error (metrics-server
+      has not scraped them yet). When
+      the pods list is forbidden, usage is still returned with request and limit
+      null and a permission_denied error.
+    script: scripts/resource_usage.py
+    tags: [usage, metrics, utilization]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [metrics.k8s.io], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      usage: { schema: ./schemas/usage.v1.json, description: "One entry per container and resource, highest use of the limit first" }
+      inspected: { schema: ./schemas/usage-inspected.v1.json, description: "Pods with and without metrics, and entries before the maxItems cap" }
+
+  - name: vpa-recommendations
+    title: VPA recommendations against current requests
+    description: >-
+      VerticalPodAutoscalers (autoscaling.k8s.io) in the namespace: target
+      workload, update mode, status conditions (RecommendationProvided,
+      LowConfidence, NoPodsMatched, ...), and per container the recommended
+      target and lower/upper bounds beside current (the pod template's requests;
+      a limit with no request counts as the request) and currentLive (the live
+      pods' requests, which differ from the template under Auto, Recreate or
+      Initial), the percent difference, differs against vpaDifferencePercent, and
+      belowLowerBound / aboveUpperBound. Kinds Deployment, StatefulSet, DaemonSet,
+      ReplicaSet, Job and CronJob are looked up; others get targetSupported false.
+      Without the CRD: dependency error, never an empty list. A forbidden
+      workload list gives targetFound null; unreadable pods give currentLive null.
+    script: scripts/vpa_recommendations.py
+    tags: [vpa, autoscaling, recommendations]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets, replicasets], verbs: [list] }
+      - { apiGroups: [batch], resources: [jobs, cronjobs], verbs: [list] }
+    outputs:
+      vpas: { schema: ./schemas/vpas.v1.json, description: "Each VPA with its target, conditions and per-container recommendation against the template's and the live pods' requests" }
+      inspected: { schema: ./schemas/vpa-inspected.v1.json, description: "How many VPAs there were before the maxItems cap" }
+
+  - name: images
+    title: Images and pull failures
+    description: >-
+      For every container (init containers and native sidecars included) of the
+      namespace's pods: the image as written, its repository, tag and digest,
+      the pull policy and the imageID the node resolved (null until pulled), plus
+      the containers waiting in ImagePullBackOff, ErrImagePull, ErrImageNeverPull
+      or InvalidImageName with the kubelet's message (cut at 1024 characters).
+      Pods of every phase are listed. Nothing is pulled or created.
+    script: scripts/images.py
+    tags: [images, imagepullbackoff, tags]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      containers: { schema: ./schemas/image-containers.v1.json, description: "Image, tag, digest, pull policy and imageID of each container" }
+      pullFailures: { schema: ./schemas/pull-failures.v1.json, description: "Containers that cannot pull their image, with the pull message" }
+      inspected: { schema: ./schemas/images-inspected.v1.json, description: "Pods, containers and pull failures before the maxItems cap" }
+
+  - name: serviceaccount-permissions
+    title: ServiceAccount permissions
+    description: >-
+      Whether a ServiceAccount of the namespace may do each of a list of actions
+      in it, asked as LocalSubjectAccessReviews (the account is not impersonated and
+      no pod is created): allowed, denied (an explicit deny from an authorizer),
+      the authorizer's reason and any evaluation error. Also whether the
+      ServiceAccount exists. The default checks are get and list pods, get
+      configmaps and list services. Creating a LocalSubjectAccessReview needs
+      create on localsubjectaccessreviews.authorization.k8s.io in the namespace,
+      which a namespace admin has and a view role does not; it changes nothing in
+      the cluster. resource names a resource or resource/subresource without a
+      dot; the API group goes in group (resource deployments, group apps).
+    script: scripts/serviceaccount_permissions.py
+    tags: [serviceaccount, rbac, access]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces, serviceaccounts], verbs: [get] }
+      - { apiGroups: [authorization.k8s.io], resources: [localsubjectaccessreviews], verbs: [create] }
+    inputs:
+      serviceAccount: { type: string, default: default, description: "ServiceAccount in the target namespace to ask about" }
+      checks:
+        type: object[]
+        schema:
+          type: object
+          properties:
+            verb: { type: string }
+            resource: { type: string, description: "A resource, or resource/subresource such as pods/log; no dots, the API group goes in group" }
+            group: { type: string, description: "API group; empty for the core group" }
+          required: [verb, resource]
+          additionalProperties: false
+        default:
+          - { verb: get, resource: pods }
+          - { verb: list, resource: pods }
+          - { verb: get, resource: configmaps }
+          - { verb: list, resource: services }
+        description: "Actions to ask about, each {verb, resource, group?}; at most 50"
+    outputs:
+      serviceAccount: { schema: ./schemas/service-account.v1.json, description: "The ServiceAccount, its user name and whether it exists; exists is null when it could not be read" }
+      access: { schema: ./schemas/access.v1.json, description: "The answer for each check, in input order" }

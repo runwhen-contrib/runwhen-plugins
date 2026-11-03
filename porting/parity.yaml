@@ -52,10 +52,33 @@ kubernetes:
       note: "classic task 2 reads files nothing creates; task 1 misreads whole-core CPU as millicores" }
 
   # --- namespace ---------------------------------------------------------------------------------------------
-  - { bundle: k8s-podresources-health,     skills: [k8s-namespace-resources], status: planned }
-  - { bundle: k8s-image-check,             skills: [k8s-namespace-resources], status: planned }
-  - { bundle: k8s-serviceaccount-check,    skills: [k8s-namespace-resources], status: planned,
-      note: "classic creates a pod; re-derived as a SubjectAccessReview (read-only)" }
+  - bundle: k8s-podresources-health
+    skills: [k8s-namespace-resources]
+    status: ported
+    ported: [k8s-namespace-resources]
+    note: "classic 'no metrics-server' and 'no VPA CRD' paths wrote an empty result the runbook read as healthy; both are dependency errors now. The OOMKilled/exit-137 half of 'Identify Overutilized Pods' is a restart fact: k8s-workload-health/pod-restarts"
+    tasks:
+      "Show Pods Without Resource Limit or Resource Requests Set in Namespace": k8s-namespace-resources/resource-settings
+      "Check Pod Resource Utilization with Top in Namespace": k8s-namespace-resources/resource-usage
+      "Identify VPA Pod Resource Recommendations in Namespace": k8s-namespace-resources/vpa-recommendations
+      "Identify Overutilized Pods in Namespace": k8s-namespace-resources/resource-usage
+  - bundle: k8s-image-check
+    skills: [k8s-namespace-resources]
+    status: ported
+    ported: [k8s-namespace-resources]
+    note: "classic launched a skopeo pod from quay.io and exec'd into it; not ported (a read skill creates nothing). Pull failures are read from the container status"
+    tasks:
+      "Check Image Rollover Times for Namespace": "dropped: report only (asserts nothing); image and imageID per container are in k8s-namespace-resources/images"
+      "List Images and Tags for Every Container in Running Pods": k8s-namespace-resources/images
+      "List Images and Tags for Every Container in Failed Pods": "k8s-namespace-resources/images (pods of every phase; each entry has phase)"
+      "List ImagePullBackOff Events and Test Path and Tags": "k8s-namespace-resources/images (pullFailures); the skopeo path/tag probe is dropped: creates and deletes a pod and needs egress to quay.io"
+  - bundle: k8s-serviceaccount-check
+    skills: [k8s-namespace-resources]
+    status: ported
+    ported: [k8s-namespace-resources]
+    note: "classic created a pod, printed its token and curled the API root, and passed when the pod could not start; re-derived as LocalSubjectAccessReviews (read-only, nothing created or run in the cluster)"
+    tasks:
+      "Test Service Account Access to Kubernetes API Server": k8s-namespace-resources/serviceaccount-permissions
   - { bundle: k8s-job-namespace-health,    skills: [k8s-namespace-health, k8s-cronjob-health], status: partial, ported: [k8s-namespace-health] }
   - { bundle: k8s-chaos-namespace,         skills: [k8s-chaos], status: planned }
   - { bundle: k8s-chaos-workload,          skills: [k8s-chaos], status: planned }

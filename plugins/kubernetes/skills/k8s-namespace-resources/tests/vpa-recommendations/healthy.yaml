@@ -1,0 +1,66 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-healthy\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:32:59Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-healthy"
+            },
+            "name": "rw-healthy",
+            "resourceVersion": "470",
+            "uid": "e2ade858-37c5-4ac3-b42d-5f97a029291b"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - verticalpodautoscalers.autoscaling.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    vpas: []
+    inspected: {vpas: 0}

@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerticalPodAutoscaler recommendations against current requests",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "targetKind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "targetName": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "targetSupported": {
+        "type": "boolean"
+      },
+      "targetFound": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "updateMode": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "recommendationProvided": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "conditions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "status",
+            "reason",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "containers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "container": {
+              "type": "string"
+            },
+            "init": {
+              "type": "boolean"
+            },
+            "current": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "additionalProperties": false
+            },
+            "currentLive": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "pods": {
+                      "type": "integer"
+                    },
+                    "cpu": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "memory": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "pods",
+                    "cpu",
+                    "memory"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "additionalProperties": false
+            },
+            "lowerBound": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "additionalProperties": false
+            },
+            "upperBound": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "additionalProperties": false
+            },
+            "cpuDifferencePercent": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "memoryDifferencePercent": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "differs": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "belowLowerBound": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "aboveUpperBound": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "container",
+            "init",
+            "current",
+            "currentLive",
+            "target",
+            "lowerBound",
+            "upperBound",
+            "cpuDifferencePercent",
+            "memoryDifferencePercent",
+            "differs",
+            "belowLowerBound",
+            "aboveUpperBound"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name",
+      "targetKind",
+      "targetName",
+      "targetSupported",
+      "targetFound",
+      "updateMode",
+      "recommendationProvided",
+      "conditions",
+      "containers",
+      "truncated"
+    ],
+    "additionalProperties": false
+  }
+}
