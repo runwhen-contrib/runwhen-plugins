@@ -44,6 +44,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          if [ -d "plugins/${{ matrix.plugin }}/tests/unit" ]; then
+            pip install pytest pyyaml jsonschema
+            python -m pytest "plugins/${{ matrix.plugin }}/tests/unit" -q
+          fi
       - name: Install rwtask
         if: env.SDK_REF != ''
         run: pip install "runwhen-capability @ git+https://github.com/runwhen-contrib/runwhen-capability@${SDK_REF}"
@@ -65,4 +72,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest pyyaml
-      - run: python -m pytest ci/tests -q
+      - run: python -m pytest ci/tests porting/tools/tests -q
