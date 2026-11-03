@@ -1,0 +1,403 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/statefulsets/db
+dryRun: true
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - statefulsets.apps
+  - db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 1000000\"],\"image\":\"busybox:1.36\",\"name\":\"db\",\"resources\":{\"requests\":{\"cpu\":\"5m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}]}},\"volumeClaimTemplates\":[{\"metadata\":{\"name\":\"data\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:00Z",
+            "generation": 5,
+            "name": "db",
+            "namespace": "rw-healthy",
+            "resourceVersion": "9196",
+            "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "db"
+                }
+            },
+            "serviceName": "db",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "db"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "sleep 1000000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "db",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            },
+            "volumeClaimTemplates": [
+                {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "metadata": {
+                        "name": "data"
+                    },
+                    "spec": {
+                        "accessModes": [
+                            "ReadWriteOnce"
+                        ],
+                        "resources": {
+                            "requests": {
+                                "storage": "100Mi"
+                            }
+                        },
+                        "storageClassName": "standard",
+                        "volumeMode": "Filesystem"
+                    },
+                    "status": {
+                        "phase": "Pending"
+                    }
+                }
+            ]
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "db-7b55f8bdd",
+            "observedGeneration": 5,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "db-7b55f8bdd",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - controllerrevisions.apps
+  - -l
+  - app=db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "data": {
+                    "spec": {
+                        "template": {
+                            "$patch": "replace",
+                            "metadata": {
+                                "annotations": {
+                                    "kubectl.kubernetes.io/restartedAt": "2026-11-04T00:17:18+05:30"
+                                },
+                                "labels": {
+                                    "app": "db"
+                                }
+                            },
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "command": [
+                                            "sh",
+                                            "-c",
+                                            "sleep 1000000"
+                                        ],
+                                        "image": "busybox:1.36",
+                                        "imagePullPolicy": "IfNotPresent",
+                                        "name": "db",
+                                        "resources": {
+                                            "requests": {
+                                                "cpu": "5m",
+                                                "memory": "4Mi"
+                                            }
+                                        },
+                                        "terminationMessagePath": "/dev/termination-log",
+                                        "terminationMessagePolicy": "File",
+                                        "volumeMounts": [
+                                            {
+                                                "mountPath": "/data",
+                                                "name": "data"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "dnsPolicy": "ClusterFirst",
+                                "restartPolicy": "Always",
+                                "schedulerName": "default-scheduler",
+                                "securityContext": {},
+                                "terminationGracePeriodSeconds": 30
+                            }
+                        }
+                    }
+                },
+                "kind": "ControllerRevision",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 1000000\"],\"image\":\"busybox:1.36\",\"name\":\"db\",\"resources\":{\"requests\":{\"cpu\":\"5m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}]}},\"volumeClaimTemplates\":[{\"metadata\":{\"name\":\"data\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T18:47:18Z",
+                    "labels": {
+                        "app": "db",
+                        "controller.kubernetes.io/hash": "54c4fdc678"
+                    },
+                    "name": "db-54c4fdc678",
+                    "namespace": "rw-healthy",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "db",
+                            "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+                        }
+                    ],
+                    "resourceVersion": "8581",
+                    "uid": "2f6d30c0-6c2a-4229-acac-c86353e8df96"
+                },
+                "revision": 2
+            },
+            {
+                "apiVersion": "apps/v1",
+                "data": {
+                    "spec": {
+                        "template": {
+                            "$patch": "replace",
+                            "metadata": {
+                                "labels": {
+                                    "app": "db"
+                                }
+                            },
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "command": [
+                                            "sh",
+                                            "-c",
+                                            "sleep 1000000"
+                                        ],
+                                        "image": "busybox:1.36",
+                                        "imagePullPolicy": "IfNotPresent",
+                                        "name": "db",
+                                        "resources": {
+                                            "limits": {
+                                                "memory": "32Mi"
+                                            },
+                                            "requests": {
+                                                "cpu": "5m",
+                                                "memory": "4Mi"
+                                            }
+                                        },
+                                        "terminationMessagePath": "/dev/termination-log",
+                                        "terminationMessagePolicy": "File",
+                                        "volumeMounts": [
+                                            {
+                                                "mountPath": "/data",
+                                                "name": "data"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "dnsPolicy": "ClusterFirst",
+                                "restartPolicy": "Always",
+                                "schedulerName": "default-scheduler",
+                                "securityContext": {},
+                                "terminationGracePeriodSeconds": 30
+                            }
+                        }
+                    }
+                },
+                "kind": "ControllerRevision",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 1000000\"],\"image\":\"busybox:1.36\",\"name\":\"db\",\"resources\":{\"requests\":{\"cpu\":\"5m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}]}},\"volumeClaimTemplates\":[{\"metadata\":{\"name\":\"data\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}]}}\n",
+                        "runwhen.com/restart-reason": "smoke test"
+                    },
+                    "creationTimestamp": "2026-11-03T18:47:50Z",
+                    "labels": {
+                        "app": "db",
+                        "controller.kubernetes.io/hash": "64bb5d486"
+                    },
+                    "name": "db-64bb5d486",
+                    "namespace": "rw-healthy",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "db",
+                            "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+                        }
+                    ],
+                    "resourceVersion": "8665",
+                    "uid": "aa0a79a3-4c22-4339-b405-7def5cd8c462"
+                },
+                "revision": 4
+            },
+            {
+                "apiVersion": "apps/v1",
+                "data": {
+                    "spec": {
+                        "template": {
+                            "$patch": "replace",
+                            "metadata": {
+                                "labels": {
+                                    "app": "db"
+                                }
+                            },
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "command": [
+                                            "sh",
+                                            "-c",
+                                            "sleep 1000000"
+                                        ],
+                                        "image": "busybox:1.36",
+                                        "imagePullPolicy": "IfNotPresent",
+                                        "name": "db",
+                                        "resources": {
+                                            "requests": {
+                                                "cpu": "5m",
+                                                "memory": "4Mi"
+                                            }
+                                        },
+                                        "terminationMessagePath": "/dev/termination-log",
+                                        "terminationMessagePolicy": "File",
+                                        "volumeMounts": [
+                                            {
+                                                "mountPath": "/data",
+                                                "name": "data"
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "dnsPolicy": "ClusterFirst",
+                                "restartPolicy": "Always",
+                                "schedulerName": "default-scheduler",
+                                "securityContext": {},
+                                "terminationGracePeriodSeconds": 30
+                            }
+                        }
+                    }
+                },
+                "kind": "ControllerRevision",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 1000000\"],\"image\":\"busybox:1.36\",\"name\":\"db\",\"resources\":{\"requests\":{\"cpu\":\"5m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}]}},\"volumeClaimTemplates\":[{\"metadata\":{\"name\":\"data\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:01Z",
+                    "labels": {
+                        "app": "db",
+                        "controller.kubernetes.io/hash": "7b55f8bdd"
+                    },
+                    "name": "db-7b55f8bdd",
+                    "namespace": "rw-healthy",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "db",
+                            "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+                        }
+                    ],
+                    "resourceVersion": "8668",
+                    "uid": "d6aac330-ed0e-4c62-8e6f-33a8d3f39ff2"
+                },
+                "revision": 5
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - rollout
+  - undo
+  - statefulset.apps/db
+  - --to-revision=4
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    statefulset.apps/db rolled back (server dry run)
+  stderr: |
+    Warning: resource statefulsets/db was previously managed with 'kubectl apply'. Rolling back will not update the kubectl.kubernetes.io/last-applied-configuration annotation, which may cause unexpected behavior on future 'kubectl apply' operations. Consider using 'kubectl apply' with your previous configuration file instead.
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"kind": "StatefulSet", "name": "db", "namespace": "rw-healthy", "updateStrategy": "RollingUpdate", "gitopsManaged": false}
+    rollback: {"applied": false, "changed": false, "wouldChange": true, "from": {"revision": 5, "images": [{"container": "db", "image": "busybox:1.36", "init": false}]}, "to": {"revision": 4, "images": [{"container": "db", "image": "busybox:1.36", "init": false}]}, "available": {"$containsWhere": {"revision": 4, "current": false}}}

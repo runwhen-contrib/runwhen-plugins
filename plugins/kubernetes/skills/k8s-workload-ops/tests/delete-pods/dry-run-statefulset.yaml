@@ -1,0 +1,424 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/statefulsets/db
+dryRun: true
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - statefulsets.apps
+  - db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 1000000\"],\"image\":\"busybox:1.36\",\"name\":\"db\",\"resources\":{\"requests\":{\"cpu\":\"5m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}]}},\"volumeClaimTemplates\":[{\"metadata\":{\"name\":\"data\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:00Z",
+            "generation": 5,
+            "name": "db",
+            "namespace": "rw-healthy",
+            "resourceVersion": "9196",
+            "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "db"
+                }
+            },
+            "serviceName": "db",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "db"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "sleep 1000000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "db",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            },
+            "volumeClaimTemplates": [
+                {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "metadata": {
+                        "name": "data"
+                    },
+                    "spec": {
+                        "accessModes": [
+                            "ReadWriteOnce"
+                        ],
+                        "resources": {
+                            "requests": {
+                                "storage": "100Mi"
+                            }
+                        },
+                        "storageClassName": "standard",
+                        "volumeMode": "Filesystem"
+                    },
+                    "status": {
+                        "phase": "Pending"
+                    }
+                }
+            ]
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "db-7b55f8bdd",
+            "observedGeneration": 5,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "db-7b55f8bdd",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - pods
+  - -l
+  - app=db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:23Z",
+                    "generateName": "db-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "db",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "db-7b55f8bdd",
+                        "statefulset.kubernetes.io/pod-name": "db-0"
+                    },
+                    "name": "db-0",
+                    "namespace": "rw-healthy",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "db",
+                            "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+                        }
+                    ],
+                    "resourceVersion": "9032",
+                    "uid": "7eaee1ca-4bf7-4871-a60f-ceca1a164c26"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "sleep 1000000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "db",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-bvqbp",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "db-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "db",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "data",
+                            "persistentVolumeClaim": {
+                                "claimName": "data-db-0"
+                            }
+                        },
+                        {
+                            "name": "kube-api-access-bvqbp",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "memory": "4Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:24Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:23Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:24Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:24Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:23Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "memory": "4Mi"
+                            },
+                            "containerID": "containerd://70b3fc90d4a303585365f8d3fca0ba23668a04b596117b54257b31a60408609b",
+                            "image": "docker.io/library/busybox:1.36",
+                            "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+                            "lastState": {},
+                            "name": "db",
+                            "ready": true,
+                            "resources": {
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T18:48:24Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        10
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-bvqbp",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.44",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.44"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "requests": {
+                            "memory": "4Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T18:48:23Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - delete
+  - pod
+  - db-0
+  - --wait=false
+  - --ignore-not-found
+  - -o
+  - name
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    pod/db-0
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"kind": "StatefulSet", "name": "db", "namespace": "rw-healthy", "updateStrategy": "RollingUpdate", "gitopsManaged": false}
+    deletion: {"applied": false, "deletedCount": 0, "wouldDeleteCount": 1, "ownedCount": 1, "deletesAll": true, "deleted": [], "wouldDelete": ["db-0"]}

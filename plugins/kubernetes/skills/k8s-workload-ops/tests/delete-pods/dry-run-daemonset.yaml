@@ -1,0 +1,395 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/daemonsets/agent
+dryRun: true
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - daemonsets.apps
+  - agent
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "DaemonSet",
+        "metadata": {
+            "annotations": {
+                "deprecated.daemonset.template.generation": "5",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"DaemonSet\",\"metadata\":{\"annotations\":{},\"name\":\"agent\",\"namespace\":\"rw-healthy\"},\"spec\":{\"selector\":{\"matchLabels\":{\"app\":\"agent\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"agent\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"name\":\"pause\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"1Mi\"}}}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:01Z",
+            "generation": 5,
+            "name": "agent",
+            "namespace": "rw-healthy",
+            "resourceVersion": "9197",
+            "uid": "8363e1e6-e1e3-46ff-a59a-345444bdf91b"
+        },
+        "spec": {
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "agent"
+                }
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "agent"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.9",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "pause",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxSurge": 0,
+                    "maxUnavailable": 1
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "currentNumberScheduled": 1,
+            "desiredNumberScheduled": 1,
+            "numberAvailable": 1,
+            "numberMisscheduled": 0,
+            "numberReady": 1,
+            "observedGeneration": 5,
+            "updatedNumberScheduled": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - pods
+  - -l
+  - app=agent
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:16Z",
+                    "generateName": "agent-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "agent",
+                        "controller-revision-hash": "69bf6696",
+                        "pod-template-generation": "5"
+                    },
+                    "name": "agent-rgjx7",
+                    "namespace": "rw-healthy",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "DaemonSet",
+                            "name": "agent",
+                            "uid": "8363e1e6-e1e3-46ff-a59a-345444bdf91b"
+                        }
+                    ],
+                    "resourceVersion": "8998",
+                    "uid": "d4345cff-3655-4c07-a7de-1cef9ae8ed22"
+                },
+                "spec": {
+                    "affinity": {
+                        "nodeAffinity": {
+                            "requiredDuringSchedulingIgnoredDuringExecution": {
+                                "nodeSelectorTerms": [
+                                    {
+                                        "matchFields": [
+                                            {
+                                                "key": "metadata.name",
+                                                "operator": "In",
+                                                "values": [
+                                                    "rw-plugins-control-plane"
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "containers": [
+                        {
+                            "image": "registry.k8s.io/pause:3.9",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "pause",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-t5f96",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists"
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists"
+                        },
+                        {
+                            "effect": "NoSchedule",
+                            "key": "node.kubernetes.io/disk-pressure",
+                            "operator": "Exists"
+                        },
+                        {
+                            "effect": "NoSchedule",
+                            "key": "node.kubernetes.io/memory-pressure",
+                            "operator": "Exists"
+                        },
+                        {
+                            "effect": "NoSchedule",
+                            "key": "node.kubernetes.io/pid-pressure",
+                            "operator": "Exists"
+                        },
+                        {
+                            "effect": "NoSchedule",
+                            "key": "node.kubernetes.io/unschedulable",
+                            "operator": "Exists"
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-t5f96",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "1Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:17Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:16Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:17Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:17Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:16Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "1m",
+                                "memory": "1Mi"
+                            },
+                            "containerID": "containerd://aabf18a409776f0195de85652ba545a4587035a9219c0e0c04de68a518588348",
+                            "image": "registry.k8s.io/pause:3.9",
+                            "imageID": "registry.k8s.io/pause@sha256:7031c1b283388d2c2e09b57badb803c05ebed362dc88d84b480cc47f72a21097",
+                            "lastState": {},
+                            "name": "pause",
+                            "ready": true,
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T18:48:17Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0
+                                    ],
+                                    "uid": 65535
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-t5f96",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.43",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.43"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "requests": {
+                            "memory": "1Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T18:48:16Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - delete
+  - pod
+  - agent-rgjx7
+  - --wait=false
+  - --ignore-not-found
+  - -o
+  - name
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    pod/agent-rgjx7
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"kind": "DaemonSet", "name": "agent", "namespace": "rw-healthy", "updateStrategy": "RollingUpdate", "gitopsManaged": false}
+    deletion: {"applied": false, "deletedCount": 0, "wouldDeleteCount": 1, "ownedCount": 1, "deletesAll": true, "deleted": [], "wouldDelete": ["agent-rgjx7"]}
