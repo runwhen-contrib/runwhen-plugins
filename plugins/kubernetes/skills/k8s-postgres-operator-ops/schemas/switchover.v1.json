@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Switchover or failover",
-  "description": "mode is switchover when a healthy leader existed, else failover. leaderAfter/leaderChanged are read back from patronictl list after the command; completed is true when the new leader is running and (with a candidate) is that candidate. null means not waited or not observed.",
+  "description": "mode is switchover when the leader was running, failover when there was no leader or it was in a terminal state (a failover always has a candidate). applied is false when patronictl printed a failure line. leaderAfter/leaderChanged are read back from patronictl list after the command; completed is true when the new leader is running and (with a candidate) is that candidate, false when the command was not confirmed or the leader did not change within the wait, null when not waited or not observed.",
   "type": "object",
   "properties": {
     "applied": {
@@ -42,13 +42,6 @@
       "type": [
         "string",
         "null"
-      ]
-    },
-    "candidateChosenBy": {
-      "enum": [
-        "input",
-        "auto",
-        null
       ]
     },
     "command": {
@@ -103,7 +96,8 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "maxLength": 1024
     },
     "outputTruncated": {
       "type": [
@@ -144,8 +138,11 @@
       "enum": [
         "leader_changed",
         "timeout",
+        "budget",
         "not_observed",
         "not_waited",
+        "failed",
+        "unconfirmed",
         null
       ]
     },
@@ -217,7 +214,6 @@
     "leaderBeforeState",
     "timelineBefore",
     "candidate",
-    "candidateChosenBy",
     "command",
     "ranIn",
     "output",

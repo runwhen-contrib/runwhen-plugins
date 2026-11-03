@@ -6,7 +6,7 @@
 #
 # Crunchy PostgresCluster (postgres-operator.crunchydata.com/v1beta1):
 #   hippo         2 instances desired and ready; pgBackRest repo ready; scheduled full and incr done.
-#                 Pods hippo-instance1-0 (primary, real postgres) and hippo-instance2-0 (replica).
+#                 Pods hippo-instance1-abcd-0 (primary, real postgres) and hippo-instance1-wxyz-0 (replica).
 #   hippo-broken  2 desired, 1 ready; stanza not created; the scheduled full backup failed and
 #                 never completed. Pods are both replicas (no primary label), instance1 not
 #                 Ready; the stub reports no Patroni leader, a replica 512 MB behind and one
@@ -110,13 +110,13 @@ done
 patch_status $PG acid-zalando '{"status":{"PostgresClusterStatus":"Running"}}'
 patch_status $PG acid-sync-failed '{"status":{"PostgresClusterStatus":"SyncFailed"}}'
 
-# Pods: wait for the ones that can be Ready (hippo-broken-instance1-0 never is), then reset
+# Pods: wait for the ones that can be Ready (hippo-broken-instance1-qrst-0 never is), then reset
 # the stub's per-pod state so the recorded members are what `patronictl list` prints.
-for p in hippo-instance1-0 hippo-instance2-0 hippo-broken-instance2-0 acid-zalando-0 acid-zalando-1; do
+for p in hippo-instance1-abcd-0 hippo-instance1-wxyz-0 hippo-broken-instance1-uvwx-0 acid-zalando-0 acid-zalando-1; do
   "${K[@]}" -n rw-pgop wait --for=condition=Ready "pod/$p" --timeout=180s >/dev/null
 done
-"${K[@]}" -n rw-pgop wait --for=jsonpath='{.status.phase}'=Running pod/hippo-broken-instance1-0 --timeout=180s >/dev/null
-for p in hippo-instance1-0:database hippo-instance2-0:database hippo-broken-instance1-0:database \
-         hippo-broken-instance2-0:database acid-zalando-0:postgres acid-zalando-1:postgres; do
-  "${K[@]}" -n rw-pgop exec "${p%%:*}" -c "${p##*:}" -- rm -f /tmp/patroni-state.json /tmp/patronictl.log
+"${K[@]}" -n rw-pgop wait --for=jsonpath='{.status.phase}'=Running pod/hippo-broken-instance1-qrst-0 --timeout=180s >/dev/null
+for p in hippo-instance1-abcd-0:database hippo-instance1-wxyz-0:database hippo-broken-instance1-qrst-0:database \
+         hippo-broken-instance1-uvwx-0:database acid-zalando-0:postgres acid-zalando-1:postgres; do
+  "${K[@]}" -n rw-pgop exec "${p%%:*}" -c "${p##*:}" -- sh -c 'rm -f /tmp/patroni-state.json /tmp/patronictl.log /tmp/patronictl.fail /tmp/patronictl.reinit.*'
 done

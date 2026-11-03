@@ -225,7 +225,7 @@ kubernetes:
     skills: [k8s-postgres-operator-ops]
     status: ported
     ported: [k8s-postgres-operator-ops]
-    note: "classic reported success whatever happened (set -e aborted before the issues JSON, the runbook looked for 'severity error', the success issue was its ELSE): a failed patronictl is a failed task now and every task reports what it read afterwards. Not reproduced: reinit of every member the script thought failed or lagging (the member is an explicit input and the leader is refused), the pod-deletion fallback, the sleep 30 verification, scale and the default 'overview' operation"
+    note: "classic reported success whatever happened (set -e aborted before the issues JSON, the runbook looked for 'severity error', the success issue was its ELSE): a failed patronictl is a failed task now and every task reports what it read afterwards. Not reproduced: reinit of every member the script thought failed or lagging (the member is an explicit input and the leader is refused), the pod-deletion fallback, the sleep 30 verification, scale and the default 'overview' operation. Behaviour change: on Crunchy classic restarted Postgres in place with patronictl, the port rolls the pods through the operator (the documented spec.metadata.annotations 'restarted' annotation), which also rolls the pgBouncer and pgBackRest repo host pods; on Zalando it restarts member by member, replicas first and the leader last, each verified"
     tasks:
       "Reinitialize Failed PostgreSQL Cluster Members": "k8s-postgres-operator-ops/reinit-member (one explicit member; which members are failed or lagging is health/patroni-status)"
       "Perform PostgreSQL Cluster Failover Operation": k8s-postgres-operator-ops/switchover

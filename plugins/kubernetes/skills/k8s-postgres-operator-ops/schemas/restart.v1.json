@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Rolling restart",
-  "description": "Crunchy: the restart annotation set on spec.metadata.annotations (method annotation); completed is true when as many instance pods as the spec asks for are Ready and were restarted at or after requestedAt. Zalando: patronictl restart (method patronictl); completed is true when every Patroni member is running or streaming afterwards. null means not waited or not observed.",
+  "description": "Crunchy: the restart annotation (spec.metadata.annotations.restarted, which the operator copies to the pod templates of every pod it runs for the cluster) set to requestedAt (method annotation); completed is true when as many instance pods as the spec asks for are Ready and were restarted at or after requestedAt. Zalando: patronictl restart <cluster> <member> --force, one member at a time, replicas first and the leader last (method patronictl); memberResults has each member's outcome; completed is true when every member printed its Success line and was back running or streaming with its Pending restart cleared. null means not waited or not observed.",
   "type": "object",
   "properties": {
     "applied": {
@@ -41,7 +41,8 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "maxLength": 1024
     },
     "command": {
       "oneOf": [
@@ -106,17 +107,6 @@
         }
       ]
     },
-    "output": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "outputTruncated": {
-      "type": [
-        "boolean"
-      ]
-    },
     "completed": {
       "type": [
         "boolean",
@@ -128,6 +118,8 @@
         "restarted",
         "running",
         "timeout",
+        "budget",
+        "member_failed",
         "not_observed",
         "not_waited",
         null
@@ -201,7 +193,8 @@
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "maxLength": 1024
               },
               "state": {
                 "type": [
@@ -220,10 +213,132 @@
                   "number",
                   "null"
                 ]
+              },
+              "pendingRestart": {
+                "type": [
+                  "boolean"
+                ]
               }
             },
             "required": [
               "name"
+            ]
+          }
+        }
+      ]
+    },
+    "memberResults": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "member": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "order": {
+                "type": [
+                  "integer"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "planned",
+                  "restarted",
+                  "not_back",
+                  "failed",
+                  "unconfirmed",
+                  "not_attempted"
+                ]
+              },
+              "applied": {
+                "type": [
+                  "boolean"
+                ]
+              },
+              "stateBefore": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pendingRestartBefore": {
+                "type": [
+                  "boolean"
+                ]
+              },
+              "stateAfter": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pendingRestartAfter": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "waitedSeconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "output": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "outputTruncated": {
+                "type": [
+                  "boolean"
+                ]
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "detailTruncated": {
+                "type": [
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "member",
+              "role",
+              "order",
+              "status",
+              "applied",
+              "stateBefore",
+              "pendingRestartBefore",
+              "stateAfter",
+              "pendingRestartAfter",
+              "waitedSeconds",
+              "output",
+              "outputTruncated",
+              "detail",
+              "detailTruncated"
             ]
           }
         }
@@ -240,14 +355,13 @@
     "previousAnnotation",
     "command",
     "ranIn",
-    "output",
-    "outputTruncated",
     "completed",
     "completionReason",
     "waitedSeconds",
     "membersFound",
     "membersReady",
     "membersRestarted",
-    "members"
+    "members",
+    "memberResults"
   ]
 }

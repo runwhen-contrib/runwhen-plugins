@@ -264,8 +264,8 @@ def test_crunchy_healthy_instances_backups_and_members():
     assert m["count"] == 2 and m["readyCount"] == 2 and m["selector"] == selector("hippo")
     by_name = {i["name"]: i for i in m["items"]}
     assert (
-        by_name["hippo-instance1-0"]["primary"] is True
-        and by_name["hippo-instance2-0"]["role"] == "replica"
+        by_name["hippo-instance1-abcd-0"]["primary"] is True
+        and by_name["hippo-instance1-wxyz-0"]["role"] == "replica"
     )
     assert calls == [get_cr("hippo"), get_pods("hippo")]
     check_outputs("cluster_status", env)
@@ -415,32 +415,32 @@ def test_members_list_is_capped_by_max_items_but_count_is_real():
 
 def test_patroni_healthy_leader_and_streaming_replica():
     stubs = standard(
-        "hippo", {patroni_argv("hippo-instance1-0", "hippo"): ok(text("patroni_hippo.json"))}
+        "hippo", {patroni_argv("hippo-instance1-abcd-0", "hippo"): ok(text("patroni_hippo.json"))}
     )
     env, errors, calls = run("patroni_status", "hippo", stubs)
     assert env["status"] == "ok" and errors == []
     p = env["outputs"]["patroni"]
     assert (
         p["leaderPresent"] is True
-        and p["leader"] == "hippo-instance1-0"
+        and p["leader"] == "hippo-instance1-abcd-0"
         and p["leaderRunning"] is True
     )
     assert p["cluster"] == "hippo-ha" and p["timelines"] == [3] and p["timelineMismatch"] is False
     assert p["notRunning"] == [] and p["aboveLagThreshold"] == [] and p["maxLagMb"] == 0
-    assert p["queried"] == {"pod": "hippo-instance1-0", "container": "database"}
-    replica = next(m for m in p["members"] if m["name"] == "hippo-instance2-0")
+    assert p["queried"] == {"pod": "hippo-instance1-abcd-0", "container": "database"}
+    replica = next(m for m in p["members"] if m["name"] == "hippo-instance1-wxyz-0")
     assert replica["state"] == "streaming" and replica["running"] is True and replica["lagMb"] == 0
     assert replica["lagUnknown"] is False
-    assert calls[-1] == patroni_argv("hippo-instance1-0", "hippo")
+    assert calls[-1] == patroni_argv("hippo-instance1-abcd-0", "hippo")
     check_outputs("patroni_status", env)
 
 
 def test_patroni_no_leader_lagging_and_failed_member_are_facts_not_errors():
-    # pod hippo-broken-instance2-0 is the Ready one, so it is the one asked
+    # pod hippo-broken-instance1-uvwx-0 is the Ready one, so it is the one asked
     stubs = standard(
         "hippo-broken",
         {
-            patroni_argv("hippo-broken-instance2-0", "hippo-broken"): ok(
+            patroni_argv("hippo-broken-instance1-uvwx-0", "hippo-broken"): ok(
                 text("patroni_hippo_broken.json")
             )
         },
@@ -450,8 +450,8 @@ def test_patroni_no_leader_lagging_and_failed_member_are_facts_not_errors():
     p = env["outputs"]["patroni"]
     assert p["leaderPresent"] is False and p["leader"] is None and p["leaderRunning"] is False
     assert p["timelines"] == [4, 5] and p["timelineMismatch"] is True
-    assert p["maxLagMb"] == 512 and p["aboveLagThreshold"] == ["hippo-broken-instance1-0"]
-    assert p["notRunning"] == ["hippo-broken-instance2-0"]
+    assert p["maxLagMb"] == 512 and p["aboveLagThreshold"] == ["hippo-broken-instance1-qrst-0"]
+    assert p["notRunning"] == ["hippo-broken-instance1-uvwx-0"]
     failed = next(m for m in p["members"] if m["state"] == "start failed")
     assert failed["running"] is False and failed["lagMb"] is None and failed["lagUnknown"] is True
     check_outputs("patroni_status", env)
@@ -461,7 +461,7 @@ def test_lag_threshold_setting_decides_the_flag():
     stubs = standard(
         "hippo-broken",
         {
-            patroni_argv("hippo-broken-instance2-0", "hippo-broken"): ok(
+            patroni_argv("hippo-broken-instance1-uvwx-0", "hippo-broken"): ok(
                 text("patroni_hippo_broken.json")
             )
         },
@@ -495,18 +495,35 @@ def test_patroni_standby_leader_counts_as_a_leader_and_pending_restart_is_report
     assert p["members"][0]["pendingRestart"] is True and p["members"][1]["lagMb"] == 3.0
 
 
-def test_empty_member_list_is_no_leader_but_unparsable_output_is_an_error():
-    p = o.patroni_view([], None, 100, 200)
-    assert p["leaderPresent"] is False and p["memberCount"] == 0
+def test_empty_array_unparsable_output_and_members_missing_facts_are_internal_errors():
     # Classic: empty or unparsable patronictl output produced zero lag and "healthy".
-    for bad in ("", "Error: nope", "{}", '["x"]'):
+    for bad in ("", "Error: nope", "{}", '["x"]', "[]"):
         with pytest.raises(RwError) as exc:
             o.parse_patroni(bad)
         assert exc.value.code == "internal"
+    for field in ("Member", "Role", "State"):
+        member = {"Cluster": "c", "Member": "a", "Role": "Leader", "State": "running", "TL": 1}
+        del member[field]
+        with pytest.raises(RwError) as exc:
+            o.parse_patroni(json.dumps([member]))
+        assert exc.value.code == "internal" and f"no {field}" in exc.value.message
+    ok_member = {"Cluster": "c", "Member": "a", "Role": "Leader", "State": "running"}
+    with pytest.raises(RwError) as exc:  # the second member is the one without a State
+        o.parse_patroni(json.dumps([ok_member, {**ok_member, "Member": "b", "State": ""}]))
+    assert "member 1 has no State" in exc.value.message
+    assert o.parse_patroni(json.dumps([ok_member]))[0]["Member"] == "a"
+
+
+@pytest.mark.parametrize("stdout", ["[]", '[{"Cluster": "hippo-ha", "Member": "x"}]'])
+def test_patroni_status_with_an_empty_array_or_members_missing_facts_fails_internal(stdout):
+    stubs = standard("hippo", {patroni_argv("hippo-instance1-abcd-0", "hippo"): ok(stdout)})
+    env, errors, _ = run("patroni_status", "hippo", stubs)
+    assert env["status"] == "failed" and errors[0]["code"] == "internal"
+    assert env["outputs"] == {}  # never an all-clear built from nothing
 
 
 def test_patroni_empty_stdout_fails_the_task_instead_of_reporting_no_lag():
-    stubs = standard("hippo", {patroni_argv("hippo-instance1-0", "hippo"): ok("")})
+    stubs = standard("hippo", {patroni_argv("hippo-instance1-abcd-0", "hippo"): ok("")})
     env, errors, _ = run("patroni_status", "hippo", stubs)
     assert env["status"] == "failed" and errors[0]["code"] == "internal"
 
@@ -521,7 +538,7 @@ def test_patroni_without_a_running_pod_is_partial_and_everything_is_null():
 
 
 def test_patroni_exec_failures_are_classified():
-    argv = patroni_argv("hippo-instance1-0", "hippo")
+    argv = patroni_argv("hippo-instance1-abcd-0", "hippo")
     cases = [
         (forbidden("pods/exec", "create"), "permission_denied"),
         (
@@ -541,7 +558,7 @@ def test_patroni_exec_failures_are_classified():
             "internal",
         ),
         (
-            (1, "", 'Error from server (NotFound): pods "hippo-instance1-0" not found'),
+            (1, "", 'Error from server (NotFound): pods "hippo-instance1-abcd-0" not found'),
             "internal",
         ),  # pod went away
     ]
@@ -554,7 +571,7 @@ def test_patroni_picks_a_ready_running_pod_and_skips_deleting_ones():
     pods = copy.deepcopy(PODS["hippo"]["items"])
     pods[0]["metadata"]["deletionTimestamp"] = "2026-11-03T20:59:00Z"
     chosen = o.exec_candidates(o.CRUNCHY, pods)
-    assert [p["metadata"]["name"] for p in chosen] == ["hippo-instance2-0"]
+    assert [p["metadata"]["name"] for p in chosen] == ["hippo-instance1-wxyz-0"]
     pods[1]["status"]["phase"] = "Pending"
     assert o.exec_candidates(o.CRUNCHY, pods) == []
 
@@ -574,14 +591,14 @@ def conn_stubs(name, pod, doc=None, answer=None):
 
 
 def test_connections_on_the_primary_from_one_psql_document():
-    env, errors, calls = run("connections", "hippo", conn_stubs("hippo", "hippo-instance1-0"))
+    env, errors, calls = run("connections", "hippo", conn_stubs("hippo", "hippo-instance1-abcd-0"))
     assert env["status"] == "ok" and errors == []
     c = env["outputs"]["connections"]
-    assert c["queried"] == {"pod": "hippo-instance1-0", "container": "database"}
+    assert c["queried"] == {"pod": "hippo-instance1-abcd-0", "container": "database"}
     assert c["maxConnections"] == 100 and c["usableConnections"] == 97 and c["total"] == 0
     assert c["utilizationPercent"] == 0.0 and c["aboveThreshold"] is False
     assert c["waitingLocks"] == 0 and c["inRecovery"] is False and c["primaryCandidates"] == 1
-    assert calls[-1] == psql_argv("hippo-instance1-0", "hippo", o.CONNECTIONS_SQL)
+    assert calls[-1] == psql_argv("hippo-instance1-abcd-0", "hippo", o.CONNECTIONS_SQL)
     check_outputs("connections", env)
 
 
@@ -597,7 +614,7 @@ def test_connections_saturation_and_ages_come_from_the_document():
         "waitingLocks": 4,
         "sessionsWaitingOnLock": 3,
     }
-    env, _, _ = run("connections", "hippo", conn_stubs("hippo", "hippo-instance1-0", doc))
+    env, _, _ = run("connections", "hippo", conn_stubs("hippo", "hippo-instance1-abcd-0", doc))
     c = env["outputs"]["connections"]
     assert c["utilizationPercent"] == 92.8 and c["aboveThreshold"] is True
     assert c["byState"] == {"active": 30, "idle": 40, "idle in transaction": 20}
@@ -609,7 +626,7 @@ def test_connections_saturation_and_ages_come_from_the_document():
     env, _, _ = run(
         "connections",
         "hippo",
-        conn_stubs("hippo", "hippo-instance1-0", doc),
+        conn_stubs("hippo", "hippo-instance1-abcd-0", doc),
         settings={"connectionUtilizationPercent": 95},
     )
     assert env["outputs"]["connections"]["aboveThreshold"] is False
@@ -624,14 +641,14 @@ def test_unreadable_max_connections_fails_instead_of_passing():
         "byState": {},
         "waitingLocks": 0,
     }
-    env, errors, _ = run("connections", "hippo", conn_stubs("hippo", "hippo-instance1-0", doc))
+    env, errors, _ = run("connections", "hippo", conn_stubs("hippo", "hippo-instance1-abcd-0", doc))
     assert env["status"] == "failed" and errors[0]["code"] == "internal"
 
 
 @pytest.mark.parametrize("out", ["", "psql: error", "[]", "null"])
 def test_psql_output_that_is_not_a_document_fails(out):
     env, errors, _ = run(
-        "connections", "hippo", conn_stubs("hippo", "hippo-instance1-0", answer=(0, out, ""))
+        "connections", "hippo", conn_stubs("hippo", "hippo-instance1-abcd-0", answer=(0, out, ""))
     )
     assert env["status"] == "failed" and errors[0]["code"] == "internal"
 
@@ -649,7 +666,7 @@ def test_stale_label_during_failover_is_visible_as_in_recovery_and_two_primaries
     stubs = {
         get_cr("hippo"): ok(CR["hippo"]),
         get_pods("hippo"): ok(pods),
-        psql_argv("hippo-instance1-0", "hippo", o.CONNECTIONS_SQL): ok(
+        psql_argv("hippo-instance1-abcd-0", "hippo", o.CONNECTIONS_SQL): ok(
             {**json.loads(text("psql_connections.json")), "inRecovery": True}
         ),
     }
@@ -659,7 +676,7 @@ def test_stale_label_during_failover_is_visible_as_in_recovery_and_two_primaries
 
 
 def test_psql_failures_are_classified():
-    argv = psql_argv("hippo-instance1-0", "hippo", o.CONNECTIONS_SQL)
+    argv = psql_argv("hippo-instance1-abcd-0", "hippo", o.CONNECTIONS_SQL)
     cases = [
         (forbidden("pods/exec", "create"), "permission_denied"),
         ((1, "", 'exec: "psql": executable file not found in $PATH'), "dependency"),
@@ -689,7 +706,11 @@ def test_connections_query_reads_no_query_text_and_leaves_its_own_session_out():
 def test_settings_lists_non_default_rows_with_name_setting_unit_source():
     stubs = standard(
         "hippo",
-        {psql_argv("hippo-instance1-0", "hippo", o.SETTINGS_SQL): ok(text("psql_settings.json"))},
+        {
+            psql_argv("hippo-instance1-abcd-0", "hippo", o.SETTINGS_SQL): ok(
+                text("psql_settings.json")
+            )
+        },
     )
     env, errors, _ = run("settings", "hippo", stubs)
     assert env["status"] == "ok" and errors == []
@@ -756,7 +777,69 @@ def test_settings_never_returns_names_matching_the_exclusion_pattern():
     view = o.settings_view(doc, None, 200)  # the query is trusted for nothing: filtered again here
     assert [i["name"] for i in view["items"]] == ["max_connections"]
     assert view["excludedCount"] == 5
-    assert "password|secret|key|ssl_.*file" in o.SETTINGS_SQL
+    assert o.EXCLUDED_PATTERN in o.SETTINGS_SQL  # the query and the filter use one expression
+    assert o.SETTINGS_SQL.count(o.EXCLUDED_PATTERN) == 2 and "@EXCLUDED@" not in o.SETTINGS_SQL
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ssl_key_file", "ssl_cert_file", "ssl_ca_file", "ssl_crl_file", "krb_server_keyfile",
+        "password_encryption", "ssl_passphrase_command", "ssl_passphrase_command_supports_reload",
+        "my_secret_thing", "api_token", "auth_token", "db_credentials", "db_credential", "vault.token",
+        "foo_dsn", "jdbc_uri", "auth", "pg_auth", "auth_method", "encryption_key", "keys", "Key",
+        "ENCRYPTION_KEY", "some.password",
+    ],
+)  # fmt: skip
+def test_settings_exclusion_covers_names_that_can_hold_a_secret(name):
+    assert o.EXCLUDED_NAME.search(name), name
+    doc = {"items": [{"name": name, "setting": "x", "unit": None, "source": "configuration file"}]}
+    assert o.settings_view(doc, None, 10)["items"] == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "autovacuum", "autovacuum_max_workers", "autovacuum_vacuum_scale_factor",
+        "log_autovacuum_min_duration", "authentication_timeout", "row_security",
+        "tcp_keepalives_idle", "tcp_user_timeout", "default_text_search_config", "max_connections",
+        "shared_buffers", "listen_addresses", "ssl_min_protocol_version", "ssl_ciphers",
+        "config_file", "hba_file", "unix_socket_permissions", "scram_iterations", "monkey_patch",
+        "bonjour_name", "wal_keep_size", "archive_timeout", "cluster_name", "synchronous_commit",
+    ],
+)  # fmt: skip
+def test_settings_exclusion_does_not_swallow_ordinary_names(name):
+    assert not o.EXCLUDED_NAME.search(name), name
+    doc = {"items": [{"name": name, "setting": "v", "unit": None, "source": "configuration file"}]}
+    assert [i["name"] for i in o.settings_view(doc, None, 10)["items"]] == [name]
+
+
+def test_settings_withholds_the_values_of_dotted_extension_settings():
+    doc = {
+        "items": [
+            {"name": "pgaudit.log", "setting": "write, ddl", "unit": None, "source": "configuration file"},
+            {"name": "auto_explain.log_min_duration", "setting": "250", "unit": "ms", "source": "configuration file"},
+            {"name": "pg_stat_statements.max", "setting": "10000", "unit": None, "source": "configuration file"},
+            {"name": "cron.database_name", "setting": "appdb", "unit": None, "source": "configuration file"},
+            {"name": "shared_buffers", "setting": "16384", "unit": "8kB", "source": "configuration file"},
+        ],
+        "excluded": 0,
+    }  # fmt: skip
+    view = o.settings_view(doc, None, 200)
+    rows = {i["name"]: i for i in view["items"]}
+    for name in (
+        "pgaudit.log",
+        "auto_explain.log_min_duration",
+        "pg_stat_statements.max",
+        "cron.database_name",
+    ):
+        assert rows[name]["setting"] is None and rows[name]["redacted"] is True, name
+        assert rows[name]["source"] == "configuration file"  # the row stays: it is set
+    assert (
+        rows["shared_buffers"]["setting"] == "16384" and rows["shared_buffers"]["redacted"] is False
+    )
+    dump = json.dumps(view)
+    assert "write, ddl" not in dump and "appdb" not in dump
 
 
 def test_settings_withholds_values_that_can_hold_a_connection_string_or_command():
@@ -775,7 +858,7 @@ def test_settings_withholds_values_that_can_hold_a_connection_string_or_command(
                 "source": "configuration file",
             },
             {
-                "name": "some_dsn",
+                "name": "some_endpoint",
                 "setting": "postgres://u:pw@host/db",
                 "unit": None,
                 "source": "configuration file",
@@ -786,7 +869,7 @@ def test_settings_withholds_values_that_can_hold_a_connection_string_or_command(
     }
     view = o.settings_view(doc, None, 200)
     rows = {i["name"]: i for i in view["items"]}
-    for name in ("primary_conninfo", "archive_command", "some_dsn"):
+    for name in ("primary_conninfo", "archive_command", "some_endpoint"):
         assert rows[name]["setting"] is None and rows[name]["redacted"] is True
     assert rows["work_mem"]["setting"] == "64" and rows["work_mem"]["unit"] == "kB"
     assert "hunter2" not in json.dumps(view) and "pw@" not in json.dumps(view)
@@ -936,7 +1019,7 @@ def declared(task):
         (
             "patroni_status",
             "hippo",
-            {patroni_argv("hippo-instance1-0", "hippo"): ok(text("patroni_hippo.json"))},
+            {patroni_argv("hippo-instance1-abcd-0", "hippo"): ok(text("patroni_hippo.json"))},
         ),
         (
             "patroni_status",
@@ -947,7 +1030,7 @@ def declared(task):
             "connections",
             "hippo",
             {
-                psql_argv("hippo-instance1-0", "hippo", o.CONNECTIONS_SQL): ok(
+                psql_argv("hippo-instance1-abcd-0", "hippo", o.CONNECTIONS_SQL): ok(
                     text("psql_connections.json")
                 )
             },
@@ -1000,9 +1083,11 @@ def test_no_script_output_contains_password_or_env_values():
     stubs = standard(
         "hippo",
         {
-            patroni_argv("hippo-instance1-0", "hippo"): ok(text("patroni_hippo.json")),
-            psql_argv("hippo-instance1-0", "hippo", o.SETTINGS_SQL): ok(text("psql_settings.json")),
-            psql_argv("hippo-instance1-0", "hippo", o.CONNECTIONS_SQL): ok(
+            patroni_argv("hippo-instance1-abcd-0", "hippo"): ok(text("patroni_hippo.json")),
+            psql_argv("hippo-instance1-abcd-0", "hippo", o.SETTINGS_SQL): ok(
+                text("psql_settings.json")
+            ),
+            psql_argv("hippo-instance1-abcd-0", "hippo", o.CONNECTIONS_SQL): ok(
                 text("psql_connections.json")
             ),
         },

@@ -87,10 +87,12 @@ tasks:
     description: >-
       Runs one psql query in the primary pod (local socket, no credential) and
       lists the pg_settings rows that are not at their default: name, setting,
-      unit and source. Settings whose name matches password|secret|key|ssl_.*file
-      are never returned (their number is excludedCount), and a setting that can
-      hold a connection string or a command line (primary_conninfo,
-      archive_command ...) is listed with its value withheld.
+      unit and source. Settings with a password, passwd, passphrase, secret,
+      token, credential, dsn, uri, auth or key part in their name (split at _ and
+      .: ssl_key_file yes, autovacuum no), and ssl_*file, are never returned (their
+      number is excludedCount). A setting that can hold a connection string or a
+      command line (primary_conninfo, archive_command ...) and every dotted
+      extension setting (pgaudit.log ...) is listed with its value withheld.
     script: scripts/settings.py
     tags: [postgres, configuration, settings, exec, psql]
     readOnly: true

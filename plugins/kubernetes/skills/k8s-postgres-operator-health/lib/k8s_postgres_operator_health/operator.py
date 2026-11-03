@@ -404,15 +404,28 @@ def backups_view(kind, obj, now):
 # --------------------------------------------------------- patroni-status ----
 
 
+REQUIRED_MEMBER_FIELDS = ("Member", "Role", "State")
+
+
 def parse_patroni(text):
-    """The members `patronictl list -f json` printed. Anything that is not a JSON array of
-    objects is an `internal` error (never an empty list)."""
+    """The members `patronictl list -f json` printed. Anything that is not a non-empty JSON array
+    of objects that each name Member, Role and State is an `internal` error (never an empty list,
+    never a member with the facts missing)."""
     try:
         data = json.loads(text)
     except ValueError as exc:
         raise RwError("internal", f"patronictl list did not print JSON: {exc}") from None
     if not isinstance(data, list) or not all(isinstance(m, dict) for m in data):
         raise RwError("internal", "patronictl list -f json did not print an array of members")
+    if not data:
+        raise RwError("internal", "patronictl list -f json printed an empty array: no members")
+    for index, member in enumerate(data):
+        missing = [f for f in REQUIRED_MEMBER_FIELDS if not member.get(f)]
+        if missing:
+            raise RwError(
+                "internal",
+                f"patronictl list -f json member {index} has no {', '.join(missing)}",
+            )
     return data
 
 
@@ -564,8 +577,16 @@ def connections_view(doc, queried, primary_count, threshold_percent):
 
 # --------------------------------------------------------------- settings ----
 
-# Names that never leave the pod (the task statement's pattern; the same regex is in the SQL).
-EXCLUDED_NAME = re.compile(r"password|secret|key|ssl_.*file", re.IGNORECASE)
+# Names that never leave the pod, matched on word parts (split at `_` and `.`), not on substrings:
+# a part that is password, passwd, passphrase, secret, token, credential, dsn, uri, auth or key
+# (plural, or with `file`: keyfile), and `ssl_*file`. `ssl_key_file` and `krb_server_keyfile` are
+# excluded; `autovacuum_*`, `row_security`, `authentication_timeout` and `tcp_keepalives_*` are
+# not (`auth` is a part of the first only as a whole word). The same expression is in the SQL.
+EXCLUDED_PATTERN = (
+    r"(^|[_.])(password|passwd|passphrase|secret|token|credential|dsn|uri|auth|key)(s|file)?($|[_.])"
+    r"|ssl_.*file"
+)
+EXCLUDED_NAME = re.compile(EXCLUDED_PATTERN, re.IGNORECASE)
 # Names whose value can embed a connection string or a command line with a credential: the row
 # is kept (it is a fact that the setting is set) but its value is withheld.
 WITHHELD_NAME = re.compile(r"conninfo|_command$|_url$", re.IGNORECASE)
@@ -581,10 +602,22 @@ SELECT json_build_object(
                      'name', name, 'setting', setting, 'unit', unit, 'source', source) ORDER BY name),
                      '[]'::json)
             FROM pg_settings
-            WHERE source NOT IN ('default', 'client', 'session') AND name !~* 'password|secret|key|ssl_.*file'),
+            WHERE source NOT IN ('default', 'client', 'session') AND name !~* '@EXCLUDED@'),
   'excluded', (SELECT count(*) FROM pg_settings
-               WHERE source NOT IN ('default', 'client', 'session') AND name ~* 'password|secret|key|ssl_.*file')
-);"""
+               WHERE source NOT IN ('default', 'client', 'session') AND name ~* '@EXCLUDED@')
+);""".replace("@EXCLUDED@", EXCLUDED_PATTERN)
+
+
+def withheld(name, value):
+    """Whether the row is kept but its value is not returned: a name that can hold a connection
+    string or command (primary_conninfo, archive_command ...), a dotted name (an extension's
+    setting, `pgaudit.log`: free text this skill cannot know the sensitivity of), or a value that
+    looks like it carries a credential."""
+    return (
+        bool(WITHHELD_NAME.search(name))
+        or "." in name
+        or bool(value is not None and _CREDENTIAL_VALUE.search(str(value)))
+    )
 
 
 def settings_view(doc, queried, max_items):
@@ -597,10 +630,8 @@ def settings_view(doc, queried, max_items):
         if EXCLUDED_NAME.search(name):
             continue  # the query already left these out; never rely on that alone
         value = s.get("setting")
-        withheld = bool(WITHHELD_NAME.search(name)) or bool(
-            value is not None and _CREDENTIAL_VALUE.search(str(value))
-        )
-        text, truncated = limit_text(None if withheld else value)
+        hidden = withheld(name, value)
+        text, truncated = limit_text(None if hidden else value)
         items.append(
             {
                 "name": name,
@@ -608,7 +639,7 @@ def settings_view(doc, queried, max_items):
                 "truncated": truncated,
                 "unit": s.get("unit"),
                 "source": s.get("source"),
-                "redacted": withheld,
+                "redacted": hidden,
             }
         )
     shown = cap(items, max_items)

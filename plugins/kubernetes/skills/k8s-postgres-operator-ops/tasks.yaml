@@ -13,19 +13,25 @@ tasks:
     title: Reinitialise a Patroni member
     description: >-
       Runs patronictl reinit <cluster> <member> --force inside a member pod: the
-      member's data directory is wiped and re-cloned from the leader. The member
-      must be a member of the Patroni cluster and must not be the leader (refused
-      as invalid_input). The Patroni cluster name is read from patronictl list, not
-      guessed. Reinit only starts the re-clone: the result reports the member's
-      state read once afterwards, it does not wait. A dry run does every check and
-      runs nothing.
+      member's data directory is wiped and re-cloned from the leader. Requires a
+      leader that is present and running; without one it is refused as
+      invalid_input (switchover or failover first). The member must be a member of
+      the Patroni cluster and must not be the leader (also invalid_input). The
+      Patroni cluster name is read from patronictl list, not guessed. The write is
+      counted done only when patronictl prints "Success: reinitialize for member
+      <member>": a Failed line, or no Success line, is an internal error and
+      applied stays false, even when patronictl exited 0. After the Success line
+      the member's state is read until it is running or streaming again or the
+      timeout input runs out (completed says which; the wait is also capped by
+      what is left of the task's time). A dry run does every check and runs
+      nothing.
     script: scripts/reinit_member.py
     tags: [postgres, patroni, reinit, replica]
     readOnly: false
     destructive: true
     idempotent: false
     dryRun: true
-    timeout: 180s
+    timeout: 420s
     effects:
       - "Stops Postgres on the member, deletes its data directory and re-clones it from the leader (pg_basebackup or the configured replica-creation method); the member is not a usable replica until that finishes, which takes as long as the database is large."
       - "The re-clone reads the whole database from the leader or from a backup repository, adding load to it."
@@ -37,9 +43,10 @@ tasks:
       - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
     inputs:
       member: { type: string, description: "The Patroni member to reinitialise (its name in patronictl list, normally the pod name); not the leader" }
+      timeout: { type: duration, default: 120s, description: "How long to read the member's state for it to be running or streaming again (0s to 300s; 0s does not wait). A re-clone of a large database takes longer: running out of time is reported as completed false, not as a failure" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The cluster object acted on, its Patroni cluster name and whether GitOps manages it" }
-      reinit: { schema: ./schemas/reinit.v1.json, description: "The member, its state before and after, and the command run" }
+      reinit: { schema: ./schemas/reinit.v1.json, description: "The member, its state before and after, the command run and whether it was confirmed and finished" }
 
   - name: switchover
     title: Switchover or failover
@@ -47,19 +54,24 @@ tasks:
       Moves leadership to another member. With a healthy leader (role Leader, state
       running) it runs patronictl switchover <cluster> --force, with --candidate
       when the candidate input is given; Patroni picks the replica otherwise. With
-      no leader, or one that is not running, it runs patronictl failover <cluster>
-      --candidate <member> --force: failover needs a candidate, so without the input
-      the running replica with the least known lag is chosen (candidateChosenBy
-      auto). A candidate must be another member that is running or streaming. Reads
-      patronictl list afterwards for up to the timeout input and reports the leader
-      before and after. A dry run does every check and runs nothing.
+      no leader, or a leader in a terminal state (stopped, crashed, start failed,
+      restart failed), it runs patronictl failover <cluster> --candidate <member>
+      --force: a failover REQUIRES the candidate input (nothing is chosen for you),
+      and the candidate must be another member that is running or streaming and
+      whose replication lag is known, otherwise invalid_input. A leader in any
+      other state (restarting, starting, stopping ...) is transient: invalid_input
+      "leader is <state>; retry later". A failure line in patronictl's output is an
+      internal error and completed false, even when it exited 0. Reads patronictl
+      list afterwards for up to the timeout input (also capped by what is left of
+      the task's time) and reports mode, the leader before and after. A dry run
+      does every check and runs nothing.
     script: scripts/switchover.py
     tags: [postgres, patroni, switchover, failover, leader]
     readOnly: false
     destructive: true
     idempotent: false
     dryRun: true
-    timeout: 300s
+    timeout: 420s
     effects:
       - "Demotes the current leader (a switchover restarts it as a replica) and promotes another member: connections to the old leader are dropped and writes fail for the seconds it takes (longer if the replica has to catch up)."
       - "A failover promotes a replica without the old leader: transactions the replica had not yet received are lost, and the old leader has to be rewound or reinitialised when it returns."
@@ -70,8 +82,8 @@ tasks:
       - { apiGroups: [""], resources: [pods], verbs: [get, list] }
       - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
     inputs:
-      candidate: { type: string, required: false, description: "The member to promote; it must be running or streaming and not the leader. Omitted: Patroni chooses for a switchover, the least-lagging running replica for a failover" }
-      timeout: { type: duration, default: 60s, description: "How long to read patronictl list for the new leader (0s to 240s; 0s does not wait). Running out of time is reported as completed false, not as a failure" }
+      candidate: { type: string, required: false, description: "The member to promote; it must be running or streaming and not the leader. Optional for a switchover (Patroni chooses); required for a failover, which also needs its lag to be known" }
+      timeout: { type: duration, default: 60s, description: "How long to read patronictl list for the new leader (0s to 300s; 0s does not wait). Running out of time is reported as completed false, not as a failure" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The cluster object acted on, its Patroni cluster name and whether GitOps manages it" }
       switchover: { schema: ./schemas/switchover.v1.json, description: "Mode, leader before and after, the candidate and the command run" }
@@ -80,32 +92,39 @@ tasks:
     title: Rolling restart of the cluster
     description: >-
       Restarts every member. Crunchy PostgresCluster: sets
-      spec.metadata.annotations["postgres-operator.crunchydata.com/restarted"] to the
-      run's reference time with a merge patch (a server-side dry run for a dry run);
-      the operator then rolls the instance pods. Zalando postgresql: runs patronictl
-      restart <cluster> --force in a member pod, which restarts Postgres on every
-      member in turn. Then reports whether all members were back to running within
-      the timeout input: Crunchy needs as many pods as the spec asks for, each Ready
-      and restarted at or after the request; Zalando needs every Patroni member
-      running or streaming. Running out of time is completed false, not a failure.
+      spec.metadata.annotations["restarted"] (the PGO v5 documented key) to the
+      run's reference time with a merge patch (a server-side dry run for a dry
+      run); the operator rolls its pods. Zalando postgresql: runs patronictl
+      restart <cluster> <member> --force once per member, replicas first and the
+      leader last. A member counts as restarted only on its "Success: restart on
+      member <member>" line (a Failed line or no Success line is an internal
+      error even when patronictl exits 0) and once it is running or streaming with
+      Pending restart cleared; the first member that fails or does not come back
+      stops the loop (the rest are not_attempted). The timeout input is the wait
+      per member (Zalando) or for all pods (Crunchy), capped by the task's
+      remaining time; running out is completed false, not a failure.
     script: scripts/rolling_restart.py
     tags: [postgres, patroni, restart, rolling]
     readOnly: false
     destructive: false
     idempotent: false
     dryRun: true
-    timeout: 300s
+    timeout: 420s
     effects:
-      - "Restarts Postgres on every member, one after the other with the leader last (Crunchy replaces the instance pods; Zalando restarts the Postgres process in place): each member's connections are dropped while it restarts, and the leader's restart interrupts writes."
-      - "Crunchy: sets the annotation postgres-operator.crunchydata.com/restarted on the PostgresCluster spec and on its pod templates; every run changes its value, and a GitOps controller managing the object may report drift."
+      - "Zalando: restarts Postgres on each member in turn (the process, not the pod), replicas first and the leader last, waiting for each member to be back before the next: that member's connections are dropped while it restarts, and the leader's restart interrupts writes."
+      - "Crunchy: sets the annotation restarted on spec.metadata.annotations, which the operator copies to the pod templates; the operator replaces the instance pods (replicas first, the primary last) and also the pgBouncer and pgBackRest repository host pods, each dropping its connections; every run changes the value, and a GitOps controller managing the object may report drift."
       - "Applies pending Postgres settings that need a restart, and for Crunchy any pod template change the operator had not yet rolled."
+    # One task, one permission set (task names are fixed). pods/exec is used ONLY for Zalando,
+    # where patronictl runs in a member pod; the Crunchy restart is an annotation patch and
+    # never execs. A role that only restarts Crunchy clusters can drop pods/exec, and one that
+    # only restarts Zalando clusters can drop the postgresclusters patch.
     permissions:
       - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get, patch] }
       - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [get] }
       - { apiGroups: [""], resources: [pods], verbs: [get, list] }
       - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
     inputs:
-      timeout: { type: duration, default: 120s, description: "How long to wait for every member to be back (0s to 240s; 0s does not wait). Running out of time is reported as completed false, not as a failure" }
+      timeout: { type: duration, default: 120s, description: "How long to wait for each member to be back (Zalando: running or streaming with Pending restart cleared; at least 1s) or for all pods (Crunchy), 0s to 300s (Crunchy: 0s does not wait). Running out of time is reported as completed false, not as a failure" }
     outputs:
       target: { schema: ./schemas/target.v1.json, description: "The cluster object acted on, its Patroni cluster name (Zalando) and whether GitOps manages it" }
-      restart: { schema: ./schemas/restart.v1.json, description: "How the restart was requested and whether all members were back within the timeout" }
+      restart: { schema: ./schemas/restart.v1.json, description: "How the restart was requested, each member's outcome (Zalando) and whether all members were back within the timeout" }

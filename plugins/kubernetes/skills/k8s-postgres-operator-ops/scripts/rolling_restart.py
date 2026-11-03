@@ -1,23 +1,25 @@
 import json
 
+from k8s_postgres_operator_ops.errors import RwError
 from k8s_postgres_operator_ops.fetch import (
+    Budget,
     load_cluster,
     load_pods,
     pick_exec_pod,
     read_members,
-    run_patronictl,
     target_kind,
     wait_until,
 )
+from k8s_postgres_operator_ops.flow import restart_members
 from k8s_postgres_operator_ops.k8s import kubectl_text
 from k8s_postgres_operator_ops.operator import (
     CRUNCHY,
     KINDS,
     RESTART_ANNOTATION,
-    all_members_up,
     check_timeout,
     crunchy_restart_done,
     desired_instances,
+    limit_text,
     patroni_cluster_name,
     pod_summary,
     restart_patch,
@@ -26,17 +28,23 @@ from k8s_postgres_operator_ops.operator import (
 
 
 def main(ctx, timeout="120s"):
+    budget = Budget(ctx)
     kind = target_kind(ctx)
     wait = check_timeout(timeout)
+    if kind != CRUNCHY and wait <= 0:
+        raise RwError(
+            "invalid_input",
+            "timeout must be at least 1s for a Zalando restart: each member has to be back before the next is restarted",
+        )
     cluster = load_cluster(ctx, kind)
     dry = bool(ctx.dry_run)
     if kind == CRUNCHY:
-        return crunchy(ctx, kind, cluster, wait, dry)
-    return zalando(ctx, kind, cluster, wait, dry)
+        return crunchy(ctx, kind, cluster, wait, dry, budget)
+    return zalando(ctx, kind, cluster, wait, dry, budget)
 
 
-def crunchy(ctx, kind, cluster, wait, dry):
-    """Set the restart annotation on spec.metadata.annotations; the operator rolls the instances."""
+def crunchy(ctx, kind, cluster, wait, dry, budget):
+    """Set the restart annotation on spec.metadata.annotations; the operator rolls the pods."""
     ns = ctx.resource.namespace
     requested_at = ctx.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     desired = desired_instances(cluster)
@@ -56,7 +64,7 @@ def crunchy(ctx, kind, cluster, wait, dry):
         *(["--dry-run=server"] if dry else []),
     )
     out = base(dry, "annotation", requested_at, desired)
-    out.update(annotation=RESTART_ANNOTATION, previousAnnotation=previous)
+    out.update(annotation=RESTART_ANNOTATION, previousAnnotation=limit_text(previous)[0])
     if not dry and wait <= 0:
         out["completionReason"] = "not_waited"
     elif not dry:
@@ -66,11 +74,12 @@ def crunchy(ctx, kind, cluster, wait, dry):
         def observe():
             return [pod_summary(kind, p) for p in load_pods(ctx, kind)]
 
+        seconds, capped = budget.wait_for(wait)
         last, reason, waited = wait_until(
             ctx,
-            wait,
+            seconds,
             observe,
-            lambda s: crunchy_restart_done(s, desired, requested_at)[0],
+            lambda s, _elapsed: crunchy_restart_done(s, desired, requested_at)[0],
         )
         out["waitedSeconds"] = waited
         if last is None:
@@ -79,7 +88,9 @@ def crunchy(ctx, kind, cluster, wait, dry):
             _, restarted, ready = crunchy_restart_done(last, desired, requested_at)
             out.update(
                 completed=None if reason == "not_observed" else reason == "done",
-                completionReason="restarted" if reason == "done" else reason,
+                completionReason="restarted"
+                if reason == "done"
+                else ("budget" if reason == "timeout" and capped else reason),
                 membersFound=len(last),
                 membersReady=ready,
                 membersRestarted=restarted,
@@ -88,8 +99,9 @@ def crunchy(ctx, kind, cluster, wait, dry):
     return {"target": target_view(kind, cluster), "restart": out}
 
 
-def zalando(ctx, kind, cluster, wait, dry):
-    """patronictl restart <cluster> --force: restarts every member (Postgres, not the pods)."""
+def zalando(ctx, kind, cluster, wait, dry, budget):
+    """patronictl restart <cluster> <member> --force, member by member: replicas first, the leader
+    last; each is waited for before the next."""
     requested_at = ctx.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     pod = pick_exec_pod(ctx, kind, load_pods(ctx, kind), "patronictl")
     raw, views = read_members(ctx, kind, pod)
@@ -99,39 +111,32 @@ def zalando(ctx, kind, cluster, wait, dry):
         command={"tool": "patronictl", "subcommand": "restart", "cluster": scope, "member": None},
         ranIn={"pod": pod["metadata"]["name"], "container": KINDS[kind]["container"]},
     )
-    if not dry:
-        out["output"], out["outputTruncated"] = run_patronictl(
-            ctx, kind, pod, "restart", scope, "--force"
-        )
-        if wait <= 0:
-            out["completionReason"] = "not_waited"
-            return {"target": target_view(kind, cluster, scope), "restart": out}
-        last, reason, waited = wait_until(
-            ctx,
-            wait,
-            lambda: read_members(ctx, kind, pod)[1],
-            all_members_up,
-        )
-        out["waitedSeconds"] = waited
-        if last is None:
-            out["completionReason"] = "not_observed"
-        else:
-            out.update(
-                completed=None if reason == "not_observed" else reason == "done",
-                completionReason="running" if reason == "done" else reason,
-                membersFound=len(last),
-                membersReady=sum(1 for m in last if m["running"]),
-                members=[
-                    {k: m[k] for k in ("name", "role", "state", "timeline", "lagMb")}
-                    for m in last[:50]
-                ],
-            )
+    results, last, stop = restart_members(ctx, kind, pod, scope, views, wait, budget, dry)
+    out["memberResults"] = results[:50]
+    if dry:
+        return {"target": target_view(kind, cluster, scope), "restart": out}
+    restarted = sum(1 for r in results if r["status"] == "restarted")
+    out.update(
+        applied=any(r["applied"] for r in results),
+        completed=stop is None,
+        completionReason="running" if stop is None else stop,
+        waitedSeconds=round(sum(r["waitedSeconds"] or 0 for r in results), 1),
+        membersFound=len(last),
+        membersReady=sum(1 for m in last if m["running"]),
+        membersRestarted=restarted,
+        members=[
+            {k: m[k] for k in ("name", "role", "state", "timeline", "lagMb", "pendingRestart")}
+            for m in last[:50]
+        ],
+    )
+    if stop == "not_observed":
+        out["completed"] = None
     return {"target": target_view(kind, cluster, scope), "restart": out}
 
 
 def base(dry, method, requested_at, expected):
     return {
-        "applied": not dry,
+        "applied": False if method == "patronictl" else not dry,
         "wouldRun": dry,
         "method": method,
         "requestedAt": requested_at,
@@ -140,8 +145,6 @@ def base(dry, method, requested_at, expected):
         "previousAnnotation": None,
         "command": None,
         "ranIn": None,
-        "output": None,
-        "outputTruncated": False,
         "completed": None,
         "completionReason": None,
         "waitedSeconds": None,
@@ -149,4 +152,5 @@ def base(dry, method, requested_at, expected):
         "membersReady": None,
         "membersRestarted": None,
         "members": None,
+        "memberResults": None,
     }

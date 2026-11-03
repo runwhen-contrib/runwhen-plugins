@@ -53,19 +53,30 @@ connection, covers SQL that needs a login.
   `longestQuerySeconds`, `longestIdleInTransactionSeconds` and `waitingLocks`. Counts leave out
   the asking session. No query text.
 - `settings`: `settings.items`, the non-default `pg_settings` rows (`name`, `setting`, `unit`,
-  `source`). Names matching `password|secret|key|ssl_.*file` are left out (`excludedCount`);
-  `redacted: true` marks a setting that can embed a connection string or command, with no value.
-  Rows with source `client` or `session` belong to the asking connection and are not listed.
+  `source`). Names with a `password`, `passwd`, `passphrase`, `secret`, `token`, `credential`,
+  `dsn`, `uri`, `auth` or `key` part (split at `_` and `.`; `ssl_key_file` goes, `autovacuum_*`
+  and `row_security` stay) and `ssl_*file` are left out (`excludedCount`); `redacted: true` marks
+  a setting with its name and source but no value: one that can embed a connection string or
+  command (`primary_conninfo`, `archive_command`) and every dotted extension setting
+  (`pgaudit.log`, `pg_stat_statements.max`). Rows with source `client` or `session` belong to the
+  asking connection and are not listed.
 
 ## How to read the result
 
 `leaderPresent: false` is a cluster with no writer: the apps cannot write, which is the finding,
 not a failed task. `leaderPresent: null` and `queried: null` mean no member pod could be asked
-(an error says so), which is not the same as no leader. A replica's `state` is normally
+(an error says so), which is not the same as no leader. A `patronictl list` that prints an empty array, or
+members without `Member`, `Role` or `State`, is an `internal` error, never `leaderPresent: false`. A replica's `state` is normally
 `streaming` (older Patroni says `running`); `creating replica`, `starting`, `stopped` and
 `start failed` are not up. `lagMb: null` with `lagUnknown: true` is a replica Patroni could not
 measure, not zero. A leader has no lag. `timelineMismatch: true` after a failover is normal for
 a moment: a member still on the old timeline is being rewound or has to be reinitialised.
+
+`cluster.shutdown: true` on a Crunchy object is `spec.shutdown`: the operator was asked to stop
+the cluster on purpose and scales the instance pods to zero. `instances.desired` still counts
+the `spec.instances[].replicas`, so `ready: 0` against a non-zero `desired` is the requested state,
+not an outage: there is no leader and `members` is empty until `shutdown` is removed. With
+`shutdown: false`, `ready` below `desired` is the finding.
 
 `instances.ready: null` on a Crunchy object means the operator has written no status yet.
 `instances.desired` counts `replicas: 1` for an instance set that does not say. The Zalando

@@ -1,4 +1,5 @@
 from k8s_postgres_operator_ops.fetch import (
+    Budget,
     load_cluster,
     load_pods,
     pick_exec_pod,
@@ -20,6 +21,7 @@ from k8s_postgres_operator_ops.operator import (
 
 
 def main(ctx, candidate=None, timeout="60s"):
+    budget = Budget(ctx)
     kind = target_kind(ctx)
     wait = check_timeout(timeout)
     candidate = clean_member(candidate, "candidate") if candidate else None
@@ -32,9 +34,8 @@ def main(ctx, candidate=None, timeout="60s"):
     pod = pick_exec_pod(ctx, kind, pods, "patronictl", avoid=(old["name"],) if old else ())
     if pod is not first:
         raw, views = read_members(ctx, kind, pod)
-        old = leader_of(views)
     scope = patroni_cluster_name(raw)
-    mode, leader, chosen, chosen_by = plan_switchover(views, candidate)
+    mode, leader, chosen = plan_switchover(views, candidate)
     args = [mode, scope]
     if chosen is not None:
         args += ["--candidate", chosen["name"]]
@@ -48,14 +49,13 @@ def main(ctx, candidate=None, timeout="60s"):
     dry = bool(ctx.dry_run)
 
     out = {
-        "applied": not dry,
+        "applied": False,
         "wouldRun": dry,
         "mode": mode,
         "leaderBefore": leader["name"] if leader else None,
         "leaderBeforeState": leader["state"] if leader else None,
         "timelineBefore": leader["timeline"] if leader else None,
         "candidate": chosen["name"] if chosen else None,
-        "candidateChosenBy": chosen_by,
         "command": command,
         "ranIn": {"pod": pod["metadata"]["name"], "container": KINDS[kind]["container"]},
         "output": None,
@@ -70,14 +70,23 @@ def main(ctx, candidate=None, timeout="60s"):
         "membersAfter": None,
     }
     if not dry:
-        out["output"], out["outputTruncated"] = run_patronictl(ctx, kind, pod, *args)
-        last, reason, waited = None, "not_waited", None
+        sent = run_patronictl(
+            ctx, kind, pod, budget, mode, chosen["name"] if chosen else None, *args, scope=mode
+        )
+        out["output"], out["outputTruncated"] = sent["output"], sent["truncated"]
+        if not sent["ok"]:
+            out["completed"] = False
+            out["completionReason"] = "unconfirmed" if sent["code"] == "timeout" else "failed"
+            return {"target": target_view(kind, cluster, scope), "switchover": out}
+        out["applied"] = True
+        last, reason, waited, capped = None, "not_waited", None, False
         if wait > 0:
+            seconds, capped = budget.wait_for(wait)
             last, reason, waited = wait_until(
                 ctx,
-                wait,
+                seconds,
                 lambda: read_members(ctx, kind, pod)[1],
-                lambda v: leader_change_done(v, mode, leader, chosen),
+                lambda v, _elapsed: leader_change_done(v, mode, leader, chosen),
             )
         out["waitedSeconds"] = waited
         if last is None:
@@ -91,7 +100,9 @@ def main(ctx, candidate=None, timeout="60s"):
                 timelineAfter=now["timeline"] if now else None,
                 leaderChanged=changed,
                 completed=reason == "done",
-                completionReason={"done": "leader_changed"}.get(reason, reason),
+                completionReason={"done": "leader_changed"}.get(
+                    reason, "budget" if reason == "timeout" and capped else reason
+                ),
                 membersAfter=[
                     {k: m[k] for k in ("name", "role", "state", "timeline", "lagMb")}
                     for m in last[:50]

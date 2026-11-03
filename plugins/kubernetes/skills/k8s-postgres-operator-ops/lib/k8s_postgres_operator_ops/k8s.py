@@ -1,6 +1,7 @@
 """kubectl access for this skill's scripts."""
 
 import json
+import subprocess
 
 from k8s_postgres_operator_ops.errors import RwError
 
@@ -126,18 +127,23 @@ def kubectl_text(ctx, *args, **run_kwargs):
 EXEC_TIMEOUT = 30
 
 
-def kubectl_exec(ctx, pod, container, *command, timeout=EXEC_TIMEOUT):
-    """Run `command` inside `container` of `pod` (kubectl exec) and return its stdout.
+def kubectl_exec_both(ctx, pod, container, *command, timeout=EXEC_TIMEOUT):
+    """Run `command` inside `container` of `pod` (kubectl exec): (stdout, stderr).
 
     The command runs on the pod's local socket with the pod's own tools; no credential is
     passed. A failed exec raises RwError with a D64 code: a missing binary is `dependency`,
-    a forbidden exec `permission_denied`. kubectl says "not found" when the pod or container
-    went away, which must not be read as the target (the cluster object) being missing, so
-    that is `internal`.
+    a forbidden exec `permission_denied`, a command still running after `timeout` seconds
+    `timeout` (the runner raises subprocess.TimeoutExpired; whatever the command did remote
+    is unknown). kubectl says "not found" when the pod or container went away, which must not
+    be read as the target (the cluster object) being missing, so that is `internal`.
     """
     argv = ["kubectl", "-n", ctx.resource.namespace, "exec", pod, "-c", container, "--", *command]
     try:
-        return run_checked(ctx, argv, timeout=timeout).stdout or ""
+        result = run_checked(ctx, argv, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RwError(
+            "timeout", f"{command[0]} in pod {pod!r} did not finish within {round(timeout)}s"
+        ) from None
     except RwError as exc:
         if exc.code == "not_found":
             raise RwError(
@@ -147,3 +153,9 @@ def kubectl_exec(ctx, pod, container, *command, timeout=EXEC_TIMEOUT):
                 ],
             ) from None
         raise
+    return result.stdout or "", result.stderr or ""
+
+
+def kubectl_exec(ctx, pod, container, *command, timeout=EXEC_TIMEOUT):
+    """`kubectl_exec_both`, stdout only (what the read commands print)."""
+    return kubectl_exec_both(ctx, pod, container, *command, timeout=timeout)[0]

@@ -8,8 +8,12 @@
 #     `sleep` from the same image.
 #   * `patronictl` is a STUB script from a ConfigMap (patronictl-stub): `list -f json` prints
 #     the recorded members of the cluster (ConfigMap patroni-<cluster>); reinit, switchover,
-#     failover and restart are accepted and appended to /tmp/patronictl.log in the pod.
-#     switchover/failover also swap in `switched.json`, so the new leader can be read back.
+#     failover and restart print Patroni-shaped output (a table, then Success lines), change the
+#     state in the pod and append to /tmp/patronictl.log. switchover/failover swap in
+#     `switched.json`, so the new leader can be read back; reinit shows `creating replica` for 8s;
+#     restart clears `Pending restart`. tests/kind/pgop-stub-mode.sh puts a cluster's pods in the
+#     `fail` mode (writes print `Failed:` and exit 0) or the `transient` mode (the leader is
+#     `restarting`).
 # The CR objects and their status are created by 30-k8s-postgres-operator.sh (a custom
 # resource cannot be applied in the same call as its CRD).
 apiVersion: v1
@@ -76,30 +80,88 @@ metadata: {name: patronictl-stub, namespace: rw-pgop}
 data:
   patronictl: |
     #!/bin/sh
-    # STUB, not Patroni. `list` prints the cluster's recorded members; writes are logged.
+    # STUB, not Patroni. It prints the shapes of Patroni 3.x/4.x output: `list -f json` the
+    # recorded members; restart and reinit a cluster table followed by one
+    # "Success: restart on member X" / "Success: reinitialize for member X" line per member;
+    # switchover and failover "Successfully switched over to "X"" / "Successfully failed over to "X"".
+    # State lives in the pod: /tmp/patroni-state.json (members), /tmp/patronictl.log (writes).
+    # Modes (set and cleared by tests/kind/pgop-stub-mode.sh):
+    #   /tmp/patronictl.fail exists: every write prints "Failed: ..." and exits 0, changing nothing
+    #   (patronictl prints this for a member that refused, whatever its exit code says).
     DIR=/etc/patroni-stub
     STATE=/tmp/patroni-state.json
     LOG=/tmp/patronictl.log
+    FAIL=/tmp/patronictl.fail
     [ -f "$STATE" ] || cp "$DIR/members.json" "$STATE"
     cmd=${1:-}
+    now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+    logw() { printf '%s patronictl %s\n' "$(now)" "$*" >> "$LOG"; }
+    # a reinitialised member shows "creating replica" for 8 seconds, then streams again
+    settle() {
+      for f in /tmp/patronictl.reinit.*; do
+        [ -f "$f" ] || continue
+        m=${f#/tmp/patronictl.reinit.}
+        if [ $(( $(date +%s) - $(cat "$f") )) -ge 8 ]; then
+          sed -i "/\"Member\": \"$m\"/s/\"State\": \"creating replica\"/\"State\": \"streaming\"/" "$STATE"
+          rm -f "$f"
+        fi
+      done
+    }
+    members() { sed -n 's/.*"Member": "\([^"]*\)".*/\1/p' "$STATE"; }
+    has_member() { grep -q "\"Member\": \"$1\"" "$STATE"; }
+    table() {
+      c=$(sed -n 's/.*"Cluster": "\([^"]*\)".*/\1/p' "$STATE" | head -1)
+      echo "+ Cluster: $c (7301122334455667788) -+------------+--------------+----+-----------+"
+      echo "| Member | Host | Role | State | TL | Lag in MB |"
+      sed -n 's/.*"Member": "\([^"]*\)", "Host": "\([^"]*\)", "Role": "\([^"]*\)", "State": "\([^"]*\)", "TL": \([0-9]*\).*/| \1 | \2 | \3 | \4 | \5 |/p' "$STATE"
+      echo "+--------+------+------+-------+----+-----------+"
+    }
+    settle
     case "$cmd" in
       list)
         cat "$STATE" ;;
       reinit)
         # patronictl reinit <cluster> <member> --force
-        grep -q "\"Member\": \"$3\"" "$STATE" || { echo "Error: $3 is not a member of cluster $2" >&2; exit 1; }
-        printf '%s patronictl %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"
+        has_member "$3" || { echo "Error: $3 is not a member of cluster $2" >&2; exit 1; }
+        table
+        if [ -f "$FAIL" ]; then
+          echo "Failed: reinitialize for member $3, status code=503, (Failed to reinitialize: member is not a replica)"
+          exit 0
+        fi
+        logw "$*"
+        sed -i "/\"Member\": \"$3\"/s/\"State\": \"streaming\"/\"State\": \"creating replica\"/" "$STATE"
+        date +%s > "/tmp/patronictl.reinit.$3"
         echo "Success: reinitialize for member $3" ;;
       switchover|failover)
-        case "$*" in *--candidate*) ;; *)
-          [ "$cmd" = failover ] && { echo "Error: Failover could be performed only to a specific node" >&2; exit 1; } ;;
+        case "$*" in *--candidate*) cand=$(echo "$*" | sed 's/.*--candidate \([^ ]*\).*/\1/') ;; *)
+          [ "$cmd" = failover ] && { echo "Error: Failover could be performed only to a specific node" >&2; exit 1; }
+          cand=$(sed -n 's/.*"Member": "\([^"]*\)".*"Role": "Leader".*/\1/p' "$DIR/switched.json" 2>/dev/null) ;;
         esac
-        printf '%s patronictl %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"
+        table
+        if [ -f "$FAIL" ]; then
+          echo "Failed: $cmd to $cand, status code=412, (candidate name does not match with sync_standby)"
+          exit 0
+        fi
+        logw "$*"
         [ -f "$DIR/switched.json" ] && cp "$DIR/switched.json" "$STATE"
-        echo "Successfully ${cmd}ed" ;;
+        if [ "$cmd" = switchover ]; then echo "Successfully switched over to \"$cand\""; else echo "Successfully failed over to \"$cand\""; fi ;;
       restart)
-        printf '%s patronictl %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"
-        echo "Success: restart on all members" ;;
+        # patronictl restart <cluster> [member] --force: one member, or every member
+        case "${3:-}" in ""|--*) targets=$(members) ;; *)
+          has_member "$3" || { echo "Error: $3 is not a member of cluster $2" >&2; exit 1; }
+          targets=$3 ;;
+        esac
+        table
+        for m in $targets; do
+          if [ -f "$FAIL" ]; then
+            echo "Failed: restart for member $m, status code=503, (restart failed)"
+          else
+            sed -i "/\"Member\": \"$m\"/s/, \"Pending restart\": \"\\*\"//" "$STATE"
+            echo "Success: restart on member $m"
+          fi
+        done
+        [ -f "$FAIL" ] || logw "$*"
+        exit 0 ;;
       *)
         echo "patronictl stub: unsupported command: $cmd" >&2; exit 2 ;;
     esac
@@ -109,11 +171,15 @@ kind: ConfigMap
 metadata: {name: patroni-hippo, namespace: rw-pgop}
 data:
   members.json: |
-    [{"Cluster": "hippo-ha", "Member": "hippo-instance1-0", "Host": "10.244.0.50", "Role": "Leader", "State": "running", "TL": 3},
-     {"Cluster": "hippo-ha", "Member": "hippo-instance2-0", "Host": "10.244.0.51", "Role": "Replica", "State": "streaming", "TL": 3, "Lag in MB": 0}]
+    [{"Cluster": "hippo-ha", "Member": "hippo-instance1-abcd-0", "Host": "10.244.0.50", "Role": "Leader", "State": "running", "TL": 3},
+     {"Cluster": "hippo-ha", "Member": "hippo-instance1-wxyz-0", "Host": "10.244.0.51", "Role": "Replica", "State": "streaming", "TL": 3, "Lag in MB": 0}]
   switched.json: |
-    [{"Cluster": "hippo-ha", "Member": "hippo-instance1-0", "Host": "10.244.0.50", "Role": "Replica", "State": "streaming", "TL": 4, "Lag in MB": 0},
-     {"Cluster": "hippo-ha", "Member": "hippo-instance2-0", "Host": "10.244.0.51", "Role": "Leader", "State": "running", "TL": 4}]
+    [{"Cluster": "hippo-ha", "Member": "hippo-instance1-abcd-0", "Host": "10.244.0.50", "Role": "Replica", "State": "streaming", "TL": 4, "Lag in MB": 0},
+     {"Cluster": "hippo-ha", "Member": "hippo-instance1-wxyz-0", "Host": "10.244.0.51", "Role": "Leader", "State": "running", "TL": 4}]
+  # the leader mid-restart: switchover must wait, not fail over
+  transient.json: |
+    [{"Cluster": "hippo-ha", "Member": "hippo-instance1-abcd-0", "Host": "10.244.0.50", "Role": "Leader", "State": "restarting", "TL": 3},
+     {"Cluster": "hippo-ha", "Member": "hippo-instance1-wxyz-0", "Host": "10.244.0.51", "Role": "Replica", "State": "streaming", "TL": 3, "Lag in MB": 0}]
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -121,16 +187,16 @@ metadata: {name: patroni-hippo-broken, namespace: rw-pgop}
 data:
   # no leader; one replica 512 MB behind, one that failed to start
   members.json: |
-    [{"Cluster": "hippo-broken-ha", "Member": "hippo-broken-instance1-0", "Host": "10.244.0.52", "Role": "Replica", "State": "running", "TL": 5, "Lag in MB": 512},
-     {"Cluster": "hippo-broken-ha", "Member": "hippo-broken-instance2-0", "Host": "10.244.0.53", "Role": "Replica", "State": "start failed", "TL": 4, "Lag in MB": "unknown"}]
+    [{"Cluster": "hippo-broken-ha", "Member": "hippo-broken-instance1-qrst-0", "Host": "10.244.0.52", "Role": "Replica", "State": "running", "TL": 5, "Lag in MB": 512},
+     {"Cluster": "hippo-broken-ha", "Member": "hippo-broken-instance1-uvwx-0", "Host": "10.244.0.53", "Role": "Replica", "State": "start failed", "TL": 4, "Lag in MB": "unknown"}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: patroni-acid-zalando, namespace: rw-pgop}
 data:
   members.json: |
-    [{"Cluster": "acid-zalando", "Member": "acid-zalando-0", "Host": "10.244.0.54", "Role": "Leader", "State": "running", "TL": 7},
-     {"Cluster": "acid-zalando", "Member": "acid-zalando-1", "Host": "10.244.0.55", "Role": "Replica", "State": "streaming", "TL": 7, "Lag in MB": 0}]
+    [{"Cluster": "acid-zalando", "Member": "acid-zalando-0", "Host": "10.244.0.54", "Role": "Leader", "State": "running", "TL": 7, "Pending restart": "*"},
+     {"Cluster": "acid-zalando", "Member": "acid-zalando-1", "Host": "10.244.0.55", "Role": "Replica", "State": "streaming", "TL": 7, "Lag in MB": 0, "Pending restart": "*"}]
   switched.json: |
     [{"Cluster": "acid-zalando", "Member": "acid-zalando-0", "Host": "10.244.0.54", "Role": "Replica", "State": "streaming", "TL": 8, "Lag in MB": 0},
      {"Cluster": "acid-zalando", "Member": "acid-zalando-1", "Host": "10.244.0.55", "Role": "Leader", "State": "running", "TL": 8}]
@@ -138,11 +204,11 @@ data:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: hippo-instance1-0
+  name: hippo-instance1-abcd-0
   namespace: rw-pgop
   labels:
     postgres-operator.crunchydata.com/cluster: hippo
-    postgres-operator.crunchydata.com/instance: hippo-instance1
+    postgres-operator.crunchydata.com/instance: hippo-instance1-abcd
     postgres-operator.crunchydata.com/instance-set: instance1
     postgres-operator.crunchydata.com/role: master
     postgres-operator.crunchydata.com/data: postgres
@@ -165,11 +231,11 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: hippo-instance2-0
+  name: hippo-instance1-wxyz-0
   namespace: rw-pgop
   labels:
     postgres-operator.crunchydata.com/cluster: hippo
-    postgres-operator.crunchydata.com/instance: hippo-instance2
+    postgres-operator.crunchydata.com/instance: hippo-instance1-wxyz
     postgres-operator.crunchydata.com/instance-set: instance1
     postgres-operator.crunchydata.com/role: replica
     postgres-operator.crunchydata.com/data: postgres
@@ -191,11 +257,11 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: hippo-broken-instance1-0
+  name: hippo-broken-instance1-qrst-0
   namespace: rw-pgop
   labels:
     postgres-operator.crunchydata.com/cluster: hippo-broken
-    postgres-operator.crunchydata.com/instance: hippo-broken-instance1
+    postgres-operator.crunchydata.com/instance: hippo-broken-instance1-qrst
     postgres-operator.crunchydata.com/instance-set: instance1
     postgres-operator.crunchydata.com/role: replica
     postgres-operator.crunchydata.com/data: postgres
@@ -218,11 +284,11 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: hippo-broken-instance2-0
+  name: hippo-broken-instance1-uvwx-0
   namespace: rw-pgop
   labels:
     postgres-operator.crunchydata.com/cluster: hippo-broken
-    postgres-operator.crunchydata.com/instance: hippo-broken-instance2
+    postgres-operator.crunchydata.com/instance: hippo-broken-instance1-uvwx
     postgres-operator.crunchydata.com/instance-set: instance1
     postgres-operator.crunchydata.com/role: replica
     postgres-operator.crunchydata.com/data: postgres
