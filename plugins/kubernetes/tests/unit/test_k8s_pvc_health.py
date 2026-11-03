@@ -585,7 +585,8 @@ def test_binding_status_script_on_the_pending_claim():
     ctx.fail = {
         "storageclass": 'Error from server (NotFound): storageclass.storage.k8s.io "does-not-exist" not found'
     }
-    out = script("binding_status")(ctx, since="3650d"  # captured events are fixed in time)
+    # Captured events are fixed in time: a wide look-back keeps this independent of the clock.
+    out = script("binding_status")(ctx, since="3650d")
     assert out["claim"]["phase"] == "Pending"
     assert out["storageClass"]["exists"] is False
     assert out["volume"] is None
