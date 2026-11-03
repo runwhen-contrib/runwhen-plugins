@@ -27,7 +27,7 @@ SYSTEM_IDENTIFIER_SQL = (
 
 # Not templates, and only databases that accept connections. pg_database_size() needs CONNECT
 # on the database or pg_read_all_stats, and raises for the whole statement otherwise, so it is
-# asked only where `sizeAllowed`; the others come back with a null size and are reported.
+# asked only where `sizeAllowed`; for the others the size is left out and the error reported.
 DATABASES_SQL = """SELECT coalesce(json_agg(json_build_object(
   'name', d.datname,
   'owner', pg_get_userbyid(d.datdba)::text,
@@ -73,10 +73,13 @@ def instance_facts(ctx):
 
 
 def read_system_identifier(ctx, errors):
-    """The system_identifier, or None with the reason appended to `errors` when it cannot be read."""
+    """The system_identifier, or None with the reason appended to `errors` when this role may
+    not read it (permission_denied). Any other failure propagates."""
     try:
         row = psql_json(ctx, SYSTEM_IDENTIFIER_SQL)
     except RwError as exc:
+        if exc.code != "permission_denied":
+            raise
         errors.append(
             {
                 "code": exc.code,
@@ -85,18 +88,25 @@ def read_system_identifier(ctx, errors):
             }
         )
         return None
-    value = (row or {}).get(CANONICAL_KEY)
+    if not isinstance(row, dict):
+        raise RwError("internal", "the server returned no system identifier row")
+    value = row.get(CANONICAL_KEY)
     return value if isinstance(value, str) and value else None
 
 
 def read_databases(ctx, errors):
-    """The database facts, sizeBytes null (and an error appended) where the role may not size it."""
+    """The database facts; `sizeBytes` is left out (and an error appended) where the role may
+    not size the database."""
     rows = psql_json(ctx, DATABASES_SQL)
-    if not isinstance(rows, list):
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
         raise RwError("internal", "the server returned no database list")
     databases = []
     for row in rows:
-        if not row.get("sizeAllowed"):
+        database = {"name": row["name"], "owner": row["owner"], "encoding": row["encoding"]}
+        if row.get("sizeAllowed"):
+            if row.get("sizeBytes") is not None:
+                database["sizeBytes"] = row["sizeBytes"]
+        else:
             errors.append(
                 {
                     "code": "permission_denied",
@@ -106,14 +116,7 @@ def read_databases(ctx, errors):
                     "scope": row["name"],
                 }
             )
-        databases.append(
-            {
-                "name": row["name"],
-                "owner": row["owner"],
-                "encoding": row["encoding"],
-                "sizeBytes": row["sizeBytes"],
-            }
-        )
+        databases.append(database)
     return databases
 
 
@@ -144,7 +147,11 @@ def build_sync(path, name, instance, databases, summary):
                 "port": instance["port"],
                 "version": instance["version"],
                 "versionNum": instance["versionNum"],
-                "systemIdentifier": instance["systemIdentifier"],
+                **(
+                    {"systemIdentifier": instance["systemIdentifier"]}
+                    if instance["systemIdentifier"]
+                    else {}
+                ),
             },
             "status": {"inRecovery": instance["inRecovery"]},
         }
@@ -157,7 +164,9 @@ def build_sync(path, name, instance, databases, summary):
                     "chain": [root, {"type": "database", "name": db["name"]}],
                 },
                 "displayName": db["name"],
-                "document": {k: db[k] for k in ("name", "owner", "encoding", "sizeBytes")},
+                "document": {
+                    k: db[k] for k in ("name", "owner", "encoding", "sizeBytes") if k in db
+                },
             }
         )
     batches = [

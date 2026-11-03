@@ -1,7 +1,7 @@
 # Shared by up.sh, down.sh and env.sh. Local docker only: every container publishes on
 # 127.0.0.1 and nothing here talks to a shared cluster. The passwords are throwaway test
 # values for these containers; they protect nothing.
-IMAGE="postgres:16.15-alpine"        # pinned tag; bump deliberately
+IMAGE="postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab"  # tag + index digest; bump deliberately
 NET="rw-pg-net"
 PRIMARY="rw-pg-primary"
 STANDBY="rw-pg-standby"

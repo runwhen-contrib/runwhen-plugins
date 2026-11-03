@@ -34,5 +34,6 @@ rw_pg_use() { # <role> [primary|standby|closed] [database]
     closed) export PGPORT=55439 ;;
     *) echo "unknown target $where" >&2; return 1 ;;
   esac
-  export PGHOST=127.0.0.1 PGUSER="$role" PGDATABASE="$db" PGSSLMODE=prefer
+  # the local servers have no TLS, and the integration defaults to sslmode=require: disable it here only
+  export PGHOST=127.0.0.1 PGUSER="$role" PGDATABASE="$db" PGSSLMODE=disable
 }

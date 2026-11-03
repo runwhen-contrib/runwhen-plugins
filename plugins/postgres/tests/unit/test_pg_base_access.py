@@ -242,3 +242,14 @@ def test_plain_unwraps_nested_mappings():
 
     wrapped = MappingProxyType({"a": MappingProxyType({"b": (1, 2)})})
     assert ax.plain(wrapped) == {"a": {"b": [1, 2]}}
+
+
+@pytest.mark.parametrize("name", ["Mixed.Case", 'we"ird', "a.b", "PG_MONITOR", "it's"])
+def test_the_facts_statement_resolves_a_role_by_exact_name_whatever_it_holds(name):
+    # a name is data in a dollar-quoted literal and is compared with pg_roles.rolname: never
+    # parsed as an identifier (to_regrole folds case and splits on the dot)
+    sql = ax.facts_sql({name}, set())
+    assert "to_regrole" not in sql
+    assert "SELECT oid FROM pg_roles WHERE rolname = r" in sql
+    assert f"ARRAY[{ax.dollar_quote(name)}]::text[]" in sql
+    assert sql.count("pg_has_role(current_user, q.oid,") == 2  # USAGE and MEMBER, same oid

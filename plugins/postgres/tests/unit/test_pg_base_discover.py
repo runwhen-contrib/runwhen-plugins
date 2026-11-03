@@ -129,12 +129,7 @@ def test_a_database_the_role_cannot_size_is_a_scoped_error_and_the_run_is_partia
     assert env["status"] == "partial"
     assert [(e["code"], e.get("scope")) for e in env["errors"]] == [("permission_denied", "orders")]
     items = env["outputs"]["databases"]["items"]
-    assert items[0] == {
-        "name": "orders",
-        "owner": "postgres",
-        "encoding": "UTF8",
-        "sizeBytes": None,
-    }
+    assert items[0] == {"name": "orders", "owner": "postgres", "encoding": "UTF8"}
     assert items[1]["sizeBytes"] == 1000
     assert env["outputs"]["summary"]["errors"][0]["scope"] == "orders"
     assert validate("rw.discovery.summary.v1", env["outputs"]["summary"]) == []
@@ -282,5 +277,68 @@ def test_databases_captured_from_a_real_server_for_a_role_that_cannot_size_order
     env = run_script("discover").envelope
     assert env["status"] == "partial"
     assert [(e["code"], e["scope"]) for e in env["errors"]] == [("permission_denied", "orders")]
-    sizes = {d["name"]: d["sizeBytes"] for d in env["outputs"]["databases"]["items"]}
+    sizes = {d["name"]: d.get("sizeBytes") for d in env["outputs"]["databases"]["items"]}
     assert sizes["orders"] is None and sizes["postgres"] > 0
+    assert "sizeBytes" not in next(
+        d for d in env["outputs"]["databases"]["items"] if d["name"] == "orders"
+    )
+
+
+@pytest.mark.parametrize(
+    "stderr,code",
+    [
+        ("psql: error: connection to server failed: timeout expired", "timeout"),
+        (
+            "psql: error: connection to server at 'h', port 5432 failed: Connection refused",
+            "unreachable",
+        ),
+        ("FATAL:  sorry, too many clients already", "rate_limited"),
+        ("ERROR:  something odd", "internal"),
+    ],
+)
+def test_only_permission_denied_is_soft_when_reading_the_system_identifier(
+    run_script, fake_psql, stderr, code
+):
+    fake_psql.on("current_setting('server_version')", stdout=json.dumps(INSTANCE_ROW))
+    fake_psql.on("FROM pg_control_system()", rc=1, stderr=stderr)
+    fake_psql.on("FROM pg_database d", stdout="[]")
+    env = run_script("discover").envelope
+    assert env["status"] == "failed"
+    assert [e["code"] for e in env["errors"]] == [code]
+
+
+@pytest.mark.parametrize("rows", ['["orders"]', '[{"name": "a"}, 1]', '{"name": "a"}', "1", ""])
+def test_a_database_list_that_is_not_a_list_of_objects_fails_the_task(run_script, fake_psql, rows):
+    fake_psql.on("current_setting('server_version')", stdout=json.dumps(INSTANCE_ROW))
+    fake_psql.on("FROM pg_control_system()", stdout=json.dumps({"systemIdentifier": SID}))
+    fake_psql.on("FROM pg_database d", stdout=rows)
+    env = run_script("discover").envelope
+    assert env["status"] == "failed"
+    assert [e["code"] for e in env["errors"]] == ["internal"]
+
+
+@pytest.mark.parametrize("answer_text", ['["x"]', '"x"', "1"])
+def test_a_system_identifier_row_that_is_not_an_object_fails_the_task(
+    run_script, fake_psql, answer_text
+):
+    fake_psql.on("current_setting('server_version')", stdout=json.dumps(INSTANCE_ROW))
+    fake_psql.on("FROM pg_control_system()", stdout=answer_text)
+    fake_psql.on("FROM pg_database d", stdout="[]")
+    env = run_script("discover").envelope
+    assert env["status"] == "failed"
+    assert [e["code"] for e in env["errors"]] == ["internal"]
+
+
+def test_unknown_values_are_left_out_of_the_sync_and_the_output_not_sent_as_null(
+    run_script, fake_psql
+):
+    answer(fake_psql, databases=[db("orders", allowed=False), db("postgres")], sid=None)
+    run = run_script("discover")
+    sync = json.loads(run.files["sync.json"])
+    root, orders, postgres = sync["batches"][0]["items"]
+    assert "providerUid" not in root
+    assert "systemIdentifier" not in root["document"]
+    assert "sizeBytes" not in orders["document"]
+    assert postgres["document"]["sizeBytes"] == 1000
+    assert not any(v is None for v in orders["document"].values())
+    assert "sizeBytes" not in run.envelope["outputs"]["databases"]["items"][0]

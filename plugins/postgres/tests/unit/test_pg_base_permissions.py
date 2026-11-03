@@ -181,8 +181,8 @@ def test_the_session_is_read_only_and_bounded(run_script, fake_psql):
     answer(fake_psql)
     run_script("check_permissions", rules=RULES[:1])
     for call in fake_psql.calls:
-        assert "default_transaction_read_only = on" in call["argv"][8]
-        assert "statement_timeout = 30000" in call["argv"][8]
+        assert call["script"].startswith("BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; ")
+        assert call["script"].endswith("; COMMIT;")
         assert call["env"] == {"PGCONNECT_TIMEOUT": "10"}
 
 
@@ -250,3 +250,51 @@ def test_facts_captured_from_a_real_server_give_the_expected_verdicts(
     fake_psql.on("FROM pg_control_system()", stdout=SID)
     access = run_script("check_permissions", rules=CAPTURED_RULES).envelope["outputs"]["access"]
     assert [e["verdict"] for e in access["rules"]] == verdicts
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"role": "pg_monitor", "n": 1e30},  # a float outside the canonical JSON range
+        {"role": "pg_monitor", "n": float("inf")},
+        {"role": "pg_monitor", "n": float("nan")},
+    ],
+)
+def test_a_rule_that_cannot_be_hashed_is_unverified_and_the_rest_of_the_report_stands(
+    run_script, fake_psql, rule
+):
+    answer(fake_psql)
+    run = run_script("check_permissions", rules=[RULES[0], rule, RULES[2]])
+    assert run.envelope["status"] == "ok"
+    access = run.envelope["outputs"]["access"]
+    assert validate("rw.access.v1", access) == []
+    assert [e["verdict"] for e in access["rules"]] == ["denied", "unverified", "granted"]
+    assert access["rules"][0]["hash"] == permission_hash(RULES[0])
+    assert "cannot be hashed" in access["rules"][1]["evidence"]
+    json.dumps(access, allow_nan=False)  # the reported rule is plain JSON
+
+
+def test_a_malformed_answer_for_one_rule_is_unverified_for_that_rule_only(run_script, fake_psql):
+    facts = {
+        **FACTS,
+        "functions": [
+            {"function": "pg_catalog.pg_control_system", "overloads": [{"execute": True}]}
+        ],
+    }
+    answer(fake_psql, facts=facts)
+    access = run_script("check_permissions", rules=RULES).envelope["outputs"]["access"]
+    assert [e["verdict"] for e in access["rules"]] == [
+        "denied", "partial", "unverified", "unverified", "denied",
+    ]  # fmt: skip
+    assert "malformed" in access["rules"][2]["evidence"]
+
+
+@pytest.mark.parametrize("answer_text", ['["x"]', '"x"', "1", ""])
+def test_a_system_identifier_row_that_is_not_an_object_fails_the_task(
+    run_script, fake_psql, answer_text
+):
+    fake_psql.on("'superuser'", stdout=json.dumps(FACTS))
+    fake_psql.on("FROM pg_control_system()", stdout=answer_text)
+    run = run_script("check_permissions", rules=RULES[:1])
+    assert run.envelope["status"] == "failed"
+    assert [e["code"] for e in run.envelope["errors"]] == ["internal"]

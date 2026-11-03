@@ -26,6 +26,43 @@ CASES = [
         'psql: error: connection to server at "127.0.0.1", port 55432 failed: FATAL:  permission denied for database "orders"\nDETAIL:  User does not have CONNECT privilege.',
         "permission_denied",
     ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 5432 failed: FATAL:  pg_hba.conf rejects connection for host "10.0.0.9", user "app", database "orders", no encryption',
+        "permission_denied",
+    ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 5432 failed: FATAL:  role "reader" is not permitted to log in',
+        "permission_denied",
+    ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 5432 failed: FATAL:  sorry, too many clients already',
+        "rate_limited",
+    ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 5432 failed: FATAL:  remaining connection slots are reserved for roles with the SUPERUSER attribute',
+        "rate_limited",
+    ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 5432 failed: FATAL:  too many connections for role "app"',
+        "rate_limited",
+    ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 6432 failed: ERROR:  no such database: orders',
+        "not_found",
+    ),
+    ("ERROR:  canceling statement due to conflict with recovery", "unreachable"),
+    ("FATAL:  terminating connection due to conflict with recovery", "unreachable"),
+    ("FATAL:  terminating connection due to administrator command", "unreachable"),
+    ("psql: error: connection to server was lost", "unreachable"),
+    ("SSL connection has been closed unexpectedly", "unreachable"),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 6432 failed: ERROR:  pgbouncer cannot connect to server',
+        "unreachable",
+    ),
+    (
+        'psql: error: connection to server at "10.0.0.5", port 6432 failed: ERROR:  unsupported startup parameter: statement_timeout',
+        "dependency",
+    ),
     ("ERROR:  permission denied for function pg_ls_dir", "permission_denied"),
     (
         "ERROR:  must be superuser or have privileges of pg_read_all_stats to use this",
@@ -83,6 +120,30 @@ def test_exit_124_is_timeout_when_stderr_says_nothing_else():
 def test_a_connect_timeout_is_a_timeout_not_unreachable():
     text = 'psql: error: connection to server at "10.0.0.5", port 5432 failed: timeout expired'
     assert pg.classify_error(text, 2) == "timeout"
+
+
+PERMISSION_DENIED_WORDING = [
+    'password authentication failed for user "app"',
+    'no pg_hba.conf entry for host "10.0.0.9", user "app", database "orders"',
+    'pg_hba.conf rejects connection for host "10.0.0.9", user "app", database "orders"',
+    'role "reader" is not permitted to log in',
+    'role "ghost" does not exist',
+    'permission denied for database "orders"',
+    "no password supplied",
+]
+
+
+@pytest.mark.parametrize("wording", PERMISSION_DENIED_WORDING)
+def test_every_permission_denied_wording_beats_the_connection_failed_catch_all(wording):
+    # libpq prefixes a refused login with 'connection to server at ... failed:', which the
+    # unreachable catch-all also matches, so the permission_denied patterns must come first
+    text = f'psql: error: connection to server at "10.0.0.5", port 5432 failed: FATAL:  {wording}'
+    assert pg.classify_error(text, 2) == "permission_denied"
+    codes = [code for code, _ in pg._RULES]
+    assert codes.index("permission_denied") < codes.index("unreachable")
+    assert codes.index("rate_limited") < codes.index("unreachable")
+    assert codes.index("not_found") < codes.index("unreachable")
+    assert codes.index("dependency") < codes.index("unreachable")
 
 
 def test_an_authentication_failure_is_not_unreachable_though_it_says_connection_failed():
@@ -151,19 +212,28 @@ def ctx_with(fake, **settings):
     return SimpleNamespace(run=fake, settings=SimpleNamespace(**values))
 
 
-def test_the_argv_is_the_read_only_one_shot_psql_with_a_statement_timeout(fake_psql):
+def test_the_argv_is_one_read_only_transaction_with_a_local_statement_timeout(fake_psql):
     fake_psql.on("SELECT 1", stdout='{"a": 1}\n')
     out = pg.psql_json(ctx_with(fake_psql), "SELECT 1")
     assert out == {"a": 1}
     call = fake_psql.calls[0]
     assert call["argv"] == [
         "psql", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1",
-        "-c", "SET statement_timeout = 30000; SET default_transaction_read_only = on",
-        "-c", "SELECT 1",
+        "-c", "BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT 1; COMMIT;",
     ]  # fmt: skip
     assert call["database"] is None
     assert call["env"] == {"PGCONNECT_TIMEOUT": "10"}
     assert call["timeout"] == pytest.approx(10 + 30 + 5)
+
+
+def test_nothing_is_set_on_the_session(fake_psql):
+    fake_psql.on("SELECT 1", stdout="1")
+    pg.psql_json(ctx_with(fake_psql), "SELECT 1")
+    script = fake_psql.calls[0]["script"]
+    # a session-level SET would leak through a pooler that shares server connections
+    assert "default_transaction_read_only" not in script
+    assert "SET statement_timeout" not in script
+    assert fake_psql.calls[0]["argv"].count("-c") == 1
 
 
 def test_database_selects_dash_d_and_the_settings_set_the_timeouts(fake_psql):
@@ -176,9 +246,32 @@ def test_database_selects_dash_d_and_the_settings_set_the_timeouts(fake_psql):
     call = fake_psql.calls[0]
     assert call["database"] == "orders"
     assert (
-        call["argv"][-3] == "SET statement_timeout = 60000; SET default_transaction_read_only = on"
+        call["argv"][-1]
+        == "BEGIN READ ONLY; SET LOCAL statement_timeout = 60000; SELECT 1; COMMIT;"
     )
     assert call["env"] == {"PGCONNECT_TIMEOUT": "3"}
+
+
+@pytest.mark.parametrize(
+    "statement,ms",
+    [("1ms", 1), ("500ms", 500), ("0.0004s", 1), ("30d", 2147483647), ("25d", 2147483647)],
+)
+def test_statement_timeout_is_clamped_to_what_the_server_accepts(fake_psql, statement, ms):
+    fake_psql.on("SELECT 1", stdout="1")
+    pg.psql_json(ctx_with(fake_psql, statement_timeout=statement), "SELECT 1")
+    assert f"SET LOCAL statement_timeout = {ms};" in fake_psql.calls[0]["script"]
+
+
+@pytest.mark.parametrize(
+    "connect,seconds",
+    [("1ms", "1"), ("400ms", "1"), ("2s", "2"), ("30d", "2147483"), ("10000d", "2147483")],
+)
+def test_connect_timeout_is_at_least_one_second_and_at_most_the_int4_of_milliseconds(
+    fake_psql, connect, seconds
+):
+    fake_psql.on("SELECT 1", stdout="1")
+    pg.psql_json(ctx_with(fake_psql, connect_timeout=connect), "SELECT 1")
+    assert fake_psql.calls[0]["env"] == {"PGCONNECT_TIMEOUT": seconds}
 
 
 def test_settings_default_when_the_skill_declares_none(fake_psql):

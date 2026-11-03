@@ -88,12 +88,14 @@ def facts_sql(roles, functions):
     FROM pg_database d),
   'roles', (
     SELECT coalesce(json_agg(json_build_object(
-      'role', r,
-      'exists', to_regrole(r) IS NOT NULL,
-      'usage', coalesce(pg_has_role(current_user, to_regrole(r), 'USAGE'), false),
-      'member', coalesce(pg_has_role(current_user, to_regrole(r), 'MEMBER'), false)
-    ) ORDER BY r), '[]'::json)
-    FROM unnest({_array(sorted(roles))}) AS r),
+      'role', q.r,
+      'exists', q.oid IS NOT NULL,
+      'usage', coalesce(pg_has_role(current_user, q.oid, 'USAGE'), false),
+      'member', coalesce(pg_has_role(current_user, q.oid, 'MEMBER'), false)
+    ) ORDER BY q.r), '[]'::json)
+    FROM (
+      SELECT r, (SELECT oid FROM pg_roles WHERE rolname = r) AS oid
+      FROM unnest({_array(sorted(roles))}) AS r) q),
   'functions', (
     SELECT coalesce(json_agg(json_build_object(
       'function', f,

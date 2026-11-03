@@ -73,17 +73,21 @@ def tracked_in(sql):
     return {f for f in TRACKED if f + "(" in sql}
 
 
-def test_discover_declares_the_functions_its_sql_calls():
+def test_discover_declares_exactly_the_functions_its_sql_calls():
     sql = dc.INSTANCE_SQL + dc.SYSTEM_IDENTIFIER_SQL + dc.DATABASES_SQL
-    # pg_has_role and has_database_privilege appear only to decide whether pg_database_size may run
-    assert declared_functions("discover") == tracked_in(sql) - {
+    assert declared_functions("discover") == tracked_in(sql)
+    assert tracked_in(sql) == {
+        "pg_control_system",
+        "pg_database_size",
         "pg_has_role",
         "has_database_privilege",
     }
 
 
-def test_discover_declares_connect_because_pg_database_size_needs_it():
-    assert {"database": "*", "privilege": "CONNECT"} in task("discover")["permissions"]
+def test_discover_declares_no_database_privilege():
+    # pg_database_size is only asked where the role may size the database, so discover works on
+    # every instance a role can connect to: it needs no CONNECT on all of them
+    assert not [p for p in task("discover")["permissions"] if "database" in p]
 
 
 def test_check_permissions_declares_the_functions_its_sql_calls():

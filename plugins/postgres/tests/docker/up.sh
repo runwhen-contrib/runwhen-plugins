@@ -14,6 +14,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/common.sh"
 
 running() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || true)" == "true" ]]; }
+exists() { docker inspect "$1" >/dev/null 2>&1; }   # running or stopped: a stopped one keeps its data
 
 # psql_in <container> <user> <password> [psql args...]: psql inside a container over TCP.
 psql_in() {
@@ -34,8 +35,10 @@ docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET" >/
 # 1. primary
 if running "$PRIMARY"; then
   log "primary already running"
+elif exists "$PRIMARY"; then
+  log "starting stopped primary"
+  docker start "$PRIMARY" >/dev/null
 else
-  docker rm -f "$PRIMARY" >/dev/null 2>&1 || true
   log "starting primary on 127.0.0.1:${PRIMARY_PORT}"
   docker run -d --name "$PRIMARY" --network "$NET" -p "127.0.0.1:${PRIMARY_PORT}:5432" \
     -e POSTGRES_PASSWORD="$SUPERUSER_PASSWORD" "$IMAGE" \
@@ -79,8 +82,10 @@ SQL
 # 4. standby: pg_basebackup from the primary through a physical slot, then run as a hot standby
 if running "$STANDBY"; then
   log "standby already running"
+elif exists "$STANDBY"; then
+  log "starting stopped standby"
+  docker start "$STANDBY" >/dev/null
 else
-  docker rm -fv "$STANDBY" >/dev/null 2>&1 || true
   psql_in "$PRIMARY" "$SUPERUSER" "$SUPERUSER_PASSWORD" -d postgres \
     -c "SELECT pg_drop_replication_slot('${SLOT}') FROM pg_replication_slots WHERE slot_name = '${SLOT}' AND NOT active" >/dev/null
   log "starting standby on 127.0.0.1:${STANDBY_PORT} (pg_basebackup from ${PRIMARY})"

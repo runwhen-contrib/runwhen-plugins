@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +33,12 @@ def load_script(name):
     return module
 
 
+# what pg.session_sql builds: the task's SQL is between the SET LOCAL and the COMMIT
+SCRIPT = re.compile(
+    r"BEGIN READ ONLY; SET LOCAL statement_timeout = (?P<ms>\d+); (?P<sql>.*); COMMIT;", re.S
+)
+
+
 class FakePsql:
     """Stands in for ctx.run: answers psql from the first handler whose text is in the SQL.
 
@@ -53,10 +60,21 @@ class FakePsql:
         assert check is False, "psql_json must pass check=False and classify the exit itself"
         assert argv[0] == "psql"
         clauses = [argv[i + 1] for i, a in enumerate(argv) if a == "-c"]
+        assert len(clauses) == 1, "one -c: the whole script is one simple query"
+        script = clauses[0]
+        match = SCRIPT.fullmatch(script)
+        assert match, f"not a read-only transaction with a local statement timeout: {script[:120]}"
+        sql = match["sql"]
         database = argv[argv.index("-d") + 1] if "-d" in argv else None
-        sql = clauses[-1]
         self.calls.append(
-            {"argv": list(argv), "sql": sql, "database": database, "env": env, "timeout": timeout}
+            {
+                "argv": list(argv),
+                "script": script,
+                "sql": sql,
+                "database": database,
+                "env": env,
+                "timeout": timeout,
+            }
         )
         for contains, result in self.handlers:
             if contains in sql:
