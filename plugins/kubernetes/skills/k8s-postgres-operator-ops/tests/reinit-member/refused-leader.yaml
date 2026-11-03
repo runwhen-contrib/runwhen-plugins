@@ -1,0 +1,734 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-pgop/postgresclusters/hippo
+inputs:
+  member: hippo-instance1-abcd-0
+dryRun: true
+now: '2026-11-03T22:05:40.114Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - postgresclusters.postgres-operator.crunchydata.com
+  - hippo
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "postgres-operator.crunchydata.com/v1beta1",
+        "kind": "PostgresCluster",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"postgres-operator.crunchydata.com/v1beta1\",\"kind\":\"PostgresCluster\",\"metadata\":{\"annotations\":{},\"name\":\"hippo\",\"namespace\":\"rw-pgop\"},\"spec\":{\"backups\":{\"pgbackrest\":{\"repos\":[{\"name\":\"repo1\",\"schedules\":{\"full\":\"0 2 * * 0\",\"incremental\":\"0 */6 * * *\"}}]}},\"instances\":[{\"name\":\"instance1\",\"replicas\":2}],\"postgresVersion\":16}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:33:39Z",
+            "generation": 3,
+            "name": "hippo",
+            "namespace": "rw-pgop",
+            "resourceVersion": "37205",
+            "uid": "81e88015-9e83-4f10-b623-2d03c613adf8"
+        },
+        "spec": {
+            "backups": {
+                "pgbackrest": {
+                    "repos": [
+                        {
+                            "name": "repo1",
+                            "schedules": {
+                                "full": "0 2 * * 0",
+                                "incremental": "0 */6 * * *"
+                            }
+                        }
+                    ]
+                }
+            },
+            "instances": [
+                {
+                    "name": "instance1",
+                    "replicas": 2
+                }
+            ],
+            "postgresVersion": 16
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-02T10:00:00Z",
+                    "message": "pgBackRest dedicated repository host is ready",
+                    "observedGeneration": 1,
+                    "reason": "StanzaCreated",
+                    "status": "True",
+                    "type": "PGBackRestReplicaRepoReady"
+                },
+                {
+                    "lastTransitionTime": "2026-11-02T10:05:00Z",
+                    "message": "pgBackRest replica create repo is ready for creating replicas",
+                    "observedGeneration": 1,
+                    "reason": "RepoBackupComplete",
+                    "status": "True",
+                    "type": "PGBackRestReplicaCreate"
+                }
+            ],
+            "instances": [
+                {
+                    "name": "instance1",
+                    "readyReplicas": 2,
+                    "replicas": 2,
+                    "updatedReplicas": 2
+                }
+            ],
+            "observedGeneration": 3,
+            "pgbackrest": {
+                "repos": [
+                    {
+                        "bound": true,
+                        "name": "repo1",
+                        "replicaCreateBackupComplete": true,
+                        "repoOptionsHash": "7c5b9d7f4",
+                        "stanzaCreated": true
+                    }
+                ],
+                "scheduledBackups": [
+                    {
+                        "completionTime": "2026-11-01T02:04:10Z",
+                        "cronJobName": "hippo-repo1-full",
+                        "repo": "repo1",
+                        "startTime": "2026-11-01T02:00:03Z",
+                        "succeeded": 1,
+                        "type": "full"
+                    },
+                    {
+                        "completionTime": "2026-11-03T18:01:15Z",
+                        "cronJobName": "hippo-repo1-incr",
+                        "repo": "repo1",
+                        "startTime": "2026-11-03T18:00:02Z",
+                        "succeeded": 1,
+                        "type": "incr"
+                    },
+                    {
+                        "completionTime": "2026-11-03T12:01:20Z",
+                        "cronJobName": "hippo-repo1-incr",
+                        "repo": "repo1",
+                        "startTime": "2026-11-03T12:00:02Z",
+                        "succeeded": 1,
+                        "type": "incr"
+                    }
+                ]
+            }
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - pods
+  - -l
+  - postgres-operator.crunchydata.com/cluster=hippo,postgres-operator.crunchydata.com/instance
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"postgres-operator.crunchydata.com/cluster\":\"hippo\",\"postgres-operator.crunchydata.com/data\":\"postgres\",\"postgres-operator.crunchydata.com/instance\":\"hippo-instance1-abcd\",\"postgres-operator.crunchydata.com/instance-set\":\"instance1\",\"postgres-operator.crunchydata.com/patroni\":\"hippo-ha\",\"postgres-operator.crunchydata.com/role\":\"master\"},\"name\":\"hippo-instance1-abcd-0\",\"namespace\":\"rw-pgop\"},\"spec\":{\"containers\":[{\"envFrom\":[{\"configMapRef\":{\"name\":\"pg-trust\"}}],\"image\":\"postgres:16-alpine\",\"name\":\"database\",\"readinessProbe\":{\"exec\":{\"command\":[\"pg_isready\",\"-U\",\"postgres\"]},\"periodSeconds\":3},\"resources\":{\"limits\":{\"memory\":\"192Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"48Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/usr/local/bin/patronictl\",\"name\":\"stub\",\"subPath\":\"patronictl\"},{\"mountPath\":\"/etc/patroni-stub\",\"name\":\"members\"}]}],\"terminationGracePeriodSeconds\":1,\"volumes\":[{\"configMap\":{\"defaultMode\":493,\"name\":\"patronictl-stub\"},\"name\":\"stub\"},{\"configMap\":{\"name\":\"patroni-hippo\"},\"name\":\"members\"}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:50:41Z",
+                    "generation": 1,
+                    "labels": {
+                        "postgres-operator.crunchydata.com/cluster": "hippo",
+                        "postgres-operator.crunchydata.com/data": "postgres",
+                        "postgres-operator.crunchydata.com/instance": "hippo-instance1-abcd",
+                        "postgres-operator.crunchydata.com/instance-set": "instance1",
+                        "postgres-operator.crunchydata.com/patroni": "hippo-ha",
+                        "postgres-operator.crunchydata.com/role": "master"
+                    },
+                    "name": "hippo-instance1-abcd-0",
+                    "namespace": "rw-pgop",
+                    "resourceVersion": "35061",
+                    "uid": "37842054-b1b4-411d-be68-5a432b8f4b50"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "envFrom": [
+                                {
+                                    "configMapRef": {
+                                        "name": "pg-trust"
+                                    }
+                                }
+                            ],
+                            "image": "postgres:16-alpine",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "database",
+                            "readinessProbe": {
+                                "exec": {
+                                    "command": [
+                                        "pg_isready",
+                                        "-U",
+                                        "postgres"
+                                    ]
+                                },
+                                "failureThreshold": 3,
+                                "periodSeconds": 3,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub",
+                                    "subPath": "patronictl"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-pbf6r",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 1,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 493,
+                                "name": "patronictl-stub"
+                            },
+                            "name": "stub"
+                        },
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "patroni-hippo"
+                            },
+                            "name": "members"
+                        },
+                        {
+                            "name": "kube-api-access-pbf6r",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "memory": "48Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:45Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:45Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "memory": "48Mi"
+                            },
+                            "containerID": "containerd://da39dfeed0152c85d45550c0d5eed5826a4ceb9da82c342f5f23a22cccfa50e5",
+                            "image": "docker.io/library/postgres:16-alpine",
+                            "imageID": "docker.io/library/postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab",
+                            "lastState": {},
+                            "name": "database",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T21:50:42Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-pbf6r",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.117",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.117"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "192Mi"
+                        },
+                        "requests": {
+                            "memory": "48Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T21:50:41Z"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"postgres-operator.crunchydata.com/cluster\":\"hippo\",\"postgres-operator.crunchydata.com/data\":\"postgres\",\"postgres-operator.crunchydata.com/instance\":\"hippo-instance1-wxyz\",\"postgres-operator.crunchydata.com/instance-set\":\"instance1\",\"postgres-operator.crunchydata.com/patroni\":\"hippo-ha\",\"postgres-operator.crunchydata.com/role\":\"replica\"},\"name\":\"hippo-instance1-wxyz-0\",\"namespace\":\"rw-pgop\"},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"infinity\"],\"image\":\"postgres:16-alpine\",\"name\":\"database\",\"resources\":{\"limits\":{\"memory\":\"32Mi\"},\"requests\":{\"cpu\":\"1m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/usr/local/bin/patronictl\",\"name\":\"stub\",\"subPath\":\"patronictl\"},{\"mountPath\":\"/etc/patroni-stub\",\"name\":\"members\"}]}],\"terminationGracePeriodSeconds\":1,\"volumes\":[{\"configMap\":{\"defaultMode\":493,\"name\":\"patronictl-stub\"},\"name\":\"stub\"},{\"configMap\":{\"name\":\"patroni-hippo\"},\"name\":\"members\"}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:50:41Z",
+                    "generation": 1,
+                    "labels": {
+                        "postgres-operator.crunchydata.com/cluster": "hippo",
+                        "postgres-operator.crunchydata.com/data": "postgres",
+                        "postgres-operator.crunchydata.com/instance": "hippo-instance1-wxyz",
+                        "postgres-operator.crunchydata.com/instance-set": "instance1",
+                        "postgres-operator.crunchydata.com/patroni": "hippo-ha",
+                        "postgres-operator.crunchydata.com/role": "replica"
+                    },
+                    "name": "hippo-instance1-wxyz-0",
+                    "namespace": "rw-pgop",
+                    "resourceVersion": "35315",
+                    "uid": "a54344e8-036d-4ae3-9c07-7310664e697d"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sleep",
+                                "infinity"
+                            ],
+                            "image": "postgres:16-alpine",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "database",
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub",
+                                    "subPath": "patronictl"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-c5bv6",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 1,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 493,
+                                "name": "patronictl-stub"
+                            },
+                            "name": "stub"
+                        },
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "patroni-hippo"
+                            },
+                            "name": "members"
+                        },
+                        {
+                            "name": "kube-api-access-c5bv6",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "4Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "1m",
+                                "memory": "4Mi"
+                            },
+                            "containerID": "containerd://f2174f5db50b648c319ba8586717b51ced928aeb11b10a954d5ac3887e8d15fc",
+                            "image": "docker.io/library/postgres:16-alpine",
+                            "imageID": "docker.io/library/postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab",
+                            "lastState": {},
+                            "name": "database",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T21:50:42Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-c5bv6",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.118",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.118"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "32Mi"
+                        },
+                        "requests": {
+                            "memory": "4Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T21:50:41Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - exec
+  - hippo-instance1-wxyz-0
+  - -c
+  - database
+  - --
+  - patronictl
+  - list
+  - -f
+  - json
+  rc: 0
+  stdout: |
+    [{"Cluster": "hippo-ha", "Member": "hippo-instance1-abcd-0", "Host": "10.244.0.50", "Role": "Leader", "State": "running", "TL": 3},
+     {"Cluster": "hippo-ha", "Member": "hippo-instance1-wxyz-0", "Host": "10.244.0.51", "Role": "Replica", "State": "streaming", "TL": 3, "Lag in MB": 0}]
+  stderr: ''
+expect:
+  status: failed
+  errorCodes:
+  - invalid_input

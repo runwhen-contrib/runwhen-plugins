@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cluster object facts",
+  "description": "Crunchy: spec/status of the PostgresCluster (instances from status.instances, conditions). Zalando: spec.numberOfInstances, ready counted from the member pods, and status.PostgresClusterStatus. generationObserved is null where the operator writes no observedGeneration.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "PostgresCluster",
+        "postgresql"
+      ]
+    },
+    "operator": {
+      "enum": [
+        "crunchy",
+        "zalando"
+      ]
+    },
+    "apiVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": [
+        "string"
+      ]
+    },
+    "namespace": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "creationTimestamp": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "deleting": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "observedGeneration": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "generationObserved": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "postgresVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "image": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "shutdown": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "clusterStatus": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "instances": {
+      "type": "object",
+      "properties": {
+        "desired": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ready": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readySource": {
+          "enum": [
+            "status",
+            "pods"
+          ]
+        },
+        "sets": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "desired": {
+                "type": [
+                  "integer"
+                ]
+              },
+              "replicas": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "ready": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "updated": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "desired",
+              "replicas",
+              "ready",
+              "updated"
+            ]
+          }
+        }
+      },
+      "required": [
+        "desired",
+        "ready",
+        "readySource",
+        "sets"
+      ]
+    },
+    "conditions": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": [
+              "boolean"
+            ]
+          },
+          "observedGeneration": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lastTransitionTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "status",
+          "reason",
+          "message",
+          "truncated",
+          "observedGeneration",
+          "lastTransitionTime"
+        ]
+      }
+    }
+  },
+  "required": [
+    "kind",
+    "operator",
+    "apiVersion",
+    "name",
+    "namespace",
+    "creationTimestamp",
+    "deleting",
+    "generation",
+    "observedGeneration",
+    "generationObserved",
+    "postgresVersion",
+    "image",
+    "shutdown",
+    "clusterStatus",
+    "instances",
+    "conditions"
+  ]
+}

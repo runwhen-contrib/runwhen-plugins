@@ -1,0 +1,79 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-pgop/postgresqls/acid-sync-failed
+now: '2026-11-03T22:05:10.738Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - postgresqls.acid.zalan.do
+  - acid-sync-failed
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "acid.zalan.do/v1",
+        "kind": "postgresql",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"acid.zalan.do/v1\",\"kind\":\"postgresql\",\"metadata\":{\"annotations\":{},\"name\":\"acid-sync-failed\",\"namespace\":\"rw-pgop\"},\"spec\":{\"numberOfInstances\":2,\"postgresql\":{\"version\":\"15\"},\"teamId\":\"acid\",\"volume\":{\"size\":\"1Gi\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:33:39Z",
+            "generation": 1,
+            "name": "acid-sync-failed",
+            "namespace": "rw-pgop",
+            "resourceVersion": "31851",
+            "uid": "d9c351a3-9f12-45ed-a720-ddfd055fa837"
+        },
+        "spec": {
+            "numberOfInstances": 2,
+            "postgresql": {
+                "version": "15"
+            },
+            "teamId": "acid",
+            "volume": {
+                "size": "1Gi"
+            }
+        },
+        "status": {
+            "PostgresClusterStatus": "SyncFailed"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - pods
+  - -l
+  - application=spilo,cluster-name=acid-sync-failed
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: partial
+  errorCodes:
+  - not_found
+  outputs:
+    patroni:
+      queried: null
+      leaderPresent: null
+      memberCount: null
+      members: []

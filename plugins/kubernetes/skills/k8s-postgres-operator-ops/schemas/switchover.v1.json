@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Switchover or failover",
+  "description": "mode is switchover when the leader was running, failover when there was no leader or it was in a terminal state (a failover always has a candidate). applied is false when patronictl printed a failure line. leaderAfter/leaderChanged are read back from patronictl list after the command; completed is true when the new leader is running and (with a candidate) is that candidate, false when the command was not confirmed or the leader did not change within the wait, null when not waited or not observed.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "wouldRun": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "switchover",
+        "failover"
+      ]
+    },
+    "leaderBefore": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "leaderBeforeState": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timelineBefore": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "candidate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "const": "patronictl"
+        },
+        "subcommand": {
+          "type": [
+            "string"
+          ]
+        },
+        "cluster": {
+          "type": [
+            "string"
+          ]
+        },
+        "candidate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "tool",
+        "subcommand",
+        "cluster"
+      ]
+    },
+    "ranIn": {
+      "type": "object",
+      "properties": {
+        "pod": {
+          "type": [
+            "string"
+          ]
+        },
+        "container": {
+          "type": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "pod",
+        "container"
+      ]
+    },
+    "output": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "outputTruncated": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "leaderAfter": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "leaderAfterState": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timelineAfter": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "leaderChanged": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completionReason": {
+      "enum": [
+        "leader_changed",
+        "timeout",
+        "budget",
+        "not_observed",
+        "not_waited",
+        "failed",
+        "unconfirmed",
+        null
+      ]
+    },
+    "waitedSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "membersAfter": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timeline": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "lagMb": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "role",
+              "state",
+              "timeline",
+              "lagMb"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "required": [
+    "applied",
+    "wouldRun",
+    "mode",
+    "leaderBefore",
+    "leaderBeforeState",
+    "timelineBefore",
+    "candidate",
+    "command",
+    "ranIn",
+    "output",
+    "outputTruncated",
+    "leaderAfter",
+    "leaderAfterState",
+    "timelineAfter",
+    "leaderChanged",
+    "completed",
+    "completionReason",
+    "waitedSeconds",
+    "membersAfter"
+  ]
+}

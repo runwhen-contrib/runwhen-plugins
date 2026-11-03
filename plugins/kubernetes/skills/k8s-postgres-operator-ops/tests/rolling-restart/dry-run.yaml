@@ -1,0 +1,156 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-pgop/postgresclusters/hippo
+dryRun: true
+now: '2026-11-03T22:05:47.722Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - postgresclusters.postgres-operator.crunchydata.com
+  - hippo
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "postgres-operator.crunchydata.com/v1beta1",
+        "kind": "PostgresCluster",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"postgres-operator.crunchydata.com/v1beta1\",\"kind\":\"PostgresCluster\",\"metadata\":{\"annotations\":{},\"name\":\"hippo\",\"namespace\":\"rw-pgop\"},\"spec\":{\"backups\":{\"pgbackrest\":{\"repos\":[{\"name\":\"repo1\",\"schedules\":{\"full\":\"0 2 * * 0\",\"incremental\":\"0 */6 * * *\"}}]}},\"instances\":[{\"name\":\"instance1\",\"replicas\":2}],\"postgresVersion\":16}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:33:39Z",
+            "generation": 3,
+            "name": "hippo",
+            "namespace": "rw-pgop",
+            "resourceVersion": "37205",
+            "uid": "81e88015-9e83-4f10-b623-2d03c613adf8"
+        },
+        "spec": {
+            "backups": {
+                "pgbackrest": {
+                    "repos": [
+                        {
+                            "name": "repo1",
+                            "schedules": {
+                                "full": "0 2 * * 0",
+                                "incremental": "0 */6 * * *"
+                            }
+                        }
+                    ]
+                }
+            },
+            "instances": [
+                {
+                    "name": "instance1",
+                    "replicas": 2
+                }
+            ],
+            "postgresVersion": 16
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-02T10:00:00Z",
+                    "message": "pgBackRest dedicated repository host is ready",
+                    "observedGeneration": 1,
+                    "reason": "StanzaCreated",
+                    "status": "True",
+                    "type": "PGBackRestReplicaRepoReady"
+                },
+                {
+                    "lastTransitionTime": "2026-11-02T10:05:00Z",
+                    "message": "pgBackRest replica create repo is ready for creating replicas",
+                    "observedGeneration": 1,
+                    "reason": "RepoBackupComplete",
+                    "status": "True",
+                    "type": "PGBackRestReplicaCreate"
+                }
+            ],
+            "instances": [
+                {
+                    "name": "instance1",
+                    "readyReplicas": 2,
+                    "replicas": 2,
+                    "updatedReplicas": 2
+                }
+            ],
+            "observedGeneration": 3,
+            "pgbackrest": {
+                "repos": [
+                    {
+                        "bound": true,
+                        "name": "repo1",
+                        "replicaCreateBackupComplete": true,
+                        "repoOptionsHash": "7c5b9d7f4",
+                        "stanzaCreated": true
+                    }
+                ],
+                "scheduledBackups": [
+                    {
+                        "completionTime": "2026-11-01T02:04:10Z",
+                        "cronJobName": "hippo-repo1-full",
+                        "repo": "repo1",
+                        "startTime": "2026-11-01T02:00:03Z",
+                        "succeeded": 1,
+                        "type": "full"
+                    },
+                    {
+                        "completionTime": "2026-11-03T18:01:15Z",
+                        "cronJobName": "hippo-repo1-incr",
+                        "repo": "repo1",
+                        "startTime": "2026-11-03T18:00:02Z",
+                        "succeeded": 1,
+                        "type": "incr"
+                    },
+                    {
+                        "completionTime": "2026-11-03T12:01:20Z",
+                        "cronJobName": "hippo-repo1-incr",
+                        "repo": "repo1",
+                        "startTime": "2026-11-03T12:00:02Z",
+                        "succeeded": 1,
+                        "type": "incr"
+                    }
+                ]
+            }
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - patch
+  - postgresclusters.postgres-operator.crunchydata.com
+  - hippo
+  - --type=merge
+  - -p
+  - '{"spec": {"metadata": {"annotations": {"restarted": "2026-11-03T22:05:47Z"}}}}'
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    postgrescluster.postgres-operator.crunchydata.com/hippo patched
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target:
+      kind: PostgresCluster
+      operator: crunchy
+      patroniCluster: null
+      gitopsManaged: false
+    restart:
+      applied: false
+      wouldRun: true
+      method: annotation
+      annotation: restarted
+      membersExpected: 2
+      completed: null
+      members: null

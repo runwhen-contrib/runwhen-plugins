@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Non-default settings",
+  "description": "pg_settings rows whose source is not default (client and session sources, which belong to the asking connection, are left out). Names with a password, passwd, passphrase, secret, token, credential, dsn, uri, auth or key part (split at _ and .), and ssl_*file, are excluded (excludedCount); a setting that can embed a connection string or a command line, and every dotted extension setting, has redacted true and no value.",
+  "type": "object",
+  "properties": {
+    "queried": {
+      "type": "object",
+      "properties": {
+        "pod": {
+          "type": [
+            "string"
+          ]
+        },
+        "container": {
+          "type": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "pod",
+        "container"
+      ]
+    },
+    "count": {
+      "type": [
+        "integer"
+      ]
+    },
+    "excludedCount": {
+      "type": [
+        "integer"
+      ]
+    },
+    "truncated": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string"
+            ]
+          },
+          "setting": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": [
+              "boolean"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redacted": {
+            "type": [
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "setting",
+          "truncated",
+          "unit",
+          "source",
+          "redacted"
+        ]
+      }
+    }
+  },
+  "required": [
+    "queried",
+    "count",
+    "excludedCount",
+    "truncated",
+    "items"
+  ]
+}
