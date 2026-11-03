@@ -1,0 +1,294 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "batch/v1",
+   "kind": "CronJob",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"always-fails\",\"namespace\":\"rw-cron\"},\"spec\":{\"failedJobsHistoryLimit\":3,\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo about to fail; exit 3\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"* * * * *\",\"successfulJobsHistoryLimit\":1}}\n"
+    },
+    "creationTimestamp": "2026-11-03T19:50:14Z",
+    "generation": 1,
+    "name": "always-fails",
+    "namespace": "rw-cron",
+    "resourceVersion": "15817",
+    "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+   },
+   "spec": {
+    "concurrencyPolicy": "Allow",
+    "failedJobsHistoryLimit": 3,
+    "jobTemplate": {
+     "metadata": {},
+     "spec": {
+      "backoffLimit": 0,
+      "template": {
+       "metadata": {},
+       "spec": {
+        "containers": [
+         {
+          "command": [
+           "sh",
+           "-c",
+           "echo about to fail; exit 3"
+          ],
+          "image": "busybox:1.36",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "job",
+          "resources": {},
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File"
+         }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30
+       }
+      }
+     }
+    },
+    "schedule": "* * * * *",
+    "successfulJobsHistoryLimit": 1,
+    "suspend": false
+   },
+   "status": {
+    "lastScheduleTime": "2026-11-03T19:55:00Z"
+   }
+  },
+  {
+   "apiVersion": "batch/v1",
+   "kind": "CronJob",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"forbid-long\",\"namespace\":\"rw-cron\"},\"spec\":{\"concurrencyPolicy\":\"Forbid\",\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 3600\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"* * * * *\",\"startingDeadlineSeconds\":90}}\n"
+    },
+    "creationTimestamp": "2026-11-03T19:50:14Z",
+    "generation": 1,
+    "name": "forbid-long",
+    "namespace": "rw-cron",
+    "resourceVersion": "15116",
+    "uid": "96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff"
+   },
+   "spec": {
+    "concurrencyPolicy": "Forbid",
+    "failedJobsHistoryLimit": 1,
+    "jobTemplate": {
+     "metadata": {},
+     "spec": {
+      "backoffLimit": 0,
+      "template": {
+       "metadata": {},
+       "spec": {
+        "containers": [
+         {
+          "command": [
+           "sh",
+           "-c",
+           "sleep 3600"
+          ],
+          "image": "busybox:1.36",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "job",
+          "resources": {},
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File"
+         }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30
+       }
+      }
+     }
+    },
+    "schedule": "* * * * *",
+    "startingDeadlineSeconds": 90,
+    "successfulJobsHistoryLimit": 3,
+    "suspend": false
+   },
+   "status": {
+    "active": [
+     {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "name": "forbid-long-29895591",
+      "namespace": "rw-cron",
+      "resourceVersion": "15113",
+      "uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+     }
+    ],
+    "lastScheduleTime": "2026-11-03T19:51:00Z"
+   }
+  },
+  {
+   "apiVersion": "batch/v1",
+   "kind": "CronJob",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"ok-every-minute\",\"namespace\":\"rw-cron\"},\"spec\":{\"failedJobsHistoryLimit\":1,\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo ok\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"* * * * *\",\"successfulJobsHistoryLimit\":3}}\n"
+    },
+    "creationTimestamp": "2026-11-03T19:50:14Z",
+    "generation": 1,
+    "name": "ok-every-minute",
+    "namespace": "rw-cron",
+    "resourceVersion": "15819",
+    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+   },
+   "spec": {
+    "concurrencyPolicy": "Allow",
+    "failedJobsHistoryLimit": 1,
+    "jobTemplate": {
+     "metadata": {},
+     "spec": {
+      "backoffLimit": 0,
+      "template": {
+       "metadata": {},
+       "spec": {
+        "containers": [
+         {
+          "command": [
+           "sh",
+           "-c",
+           "echo ok"
+          ],
+          "image": "busybox:1.36",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "job",
+          "resources": {},
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File"
+         }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30
+       }
+      }
+     }
+    },
+    "schedule": "* * * * *",
+    "successfulJobsHistoryLimit": 3,
+    "suspend": false
+   },
+   "status": {
+    "lastScheduleTime": "2026-11-03T19:55:00Z",
+    "lastSuccessfulTime": "2026-11-03T19:55:04Z"
+   }
+  },
+  {
+   "apiVersion": "batch/v1",
+   "kind": "CronJob",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"paused\",\"namespace\":\"rw-cron\"},\"spec\":{\"jobTemplate\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo never runs\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"*/5 * * * *\",\"suspend\":true}}\n"
+    },
+    "creationTimestamp": "2026-11-03T19:50:14Z",
+    "generation": 1,
+    "name": "paused",
+    "namespace": "rw-cron",
+    "resourceVersion": "15029",
+    "uid": "d98b87c6-e6f9-4f4b-b1a6-227e0698df64"
+   },
+   "spec": {
+    "concurrencyPolicy": "Allow",
+    "failedJobsHistoryLimit": 1,
+    "jobTemplate": {
+     "metadata": {},
+     "spec": {
+      "template": {
+       "metadata": {},
+       "spec": {
+        "containers": [
+         {
+          "command": [
+           "sh",
+           "-c",
+           "echo never runs"
+          ],
+          "image": "busybox:1.36",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "job",
+          "resources": {},
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File"
+         }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30
+       }
+      }
+     }
+    },
+    "schedule": "*/5 * * * *",
+    "successfulJobsHistoryLimit": 3,
+    "suspend": true
+   },
+   "status": {}
+  },
+  {
+   "apiVersion": "batch/v1",
+   "kind": "CronJob",
+   "metadata": {
+    "annotations": {
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"tz-daily\",\"namespace\":\"rw-cron\"},\"spec\":{\"jobTemplate\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo daily\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"0 3 * * *\",\"timeZone\":\"Europe/London\"}}\n"
+    },
+    "creationTimestamp": "2026-11-03T19:50:14Z",
+    "generation": 1,
+    "name": "tz-daily",
+    "namespace": "rw-cron",
+    "resourceVersion": "15031",
+    "uid": "d8d08a77-6df0-4cd6-897d-3c7b952a53db"
+   },
+   "spec": {
+    "concurrencyPolicy": "Allow",
+    "failedJobsHistoryLimit": 1,
+    "jobTemplate": {
+     "metadata": {},
+     "spec": {
+      "template": {
+       "metadata": {},
+       "spec": {
+        "containers": [
+         {
+          "command": [
+           "sh",
+           "-c",
+           "echo daily"
+          ],
+          "image": "busybox:1.36",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "job",
+          "resources": {},
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File"
+         }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30
+       }
+      }
+     }
+    },
+    "schedule": "0 3 * * *",
+    "successfulJobsHistoryLimit": 3,
+    "suspend": false,
+    "timeZone": "Europe/London"
+   },
+   "status": {}
+  }
+ ],
+ "kind": "List",
+ "metadata": {}
+}
