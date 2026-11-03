@@ -44,8 +44,32 @@ kubernetes:
       "Decrease Memory Resources for Deployment": "k8s-workload-ops/set-resources (explicit values)"
 
   # --- workloads ---------------------------------------------------------------------------------------------
-  - { bundle: k8s-statefulset-ops,         skills: [k8s-workload-ops], status: planned }
-  - { bundle: k8s-restart-resource,        skills: [k8s-workload-ops], status: planned, note: "label-selected restart becomes rollout-restart on the target workload" }
+  - bundle: k8s-statefulset-ops
+    skills: [k8s-workload-ops]
+    status: partial
+    ported: [k8s-workload-ops]
+    note: "9 of 11 classic tasks map to k8s-workload-ops tasks that already accept a StatefulSet; the 2 HPA tasks have no V13 counterpart yet (same gap as k8s-deployment-ops: k8s-workload-health/hpa-status is read-only, there is no HPA write task), so the bundle stays partial until an hpa-bounds task joins k8s-workload-ops. Decided differences: a classic factor (SCALE_UP_FACTOR, RESOURCE_SCALE_DOWN_FACTOR) becomes the explicit replicas or quantity the caller passes; the MAX_REPLICAS cap and the 'scale down to 1 when zero is not allowed' fallback are not ported (a refused scale is an error the caller sees); the classic resource tasks applied one value to every container (kubectl set resources without -c) and guessed from VPA, set-resources changes one named container with explicit values"
+    tasks:
+      "Restart StatefulSet": k8s-workload-ops/rollout-restart
+      "Force Delete Pods for StatefulSet": "k8s-workload-ops/delete-pods (the classic selector from the pod template's labels could match other workloads' pods and its delete had no --force; delete-pods confirms ownership through ownerReferences and can name pods)"
+      "Rollback StatefulSet to Previous Version": "k8s-workload-ops/rollback (ControllerRevision history; reports the revisions and images it moves between)"
+      "Scale Down StatefulSet": "k8s-workload-ops/scale (replicas input; 0 needs the allowScaleToZero setting, the classic ALLOW_SCALE_TO_ZERO)"
+      "Scale Up StatefulSet by factor": "k8s-workload-ops/scale (the caller passes the replica count; the classic factor and MAX_REPLICAS are not ported)"
+      "Scale Up HPA for StatefulSet": "dropped: no HPA write task in k8s-workload-ops yet; an hpa-bounds task can join the wave"
+      "Scale Down HPA for StatefulSet": "dropped: no HPA write task in k8s-workload-ops yet; an hpa-bounds task can join the wave"
+      "Increase CPU Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit cpuRequest/cpuLimit on one container; no VPA guessing)"
+      "Increase Memory Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit memoryRequest/memoryLimit on one container; no VPA guessing)"
+      "Decrease CPU Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit values on one container)"
+      "Decrease Memory Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit values on one container)"
+  - bundle: k8s-restart-resource
+    skills: [k8s-workload-ops]
+    status: ported
+    ported: [k8s-workload-ops]
+    note: "label-selected restart becomes rollout-restart on the target workload"
+    tasks:
+      "Get Current Resource State with Labels": "dropped: report-only YAML dump of the labelled workloads, asserts nothing; the workload's state is k8s-workload-health/rollout-status"
+      "Get Resource Logs with Labels": "dropped: report-only log dump, asserts nothing; k8s-workload-logs/recent-logs reads the workload's logs"
+      "Restart Resource with Labels": "k8s-workload-ops/rollout-restart (the target is the workload itself, not the first of a label match; the classic reported 'Restarted' even when nothing matched and never waited for the rollout)"
   - { bundle: k8s-stacktrace-health,       skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs] }
   - { bundle: k8s-labeledpods-healthcheck, skills: [k8s-workload-health], status: ported, ported: [k8s-workload-health], note: "running-pod count is part of rollout-status" }
   - { bundle: k8s-cluster-resource-health, skills: [k8s-node-health], status: ported, ported: [k8s-node-health],
