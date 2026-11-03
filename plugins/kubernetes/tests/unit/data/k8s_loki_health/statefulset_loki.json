@@ -1,0 +1,134 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "StatefulSet",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"loki\",\"namespace\":\"rw-loki\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/component\":\"single-binary\",\"app.kubernetes.io/name\":\"loki\"}},\"serviceName\":\"loki-headless\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/component\":\"single-binary\",\"app.kubernetes.io/name\":\"loki\"}},\"spec\":{\"containers\":[{\"args\":[\"-config.file=/etc/loki/loki.yaml\"],\"image\":\"grafana/loki:3.3.2\",\"name\":\"loki\",\"ports\":[{\"containerPort\":3100,\"name\":\"http-metrics\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/ready\",\"port\":\"http-metrics\"},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"192Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"64Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/etc/loki\",\"name\":\"config\"},{\"mountPath\":\"/loki\",\"name\":\"data\"}]}],\"volumes\":[{\"configMap\":{\"items\":[{\"key\":\"loki.yaml\",\"path\":\"loki.yaml\"}],\"name\":\"loki-config\"},\"name\":\"config\"},{\"emptyDir\":{\"sizeLimit\":\"128Mi\"},\"name\":\"data\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T22:22:32Z",
+    "generation": 2,
+    "name": "loki",
+    "namespace": "rw-loki",
+    "resourceVersion": "44135",
+    "uid": "018f7034-a910-43b2-8a47-b7e6b7bf166a"
+  },
+  "spec": {
+    "persistentVolumeClaimRetentionPolicy": {
+      "whenDeleted": "Retain",
+      "whenScaled": "Retain"
+    },
+    "podManagementPolicy": "OrderedReady",
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/component": "single-binary",
+        "app.kubernetes.io/name": "loki"
+      }
+    },
+    "serviceName": "loki-headless",
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/component": "single-binary",
+          "app.kubernetes.io/name": "loki"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "args": [
+              "-config.file=/etc/loki/loki.yaml"
+            ],
+            "image": "grafana/loki:3.3.2",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "loki",
+            "ports": [
+              {
+                "containerPort": 3100,
+                "name": "http-metrics",
+                "protocol": "TCP"
+              }
+            ],
+            "readinessProbe": {
+              "failureThreshold": 3,
+              "httpGet": {
+                "path": "/ready",
+                "port": "http-metrics",
+                "scheme": "HTTP"
+              },
+              "periodSeconds": 5,
+              "successThreshold": 1,
+              "timeoutSeconds": 1
+            },
+            "resources": {
+              "limits": {
+                "memory": "192Mi"
+              },
+              "requests": {
+                "cpu": "10m",
+                "memory": "64Mi"
+              }
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/etc/loki",
+                "name": "config"
+              },
+              {
+                "mountPath": "/loki",
+                "name": "data"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "restartPolicy": "Always",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30,
+        "volumes": [
+          {
+            "configMap": {
+              "defaultMode": 420,
+              "items": [
+                {
+                  "key": "loki.yaml",
+                  "path": "loki.yaml"
+                }
+              ],
+              "name": "loki-config"
+            },
+            "name": "config"
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "128Mi"
+            },
+            "name": "data"
+          }
+        ]
+      }
+    },
+    "updateStrategy": {
+      "rollingUpdate": {
+        "maxUnavailable": 1,
+        "partition": 0
+      },
+      "type": "RollingUpdate"
+    }
+  },
+  "status": {
+    "availableReplicas": 1,
+    "collisionCount": 0,
+    "currentReplicas": 1,
+    "currentRevision": "loki-767b998595",
+    "observedGeneration": 2,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "updateRevision": "loki-767b998595",
+    "updatedReplicas": 1
+  }
+}

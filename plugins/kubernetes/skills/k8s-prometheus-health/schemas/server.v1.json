@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prometheus server status per pod",
+  "description": "What each Prometheus pod answered on /-/healthy, /-/ready, /api/v1/status/runtimeinfo and /api/v1/status/tsdb through the API server's pod proxy. A part that was not obtained is null (with an error), never false or 0.",
+  "type": "object",
+  "properties": {
+    "prometheus": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "shards": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scheme": {
+          "enum": [
+            "http",
+            "https"
+          ]
+        },
+        "portName": {
+          "type": "string"
+        },
+        "routePrefix": {
+          "type": "string"
+        },
+        "expectedReplicas": {
+          "type": "integer",
+          "description": "spec.replicas (1 when unset) times spec.shards (1 when unset): the pods the CR asks for"
+        },
+        "conditions": {
+          "type": "array",
+          "description": "the operator's Available and Reconciled conditions from Prometheus.status.conditions; empty when the operator has set none",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "messageTruncated": {
+                "type": "boolean"
+              },
+              "lastTransitionTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "status",
+              "reason",
+              "message",
+              "messageTruncated",
+              "lastTransitionTime"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "name",
+        "namespace",
+        "replicas",
+        "shards",
+        "version",
+        "scheme",
+        "portName",
+        "routePrefix",
+        "expectedReplicas",
+        "conditions"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer",
+      "description": "pods the Prometheus CR owns (label prometheus=<name>)"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods were cut at maxItems"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's Ready condition"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running, or a running one beyond the 10 asked, which is not asked"
+          },
+          "healthy": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "/-/healthy: true on 200 with the healthy text, false on 503"
+          },
+          "ready": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "/-/ready: true on 200 with the ready text, false on 503 (still starting, replaying its WAL)"
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "startTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "uptimeSeconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "lastConfigTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastConfigAgeSeconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reloadConfigSuccess": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "corruptionCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "WAL/TSDB corruptions since start"
+              },
+              "goroutineCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "storageRetention": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "startTime",
+              "uptimeSeconds",
+              "lastConfigTime",
+              "lastConfigAgeSeconds",
+              "reloadConfigSuccess",
+              "corruptionCount",
+              "goroutineCount",
+              "storageRetention"
+            ],
+            "additionalProperties": false
+          },
+          "tsdb": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "headSeries": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "headChunks": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "headLabelPairs": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "headSeries",
+              "headChunks",
+              "headLabelPairs"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "port",
+          "queried",
+          "healthy",
+          "ready",
+          "runtime",
+          "tsdb"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "podsSkipped": {
+      "type": "integer",
+      "description": "running pods not asked because more than 10 exist (one pod per shard is asked first)"
+    }
+  },
+  "required": [
+    "prometheus",
+    "podCount",
+    "podsSkipped",
+    "truncated",
+    "pods"
+  ],
+  "additionalProperties": false
+}

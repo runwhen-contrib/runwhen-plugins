@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Loki hash rings",
+  "description": "For each ring path (/ring is the ingester ring, /distributor/ring, /compactor/ring) the members the first pod that serves it reports, by state, with token count and last heartbeat. A path no asked pod serves is served false: a fact (a component that does not run in this workload, or in single-binary mode a ring that is not enabled).",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "queriedPods": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "served": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true when a pod served it as ring JSON; false when every asked pod answered 404; null when every attempt failed (an error says why)"
+          },
+          "viewedFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the pod whose view this is"
+          },
+          "unservedBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "pods asked before one served it that answered 404"
+          },
+          "memberCount": {
+            "type": "integer"
+          },
+          "byState": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "member count by state as the ring reports it (ACTIVE, LEAVING, UNHEALTHY, JOINING, PENDING, LEFT)"
+          },
+          "notActiveCount": {
+            "type": "integer"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "address": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "zone": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tokenCount": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "registeredAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "lastHeartbeat": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "heartbeatAgeSeconds": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "ctx.now() minus lastHeartbeat"
+                },
+                "readOnly": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "state",
+                "address",
+                "zone",
+                "tokenCount",
+                "registeredAt",
+                "lastHeartbeat",
+                "heartbeatAgeSeconds",
+                "readOnly"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "membersTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "served",
+          "viewedFrom",
+          "unservedBy",
+          "memberCount",
+          "byState",
+          "notActiveCount",
+          "members",
+          "membersTruncated"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "queriedPods",
+    "rings"
+  ],
+  "additionalProperties": false
+}

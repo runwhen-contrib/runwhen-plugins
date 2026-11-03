@@ -1,0 +1,284 @@
+# k8s-prometheus-health scenarios, applied by up.sh. NO prometheus-operator runs here: the
+# monitoring.coreos.com Prometheus and ServiceMonitor CRDs are synthetic (no controller), and
+# the "Prometheus" is a plain prom/prometheus Deployment that stands in for the StatefulSet the
+# operator would create. The stub is wired the way the operator wires it, so the skill finds it
+# by the same labels and Service:
+#   - pod labels app.kubernetes.io/name=prometheus + prometheus=rw-prom (the Prometheus CR's name),
+#     container `prometheus` with a port named `web` (9090);
+#   - the headless Service `prometheus-operated` (selector app.kubernetes.io/name=prometheus).
+# The static config scrapes itself (one up target, in a pool named like the operator names a
+# ServiceMonitor's: serviceMonitor/rw-prometheus/sm-ok/0) and an unresolvable address (one down
+# target, job rw-down), and has two rule groups, one of which fails every evaluation
+# (duplicate label set). The CR instances are in k8s-prometheus-health-instances.yaml, applied
+# by 30-k8s-prometheus-health.sh once the CRDs are Established.
+# A second, clean stub (prometheus-rw-prom-clean in rw-prometheus-apps) has one up target and
+# one healthy rule group, for the healthy scenarios.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-prometheus
+  labels: {monitoring: rw}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-prometheus-apps
+  labels: {monitoring: rw}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: prometheuses.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  scope: Namespaced
+  names: {kind: Prometheus, listKind: PrometheusList, plural: prometheuses, singular: prometheus}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: servicemonitors.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  scope: Namespaced
+  names: {kind: ServiceMonitor, listKind: ServiceMonitorList, plural: servicemonitors, singular: servicemonitor}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rw-prom-config
+  namespace: rw-prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 5s
+      evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/rules.yml
+    scrape_configs:
+      - job_name: serviceMonitor/rw-prometheus/sm-ok/0
+        static_configs:
+          - targets: ["localhost:9090"]
+            labels: {job: sm-ok}
+      - job_name: rw-down
+        metrics_path: /metrics
+        params: {token: [not-a-secret]}
+        static_configs:
+          - targets: ["rw-nothing.rw-prometheus.svc.cluster.local:9100"]
+  rules.yml: |
+    groups:
+      - name: rw-ok
+        interval: 15s
+        rules:
+          - record: rw:targets:count
+            expr: count(up)
+      - name: rw-broken
+        interval: 15s
+        rules:
+          - record: rw:duplicate_labelset
+            expr: label_replace(label_replace(up, "instance", "x", "", ""), "job", "x", "", "")
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-rw
+  namespace: rw-prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-rw-discovery
+  namespace: rw-prometheus
+rules:
+  - apiGroups: [""]
+    resources: [services, endpoints, pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-rw-discovery
+  namespace: rw-prometheus
+subjects:
+  - {kind: ServiceAccount, name: prometheus-rw, namespace: rw-prometheus}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: prometheus-rw-discovery}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-rw-prom
+  namespace: rw-prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: prometheus, prometheus: rw-prom}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/instance: rw-prom
+        app.kubernetes.io/managed-by: prometheus-operator
+        operator.prometheus.io/name: rw-prom
+        prometheus: rw-prom
+    spec:
+      serviceAccountName: prometheus-rw
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=1h
+            - --web.listen-address=:9090
+          ports:
+            - {name: web, containerPort: 9090}
+          readinessProbe:
+            httpGet: {path: /-/ready, port: web}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {memory: 192Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - name: config
+          configMap: {name: prometheus-rw-prom-config}
+        - name: data
+          emptyDir: {sizeLimit: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-operated
+  namespace: rw-prometheus
+spec:
+  clusterIP: None
+  selector: {app.kubernetes.io/name: prometheus}
+  ports:
+    - {name: web, port: 9090, targetPort: web}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rw-prom-clean-config
+  namespace: rw-prometheus-apps
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 5s
+      evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/rules.yml
+    scrape_configs:
+      - job_name: serviceMonitor/rw-prometheus-apps/sm-clean/0
+        static_configs:
+          - targets: ["localhost:9090"]
+            labels: {job: sm-clean}
+  rules.yml: |
+    groups:
+      - name: rw-clean
+        interval: 15s
+        rules:
+          - record: rw:targets:count
+            expr: count(up)
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-clean
+  namespace: rw-prometheus-apps
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-clean-discovery
+  namespace: rw-prometheus-apps
+rules:
+  - apiGroups: [""]
+    resources: [services, endpoints, pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-clean-discovery
+  namespace: rw-prometheus-apps
+subjects:
+  - {kind: ServiceAccount, name: prometheus-clean, namespace: rw-prometheus-apps}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: prometheus-clean-discovery}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-rw-prom-clean
+  namespace: rw-prometheus-apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: prometheus, prometheus: rw-prom-clean}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/instance: rw-prom-clean
+        app.kubernetes.io/managed-by: prometheus-operator
+        operator.prometheus.io/name: rw-prom-clean
+        prometheus: rw-prom-clean
+    spec:
+      serviceAccountName: prometheus-clean
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.1.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=1h
+            - --web.listen-address=:9090
+          ports:
+            - {name: web, containerPort: 9090}
+          readinessProbe:
+            httpGet: {path: /-/ready, port: web}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {memory: 192Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - name: config
+          configMap: {name: prometheus-rw-prom-clean-config}
+        - name: data
+          emptyDir: {sizeLimit: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-operated
+  namespace: rw-prometheus-apps
+spec:
+  clusterIP: None
+  selector: {app.kubernetes.io/name: prometheus}
+  ports:
+    - {name: web, port: 9090, targetPort: web}

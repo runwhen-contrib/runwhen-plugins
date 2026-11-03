@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Loki /ready per pod",
+  "description": "What each pod of the workload answered on /ready through the API server's pod proxy. ready is true for 200 with the ready text, false for 503 (the proxy does not pass the 503 body on, so the reason is not here); null when the pod was not asked or the answer was an error.",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods were cut at maxItems"
+    },
+    "readyCount": {
+      "type": "integer"
+    },
+    "notReadyCount": {
+      "type": "integer"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's Ready condition (the kubelet's probe, which may not be /ready)"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running (or beyond the first 10), which is not asked"
+          },
+          "ready": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "httpStatus": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "200 or 503"
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the 200 body"
+          },
+          "bodyTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "port",
+          "queried",
+          "ready",
+          "httpStatus",
+          "body",
+          "bodyTruncated"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "podCount",
+    "truncated",
+    "readyCount",
+    "notReadyCount",
+    "pods"
+  ],
+  "additionalProperties": false
+}
