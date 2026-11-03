@@ -6,11 +6,13 @@ description: >-
   with a small allow-list of flags. Secrets are denied. Use when you need to look
   at a specific object, a log tail or an API shape and no kubernetes health skill
   covers it, or to double-check a skill's finding with the raw kubectl output.
+  Also the permission check: tests RBAC rules against the connection's identity
+  (granted, partial with namespaces, denied, unverified).
 runwhen:
-  role: cli
+  role: [cli, permission-check]
   appliesTo:
     types: [kubernetes/cluster]
-  tags: [cli, kubectl]
+  tags: [cli, kubectl, permission-check]
 ---
 
 ## When to use
@@ -97,3 +99,43 @@ What is allowed is decided by settings the agent cannot change:
 - Node pressure or capacity: `kubernetes:k8s-node-health`.
 - Changing something: `kubernetes:k8s-workload-ops` (scale, restart, rollback), which asks
   for explicit write permission.
+
+## check-permissions
+
+The platform runs this task (the integration's `permissionCheck` entry point) to find out which
+of the permissions installed skills declare this connection's identity really has. You rarely
+call it yourself; call it to answer "can this connection do X, and where?".
+
+- Inputs: `rules` (required, at most 500 RBAC rules as skills declare them: `apiGroups`,
+  `resources` (`pods/log` for a subresource), `resourceNames`, `verbs`, or `nonResourceURLs`
+  and `verbs`) and `namespaces` (default empty: every namespace the identity can list).
+- Output `access` (`rw.access.v1`): one entry per rule, in input order, with `hash`, the `rule`,
+  a `verdict` and short `evidence`. `granted`: every (group, resource, verb, name) the rule
+  names is allowed cluster-wide. `partial`: allowed only in the namespaces of `scope`. `denied`:
+  refused cluster-wide and in every namespace asked. `unverified`: it could not be decided, and
+  the evidence says why. `root.canonicalKey` is the kube-system namespace UID, left out when the
+  identity cannot read it.
+- It asks the API server (SelfSubjectAccessReview cluster-wide; one SelfSubjectRulesReview per
+  namespace for the rest, falling back to access reviews when the server says its answer is
+  incomplete) and creates nothing that persists. `*` in a rule is asked literally, so `["*"]`
+  is granted only by a rule that itself says `*`. A rule is granted only if every expansion is.
+- Cluster-scoped resources (`nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, CRDs
+  that are cluster-scoped, ...) are `granted` or `denied` only, never `partial`: a namespaced
+  RoleBinding cannot grant them, although the API server answers yes when asked inside a
+  namespace. Which kinds are cluster-scoped comes from `kubectl api-resources` (once per run, only
+  when something was refused), backed by a static table; a subresource follows its base. If neither
+  knows a kind, a would-be `partial` is `unverified` (error scope `discovery`). The one exception
+  is `get namespaces` with `resourceNames` inside the namespaces probed: a namespace is its own
+  scope. Cluster-scoped rules are decided without listing namespaces.
+- `partial` with an error `permission_denied` scoped `namespaces`: the identity cannot list
+  namespaces, so every namespaced rule that is not granted cluster-wide is `unverified`, not
+  `denied`. Pass `namespaces` to name the ones to probe. More namespaces than `maxNamespaces`
+  (500) probes the first ones and says so. `maxReviews` (3000) bounds the API calls. A review the
+  server could not evaluate (`evaluationError`), a failed batch, or one cut by `maxReviews` or the
+  time budget leaves its rules `unverified` with a scoped error; the other rules are unaffected.
+  A `scope` lists at most 500 namespaces; the evidence says when it was cut.
+- A rule that is not a valid RBAC rule gets its own `unverified` entry with the reason; the run
+  goes on.
+- Multi-group rules are a cross product: `apiGroups: ["", apps]` with `resources: [pods,
+  deployments]` also asks for `apps/pods`, which does not exist, so the rule is `denied`. Write
+  one group per rule.

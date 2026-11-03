@@ -13,7 +13,7 @@ checklist below is the review bar for every ported skill. See
 4. Outputs are data, not verdicts: lists of objects with the fields an engineer would look at (name, reason, counts, timestamps), plus booleans for threshold crossings driven by settings. No severity, title or next-steps strings.
 5. Thresholds and lookbacks are `settings` (admin) or `inputs` (caller) with defaults; lookback defaults ≥ 1h (classic 10m defaults missed most incidents).
 6. Errors: every source-system call failure maps to a D64 code via the classifier; per-item failures use `ctx.error` and continue (→ `partial`); a failure that leaves nothing to report raises (→ `failed`).
-7. `permissions`: the exact RBAC rules the script needs; target-namespace scope only unless the type is cluster-scoped. Note cluster-scoped needs in SKILL.md.
+7. `permissions`: the exact RBAC rules the script needs; target-namespace scope only unless the type is cluster-scoped. Note cluster-scoped needs in SKILL.md. One API group per rule: the permission check asks every (group, resource, verb) of a rule's cross product, so a rule mixing groups (`apiGroups: ["", apps]` with `resources: [pods, deployments]`) names pairs that do not exist and is reported `denied`. A cluster-scoped resource can only be `granted` or `denied`, never `partial`.
 8. Fixtures: `rwtask test --record` on the kind scenarios for `healthy`, `broken` (the condition the task detects), `forbidden`, `not-found`; commit `tests/`.
 9. Bounds: list outputs capped by a `maxItems` setting (default 200); raw logs and dumps go to an `artifact` output.
 10. `SKILL.md`: when to use, what each task tells you, how to read the result, what to try next (naming sibling skills by `<plugin>:<skill>/<task>`).

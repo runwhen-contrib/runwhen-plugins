@@ -1,0 +1,386 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+inputs:
+  rules:
+  - apiGroups:
+    - ''
+    resources:
+    - pods
+    verbs:
+    - get
+    - list
+  - apiGroups:
+    - ''
+    resources:
+    - secrets
+    verbs:
+    - get
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - create
+  - nonResourceURLs:
+    - /version
+    verbs:
+    - get
+  - apiGroups:
+    - ''
+    resources:
+    - pods
+    resourceNames:
+    - web-0
+    verbs:
+    - get
+  - apiGroups:
+    - ''
+    resources:
+    - pods/log
+    verbs:
+    - get
+  - apiGroups:
+    - ''
+    resources:
+    - nodes
+    verbs:
+    - list
+  - apiGroups:
+    - ''
+    resources:
+    - namespaces
+    verbs:
+    - list
+  - apiGroups:
+    - ''
+    resources:
+    - namespaces
+    resourceNames:
+    - rw-healthy
+    verbs:
+    - get
+  - apiGroups:
+    - '*'
+    resources:
+    - '*'
+    verbs:
+    - '*'
+now: '2026-11-03T20:47:14.459Z'
+calls:
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - review-0.json
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "pods",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "pods",
+                "verb": "list"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "secrets",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "group": "apps",
+                "resource": "deployments",
+                "verb": "create"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "nonResourceAttributes": {
+                "path": "/version",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "name": "web-0",
+                "resource": "pods",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "pods",
+                "subresource": "log",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "nodes",
+                "verb": "list"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "namespaces",
+                "verb": "list"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "name": "rw-healthy",
+                "resource": "namespaces",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "group": "*",
+                "resource": "*",
+                "verb": "*"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - kube-system
+  - -o
+  - jsonpath={.metadata.uid}
+  rc: 0
+  stdout: 30be408d-624f-4dc1-90bb-598388f92de6
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    access:
+      rules:
+      - hash: sha256:9855a3faee8a03a704b8051268a0aec2c0cc72a5753b3a1207af6979a668f0c3
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:df34c2745dfe818bdb21e5b9a5eb9d8f31839b3963ebe76ec738448865f7b9d6
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - secrets
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:7b9d3fb9179f3dde2e02174cd27240b710d20a65f2c89cd34e53c5238027731f
+        rule:
+          apiGroups:
+          - apps
+          resources:
+          - deployments
+          verbs:
+          - create
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:138b07172decda6011599b21a17bc0b7e302c95082b7598427c83964b492987c
+        rule:
+          nonResourceURLs:
+          - /version
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of ClusterRole
+          "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:a5a4929c662d39b62a767447303e2b66fe5cbe21fe3fa75b8b2ff8b8c5c3ab46
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - pods
+          resourceNames:
+          - web-0
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:d9caefbced6735e3277b2d95b47ac7c4f891eec644d14299929a725947a17682
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - pods/log
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:102643a9f634fa23b9076f170222bebb4c817225ec9186c593a0570694960dd2
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - nodes
+          verbs:
+          - list
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:dbdfb3c770b48ebe9a130fe906d45a8938b9500e01cbf1825a10e80849e27721
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - namespaces
+          verbs:
+          - list
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:1d5d324f26761941f42a1e016ed7a2a8287252d36dc7cc8868bd06f74b36da7b
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - namespaces
+          resourceNames:
+          - rw-healthy
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:0ec70b3d4fb4e7fc506e61f43d8fe6a8bf3f0a1be9fa784a5ce1477f8440eb7d
+        rule:
+          apiGroups:
+          - '*'
+          resources:
+          - '*'
+          verbs:
+          - '*'
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      root:
+        canonicalKey:
+          name: kubeSystemUid
