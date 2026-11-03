@@ -1,0 +1,47 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-nsres
+inputs:
+  serviceAccount: reader
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-nsres
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces "rw-nsres" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "namespaces" in API group "" in the namespace "rw-nsres"
+- argv:
+  - kubectl
+  - -n
+  - rw-nsres
+  - get
+  - serviceaccounts
+  - reader
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): serviceaccounts "reader" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "serviceaccounts" in API group "" in the namespace "rw-nsres"
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - sar-0.json
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): error when creating "sar-0.json": subjectaccessreviews.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot create resource "subjectaccessreviews" in API group "authorization.k8s.io" at the cluster scope
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

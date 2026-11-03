@@ -1,0 +1,33 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-nsres
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-nsres
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces "rw-nsres" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "namespaces" in API group "" in the namespace "rw-nsres"
+- argv:
+  - kubectl
+  - -n
+  - rw-nsres
+  - get
+  - pods.metrics.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    error: the server doesn't have a resource type "pods"
+expect:
+  status: failed
+  errorCodes:
+  - dependency
+  - permission_denied

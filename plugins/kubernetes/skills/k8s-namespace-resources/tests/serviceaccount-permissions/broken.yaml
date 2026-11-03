@@ -1,0 +1,211 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-nsres
+inputs:
+  serviceAccount: reader
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-nsres
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-nsres\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:47Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-nsres"
+            },
+            "name": "rw-nsres",
+            "resourceVersion": "14898",
+            "uid": "21375dd9-1038-4d1d-822c-a5f05b16c7f6"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-nsres
+  - get
+  - serviceaccounts
+  - reader
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "ServiceAccount",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"ServiceAccount\",\"metadata\":{\"annotations\":{},\"name\":\"reader\",\"namespace\":\"rw-nsres\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:47Z",
+            "name": "reader",
+            "namespace": "rw-nsres",
+            "resourceVersion": "14920",
+            "uid": "537b23cd-9b0f-4dfe-bb89-a1f1a976291c"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - sar-0.json
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "groups": [
+                "system:serviceaccounts",
+                "system:serviceaccounts:rw-nsres",
+                "system:authenticated"
+            ],
+            "resourceAttributes": {
+                "namespace": "rw-nsres",
+                "resource": "pods",
+                "verb": "get"
+            },
+            "user": "system:serviceaccount:rw-nsres:reader"
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by RoleBinding \"reader/rw-nsres\" of Role \"reader\" to ServiceAccount \"reader/rw-nsres\""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - sar-1.json
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "groups": [
+                "system:serviceaccounts",
+                "system:serviceaccounts:rw-nsres",
+                "system:authenticated"
+            ],
+            "resourceAttributes": {
+                "namespace": "rw-nsres",
+                "resource": "pods",
+                "verb": "list"
+            },
+            "user": "system:serviceaccount:rw-nsres:reader"
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by RoleBinding \"reader/rw-nsres\" of Role \"reader\" to ServiceAccount \"reader/rw-nsres\""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - sar-2.json
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "groups": [
+                "system:serviceaccounts",
+                "system:serviceaccounts:rw-nsres",
+                "system:authenticated"
+            ],
+            "resourceAttributes": {
+                "namespace": "rw-nsres",
+                "resource": "configmaps",
+                "verb": "get"
+            },
+            "user": "system:serviceaccount:rw-nsres:reader"
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by RoleBinding \"reader/rw-nsres\" of Role \"reader\" to ServiceAccount \"reader/rw-nsres\""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - sar-3.json
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "groups": [
+                "system:serviceaccounts",
+                "system:serviceaccounts:rw-nsres",
+                "system:authenticated"
+            ],
+            "resourceAttributes": {
+                "namespace": "rw-nsres",
+                "resource": "services",
+                "verb": "list"
+            },
+            "user": "system:serviceaccount:rw-nsres:reader"
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    serviceAccount: {name: reader, namespace: rw-nsres, user: 'system:serviceaccount:rw-nsres:reader', exists: true}
+    access:
+    - {verb: get, resource: pods, subresource: null, group: '', allowed: true, denied: false, reason: 'RBAC: allowed by RoleBinding "reader/rw-nsres"
+        of Role "reader" to ServiceAccount "reader/rw-nsres"', evaluationError: null, truncated: false}
+    - {verb: list, resource: pods, subresource: null, group: '', allowed: true, denied: false, reason: 'RBAC: allowed by RoleBinding "reader/rw-nsres"
+        of Role "reader" to ServiceAccount "reader/rw-nsres"', evaluationError: null, truncated: false}
+    - {verb: get, resource: configmaps, subresource: null, group: '', allowed: true, denied: false, reason: 'RBAC: allowed by RoleBinding "reader/rw-nsres"
+        of Role "reader" to ServiceAccount "reader/rw-nsres"', evaluationError: null, truncated: false}
+    - {verb: list, resource: services, subresource: null, group: '', allowed: false, denied: false, reason: null, evaluationError: null, truncated: false}
