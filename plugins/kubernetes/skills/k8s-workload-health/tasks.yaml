@@ -43,7 +43,7 @@ tasks:
     readOnly: true
     permissions:
       - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
-      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
       - { apiGroups: [""], resources: [pods], verbs: [list] }
     inputs:
       since: { type: duration, default: 1h, description: Look-back window for the recent flag on the last termination }
@@ -56,14 +56,16 @@ tasks:
     description: >-
       For each pod the workload owns: phase, readiness, containers ready out of
       total, node, whether it was scheduled (and the scheduler's reason when it
-      was not), and the waiting or terminated reason of each container such as
-      ImagePullBackOff, CrashLoopBackOff or ContainerCreating. Not-ready pods first.
+      was not), and the waiting or terminated reason of each container, init
+      containers included (flagged init), such as ImagePullBackOff,
+      CrashLoopBackOff or PodInitializing. Init container readiness is counted
+      apart from the app containers'. Not-ready pods first.
     script: scripts/pod_status.py
     tags: [pods, readiness]
     readOnly: true
     permissions:
       - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
-      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
       - { apiGroups: [""], resources: [pods], verbs: [list] }
     outputs:
       pods: { schema: ./schemas/pods.v1.json, description: One entry per pod }
@@ -75,8 +77,10 @@ tasks:
       Warning events about the workload, its ReplicaSets or ControllerRevisions,
       its current pods and the PVCs those pods mount, last seen within the
       look-back window, grouped by object and reason with an occurrence count,
-      first and last seen and the latest message. Events about pods that no
-      longer exist are not included.
+      first and last seen and the latest message. An event about a pod counts
+      only if its involvedObject uid is the current pod's uid, so events of an
+      earlier pod with the same name (a recreated StatefulSet pod) are left
+      out, as are events about pods that no longer exist.
     script: scripts/warning_events.py
     tags: [events]
     readOnly: true
@@ -95,7 +99,9 @@ tasks:
       Liveness, readiness and startup probe of every container in the pod
       template: whether it is set, its handler, its port, whether that port is
       declared in the container's ports (by number or by name) and the timings.
-      A probe on an undeclared port is a fact to check, not proof it fails.
+      Native sidecar init containers are included (init: true). An exec probe
+      reports only its program and argument count, never the arguments. A probe
+      on an undeclared port is a fact to check, not proof it fails.
     script: scripts/probe_config.py
     tags: [probes]
     readOnly: true
@@ -109,10 +115,14 @@ tasks:
     description: >-
       Revisions (ReplicaSets or ControllerRevisions) created within the look-back
       window, each compared with the revision before it: image changes, env var
-      names added or removed, resource request and limit changes, containers
-      added or removed. Env values are never read out. Scaling does not create a
-      revision, and a rollback to an older revision shows only if that revision
-      was itself created in the window.
+      names added, removed or changed, resource request and limit changes,
+      containers added or removed, and the names of any other pod-spec field or
+      template annotation that differs (such as a restartedAt annotation). Env
+      values are never read out. Each entry says whether it is the current
+      revision. A Deployment rollback re-uses an old ReplicaSet (reused: true);
+      the current revision is listed when it was created in the window or, for
+      a re-used one, when the Deployment's Progressing condition changed in it.
+      Scaling does not create a revision.
     script: scripts/config_changes.py
     tags: [changes, rollout]
     readOnly: true
@@ -131,7 +141,10 @@ tasks:
       bounds, current and desired replicas, whether it sits at its minimum or
       maximum, its conditions, each metric's target and current value, and
       whether a Utilization metric targets a container that has no resource
-      request. An empty list means no autoscaler targets the workload.
+      request (a LimitRange default request makes that a false positive), and
+      defaultCpuTarget when the autoscaler has no metrics and so uses the
+      controller's 80 percent CPU default. An empty list means no autoscaler
+      targets the workload.
     script: scripts/hpa_status.py
     tags: [autoscaling, hpa]
     readOnly: true

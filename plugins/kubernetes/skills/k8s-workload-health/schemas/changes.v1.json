@@ -11,6 +11,18 @@
       "name": {
         "type": "string"
       },
+      "current": {
+        "type": "boolean"
+      },
+      "reused": {
+        "type": "boolean"
+      },
+      "windowBasis": {
+        "enum": [
+          "created",
+          "progressing"
+        ]
+      },
       "created": {
         "type": [
           "string",
@@ -99,6 +111,31 @@
           "additionalProperties": false
         }
       },
+      "envChanged": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "container": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "container",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "otherPodSpecChanged": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
       "resourceChanges": {
         "type": "array",
         "items": {
@@ -133,17 +170,25 @@
         "items": {
           "type": "string"
         }
+      },
+      "truncated": {
+        "type": "boolean"
       }
     },
     "required": [
       "revision",
       "name",
+      "current",
+      "reused",
+      "windowBasis",
       "created",
       "previousRevision",
       "images",
       "imageChanges",
       "envAdded",
       "envRemoved",
+      "envChanged",
+      "otherPodSpecChanged",
       "resourceChanges",
       "containersAdded",
       "containersRemoved"
