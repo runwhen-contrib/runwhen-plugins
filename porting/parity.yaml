@@ -315,7 +315,15 @@ kubernetes:
       "Check SeaweedFS Bucket Quota and Usage": "k8s-seaweedfs-health/buckets (usedBytes per bucket from the master, quota state/limit/percent from the filer entry, extended attribute names, anonymous list result), without weed shell text scraping. Always-on 'N buckets healthy' status issue dropped"
   - { bundle: k8s-artifactory-health,    skills: [k8s-artifactory-health], status: planned }
   - { bundle: k8s-jenkins-healthcheck,   skills: [k8s-jenkins-health], status: planned }
-  - { bundle: k8s-otelcollector,         skills: [k8s-otelcollector-health], status: planned }
+  - bundle: k8s-otelcollector
+    skills: [k8s-otelcollector-health]
+    status: ported
+    ported: [k8s-otelcollector-health]
+    note: "the collector's own metrics are read through the API server's pod proxy (kubectl get --raw .../pods/<pod>:8888/proxy/metrics, RBAC pods/proxy) instead of kubectl exec curl in a bastion workload: no curl in the image, no WORKLOAD_SERVICE/WORKLOAD_NAME bastion inputs, every pod of the workload is read (the classic logs read service/<name>, which is ONE backing pod). Classic defects not reproduced: the queue script had no return-code check, so empty metrics, a failed exec or a timeout gave exit 0 and 'healthy'; it compared the raw text with [ -gt ] and the test errored silently for floats and exponent notation (5e+02, 500.0), leaving rv 0; the 500 threshold was hard-coded, not relative to the queue capacity; both log tasks piped kubectl logs into grep with no pipefail so a denied or failed logs call was an empty string and exit 0, and the runbook gated on returncode > 0 which also read a timeout (-1) as healthy"
+    tasks:
+      "Query Collector Queued Spans": "k8s-otelcollector-health/exporter-queue (queues: otelcol_exporter_queue_size against queue_capacity per exporter and data type, utilisation against the queueUtilizationPercent setting instead of 500 queued items; the metrics are parsed, with the older and newer names)"
+      "Check OpenTelemetry Collector Logs For Errors": "k8s-workload-logs/error-patterns (target the collector workload; the grep for the lowercase word error over a single backing pod is replaced by that skill's pattern search over the workload's pods; the collector's own counters are in exporter-queue)"
+      "Query OpenTelemetry Logs For Dropped Spans": "k8s-otelcollector-health/exporter-queue (counters: exporter send_failed and enqueue_failed, receiver refused, processor dropped and refused per data type, from the collector's metrics: cumulative counts with their uptime instead of grepping the word dropped in the last 60 minutes of logs, which also matched 'dropped: 0' lines)"
   - { bundle: k8s-jaeger-http-query,     skills: [k8s-jaeger-health], status: planned }
   - { bundle: k8s-litellm-proxy-health,  skills: [k8s-litellm-health], status: planned,
       note: "unauthenticated health endpoints only; master-key reads (secrets, printenv) are not ported" }

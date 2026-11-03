@@ -1,0 +1,281 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T23:21:27Z",
+    "generateName": "otel-ok-764cbccfd-",
+    "generation": 1,
+    "labels": {
+     "app": "otel-ok",
+     "app.kubernetes.io/name": "opentelemetry-collector",
+     "pod-template-hash": "764cbccfd"
+    },
+    "name": "otel-ok-764cbccfd-dhzds",
+    "namespace": "rw-otel",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "otel-ok-764cbccfd",
+      "uid": "44687541-1173-409e-aeaf-86968e565f38"
+     }
+    ],
+    "resourceVersion": "51632",
+    "uid": "b94b2d4d-0537-4861-a940-a971500981f3"
+   },
+   "spec": {
+    "containers": [
+     {
+      "args": [
+       "--config=/conf/config.yaml"
+      ],
+      "image": "otel/opentelemetry-collector:0.164.0",
+      "imagePullPolicy": "IfNotPresent",
+      "name": "otelcol",
+      "ports": [
+       {
+        "containerPort": 4317,
+        "name": "otlp-grpc",
+        "protocol": "TCP"
+       },
+       {
+        "containerPort": 4318,
+        "name": "otlp-http",
+        "protocol": "TCP"
+       },
+       {
+        "containerPort": 8888,
+        "name": "metrics",
+        "protocol": "TCP"
+       }
+      ],
+      "resources": {
+       "limits": {
+        "memory": "128Mi"
+       },
+       "requests": {
+        "cpu": "5m",
+        "memory": "24Mi"
+       }
+      },
+      "terminationMessagePath": "/dev/termination-log",
+      "terminationMessagePolicy": "File",
+      "volumeMounts": [
+       {
+        "mountPath": "/conf",
+        "name": "conf",
+        "readOnly": true
+       },
+       {
+        "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+        "name": "kube-api-access-mwjmt",
+        "readOnly": true
+       }
+      ]
+     }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "enableServiceLinks": true,
+    "nodeName": "rw-plugins-control-plane",
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Always",
+    "schedulerName": "default-scheduler",
+    "securityContext": {},
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 30,
+    "tolerations": [
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/not-ready",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     },
+     {
+      "effect": "NoExecute",
+      "key": "node.kubernetes.io/unreachable",
+      "operator": "Exists",
+      "tolerationSeconds": 300
+     }
+    ],
+    "volumes": [
+     {
+      "configMap": {
+       "defaultMode": 420,
+       "name": "otel-ok-config"
+      },
+      "name": "conf"
+     },
+     {
+      "name": "kube-api-access-mwjmt",
+      "projected": {
+       "defaultMode": 420,
+       "sources": [
+        {
+         "serviceAccountToken": {
+          "expirationSeconds": 3607,
+          "path": "token"
+         }
+        },
+        {
+         "configMap": {
+          "items": [
+           {
+            "key": "ca.crt",
+            "path": "ca.crt"
+           }
+          ],
+          "name": "kube-root-ca.crt"
+         }
+        },
+        {
+         "downwardAPI": {
+          "items": [
+           {
+            "fieldRef": {
+             "apiVersion": "v1",
+             "fieldPath": "metadata.namespace"
+            },
+            "path": "namespace"
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "status": {
+    "allocatedResources": {
+     "cpu": "5m",
+     "memory": "24Mi"
+    },
+    "conditions": [
+     {
+      "lastProbeTime": null,
+      "lastTransitionTime": "2026-11-03T23:21:27Z",
+      "observedGeneration": 1,
+      "status": "True",
+      "type": "PodReadyToStartContainers"
+     },
+     {
+      "lastProbeTime": null,
+      "lastTransitionTime": "2026-11-03T23:21:27Z",
+      "observedGeneration": 1,
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastProbeTime": null,
+      "lastTransitionTime": "2026-11-03T23:21:37Z",
+      "observedGeneration": 1,
+      "status": "True",
+      "type": "Ready"
+     },
+     {
+      "lastProbeTime": null,
+      "lastTransitionTime": "2026-11-03T23:21:37Z",
+      "observedGeneration": 1,
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastProbeTime": null,
+      "lastTransitionTime": "2026-11-03T23:21:27Z",
+      "observedGeneration": 1,
+      "status": "True",
+      "type": "PodScheduled"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "allocatedResources": {
+       "cpu": "5m",
+       "memory": "24Mi"
+      },
+      "containerID": "containerd://160869938e8fdeccea59603deb976e0e25b3c12debd82634dbd97f339cef5f2a",
+      "image": "docker.io/otel/opentelemetry-collector:0.164.0",
+      "imageID": "docker.io/otel/opentelemetry-collector@sha256:28b6d41ac51bff6b41ba5e8fe503569ffb9d6a1ea90f7a78419e86f34e44f750",
+      "lastState": {},
+      "name": "otelcol",
+      "ready": true,
+      "resources": {
+       "limits": {
+        "memory": "128Mi"
+       },
+       "requests": {
+        "cpu": "5m",
+        "memory": "24Mi"
+       }
+      },
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-11-03T23:21:37Z"
+       }
+      },
+      "user": {
+       "linux": {
+        "gid": 0,
+        "supplementalGroups": [
+         0
+        ],
+        "uid": 10001
+       }
+      },
+      "volumeMounts": [
+       {
+        "mountPath": "/conf",
+        "name": "conf",
+        "readOnly": true,
+        "recursiveReadOnly": "Disabled"
+       },
+       {
+        "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+        "name": "kube-api-access-mwjmt",
+        "readOnly": true,
+        "recursiveReadOnly": "Disabled"
+       }
+      ]
+     }
+    ],
+    "hostIP": "172.19.0.2",
+    "hostIPs": [
+     {
+      "ip": "172.19.0.2"
+     }
+    ],
+    "observedGeneration": 1,
+    "phase": "Running",
+    "podIP": "10.244.0.160",
+    "podIPs": [
+     {
+      "ip": "10.244.0.160"
+     }
+    ],
+    "qosClass": "Burstable",
+    "resources": {
+     "limits": {
+      "memory": "128Mi"
+     },
+     "requests": {
+      "memory": "24Mi"
+     }
+    },
+    "startTime": "2026-11-03T23:21:27Z"
+   }
+  }
+ ],
+ "kind": "List",
+ "metadata": {
+  "resourceVersion": ""
+ }
+}

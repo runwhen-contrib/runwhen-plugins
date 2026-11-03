@@ -1,0 +1,57 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    min: 1
+    max: 10000
+    description: Most entries any list output returns
+  maxPods:
+    type: integer
+    default: 20
+    min: 1
+    max: 200
+    description: Most Running pods of the workload whose metrics are read (one request each); the output says when more were Running
+  metricsPort:
+    type: integer
+    default: 8888
+    min: 1
+    max: 65535
+    description: "Port of the collector's own metrics (service.telemetry.metrics; 8888 by default). Recent versions bind it to localhost unless configured with the pod IP or 0.0.0.0, and the API server cannot reach a localhost-only port"
+  scheme:
+    type: enum
+    enum: [http, https]
+    default: http
+    description: Scheme the API server uses to reach the pod
+tasks:
+  - name: exporter-queue
+    title: Collector exporter queues and drop counters
+    description: >-
+      Reads the collector's own metrics (Prometheus text on the metrics port) from each
+      Running pod of the workload through the API server's pod proxy: for every
+      exporter and data type otelcol_exporter_queue_size against queue_capacity with the
+      utilisation and whether the queue is full (against the queueUtilizationPercent
+      setting), and the cumulative exporter send_failed and enqueue_failed counters, receiver
+      refused counters and processor dropped or refused counters per data type (spans,
+      metric points and log records as traces, metrics and logs). Handles the older and newer
+      metric names (with or without the otelcol_ prefix and the _total suffix). A pod that is
+      not Running, or whose metrics page cannot be read, is listed with the reason. This
+      replaces the classic dropped-spans log search with the counters the collector itself
+      keeps; for error lines in the logs use kubernetes:k8s-workload-logs/error-patterns.
+    script: scripts/exporter_queue.py
+    tags: [otel, opentelemetry, collector, exporter, queue, backpressure, dropped]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, daemonsets, statefulsets], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    settings:
+      queueUtilizationPercent: { type: number, default: 80, min: 0, max: 100, description: "A queue at or above this percent of its capacity is marked atOrAboveThreshold" }
+    outputs:
+      pods: { schema: ./schemas/pods.v1.json, description: "Each pod of the workload: queried, uptime and series count, or why it was not asked" }
+      queues: { schema: ./schemas/queues.v1.json, description: "Exporter sending queues: size, capacity, utilisation, full" }
+      counters: { schema: ./schemas/counters.v1.json, description: "Cumulative send_failed, enqueue_failed, refused and dropped counters per exporter, receiver or processor and data type" }
