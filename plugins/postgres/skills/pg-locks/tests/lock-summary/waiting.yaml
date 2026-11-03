@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T21:41:44.788Z'
+now: '2026-11-03T22:07:30.250Z'
 calls:
 - argv:
   - psql
@@ -15,10 +15,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    WITH l AS MATERIALIZED (
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH l AS MATERIALIZED (
       SELECT pid, locktype, database, relation, page, tuple, virtualxid, transactionid, classid,
              objid, objsubid, mode, granted, fastpath, waitstart
       FROM pg_locks
@@ -45,10 +43,10 @@ calls:
       'tableEntries', (SELECT count(*) FROM (SELECT DISTINCT locktype, database, relation, page, tuple,
                          virtualxid, transactionid, classid, objid, objsubid FROM l WHERE NOT fastpath) d),
       'fastPathLocks', (SELECT count(*) FROM l WHERE fastpath)
-    )
+    ); COMMIT;
   rc: 0
   stdout: |
-    {"total" : 11, "granted" : 9, "waiting" : 2, "waitingBackends" : 2, "longestWaitMs" : 8214, "byMode" : [{"mode" : "AccessExclusiveLock", "granted" : true, "count" : 1}, {"mode" : "AccessExclusiveLock", "granted" : false, "count" : 2}, {"mode" : "ExclusiveLock", "granted" : true, "count" : 8}], "maxLocksPerTransaction" : 64, "maxConnections" : 100, "maxPreparedTransactions" : 0, "capacity" : 6400, "tableEntries" : 4, "fastPathLocks" : 5}
+    {"total" : 9, "granted" : 7, "waiting" : 2, "waitingBackends" : 2, "longestWaitMs" : 8810, "byMode" : [{"mode" : "AccessExclusiveLock", "granted" : true, "count" : 1}, {"mode" : "AccessExclusiveLock", "granted" : false, "count" : 2}, {"mode" : "ExclusiveLock", "granted" : true, "count" : 6}], "maxLocksPerTransaction" : 64, "maxConnections" : 100, "maxPreparedTransactions" : 0, "capacity" : 6400, "tableEntries" : 4, "fastPathLocks" : 3}
   stderr: ''
 expect:
   status: ok

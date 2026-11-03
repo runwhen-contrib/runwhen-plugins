@@ -6,7 +6,7 @@
 resource: postgres/instances/orders-db
 inputs:
   minDuration: 1d
-now: '2026-11-03T21:44:12.898Z'
+now: '2026-11-03T22:06:35.452Z'
 calls:
 - argv:
   - psql
@@ -17,10 +17,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    WITH cfg AS (
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH cfg AS (
       SELECT (current_setting('is_superuser') = 'on'
                OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE')) AS full_view
     ), hidden AS (
@@ -66,7 +64,7 @@ calls:
           'blockedBy', pg_blocking_pids(pid)
         ) ORDER BY dur DESC, pid), '[]'::json)
         FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT 200) h)
-    )
+    ); COMMIT;
   rc: 0
   stdout: |
     {"fullView" : true, "hiddenSessions" : 0, "total" : 0, "items" : []}

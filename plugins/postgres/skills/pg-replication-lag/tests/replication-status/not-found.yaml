@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T21:42:04.079Z'
+now: '2026-11-03T22:07:52.565Z'
 calls:
 - argv:
   - psql
@@ -15,14 +15,12 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    SELECT json_build_object(
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
       'inRecovery', pg_is_in_recovery(),
       'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
       'database', current_database()
-    )
+    ); COMMIT;
   rc: 2
   stdout: ''
   stderr: |

@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T21:41:40.130Z'
+now: '2026-11-03T22:07:25.439Z'
 calls:
 - argv:
   - psql
@@ -15,10 +15,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    WITH waits AS (
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH waits AS (
       SELECT DISTINCT ON (l.pid) l.pid, l.locktype, l.mode, l.database, l.relation,
              pg_blocking_pids(l.pid) AS blockers,
              floor(extract(epoch FROM clock_timestamp() - l.waitstart) * 1000)::bigint AS wait_ms
@@ -60,10 +58,10 @@ calls:
         ) ORDER BY i.pid)
         FROM involved i LEFT JOIN pg_stat_activity a ON a.pid = i.pid
         WHERE i.pid NOT IN (SELECT pid FROM edges)), '[]'::json)
-    )
+    ); COMMIT;
   rc: 0
   stdout: |
-    {"fullView" : true, "database" : "orders", "waiters" : [{"pid" : 702, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "active", "waitMs" : 3618, "lockType" : "relation", "lockMode" : "AccessExclusiveLock", "lockDatabase" : "orders", "relationOid" : 16403, "relation" : "public.lock_fixture", "blockedBy" : [689]}, {"pid" : 716, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "active", "waitMs" : 3571, "lockType" : "relation", "lockMode" : "AccessExclusiveLock", "lockDatabase" : "orders", "relationOid" : 16403, "relation" : "public.lock_fixture", "blockedBy" : [689,702]}], "blockers" : [{"pid" : 689, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "idle in transaction", "xactAgeMs" : 3683}]}
+    {"fullView" : true, "database" : "orders", "waiters" : [{"pid" : 1274, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "active", "waitMs" : 3970, "lockType" : "relation", "lockMode" : "AccessExclusiveLock", "lockDatabase" : "orders", "relationOid" : 16403, "relation" : "public.lock_fixture", "blockedBy" : [1261]}, {"pid" : 1295, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "active", "waitMs" : 3595, "lockType" : "relation", "lockMode" : "AccessExclusiveLock", "lockDatabase" : "orders", "relationOid" : 16403, "relation" : "public.lock_fixture", "blockedBy" : [1261,1274]}], "blockers" : [{"pid" : 1261, "datname" : "orders", "usename" : "postgres", "applicationName" : "rw-fixture-locks", "state" : "idle in transaction", "xactAgeMs" : 4084}]}
   stderr: ''
 expect:
   status: ok

@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T21:44:06.319Z'
+now: '2026-11-03T22:06:30.035Z'
 calls:
 - argv:
   - psql
@@ -15,10 +15,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    WITH cfg AS (
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH cfg AS (
       SELECT current_setting('max_connections')::int AS max_connections,
              current_setting('superuser_reserved_connections')::int AS superuser_reserved,
              nullif(current_setting('reserved_connections', true), '')::int AS reserved,
@@ -75,7 +73,7 @@ calls:
       'oldestTransactionMs', (SELECT (extract(epoch FROM max(now() - xact_start)) * 1000)::bigint
           FROM s WHERE is_client AND xact_start IS NOT NULL),
       'waitingOnLock', (SELECT count(*) FROM s WHERE is_client AND wait_event_type = 'Lock')
-    )
+    ); COMMIT;
   rc: 2
   stdout: ''
   stderr: "psql: error: connection to server at \"127.0.0.1\", port 55439 failed: Connection refused\n\

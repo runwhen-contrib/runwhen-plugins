@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T21:44:03.602Z'
+now: '2026-11-03T22:06:23.544Z'
 calls:
 - argv:
   - psql
@@ -15,10 +15,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    WITH cfg AS (
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH cfg AS (
       SELECT current_setting('max_connections')::int AS max_connections,
              current_setting('superuser_reserved_connections')::int AS superuser_reserved,
              nullif(current_setting('reserved_connections', true), '')::int AS reserved,
@@ -75,10 +73,10 @@ calls:
       'oldestTransactionMs', (SELECT (extract(epoch FROM max(now() - xact_start)) * 1000)::bigint
           FROM s WHERE is_client AND xact_start IS NOT NULL),
       'waitingOnLock', (SELECT count(*) FROM s WHERE is_client AND wait_event_type = 'Lock')
-    )
+    ); COMMIT;
   rc: 0
   stdout: |
-    {"fullView" : true, "maxConnections" : 100, "superuserReservedConnections" : 3, "reservedConnections" : 0, "inUse" : 5, "hiddenSessions" : 0, "byState" : {"active" : 1, "idle" : 3, "idleInTransaction" : 1, "idleInTransactionAborted" : 0, "fastpath" : 0, "disabled" : 0, "nullState" : 0}, "byBackendType" : {"total" : 7, "items" : [{"backendType" : "client backend", "count" : 5}, {"backendType" : "autovacuum launcher", "count" : 1}, {"backendType" : "background writer", "count" : 1}, {"backendType" : "checkpointer", "count" : 1}, {"backendType" : "logical replication launcher", "count" : 1}, {"backendType" : "walsender", "count" : 1}, {"backendType" : "walwriter", "count" : 1}]}, "byDatabase" : {"total" : 2, "items" : [{"database" : "orders", "count" : 4}, {"database" : "postgres", "count" : 1}]}, "byUserApplication" : {"total" : 1, "items" : [{"user" : "rw_monitor", "applicationName" : "rw-fixture-sessions", "count" : 5}]}, "oldestIdleInTransactionMs" : 279592, "oldestTransactionMs" : 279592, "waitingOnLock" : 0}
+    {"fullView" : true, "maxConnections" : 100, "superuserReservedConnections" : 3, "reservedConnections" : 0, "inUse" : 5, "hiddenSessions" : 0, "byState" : {"active" : 1, "idle" : 3, "idleInTransaction" : 1, "idleInTransactionAborted" : 0, "fastpath" : 0, "disabled" : 0, "nullState" : 0}, "byBackendType" : {"total" : 7, "items" : [{"backendType" : "client backend", "count" : 5}, {"backendType" : "autovacuum launcher", "count" : 1}, {"backendType" : "background writer", "count" : 1}, {"backendType" : "checkpointer", "count" : 1}, {"backendType" : "logical replication launcher", "count" : 1}, {"backendType" : "walsender", "count" : 1}, {"backendType" : "walwriter", "count" : 1}]}, "byDatabase" : {"total" : 2, "items" : [{"database" : "orders", "count" : 4}, {"database" : "postgres", "count" : 1}]}, "byUserApplication" : {"total" : 1, "items" : [{"user" : "rw_monitor", "applicationName" : "rw-fixture-sessions", "count" : 5}]}, "oldestIdleInTransactionMs" : 17349, "oldestTransactionMs" : 17350, "waitingOnLock" : 0}
   stderr: ''
 expect:
   status: ok

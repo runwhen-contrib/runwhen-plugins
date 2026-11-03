@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T21:42:11.395Z'
+now: '2026-11-03T22:07:55.859Z'
 calls:
 - argv:
   - psql
@@ -15,14 +15,12 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    SELECT json_build_object(
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
       'inRecovery', pg_is_in_recovery(),
       'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
       'database', current_database()
-    )
+    ); COMMIT;
   rc: 0
   stdout: |
     {"inRecovery" : false, "fullView" : true, "database" : "orders"}
@@ -36,10 +34,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    SELECT json_build_object(
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
       'currentLsn', pg_current_wal_lsn()::text,
       'replicas', coalesce((SELECT json_agg(json_build_object(
           'pid', r.pid,
@@ -66,10 +62,10 @@ calls:
           'retainedWalBytes', pg_wal_lsn_diff(pg_current_wal_lsn(), s.restart_lsn)::bigint,
           'safeWalSize', s.safe_wal_size
         ) ORDER BY s.slot_name) FROM pg_replication_slots s), '[]'::json)
-    )
+    ); COMMIT;
   rc: 0
   stdout: |
-    {"currentLsn" : "0/32ACB88", "replicas" : [{"pid" : 114, "usename" : "rw_replicator", "applicationName" : "walreceiver", "clientAddr" : "172.20.0.3", "state" : "streaming", "syncState" : "async", "writeLagMs" : 1, "flushLagMs" : 3, "replayLagMs" : 9, "sentLsnBytes" : 0, "writeLsnBytes" : 0, "flushLsnBytes" : 0, "replayLsnBytes" : 0}], "slots" : [{"slotName" : "rw_fixture_idle", "slotType" : "physical", "database" : null, "active" : false, "activePid" : null, "walStatus" : "reserved", "retainedWalBytes" : 2372336, "safeWalSize" : null}, {"slotName" : "rw_standby", "slotType" : "physical", "database" : null, "active" : true, "activePid" : 114, "walStatus" : "reserved", "retainedWalBytes" : 0, "safeWalSize" : null}]}
+    {"currentLsn" : "0/34106A0", "replicas" : [{"pid" : 857, "usename" : "rw_replicator", "applicationName" : "walreceiver", "clientAddr" : "172.20.0.3", "state" : "streaming", "syncState" : "async", "writeLagMs" : 4, "flushLagMs" : 7, "replayLagMs" : 66, "sentLsnBytes" : 0, "writeLsnBytes" : 0, "flushLsnBytes" : 0, "replayLsnBytes" : 0}], "slots" : [{"slotName" : "rw_fixture_idle", "slotType" : "physical", "database" : null, "active" : false, "activePid" : null, "walStatus" : "reserved", "retainedWalBytes" : 1175776, "safeWalSize" : null}, {"slotName" : "rw_standby", "slotType" : "physical", "database" : null, "active" : true, "activePid" : 857, "walStatus" : "reserved", "retainedWalBytes" : 0, "safeWalSize" : null}]}
   stderr: ''
 expect:
   status: ok
@@ -90,4 +86,4 @@ expect:
           items:
             $contains:
             - {slotName: rw_standby, slotType: physical, active: true, walStatus: reserved, retainedWalBytes: 0}
-            - {slotName: rw_fixture_idle, slotType: physical, active: false, activePid: null, walStatus: reserved, retainedWalBytes: 2372336}
+            - {slotName: rw_fixture_idle, slotType: physical, active: false, activePid: null, walStatus: reserved, retainedWalBytes: 1175776}
