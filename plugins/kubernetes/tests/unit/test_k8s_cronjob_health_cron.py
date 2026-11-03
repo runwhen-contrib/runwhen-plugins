@@ -146,11 +146,25 @@ def test_a_wall_time_skipped_by_spring_forward_does_not_fire():
     assert nxt("30 2 * * *", "2026-03-07T07:30:00", "America/New_York") == "2026-03-09T06:30:00"
 
 
+def test_a_repeated_wall_time_fires_at_both_occurrences():
+    # America/New_York 2026-11-01: 01:30 happens twice (05:30Z in EDT, 06:30Z in EST)
+    ny = "America/New_York"
+    assert prev("30 1 * * *", "2026-11-01T12:00:00", ny) == "2026-11-01T06:30:00"
+    assert prev("30 1 * * *", "2026-11-01T06:00:00", ny) == "2026-11-01T05:30:00"
+    assert nxt("30 1 * * *", "2026-11-01T05:30:00", ny) == "2026-11-01T06:30:00"
+    assert nxt("30 1 * * *", "2026-11-01T06:30:00", ny) == "2026-11-02T06:30:00"
+    assert nxt("30 1 * * *", "2026-10-31T12:00:00", ny) == "2026-11-01T05:30:00"
+    # an ordinary day fires once, and the 01:45 repeat sorts after 01:30's
+    assert prev("30 1 * * *", "2026-11-03T12:00:00", ny) == "2026-11-03T06:30:00"
+    assert nxt("*/15 1 * * *", "2026-11-01T05:45:00", ny) == "2026-11-01T06:00:00"
+
+
 def test_tz_prefix_in_the_schedule_sets_the_zone():
     assert prev("CRON_TZ=Asia/Kolkata 0 9 * * *", "2026-11-03T12:00:00") == "2026-11-03T03:30:00"
     assert prev("TZ=Asia/Kolkata 0 9 * * *", "2026-11-03T12:00:00") == "2026-11-03T03:30:00"
-    # spec.timeZone wins over a prefix (the API accepts only one of them)
-    assert cron.parse_schedule("TZ=Asia/Tokyo 0 9 * * *", "UTC").zone_name == "UTC"
+    # a prefix wins over spec.timeZone, as in the controller's formatSchedule (the API
+    # accepts only one of them)
+    assert cron.parse_schedule("TZ=Asia/Tokyo 0 9 * * *", "UTC").zone_name == "Asia/Tokyo"
 
 
 def test_unknown_zone_is_its_own_error():
@@ -170,6 +184,18 @@ def test_every_counts_from_the_anchor():
     assert s.prev(at("2026-11-03T12:05:00"), anchor) == at("2026-11-03T12:04:30")
     assert s.prev(at("2026-11-03T12:01:00"), anchor) is None  # not yet fired once
     assert s.prev(at("2026-11-03T12:05:00"), None) is None
+
+
+def test_every_next_chains_from_the_anchor_not_from_the_instant_asked_about():
+    hourly = cron.parse_schedule("@every 1h")
+    anchor = at("2026-11-03T00:00:00")
+    assert hourly.next(at("2026-11-03T03:30:00"), anchor) == at("2026-11-03T04:00:00")
+    assert hourly.next(at("2026-11-03T04:00:00"), anchor) == at("2026-11-03T05:00:00")
+    assert hourly.next(at("2026-11-02T20:00:00"), anchor) == at("2026-11-03T01:00:00")  # first fire
+    assert hourly.next(at("2026-11-03T03:30:00")) == at("2026-11-03T04:30:00")  # no anchor: +delay
+    assert cron.parse_schedule("0 * * * *").next(at("2026-11-03T03:30:00"), anchor) == at(
+        "2026-11-03T04:00:00"
+    )
 
 
 def test_go_durations():

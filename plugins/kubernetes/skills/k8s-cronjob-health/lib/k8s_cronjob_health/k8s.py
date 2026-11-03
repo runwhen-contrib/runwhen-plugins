@@ -20,11 +20,11 @@ except ImportError:
 
 # (code, pattern) in priority order, matched against kubectl's stderr.
 _PATTERNS = [
-    ("not_found", re.compile(r"NotFound|\bnot found\b", re.I)),
     (
         "permission_denied",
         re.compile(r"Forbidden|\bcannot (get|list|watch|create)\b|Unauthorized", re.I),
     ),
+    ("not_found", re.compile(r"NotFound|\bnot found\b", re.I)),
     (
         "dependency",
         re.compile(

@@ -28,6 +28,8 @@ def main(ctx, since="1h"):
     except ScheduleError as exc:
         ctx.error(exc.code, exc.message, scope="schedule")
         evaluated = unevaluated()
+    if evaluated["neverFires"]:
+        ctx.error("invalid_input", "schedule never fires", scope="schedule")
     # the Job list only fills in the active Jobs' details: skipped when none are active
     active_refs = cronjob.get("status", {}).get("active") or []
     jobs = list_jobs_secondary(ctx) if active_refs else []

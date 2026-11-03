@@ -198,7 +198,9 @@ def test_a_schedule_that_has_not_fired_since_creation_has_no_expected_fire():
     assert (out["missedFires"], out["behindSchedule"]) == (0, False)
 
 
-def test_missed_fires_stop_counting_at_101_like_the_controller():
+def test_missed_fires_stop_counting_at_101():
+    # the controller only warns (TooManyMissedTimes) past 100 and still starts the latest;
+    # counting stops there so a long outage costs a bounded search
     out = evaluate(cj(last="2026-10-01T00:00:00Z", created="2026-09-01T00:00:00Z"))
     assert (out["missedFires"], out["missedFiresCapped"]) == (101, True)
 
@@ -230,6 +232,40 @@ def test_starting_deadline_is_exceeded_only_when_the_latest_missed_slot_is_older
     assert evaluate(cj(**hourly))["deadlineExceeded"] is None  # no deadline set
     caught_up = dict(hourly, last="2026-11-03T12:00:00Z")
     assert evaluate(cj(startingDeadlineSeconds=300, **caught_up))["deadlineExceeded"] is False
+
+
+def test_every_next_fire_and_window_chain_from_the_last_schedule_time():
+    out = evaluate(
+        cj("@every 1h", created="2026-11-03T00:00:00Z", last="2026-11-03T00:00:00Z"),
+        now=at("2026-11-03T03:30:00Z"),
+    )
+    assert out["nextExpectedFire"] == "2026-11-03T04:00:00Z"
+    assert out["lastExpectedFire"] == "2026-11-03T03:00:00Z"
+    assert out["missedSince"] is True and out["missedFires"] == 3
+
+
+def test_a_schedule_that_never_fires_is_flagged_not_hidden():
+    out = evaluate(cj("0 0 31 2 *"))
+    assert out["neverFires"] is True and out["nextExpectedFire"] is None
+    assert (out["missedFires"], out["behindSchedule"]) == (0, False)
+    assert (
+        evaluate(cj("0 0 31 2 *", suspend=True))["neverFires"] is False
+    )  # nothing is expected anyway
+    assert evaluate(cj())["neverFires"] is False
+    assert schedule.unevaluated()["neverFires"] is None
+
+
+def test_the_starting_deadline_is_judged_against_itself_when_shorter_than_the_grace():
+    hourly = dict(
+        schedule_text="0 * * * *", created="2026-11-03T00:00:00Z", last="2026-11-03T11:00:00Z"
+    )
+    now = at("2026-11-03T12:00:45Z")  # the 12:00 slot is 45s old: inside the 60s grace
+    out = evaluate(cj(startingDeadlineSeconds=30, **hourly), now=now)
+    assert out["behindSchedule"] is False and out["deadlineExceeded"] is True
+    assert evaluate(cj(startingDeadlineSeconds=300, **hourly), now=now)["deadlineExceeded"] is False
+    # a slot already started is not a missed window
+    done = dict(hourly, last="2026-11-03T12:00:00Z")
+    assert evaluate(cj(startingDeadlineSeconds=30, **done), now=now)["deadlineExceeded"] is False
 
 
 def test_every_schedules_run_from_the_last_schedule_time():
@@ -296,9 +332,23 @@ def test_active_jobs_come_from_status_active_with_details_from_the_job_objects()
     assert rows["run-1"]["exists"] is True and rows["run-1"]["runningSeconds"] == 620
     assert (rows["run-1"]["activePods"], rows["run-1"]["failedPods"]) == (1, 2)
     assert rows["gone"]["exists"] is False and rows["gone"]["startTime"] is None
+    assert (rows["run-1"]["suspended"], rows["gone"]["suspended"]) == (False, None)
     unknown = schedule.active_jobs(cronjob, None, NOW)
     assert [r["exists"] for r in unknown] == [None, None]  # Jobs not listed: not "gone"
     assert schedule.active_jobs(cj(), [], NOW) == []
+
+
+def test_a_suspended_active_job_is_not_running():
+    cronjob = cj()
+    cronjob["status"]["active"] = [{"name": "held"}]
+    held = job("held", "2026-11-03T12:00:00Z", state="Running")
+    held["spec"]["suspend"] = True
+    (row,) = schedule.active_jobs(cronjob, [held], NOW)
+    assert row["suspended"] is True and row["runningSeconds"] is None
+    assert row["startTime"] == "2026-11-03T12:00:00Z"
+    entry = runs.run_entry(held, [], NOW)
+    assert entry["status"] == "active" and entry["suspended"] is True
+    assert entry["runningSeconds"] is None
 
 
 def test_events_in_window_without_the_routine_per_job_ones():
@@ -551,6 +601,12 @@ def test_a_job_without_a_start_time_counts_from_its_creation():
         (127, "kubectl: command not found", "dependency"),
         (1, 'error: the server doesn\'t have a resource type "widgets"', "dependency"),
         (1, "something odd", "internal"),
+        (
+            1,
+            'Error from server (Forbidden): jobs.batch is forbidden: User "u" cannot list resource "jobs" '
+            '... clusterrole.rbac.authorization.k8s.io "view" not found',
+            "permission_denied",
+        ),
     ],
 )
 def test_kubectl_failures_are_classified(rc, stderr, code):
@@ -977,6 +1033,19 @@ def test_a_schedule_that_cannot_be_evaluated_is_an_error_with_the_other_facts_ke
     s = env["outputs"]["schedule"]
     assert s["suspended"] is True and s["schedule"] == "61 * * * *"
     assert (s["lastExpectedFire"], s["behindSchedule"], s["missedFires"]) == (None, None, None)
+
+
+def test_a_schedule_that_never_fires_is_a_scoped_error_with_the_facts_kept():
+    never = copy.deepcopy(named(load("cronjobs"), "ok-every-minute"))
+    never["spec"]["schedule"] = "0 0 31 2 *"
+    stub = stubs("ok-every-minute")
+    stub[argvs("ok-every-minute")["cronjob"]] = (0, json.dumps(never), "")
+    with make_context(resource=resource("ok-every-minute"), settings=SETTINGS) as tc:
+        stub_commands(tc, stub)
+        env = run_main(script("schedule_health"), tc)
+    assert env["status"] == "partial" and codes(env) == [("invalid_input", "schedule")]
+    s = env["outputs"]["schedule"]
+    assert s["neverFires"] is True and s["nextExpectedFire"] is None and s["suspended"] is False
 
 
 @pytest.mark.parametrize("task", TASK_SCRIPTS.values())

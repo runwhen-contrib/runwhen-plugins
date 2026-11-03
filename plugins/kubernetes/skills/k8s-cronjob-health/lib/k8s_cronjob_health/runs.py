@@ -127,7 +127,11 @@ def run_entry(job, pods, now):
         "completionTime": status.get("completionTime"),
         "finishedAt": fmt_time(finished) if state != "active" else None,
         "durationSeconds": seconds_between(started, finished) if state != "active" else None,
-        "runningSeconds": seconds_between(started, now) if state == "active" else None,
+        "runningSeconds": (
+            seconds_between(started, now)
+            if state == "active" and not spec.get("suspend", False)
+            else None
+        ),
         "suspended": bool(spec.get("suspend", False)),
         "activePods": status.get("active") or 0,
         "succeededPods": status.get("succeeded") or 0,

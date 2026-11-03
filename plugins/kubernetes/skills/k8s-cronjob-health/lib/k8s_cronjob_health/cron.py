@@ -11,8 +11,8 @@ sets it otherwise (the API allows only one of them).
 Pure functions: no clock, no kubectl. `Schedule.prev` and `Schedule.next` take
 the instant to look from. Fires happen at second 0 of a minute, in the schedule's
 zone, evaluated on the wall clock: a wall time that does not exist (spring
-forward) does not fire, and a repeated wall time (fall back) fires once, at its
-first occurrence.
+forward) does not fire, and a repeated wall time (fall back) fires at both of its
+occurrences, as robfig/cron does.
 """
 
 import re
@@ -123,13 +123,15 @@ def parse_go_duration(text):
 
 
 def _wall_to_utc(wall, zone):
-    """The UTC instant of a naive wall-clock time in `zone`, or None when that
-    wall time does not exist (skipped by a spring-forward change)."""
-    aware = wall.replace(tzinfo=zone)
-    utc = aware.astimezone(UTC)
-    if utc.astimezone(zone).replace(tzinfo=None) != wall:
-        return None
-    return utc
+    """The UTC instants of a naive wall-clock time in `zone`, sorted: none when that wall
+    time does not exist (skipped by a spring-forward change), two when it happens twice
+    (a fall-back change), else one."""
+    found = set()
+    for fold in (0, 1):
+        utc = wall.replace(tzinfo=zone, fold=fold).astimezone(UTC)
+        if utc.astimezone(zone).replace(tzinfo=None) == wall:
+            found.add(utc)
+    return sorted(found)
 
 
 class Every:
@@ -141,8 +143,14 @@ class Every:
         self.zone = UTC
         self.zone_name = "UTC"
 
-    def next(self, after):
-        return after.astimezone(UTC).replace(microsecond=0) + self.delay
+    def next(self, after, anchor=None):
+        """First fire strictly after `after`. With an `anchor` (the instant the chain
+        started: lastScheduleTime, else the creation) the fires are anchor + k*delay,
+        k >= 1; without one it is `after` plus the delay."""
+        if anchor is None:
+            return after.astimezone(UTC).replace(microsecond=0) + self.delay
+        k = max(0, int((after - anchor) / self.delay)) + 1
+        return anchor + k * self.delay
 
     def prev(self, now, anchor):
         """Latest anchor + k*delay (k >= 1) at or before `now`; None without an anchor or before the first."""
@@ -172,48 +180,40 @@ class Cron:
             return dom and dow
         return dom or dow
 
-    def _times(self, descending=False):
-        times = [(h, m) for h in sorted(self.hours) for m in sorted(self.minutes)]
-        return times[::-1] if descending else times
+    def _times(self):
+        return [(h, m) for h in sorted(self.hours) for m in sorted(self.minutes)]
 
-    def next(self, after):
-        """First fire strictly after `after` (aware datetime), or None."""
-        floor = after.astimezone(self.zone).replace(tzinfo=None)
-        day = floor.date()
+    def _instants(self, day):
+        """Every fire instant of the local calendar day `day`, sorted."""
+        if not self._day_matches(day):
+            return []
+        out = []
+        for h, m in self._times():
+            out.extend(_wall_to_utc(datetime(day.year, day.month, day.day, h, m), self.zone))
+        return sorted(out)
+
+    def next(self, after, anchor=None):
+        """First fire strictly after `after` (aware datetime), or None. `anchor` is unused."""
+        day = after.astimezone(self.zone).date()
         for offset in range(SEARCH_DAYS):
-            d = day + timedelta(days=offset)
-            if not self._day_matches(d):
-                continue
-            for h, m in self._times():
-                wall = datetime(d.year, d.month, d.day, h, m)
-                if wall <= floor:
-                    continue
-                utc = _wall_to_utc(wall, self.zone)
-                if utc is not None and utc > after:
+            for utc in self._instants(day + timedelta(days=offset)):
+                if utc > after:
                     return utc
         return None
 
     def prev(self, now, anchor=None):
-        """Last fire at or before `now`, or None."""
-        local = now.astimezone(self.zone).replace(tzinfo=None)
-        day = local.date()
+        """Last fire at or before `now`, or None. `anchor` is unused."""
+        day = now.astimezone(self.zone).date()
         for offset in range(SEARCH_DAYS):
-            d = day - timedelta(days=offset)
-            if not self._day_matches(d):
-                continue
-            for h, m in self._times(descending=True):
-                wall = datetime(d.year, d.month, d.day, h, m)
-                if wall > local:
-                    continue
-                utc = _wall_to_utc(wall, self.zone)
-                if utc is not None and utc <= now:
+            for utc in reversed(self._instants(day - timedelta(days=offset))):
+                if utc <= now:
                     return utc
         return None
 
 
 def parse_schedule(text, time_zone=None):
-    """A `Cron` or `Every` for `spec.schedule`, in `spec.timeZone` (or the schedule's
-    own TZ=/CRON_TZ= prefix; UTC when neither). Raises ValueError (TimeZoneUnavailable
+    """A `Cron` or `Every` for `spec.schedule`, in the schedule's own TZ=/CRON_TZ= prefix
+    zone, else `spec.timeZone` (UTC when neither). Raises ValueError (TimeZoneUnavailable
     for a zone this machine does not know) on anything the controller would refuse."""
     spec = (text or "").strip()
     if not spec:
@@ -221,7 +221,7 @@ def parse_schedule(text, time_zone=None):
     zone_name = time_zone or None
     if spec.startswith(("TZ=", "CRON_TZ=")):
         prefix, _, spec = spec.partition(" ")
-        zone_name = zone_name or prefix.split("=", 1)[1]
+        zone_name = prefix.split("=", 1)[1]
         spec = spec.strip()
     if spec.startswith("@every"):
         _, _, duration = spec.partition(" ")

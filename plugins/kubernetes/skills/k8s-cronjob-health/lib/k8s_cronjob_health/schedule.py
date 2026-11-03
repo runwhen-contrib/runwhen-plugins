@@ -12,12 +12,14 @@ from datetime import timedelta
 from k8s_cronjob_health import cron
 from k8s_cronjob_health.common import fmt_time, parse_duration, parse_time, seconds_between, trunc
 
-# The controller gives up counting after 100 missed schedules (TooManyMissedTimes).
+# Past 100 missed schedules the controller only records a TooManyMissedTimes warning and
+# still starts the latest one; counting stops at 101 so a long outage costs a bounded search.
 MISSED_CAP = 101
 
 EVALUATED_FIELDS = (
     "lastExpectedFire",
     "nextExpectedFire",
+    "neverFires",
     "evaluatedTimeZone",
     "missedFires",
     "missedFiresCapped",
@@ -68,13 +70,15 @@ def evaluate(cronjob, now, since, grace_seconds):
     suspended = bool(spec.get("suspend"))
     cutoff = now - timedelta(seconds=grace_seconds)
 
+    next_fire = schedule.next(now, earliest)
     expected = schedule.prev(now, earliest)
     if expected is not None and created is not None and expected <= created:
         expected = None  # it has not fired since the CronJob was created
 
     result = {
         "lastExpectedFire": fmt_time(expected),
-        "nextExpectedFire": None if suspended else fmt_time(schedule.next(now)),
+        "nextExpectedFire": None if suspended else fmt_time(next_fire),
+        "neverFires": next_fire is None and not suspended,
         "evaluatedTimeZone": schedule.zone_name,
         "missedFires": 0,
         "missedFiresCapped": False,
@@ -87,7 +91,7 @@ def evaluate(cronjob, now, since, grace_seconds):
 
     missed, cursor = 0, earliest
     while missed < MISSED_CAP:
-        cursor = schedule.next(cursor)
+        cursor = schedule.next(cursor, earliest)
         if cursor is None or cursor > cutoff:
             break
         missed += 1
@@ -96,16 +100,17 @@ def evaluate(cronjob, now, since, grace_seconds):
     result["behindSchedule"] = missed > 0
 
     window_start = max(earliest, now - parse_duration(since))
-    first_in_window = schedule.next(window_start)
+    first_in_window = schedule.next(window_start, earliest)
     result["missedSince"] = first_in_window is not None and first_in_window <= cutoff
 
     deadline = spec.get("startingDeadlineSeconds")
     if deadline is not None:
+        # the controller drops a slot once it is older than the deadline, however long the
+        # grace period: with a deadline shorter than the grace, judge by the deadline
         result["deadlineExceeded"] = False
-        if missed > 0:
-            latest_missed = schedule.prev(cutoff, earliest)
-            if latest_missed is not None:
-                result["deadlineExceeded"] = (now - latest_missed).total_seconds() > deadline
+        latest = schedule.prev(now - timedelta(seconds=min(grace_seconds, deadline)), earliest)
+        if latest is not None and latest > earliest:
+            result["deadlineExceeded"] = (now - latest).total_seconds() > deadline
     return result
 
 
@@ -118,6 +123,7 @@ def active_jobs(cronjob, jobs, now):
         row = {
             "name": ref.get("name"),
             "exists": None,
+            "suspended": None,
             "startTime": None,
             "runningSeconds": None,
             "activePods": None,
@@ -130,9 +136,11 @@ def active_jobs(cronjob, jobs, now):
             if job is not None:
                 st = job.get("status", {})
                 started = parse_time(st.get("startTime"))
+                suspended = bool(job.get("spec", {}).get("suspend", False))
                 row.update(
+                    suspended=suspended,
                     startTime=st.get("startTime"),
-                    runningSeconds=seconds_between(started, now),
+                    runningSeconds=None if suspended else seconds_between(started, now),
                     activePods=st.get("active") or 0,
                     succeededPods=st.get("succeeded") or 0,
                     failedPods=st.get("failed") or 0,
