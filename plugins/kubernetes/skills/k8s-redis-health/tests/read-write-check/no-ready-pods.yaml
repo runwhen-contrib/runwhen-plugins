@@ -1,0 +1,61 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-redis/deployments/redis-idle
+dryRun: true
+now: '2026-11-03T23:15:39.064Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - deployments.apps
+  - redis-idle
+  - -o
+  - jsonpath={"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=redis-idle
+    s:metadata.namespace=rw-redis
+    s:metadata.uid=d17b9211-fb2e-49f3-8502-a0830a171618
+    j:spec.selector={"matchLabels":{"app":"redis-idle"}}
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - replicasets.apps
+  - -l
+  - app=redis-idle
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=redis-idle-6c994fd87c
+    s:metadata.uid=6fa5fcd5-0e95-4746-9062-47bc6c8ae4cd
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"Deployment","name":"redis-idle","uid":"d17b9211-fb2e-49f3-8502-a0830a171618"}]
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - pods
+  - -l
+  - app=redis-idle
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"s:spec.nodeName="}{.spec.nodeName}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"|"}{.image}{"\n"}{end}{end}
+  rc: 0
+  stdout: ''
+  stderr: ''
+expect:
+  status: failed
+  errorCodes:
+  - unreachable

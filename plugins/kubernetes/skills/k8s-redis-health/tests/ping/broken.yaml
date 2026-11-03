@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-redis/statefulsets/redis-orphan
-now: '2026-11-03T22:32:44.598Z'
+now: '2026-11-03T23:14:54.876Z'
 calls:
 - argv:
   - kubectl
@@ -14,116 +14,14 @@ calls:
   - statefulsets.apps
   - redis-orphan
   - -o
-  - json
+  - jsonpath={"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}
   rc: 0
   stdout: |
-    {
-        "apiVersion": "apps/v1",
-        "kind": "StatefulSet",
-        "metadata": {
-            "annotations": {
-                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"redis-orphan\",\"namespace\":\"rw-redis\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"redis-orphan\"}},\"serviceName\":\"redis-orphan\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"redis-orphan\"}},\"spec\":{\"containers\":[{\"command\":[\"redis-server\",\"--replicaof\",\"redis-gone.rw-redis.svc\",\"6379\",\"--save\",\"\"],\"image\":\"redis:7-alpine\",\"name\":\"redis\",\"ports\":[{\"containerPort\":6379,\"name\":\"redis\"}],\"readinessProbe\":{\"exec\":{\"command\":[\"redis-cli\",\"ping\"]},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"8Mi\"}}}]}}}}\n"
-            },
-            "creationTimestamp": "2026-11-03T22:19:50Z",
-            "generation": 1,
-            "name": "redis-orphan",
-            "namespace": "rw-redis",
-            "resourceVersion": "39800",
-            "uid": "c2dc08e9-00af-4086-b7a6-bb815b603740"
-        },
-        "spec": {
-            "persistentVolumeClaimRetentionPolicy": {
-                "whenDeleted": "Retain",
-                "whenScaled": "Retain"
-            },
-            "podManagementPolicy": "OrderedReady",
-            "replicas": 1,
-            "revisionHistoryLimit": 10,
-            "selector": {
-                "matchLabels": {
-                    "app": "redis-orphan"
-                }
-            },
-            "serviceName": "redis-orphan",
-            "template": {
-                "metadata": {
-                    "labels": {
-                        "app": "redis-orphan"
-                    }
-                },
-                "spec": {
-                    "containers": [
-                        {
-                            "command": [
-                                "redis-server",
-                                "--replicaof",
-                                "redis-gone.rw-redis.svc",
-                                "6379",
-                                "--save",
-                                ""
-                            ],
-                            "image": "redis:7-alpine",
-                            "imagePullPolicy": "IfNotPresent",
-                            "name": "redis",
-                            "ports": [
-                                {
-                                    "containerPort": 6379,
-                                    "name": "redis",
-                                    "protocol": "TCP"
-                                }
-                            ],
-                            "readinessProbe": {
-                                "exec": {
-                                    "command": [
-                                        "redis-cli",
-                                        "ping"
-                                    ]
-                                },
-                                "failureThreshold": 3,
-                                "periodSeconds": 5,
-                                "successThreshold": 1,
-                                "timeoutSeconds": 1
-                            },
-                            "resources": {
-                                "limits": {
-                                    "memory": "64Mi"
-                                },
-                                "requests": {
-                                    "cpu": "5m",
-                                    "memory": "8Mi"
-                                }
-                            },
-                            "terminationMessagePath": "/dev/termination-log",
-                            "terminationMessagePolicy": "File"
-                        }
-                    ],
-                    "dnsPolicy": "ClusterFirst",
-                    "restartPolicy": "Always",
-                    "schedulerName": "default-scheduler",
-                    "securityContext": {},
-                    "terminationGracePeriodSeconds": 30
-                }
-            },
-            "updateStrategy": {
-                "rollingUpdate": {
-                    "maxUnavailable": 1,
-                    "partition": 0
-                },
-                "type": "RollingUpdate"
-            }
-        },
-        "status": {
-            "availableReplicas": 1,
-            "collisionCount": 0,
-            "currentReplicas": 1,
-            "currentRevision": "redis-orphan-7cb867d99b",
-            "observedGeneration": 1,
-            "readyReplicas": 1,
-            "replicas": 1,
-            "updateRevision": "redis-orphan-7cb867d99b",
-            "updatedReplicas": 1
-        }
-    }
+    @
+    s:metadata.name=redis-orphan
+    s:metadata.namespace=rw-redis
+    s:metadata.uid=61dcc75f-a9f6-402b-aab4-9e6f65339985
+    j:spec.selector={"matchLabels":{"app":"redis-orphan"}}
   stderr: ''
 - argv:
   - kubectl
@@ -134,292 +32,18 @@ calls:
   - -l
   - app=redis-orphan
   - -o
-  - json
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"s:spec.nodeName="}{.spec.nodeName}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"|"}{.image}{"\n"}{end}{end}
   rc: 0
   stdout: |
-    {
-        "apiVersion": "v1",
-        "items": [
-            {
-                "apiVersion": "v1",
-                "kind": "Pod",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T22:19:50Z",
-                    "generateName": "redis-orphan-",
-                    "generation": 1,
-                    "labels": {
-                        "app": "redis-orphan",
-                        "apps.kubernetes.io/pod-index": "0",
-                        "controller-revision-hash": "redis-orphan-7cb867d99b",
-                        "statefulset.kubernetes.io/pod-name": "redis-orphan-0"
-                    },
-                    "name": "redis-orphan-0",
-                    "namespace": "rw-redis",
-                    "ownerReferences": [
-                        {
-                            "apiVersion": "apps/v1",
-                            "blockOwnerDeletion": true,
-                            "controller": true,
-                            "kind": "StatefulSet",
-                            "name": "redis-orphan",
-                            "uid": "c2dc08e9-00af-4086-b7a6-bb815b603740"
-                        }
-                    ],
-                    "resourceVersion": "39816",
-                    "uid": "e3175257-f222-4534-8b1c-a77d177e18e5"
-                },
-                "spec": {
-                    "containers": [
-                        {
-                            "command": [
-                                "redis-server",
-                                "--replicaof",
-                                "redis-gone.rw-redis.svc",
-                                "6379",
-                                "--save",
-                                ""
-                            ],
-                            "image": "redis:7-alpine",
-                            "imagePullPolicy": "IfNotPresent",
-                            "name": "redis",
-                            "ports": [
-                                {
-                                    "containerPort": 6379,
-                                    "name": "redis",
-                                    "protocol": "TCP"
-                                }
-                            ],
-                            "readinessProbe": {
-                                "exec": {
-                                    "command": [
-                                        "redis-cli",
-                                        "ping"
-                                    ]
-                                },
-                                "failureThreshold": 3,
-                                "periodSeconds": 5,
-                                "successThreshold": 1,
-                                "timeoutSeconds": 1
-                            },
-                            "resources": {
-                                "limits": {
-                                    "memory": "64Mi"
-                                },
-                                "requests": {
-                                    "cpu": "5m",
-                                    "memory": "8Mi"
-                                }
-                            },
-                            "terminationMessagePath": "/dev/termination-log",
-                            "terminationMessagePolicy": "File",
-                            "volumeMounts": [
-                                {
-                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-28fgw",
-                                    "readOnly": true
-                                }
-                            ]
-                        }
-                    ],
-                    "dnsPolicy": "ClusterFirst",
-                    "enableServiceLinks": true,
-                    "hostname": "redis-orphan-0",
-                    "nodeName": "rw-plugins-control-plane",
-                    "preemptionPolicy": "PreemptLowerPriority",
-                    "priority": 0,
-                    "restartPolicy": "Always",
-                    "schedulerName": "default-scheduler",
-                    "securityContext": {},
-                    "serviceAccount": "default",
-                    "serviceAccountName": "default",
-                    "subdomain": "redis-orphan",
-                    "terminationGracePeriodSeconds": 30,
-                    "tolerations": [
-                        {
-                            "effect": "NoExecute",
-                            "key": "node.kubernetes.io/not-ready",
-                            "operator": "Exists",
-                            "tolerationSeconds": 300
-                        },
-                        {
-                            "effect": "NoExecute",
-                            "key": "node.kubernetes.io/unreachable",
-                            "operator": "Exists",
-                            "tolerationSeconds": 300
-                        }
-                    ],
-                    "volumes": [
-                        {
-                            "name": "kube-api-access-28fgw",
-                            "projected": {
-                                "defaultMode": 420,
-                                "sources": [
-                                    {
-                                        "serviceAccountToken": {
-                                            "expirationSeconds": 3607,
-                                            "path": "token"
-                                        }
-                                    },
-                                    {
-                                        "configMap": {
-                                            "items": [
-                                                {
-                                                    "key": "ca.crt",
-                                                    "path": "ca.crt"
-                                                }
-                                            ],
-                                            "name": "kube-root-ca.crt"
-                                        }
-                                    },
-                                    {
-                                        "downwardAPI": {
-                                            "items": [
-                                                {
-                                                    "fieldRef": {
-                                                        "apiVersion": "v1",
-                                                        "fieldPath": "metadata.namespace"
-                                                    },
-                                                    "path": "namespace"
-                                                }
-                                            ]
-                                        }
-                                    }
-                                ]
-                            }
-                        }
-                    ]
-                },
-                "status": {
-                    "allocatedResources": {
-                        "cpu": "5m",
-                        "memory": "8Mi"
-                    },
-                    "conditions": [
-                        {
-                            "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T22:19:52Z",
-                            "observedGeneration": 1,
-                            "status": "True",
-                            "type": "PodReadyToStartContainers"
-                        },
-                        {
-                            "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T22:19:50Z",
-                            "observedGeneration": 1,
-                            "status": "True",
-                            "type": "Initialized"
-                        },
-                        {
-                            "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T22:20:01Z",
-                            "observedGeneration": 1,
-                            "status": "True",
-                            "type": "Ready"
-                        },
-                        {
-                            "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T22:20:01Z",
-                            "observedGeneration": 1,
-                            "status": "True",
-                            "type": "ContainersReady"
-                        },
-                        {
-                            "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T22:19:50Z",
-                            "observedGeneration": 1,
-                            "status": "True",
-                            "type": "PodScheduled"
-                        }
-                    ],
-                    "containerStatuses": [
-                        {
-                            "allocatedResources": {
-                                "cpu": "5m",
-                                "memory": "8Mi"
-                            },
-                            "containerID": "containerd://1ec6c370bf544f3ac2e6065addbca933e2335b193a33ebad0cecc922247ca1e1",
-                            "image": "docker.io/library/redis:7-alpine",
-                            "imageID": "docker.io/library/redis@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f",
-                            "lastState": {},
-                            "name": "redis",
-                            "ready": true,
-                            "resources": {
-                                "limits": {
-                                    "memory": "64Mi"
-                                },
-                                "requests": {
-                                    "cpu": "5m",
-                                    "memory": "8Mi"
-                                }
-                            },
-                            "restartCount": 0,
-                            "started": true,
-                            "state": {
-                                "running": {
-                                    "startedAt": "2026-11-03T22:20:00Z"
-                                }
-                            },
-                            "user": {
-                                "linux": {
-                                    "gid": 0,
-                                    "supplementalGroups": [
-                                        0,
-                                        1,
-                                        2,
-                                        3,
-                                        4,
-                                        6,
-                                        10,
-                                        11,
-                                        20,
-                                        26,
-                                        27
-                                    ],
-                                    "uid": 0
-                                }
-                            },
-                            "volumeMounts": [
-                                {
-                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-28fgw",
-                                    "readOnly": true,
-                                    "recursiveReadOnly": "Disabled"
-                                }
-                            ]
-                        }
-                    ],
-                    "hostIP": "172.19.0.2",
-                    "hostIPs": [
-                        {
-                            "ip": "172.19.0.2"
-                        }
-                    ],
-                    "observedGeneration": 1,
-                    "phase": "Running",
-                    "podIP": "10.244.0.199",
-                    "podIPs": [
-                        {
-                            "ip": "10.244.0.199"
-                        }
-                    ],
-                    "qosClass": "Burstable",
-                    "resources": {
-                        "limits": {
-                            "memory": "64Mi"
-                        },
-                        "requests": {
-                            "memory": "8Mi"
-                        }
-                    },
-                    "startTime": "2026-11-03T22:19:50Z"
-                }
-            }
-        ],
-        "kind": "List",
-        "metadata": {
-            "resourceVersion": ""
-        }
-    }
+    @
+    s:metadata.name=redis-orphan-0
+    s:metadata.uid=ef97c699-ca4b-43a0-b611-633761fd0603
+    s:spec.nodeName=rw-plugins-control-plane
+    j:metadata.labels={"app":"redis-orphan","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"redis-orphan-7cb867d99b","statefulset.kubernetes.io/pod-name":"redis-orphan-0"}
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"StatefulSet","name":"redis-orphan","uid":"61dcc75f-a9f6-402b-aab4-9e6f65339985"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:40Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:40Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:41Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:41Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:40Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:redis|redis:7-alpine
   stderr: ''
 - argv:
   - kubectl
@@ -432,9 +56,14 @@ calls:
   - --
   - sh
   - -c
-  - if [ -n "${REDIS_PASSWORD:-}" ]; then REDISCLI_AUTH="$REDIS_PASSWORD"; export REDISCLI_AUTH; fi; exec
-    redis-cli "$@"
+  - pw="${REDIS_PASSWORD:-}"; if [ -z "$pw" ] && [ -n "${REDIS_PASSWORD_FILE:-}" ] && [ -r "$REDIS_PASSWORD_FILE"
+    ]; then pw=$(cat "$REDIS_PASSWORD_FILE"); fi; if [ -z "$pw" ]; then pw="${VALKEY_PASSWORD:-}"; fi;
+    if [ -z "$pw" ] && [ -n "${VALKEY_PASSWORD_FILE:-}" ] && [ -r "$VALKEY_PASSWORD_FILE" ]; then pw=$(cat
+    "$VALKEY_PASSWORD_FILE"); fi; if [ -n "$pw" ]; then REDISCLI_AUTH="$pw"; export REDISCLI_AUTH; fi;
+    if command -v redis-cli >/dev/null; then exec redis-cli "$@"; fi; exec valkey-cli "$@"
   - sh
+  - -p
+  - '6379'
   - PING
   rc: 0
   stdout: |
@@ -451,44 +80,49 @@ calls:
   - --
   - sh
   - -c
-  - if [ -n "${REDIS_PASSWORD:-}" ]; then REDISCLI_AUTH="$REDIS_PASSWORD"; export REDISCLI_AUTH; fi; exec
-    redis-cli "$@"
+  - pw="${REDIS_PASSWORD:-}"; if [ -z "$pw" ] && [ -n "${REDIS_PASSWORD_FILE:-}" ] && [ -r "$REDIS_PASSWORD_FILE"
+    ]; then pw=$(cat "$REDIS_PASSWORD_FILE"); fi; if [ -z "$pw" ]; then pw="${VALKEY_PASSWORD:-}"; fi;
+    if [ -z "$pw" ] && [ -n "${VALKEY_PASSWORD_FILE:-}" ] && [ -r "$VALKEY_PASSWORD_FILE" ]; then pw=$(cat
+    "$VALKEY_PASSWORD_FILE"); fi; if [ -n "$pw" ]; then REDISCLI_AUTH="$pw"; export REDISCLI_AUTH; fi;
+    if command -v redis-cli >/dev/null; then exec redis-cli "$@"; fi; exec valkey-cli "$@"
   - sh
+  - -p
+  - '6379'
   - INFO
   rc: 0
   stdout: "# Server\r\nredis_version:7.4.12\r\nredis_git_sha1:00000000\r\nredis_git_dirty:0\r\nredis_build_id:2d3dd1569b92d75e\r\
     \nredis_mode:standalone\r\nos:Linux 6.12.76-linuxkit aarch64\r\narch_bits:64\r\nmonotonic_clock:POSIX\
     \ clock_gettime\r\nmultiplexing_api:epoll\r\natomicvar_api:c11-builtin\r\ngcc_version:14.2.0\r\nprocess_id:1\r\
-    \nprocess_supervised:no\r\nrun_id:e6cf2b6f974d4912f074e10edaf1a282720b6175\r\ntcp_port:6379\r\nserver_time_usec:1793745166106547\r\
-    \nuptime_in_seconds:766\r\nuptime_in_days:0\r\nhz:10\r\nconfigured_hz:10\r\nlru_clock:15360270\r\n\
+    \nprocess_supervised:no\r\nrun_id:b7c7135d7ed61b0c3616d4df331e07ae77283efe\r\ntcp_port:6379\r\nserver_time_usec:1793747695585288\r\
+    \nuptime_in_seconds:15\r\nuptime_in_days:0\r\nhz:10\r\nconfigured_hz:10\r\nlru_clock:15362799\r\n\
     executable:/data/redis-server\r\nconfig_file:\r\nio_threads_active:0\r\nlistener0:name=tcp,bind=*,bind=-::*,port=6379\r\
     \n\r\n# Clients\r\nconnected_clients:1\r\ncluster_connections:0\r\nmaxclients:10000\r\nclient_recent_max_input_buffer:0\r\
     \nclient_recent_max_output_buffer:0\r\nblocked_clients:0\r\ntracking_clients:0\r\npubsub_clients:0\r\
     \nwatching_clients:0\r\nclients_in_timeout_table:0\r\ntotal_watched_keys:0\r\ntotal_blocking_keys:0\r\
-    \ntotal_blocking_keys_on_nokey:0\r\n\r\n# Memory\r\nused_memory:1071496\r\nused_memory_human:1.02M\r\
-    \nused_memory_rss:3883008\r\nused_memory_rss_human:3.70M\r\nused_memory_peak:1071496\r\nused_memory_peak_human:1.02M\r\
-    \nused_memory_peak_perc:100.00%\r\nused_memory_overhead:981408\r\nused_memory_startup:981216\r\nused_memory_dataset:90088\r\
-    \nused_memory_dataset_perc:99.79%\r\nallocator_allocated:3348088\r\nallocator_active:14614528\r\n\
-    allocator_resident:16252928\r\nallocator_muzzy:0\r\ntotal_system_memory:4109201408\r\ntotal_system_memory_human:3.83G\r\
+    \ntotal_blocking_keys_on_nokey:0\r\n\r\n# Memory\r\nused_memory:1046664\r\nused_memory_human:1022.13K\r\
+    \nused_memory_rss:8085504\r\nused_memory_rss_human:7.71M\r\nused_memory_peak:1046664\r\nused_memory_peak_human:1022.13K\r\
+    \nused_memory_peak_perc:100.23%\r\nused_memory_overhead:981408\r\nused_memory_startup:981216\r\nused_memory_dataset:65256\r\
+    \nused_memory_dataset_perc:99.71%\r\nallocator_allocated:4718880\r\nallocator_active:13303808\r\n\
+    allocator_resident:14942208\r\nallocator_muzzy:0\r\ntotal_system_memory:4109201408\r\ntotal_system_memory_human:3.83G\r\
     \nused_memory_lua:32768\r\nused_memory_vm_eval:32768\r\nused_memory_lua_human:32.00K\r\nused_memory_scripts_eval:0\r\
     \nnumber_of_cached_scripts:0\r\nnumber_of_functions:0\r\nnumber_of_libraries:0\r\nused_memory_vm_functions:33792\r\
     \nused_memory_vm_total:66560\r\nused_memory_vm_total_human:65.00K\r\nused_memory_functions:192\r\n\
     used_memory_scripts:192\r\nused_memory_scripts_human:192B\r\nmaxmemory:0\r\nmaxmemory_human:0B\r\n\
-    maxmemory_policy:noeviction\r\nallocator_frag_ratio:7.23\r\nallocator_frag_bytes:8018568\r\nallocator_rss_ratio:1.11\r\
-    \nallocator_rss_bytes:1638400\r\nrss_overhead_ratio:0.24\r\nrss_overhead_bytes:-12369920\r\nmem_fragmentation_ratio:3.76\r\
-    \nmem_fragmentation_bytes:2851520\r\nmem_not_counted_for_evict:0\r\nmem_replication_backlog:0\r\n\
+    maxmemory_policy:noeviction\r\nallocator_frag_ratio:3.01\r\nallocator_frag_bytes:5337056\r\nallocator_rss_ratio:1.12\r\
+    \nallocator_rss_bytes:1638400\r\nrss_overhead_ratio:0.54\r\nrss_overhead_bytes:-6856704\r\nmem_fragmentation_ratio:8.04\r\
+    \nmem_fragmentation_bytes:7079440\r\nmem_not_counted_for_evict:0\r\nmem_replication_backlog:0\r\n\
     mem_total_replication_buffers:0\r\nmem_clients_slaves:0\r\nmem_clients_normal:0\r\nmem_cluster_links:0\r\
     \nmem_aof_buffer:0\r\nmem_allocator:jemalloc-5.3.0\r\nmem_overhead_db_hashtable_rehashing:0\r\nactive_defrag_running:0\r\
     \nlazyfree_pending_objects:0\r\nlazyfreed_objects:0\r\n\r\n# Persistence\r\nloading:0\r\nasync_loading:0\r\
     \ncurrent_cow_peak:0\r\ncurrent_cow_size:0\r\ncurrent_cow_size_age:0\r\ncurrent_fork_perc:0.00\r\n\
     current_save_keys_processed:0\r\ncurrent_save_keys_total:0\r\nrdb_changes_since_last_save:0\r\nrdb_bgsave_in_progress:0\r\
-    \nrdb_last_save_time:1793744400\r\nrdb_last_bgsave_status:ok\r\nrdb_last_bgsave_time_sec:-1\r\nrdb_current_bgsave_time_sec:-1\r\
+    \nrdb_last_save_time:1793747680\r\nrdb_last_bgsave_status:ok\r\nrdb_last_bgsave_time_sec:-1\r\nrdb_current_bgsave_time_sec:-1\r\
     \nrdb_saves:0\r\nrdb_last_cow_size:0\r\nrdb_last_load_keys_expired:0\r\nrdb_last_load_keys_loaded:0\r\
     \naof_enabled:0\r\naof_rewrite_in_progress:0\r\naof_rewrite_scheduled:0\r\naof_last_rewrite_time_sec:-1\r\
     \naof_current_rewrite_time_sec:-1\r\naof_last_bgrewrite_status:ok\r\naof_rewrites:0\r\naof_rewrites_consecutive_failures:0\r\
     \naof_last_write_status:ok\r\naof_last_cow_size:0\r\nmodule_fork_in_progress:0\r\nmodule_fork_last_cow_size:0\r\
-    \n\r\n# Stats\r\ntotal_connections_received:160\r\ntotal_commands_processed:159\r\ninstantaneous_ops_per_sec:0\r\
-    \ntotal_net_input_bytes:2258\r\ntotal_net_output_bytes:19126\r\ntotal_net_repl_input_bytes:0\r\ntotal_net_repl_output_bytes:0\r\
+    \n\r\n# Stats\r\ntotal_connections_received:5\r\ntotal_commands_processed:4\r\ninstantaneous_ops_per_sec:0\r\
+    \ntotal_net_input_bytes:70\r\ntotal_net_output_bytes:28\r\ntotal_net_repl_input_bytes:0\r\ntotal_net_repl_output_bytes:0\r\
     \ninstantaneous_input_kbps:0.01\r\ninstantaneous_output_kbps:0.00\r\ninstantaneous_input_repl_kbps:0.00\r\
     \ninstantaneous_output_repl_kbps:0.00\r\nrejected_connections:0\r\nsync_full:0\r\nsync_partial_ok:0\r\
     \nsync_partial_err:0\r\nexpired_subkeys:0\r\nexpired_keys:0\r\nexpired_stale_perc:0.00\r\nexpired_time_cap_reached_count:0\r\
@@ -498,21 +132,21 @@ calls:
     \nmigrate_cached_sockets:0\r\nslave_expires_tracked_keys:0\r\nactive_defrag_hits:0\r\nactive_defrag_misses:0\r\
     \nactive_defrag_key_hits:0\r\nactive_defrag_key_misses:0\r\ntotal_active_defrag_time:0\r\ncurrent_active_defrag_time:0\r\
     \ntracking_total_keys:0\r\ntracking_total_items:0\r\ntracking_total_prefixes:0\r\nunexpected_error_replies:0\r\
-    \ntotal_error_replies:0\r\ndump_payload_sanitizations:0\r\ntotal_reads_processed:319\r\ntotal_writes_processed:159\r\
+    \ntotal_error_replies:0\r\ndump_payload_sanitizations:0\r\ntotal_reads_processed:9\r\ntotal_writes_processed:4\r\
     \nio_threaded_reads_processed:0\r\nio_threaded_writes_processed:0\r\nclient_query_buffer_limit_disconnections:0\r\
     \nclient_output_buffer_limit_disconnections:0\r\nreply_buffer_shrinks:0\r\nreply_buffer_expands:0\r\
-    \neventloop_cycles:7790\r\neventloop_duration_sum:27453883\r\neventloop_duration_cmd_sum:25139\r\n\
-    instantaneous_eventloop_cycles_per_sec:10\r\ninstantaneous_eventloop_duration_usec:3346\r\nacl_access_denied_auth:0\r\
-    \nacl_access_denied_cmd:0\r\nacl_access_denied_key:0\r\nacl_access_denied_channel:0\r\n\r\n# Replication\r\
-    \nrole:slave\r\nmaster_host:redis-gone.rw-redis.svc\r\nmaster_port:6379\r\nmaster_link_status:down\r\
-    \nmaster_last_io_seconds_ago:-1\r\nmaster_sync_in_progress:0\r\nslave_read_repl_offset:1\r\nslave_repl_offset:1\r\
-    \nmaster_link_down_since_seconds:-1\r\nslave_priority:100\r\nslave_read_only:1\r\nreplica_announced:1\r\
-    \nconnected_slaves:0\r\nmaster_failover_state:no-failover\r\nmaster_replid:6da385f6f9dd4ee9a0afcc15c65b766cab048beb\r\
-    \nmaster_replid2:0000000000000000000000000000000000000000\r\nmaster_repl_offset:0\r\nsecond_repl_offset:-1\r\
-    \nrepl_backlog_active:0\r\nrepl_backlog_size:1048576\r\nrepl_backlog_first_byte_offset:0\r\nrepl_backlog_histlen:0\r\
-    \n\r\n# CPU\r\nused_cpu_sys:0.581330\r\nused_cpu_user:1.679187\r\nused_cpu_sys_children:0.002636\r\
-    \nused_cpu_user_children:0.004128\r\nused_cpu_sys_main_thread:0.580832\r\nused_cpu_user_main_thread:1.677248\r\
-    \n\r\n# Modules\r\n\r\n# Errorstats\r\n\r\n# Cluster\r\ncluster_enabled:0\r\n\r\n# Keyspace\r\n"
+    \neventloop_cycles:158\r\neventloop_duration_sum:139521\r\neventloop_duration_cmd_sum:6\r\ninstantaneous_eventloop_cycles_per_sec:10\r\
+    \ninstantaneous_eventloop_duration_usec:1149\r\nacl_access_denied_auth:0\r\nacl_access_denied_cmd:0\r\
+    \nacl_access_denied_key:0\r\nacl_access_denied_channel:0\r\n\r\n# Replication\r\nrole:slave\r\nmaster_host:redis-gone.rw-redis.svc\r\
+    \nmaster_port:6379\r\nmaster_link_status:down\r\nmaster_last_io_seconds_ago:-1\r\nmaster_sync_in_progress:0\r\
+    \nslave_read_repl_offset:1\r\nslave_repl_offset:1\r\nmaster_link_down_since_seconds:-1\r\nslave_priority:100\r\
+    \nslave_read_only:1\r\nreplica_announced:1\r\nconnected_slaves:0\r\nmaster_failover_state:no-failover\r\
+    \nmaster_replid:9dd710f4f23095519b02bcc6c366b7af3abe25dc\r\nmaster_replid2:0000000000000000000000000000000000000000\r\
+    \nmaster_repl_offset:0\r\nsecond_repl_offset:-1\r\nrepl_backlog_active:0\r\nrepl_backlog_size:1048576\r\
+    \nrepl_backlog_first_byte_offset:0\r\nrepl_backlog_histlen:0\r\n\r\n# CPU\r\nused_cpu_sys:0.011616\r\
+    \nused_cpu_user:0.029569\r\nused_cpu_sys_children:0.000490\r\nused_cpu_user_children:0.002056\r\n\
+    used_cpu_sys_main_thread:0.011423\r\nused_cpu_user_main_thread:0.029079\r\n\r\n# Modules\r\n\r\n#\
+    \ Errorstats\r\n\r\n# Cluster\r\ncluster_enabled:0\r\n\r\n# Keyspace\r\n"
   stderr: ''
 expect:
   status: ok
