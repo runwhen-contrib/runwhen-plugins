@@ -1,0 +1,116 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (most relevant first)
+  restartThreshold:
+    type: integer
+    default: 3
+    description: A container with at least this many restarts makes its pod appear in unhealthy-pods with the restarts state
+  jobActiveMaxMinutes:
+    type: integer
+    default: 60
+    description: An active Job running longer than this many minutes has longRunning true in failed-jobs
+  quotaRatio:
+    type: number
+    default: 0.8
+    description: A ResourceQuota resource with used/hard at or above this ratio has atOrAbove true in resource-quotas
+tasks:
+  - name: warning-events
+    title: Warning events
+    description: >-
+      Warning events in the namespace last seen within the look-back window,
+      grouped by involved object kind, name and reason with an occurrence count,
+      first and last seen and the latest message. For events about a Pod,
+      ReplicaSet or Job, the workload that owns it (Deployment, StatefulSet,
+      DaemonSet, Job or CronJob) and whether the object still exists. Events
+      about objects that were already deleted are kept.
+    script: scripts/warning_events.py
+    tags: [events]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [""], resources: [events, pods], verbs: [list] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window, applied to when the event was last seen" }
+    outputs:
+      events: { schema: ./schemas/events.v1.json, description: "Grouped Warning events, most recently seen first" }
+
+  - name: unhealthy-pods
+    title: Unhealthy pods
+    description: >-
+      Pods that are in a bad state right now, however long ago they got there:
+      Pending (with the scheduler's reason when unscheduled), Failed, Running
+      but not Ready, containers waiting with their reason (ImagePullBackOff,
+      CrashLoopBackOff, ContainerCreating), and containers restarted at least
+      restartThreshold times. Each pod names its owning workload.
+    script: scripts/unhealthy_pods.py
+    tags: [pods, readiness, restarts]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+    outputs:
+      pods: { schema: ./schemas/unhealthy-pods.v1.json, description: "One entry per unhealthy pod, most states first" }
+      counts: { schema: ./schemas/pod-counts.v1.json, description: Totals before the maxItems cap }
+
+  - name: failed-jobs
+    title: Failed and long-running Jobs
+    description: >-
+      Jobs with a Failed condition (BackoffLimitExceeded, DeadlineExceeded, or
+      any other reason) and active Jobs that have been running longer than the
+      jobActiveMaxMinutes setting, each with its failed pod count, start time and
+      the CronJob that owns it, if any. No look-back: a failed Job is listed
+      until it is deleted.
+    script: scripts/failed_jobs.py
+    tags: [jobs]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+    outputs:
+      jobs: { schema: ./schemas/failed-jobs.v1.json, description: "Failed or long-running Jobs, newest failure first" }
+      counts: { schema: ./schemas/job-counts.v1.json, description: Job totals before the maxItems cap }
+
+  - name: resource-quotas
+    title: Resource quota usage
+    description: >-
+      Every resource of every ResourceQuota in the namespace: used, hard, the
+      used/hard ratio and whether it is at or above the quotaRatio setting.
+      Highest ratio first. An empty list means the namespace has no ResourceQuota.
+    script: scripts/resource_quotas.py
+    tags: [quota, capacity]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [""], resources: [resourcequotas], verbs: [list] }
+    outputs:
+      quotas: { schema: ./schemas/quotas.v1.json, description: "One entry per quota resource, highest ratio first" }
+
+  - name: pdb-coverage
+    title: PodDisruptionBudget coverage
+    description: >-
+      Deployments and StatefulSets with more than one replica that no
+      PodDisruptionBudget selects through their pod template labels, and the
+      PodDisruptionBudgets that currently allow no disruptions, with their
+      current and desired healthy counts and the workloads they select.
+    script: scripts/pdb_coverage.py
+    tags: [pdb, availability]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [apps], resources: [deployments, statefulsets], verbs: [list] }
+      - { apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [list] }
+    outputs:
+      uncovered: { schema: ./schemas/uncovered.v1.json, description: Multi-replica workloads without a PodDisruptionBudget }
+      pdbs: { schema: ./schemas/pdbs.v1.json, description: PodDisruptionBudgets whose disruptionsAllowed is 0 }
+      inspected: { schema: ./schemas/pdb-inspected.v1.json, description: How many workloads and PodDisruptionBudgets were looked at }

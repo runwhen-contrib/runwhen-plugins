@@ -1,0 +1,87 @@
+# Namespace-level conditions for the k8s-namespace-health skill.
+# Applies on top of 10-healthy.yaml and 20-broken.yaml (rw-broken already has a
+# failed Job `fails` and failing pods).
+
+# rw-healthy: a PDB that allows one disruption for the 2-replica `web`, and a
+# quota far above current usage.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: rw-healthy
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: web}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: roomy
+  namespace: rw-healthy
+spec:
+  hard:
+    pods: "50"
+---
+# rw-broken: two replicas and no PodDisruptionBudget.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: no-pdb
+  namespace: rw-broken
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: no-pdb}
+  template:
+    metadata:
+      labels: {app: no-pdb}
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
+---
+# rw-broken: a Job that is still active (the skill flags it once it has been
+# running longer than the jobActiveMaxMinutes setting).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: still-running
+  namespace: rw-broken
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: job
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 1000000"]
+          resources:
+            requests: {cpu: 1m, memory: 2Mi}
+---
+# rw-broken: zero disruptions allowed. `crashloop` never becomes Ready, so
+# minAvailable 1 cannot be met (currentHealthy 0, desiredHealthy 1).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crashloop
+  namespace: rw-broken
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: crashloop}
+---
+# rw-broken: a pod quota with little headroom, and a Job-count quota well below its
+# limit. Applied last so existing pods are admitted. With the other scenario files
+# applied there are about ten non-terminal pods, so pods sits near 10/12.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tight
+  namespace: rw-broken
+spec:
+  hard:
+    pods: "12"
+    count/jobs.batch: "4"
