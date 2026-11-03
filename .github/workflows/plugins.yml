@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 env:
-  # contracts-v1 once lane A tags it, v13/plugins until then. Unset until the
-  # runwhen-capability SDK (rwtask) exists: validate/test steps are skipped.
-  SDK_REF: ${{ vars.SDK_REF }}
+  # The runwhen-capability SDK (rwtask) the plugins are validated and replayed with. The
+  # repo variable overrides the pin; bump the pin with the SDK the plugins target.
+  SDK_REF: ${{ vars.SDK_REF || '5a09ac4c9031243a0d4cdc68d54c7e8797b7e3dd' }}
 
 jobs:
   changed:
@@ -44,6 +44,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install rwtask
+        if: env.SDK_REF != ''
+        run: pip install "runwhen-capability @ git+https://github.com/runwhen-contrib/runwhen-capability@${SDK_REF}"
       - name: Unit tests
         run: |
           set -euo pipefail
@@ -51,15 +54,17 @@ jobs:
             pip install pytest pyyaml jsonschema
             python -m pytest "plugins/${{ matrix.plugin }}/tests/unit" -q
           fi
-      - name: Install rwtask
-        if: env.SDK_REF != ''
-        run: pip install "runwhen-capability @ git+https://github.com/runwhen-contrib/runwhen-capability@${SDK_REF}"
       - name: Validate
         if: env.SDK_REF != ''
         run: rwtask validate "plugins/${{ matrix.plugin }}"
       - name: Test (replay recorded fixtures)
         if: env.SDK_REF != ''
-        run: rwtask test "plugins/${{ matrix.plugin }}"
+        run: |
+          set -euo pipefail
+          for skill in plugins/${{ matrix.plugin }}/skills/*/; do
+            [ -d "$skill" ] || continue
+            rwtask test "$(basename "$skill")" --plugin-dir "plugins/${{ matrix.plugin }}"
+          done
       - name: SDK not pinned
         if: env.SDK_REF == ''
         run: echo "::notice::vars.SDK_REF is unset; skipping rwtask validate/test for ${{ matrix.plugin }}"
