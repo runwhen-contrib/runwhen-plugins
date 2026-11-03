@@ -1,0 +1,142 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (newest or most relevant first)
+  restartThreshold:
+    type: integer
+    default: 1
+    description: A container with at least this many restarts has exceedsThreshold true in pod-restarts
+tasks:
+  - name: rollout-status
+    title: Rollout status
+    description: >-
+      Desired, ready, updated and available replica counts, the workload's own
+      conditions (including ProgressDeadlineExceeded), update strategy, whether
+      the controller has observed the latest spec, and the revision history with
+      the images each revision runs.
+    script: scripts/rollout_status.py
+    tags: [rollout, replicas]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+    outputs:
+      rollout: { schema: ./schemas/rollout.v1.json, description: "Replica counts, conditions and strategy" }
+      revisions: { schema: ./schemas/revisions.v1.json, description: "ReplicaSets or ControllerRevisions, newest first" }
+
+  - name: pod-restarts
+    title: Container restarts
+    description: >-
+      Every container (init containers included) of the workload's pods with at
+      least one restart: restart count, how the last run ended (reason, exit
+      code, signal, finish time), whether that was within the look-back window,
+      and whether the count reaches the restartThreshold setting. An empty
+      restarts list with a non-zero inspected.pods means the pods did not restart.
+    script: scripts/pod_restarts.py
+    tags: [restarts, crashloop, oomkilled]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: Look-back window for the recent flag on the last termination }
+    outputs:
+      restarts: { schema: ./schemas/restarts.v1.json, description: "Containers with restartCount above zero, most restarts first" }
+      inspected: { schema: ./schemas/inspected.v1.json, description: How many pods were looked at }
+
+  - name: pod-status
+    title: Pod status
+    description: >-
+      For each pod the workload owns: phase, readiness, containers ready out of
+      total, node, whether it was scheduled (and the scheduler's reason when it
+      was not), and the waiting or terminated reason of each container such as
+      ImagePullBackOff, CrashLoopBackOff or ContainerCreating. Not-ready pods first.
+    script: scripts/pod_status.py
+    tags: [pods, readiness]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      pods: { schema: ./schemas/pods.v1.json, description: One entry per pod }
+      counts: { schema: ./schemas/pod-counts.v1.json, description: Totals before the maxItems cap }
+
+  - name: warning-events
+    title: Warning events
+    description: >-
+      Warning events about the workload, its ReplicaSets or ControllerRevisions,
+      its current pods and the PVCs those pods mount, last seen within the
+      look-back window, grouped by object and reason with an occurrence count,
+      first and last seen and the latest message. Events about pods that no
+      longer exist are not included.
+    script: scripts/warning_events.py
+    tags: [events]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+      - { apiGroups: [""], resources: [pods, events], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window, applied to when the event was last seen" }
+    outputs:
+      events: { schema: ./schemas/events.v1.json, description: "Grouped Warning events, most recently seen first" }
+
+  - name: probe-config
+    title: Probe configuration
+    description: >-
+      Liveness, readiness and startup probe of every container in the pod
+      template: whether it is set, its handler, its port, whether that port is
+      declared in the container's ports (by number or by name) and the timings.
+      A probe on an undeclared port is a fact to check, not proof it fails.
+    script: scripts/probe_config.py
+    tags: [probes]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+    outputs:
+      probes: { schema: ./schemas/probes.v1.json, description: Three entries per container }
+
+  - name: config-changes
+    title: Recent configuration changes
+    description: >-
+      Revisions (ReplicaSets or ControllerRevisions) created within the look-back
+      window, each compared with the revision before it: image changes, env var
+      names added or removed, resource request and limit changes, containers
+      added or removed. Env values are never read out. Scaling does not create a
+      revision, and a rollback to an older revision shows only if that revision
+      was itself created in the window.
+    script: scripts/config_changes.py
+    tags: [changes, rollout]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets, controllerrevisions], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: Look-back window on the revision's creation time }
+    outputs:
+      changes: { schema: ./schemas/changes.v1.json, description: "One entry per revision created in the window, newest first" }
+
+  - name: hpa-status
+    title: Autoscaler status
+    description: >-
+      HorizontalPodAutoscalers whose scale target is this workload: replica
+      bounds, current and desired replicas, whether it sits at its minimum or
+      maximum, its conditions, each metric's target and current value, and
+      whether a Utilization metric targets a container that has no resource
+      request. An empty list means no autoscaler targets the workload.
+    script: scripts/hpa_status.py
+    tags: [autoscaling, hpa]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [list] }
+    outputs:
+      hpas: { schema: ./schemas/hpas.v1.json, description: One entry per matching autoscaler }

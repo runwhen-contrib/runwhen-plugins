@@ -1,0 +1,497 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "1",
+     "deployment.kubernetes.io/max-replicas": "2",
+     "deployment.kubernetes.io/revision": "1"
+    },
+    "creationTimestamp": "2026-11-03T17:33:03Z",
+    "generation": 1,
+    "labels": {
+     "app": "bad-image",
+     "pod-template-hash": "866577b69d"
+    },
+    "name": "bad-image-866577b69d",
+    "namespace": "rw-broken",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "bad-image",
+      "uid": "8a662b44-fa9b-4a2c-96a8-f728b3647bd0"
+     }
+    ],
+    "resourceVersion": "615",
+    "uid": "5631bc70-dd0a-4936-9163-f4416cd8a064"
+   },
+   "spec": {
+    "replicas": 1,
+    "selector": {
+     "matchLabels": {
+      "app": "bad-image",
+      "pod-template-hash": "866577b69d"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "bad-image",
+       "pod-template-hash": "866577b69d"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "nginx:does-not-exist-0.0.0",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "8Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "fullyLabeledReplicas": 1,
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "1",
+     "deployment.kubernetes.io/max-replicas": "2",
+     "deployment.kubernetes.io/revision": "1"
+    },
+    "creationTimestamp": "2026-11-03T17:33:02Z",
+    "generation": 1,
+    "labels": {
+     "app": "bad-probe",
+     "pod-template-hash": "776cdc668b"
+    },
+    "name": "bad-probe-776cdc668b",
+    "namespace": "rw-broken",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "bad-probe",
+      "uid": "056ea48e-5513-4304-b7c1-7b10375df3b1"
+     }
+    ],
+    "resourceVersion": "604",
+    "uid": "62ce13e9-2b1e-4212-8c36-1a9d3f273e95"
+   },
+   "spec": {
+    "replicas": 1,
+    "selector": {
+     "matchLabels": {
+      "app": "bad-probe",
+      "pod-template-hash": "776cdc668b"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "bad-probe",
+       "pod-template-hash": "776cdc668b"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "nginx:alpine",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "ports": [
+         {
+          "containerPort": 80,
+          "protocol": "TCP"
+         }
+        ],
+        "readinessProbe": {
+         "failureThreshold": 1,
+         "httpGet": {
+          "path": "/",
+          "port": 9999,
+          "scheme": "HTTP"
+         },
+         "periodSeconds": 5,
+         "successThreshold": 1,
+         "timeoutSeconds": 1
+        },
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "8Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "fullyLabeledReplicas": 1,
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "1",
+     "deployment.kubernetes.io/max-replicas": "2",
+     "deployment.kubernetes.io/revision": "1"
+    },
+    "creationTimestamp": "2026-11-03T17:33:02Z",
+    "generation": 1,
+    "labels": {
+     "app": "crashloop",
+     "pod-template-hash": "77d67d4789"
+    },
+    "name": "crashloop-77d67d4789",
+    "namespace": "rw-broken",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "crashloop",
+      "uid": "cfc9bed4-bbca-4712-9d63-9451f0f52343"
+     }
+    ],
+    "resourceVersion": "4019",
+    "uid": "6092dcd8-ab06-4664-ad24-358c26317a4c"
+   },
+   "spec": {
+    "replicas": 1,
+    "selector": {
+     "matchLabels": {
+      "app": "crashloop",
+      "pod-template-hash": "77d67d4789"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "crashloop",
+       "pod-template-hash": "77d67d4789"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sh",
+         "-c",
+         "echo 'fatal: cannot load config' >&2; exit 1"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "2Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "fullyLabeledReplicas": 1,
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "1",
+     "deployment.kubernetes.io/max-replicas": "2",
+     "deployment.kubernetes.io/revision": "1"
+    },
+    "creationTimestamp": "2026-11-03T17:33:03Z",
+    "generation": 1,
+    "labels": {
+     "app": "oom",
+     "pod-template-hash": "d84c6594b"
+    },
+    "name": "oom-d84c6594b",
+    "namespace": "rw-broken",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "oom",
+      "uid": "bad99d0f-bde2-4063-a137-5fb955ebb6f3"
+     }
+    ],
+    "resourceVersion": "4075",
+    "uid": "acd0ac99-ae60-4444-a4cb-07d3439355fb"
+   },
+   "spec": {
+    "replicas": 1,
+    "selector": {
+     "matchLabels": {
+      "app": "oom",
+      "pod-template-hash": "d84c6594b"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "oom",
+       "pod-template-hash": "d84c6594b"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sh",
+         "-c",
+         "x=$(head -c 67108864 /dev/zero | tr '\\0' a); echo ${#x}; sleep 3600"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "limits": {
+          "memory": "16Mi"
+         },
+         "requests": {
+          "cpu": "1m",
+          "memory": "8Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "fullyLabeledReplicas": 1,
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "1",
+     "deployment.kubernetes.io/max-replicas": "2",
+     "deployment.kubernetes.io/revision": "2"
+    },
+    "creationTimestamp": "2026-11-03T17:33:26Z",
+    "generation": 1,
+    "labels": {
+     "app": "stuck-rollout",
+     "pod-template-hash": "6587d4dd99"
+    },
+    "name": "stuck-rollout-6587d4dd99",
+    "namespace": "rw-broken",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "stuck-rollout",
+      "uid": "c2191383-6e64-4fa5-8466-3c6b1d5c8bcb"
+     }
+    ],
+    "resourceVersion": "884",
+    "uid": "89ee5467-12e5-435e-9df6-00fb7d5e9bca"
+   },
+   "spec": {
+    "replicas": 1,
+    "selector": {
+     "matchLabels": {
+      "app": "stuck-rollout",
+      "pod-template-hash": "6587d4dd99"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "stuck-rollout",
+       "pod-template-hash": "6587d4dd99"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "nginx:does-not-exist-0.0.0",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "8Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "fullyLabeledReplicas": 1,
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "ReplicaSet",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/desired-replicas": "1",
+     "deployment.kubernetes.io/max-replicas": "2",
+     "deployment.kubernetes.io/revision": "1"
+    },
+    "creationTimestamp": "2026-11-03T17:33:04Z",
+    "generation": 1,
+    "labels": {
+     "app": "stuck-rollout",
+     "pod-template-hash": "65dc6dd5d6"
+    },
+    "name": "stuck-rollout-65dc6dd5d6",
+    "namespace": "rw-broken",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "Deployment",
+      "name": "stuck-rollout",
+      "uid": "c2191383-6e64-4fa5-8466-3c6b1d5c8bcb"
+     }
+    ],
+    "resourceVersion": "872",
+    "uid": "6b48def5-be6b-4caa-be0e-5351db0b3912"
+   },
+   "spec": {
+    "replicas": 1,
+    "selector": {
+     "matchLabels": {
+      "app": "stuck-rollout",
+      "pod-template-hash": "65dc6dd5d6"
+     }
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "stuck-rollout",
+       "pod-template-hash": "65dc6dd5d6"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "nginx:alpine",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "8Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "fullyLabeledReplicas": 1,
+    "observedGeneration": 1,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0
+   }
+  }
+ ],
+ "kind": "List",
+ "metadata": {
+  "resourceVersion": ""
+ }
+}
