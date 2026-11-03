@@ -1,0 +1,359 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-seaweedfs/statefulsets/swfs-down
+now: '2026-11-03T23:15:48.556Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - statefulsets
+  - swfs-down
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-down\",\"app.kubernetes.io/name\":\"seaweedfs\"},\"name\":\"swfs-down\",\"namespace\":\"rw-seaweedfs\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-down\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"serviceName\":\"swfs-down\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-down\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"spec\":{\"containers\":[{\"args\":[\"server\",\"-dir=/data\",\"-filer\",\"-s3\"],\"image\":\"chrislusf/seaweedfs:does-not-exist-0.0.0\",\"name\":\"seaweedfs\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"1Mi\"}}}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T23:13:03Z",
+            "generation": 1,
+            "labels": {
+                "app.kubernetes.io/component": "all-in-one",
+                "app.kubernetes.io/instance": "swfs-down",
+                "app.kubernetes.io/name": "seaweedfs"
+            },
+            "name": "swfs-down",
+            "namespace": "rw-seaweedfs",
+            "resourceVersion": "49484",
+            "uid": "ec64862a-accc-4c82-ae9f-b3d7699bab42"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/component": "all-in-one",
+                    "app.kubernetes.io/instance": "swfs-down",
+                    "app.kubernetes.io/name": "seaweedfs"
+                }
+            },
+            "serviceName": "swfs-down",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-down",
+                        "app.kubernetes.io/name": "seaweedfs"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-filer",
+                                "-s3"
+                            ],
+                            "image": "chrislusf/seaweedfs:does-not-exist-0.0.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 0,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "swfs-down-5c98b766db",
+            "observedGeneration": 1,
+            "replicas": 1,
+            "updateRevision": "swfs-down-5c98b766db",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=seaweedfs,app.kubernetes.io/instance=swfs-down
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:13:03Z",
+                    "generateName": "swfs-down-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-down",
+                        "app.kubernetes.io/name": "seaweedfs",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "swfs-down-5c98b766db",
+                        "statefulset.kubernetes.io/pod-name": "swfs-down-0"
+                    },
+                    "name": "swfs-down-0",
+                    "namespace": "rw-seaweedfs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "swfs-down",
+                            "uid": "ec64862a-accc-4c82-ae9f-b3d7699bab42"
+                        }
+                    ],
+                    "resourceVersion": "50017",
+                    "uid": "c6fac34b-76ea-4178-8361-1291213b1322"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-filer",
+                                "-s3"
+                            ],
+                            "image": "chrislusf/seaweedfs:does-not-exist-0.0.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "1Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-tzvdp",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "swfs-down-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "swfs-down",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-tzvdp",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "1Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:13:03Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:13:03Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:13:03Z",
+                            "message": "containers with unready status: [seaweedfs]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:13:03Z",
+                            "message": "containers with unready status: [seaweedfs]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:13:03Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "image": "chrislusf/seaweedfs:does-not-exist-0.0.0",
+                            "imageID": "",
+                            "lastState": {},
+                            "name": "seaweedfs",
+                            "ready": false,
+                            "restartCount": 0,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "Back-off pulling image \"chrislusf/seaweedfs:does-not-exist-0.0.0\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/chrislusf/seaweedfs:does-not-exist-0.0.0\": failed to resolve reference \"docker.io/chrislusf/seaweedfs:does-not-exist-0.0.0\": docker.io/chrislusf/seaweedfs:does-not-exist-0.0.0: not found",
+                                    "reason": "ImagePullBackOff"
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-tzvdp",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Pending",
+                    "podIP": "10.244.0.130",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.130"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "requests": {
+                            "cpu": "1m",
+                            "memory": "1Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T23:13:03Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: failed
+  errorCodes:
+  - unreachable

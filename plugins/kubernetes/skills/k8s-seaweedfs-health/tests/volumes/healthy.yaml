@@ -1,0 +1,535 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-seaweedfs/statefulsets/swfs-ok
+now: '2026-11-03T23:17:25.141Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - statefulsets
+  - swfs-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-ok\",\"app.kubernetes.io/name\":\"seaweedfs\"},\"name\":\"swfs-ok\",\"namespace\":\"rw-seaweedfs\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-ok\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"serviceName\":\"swfs-ok\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-ok\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"spec\":{\"containers\":[{\"args\":[\"server\",\"-dir=/data\",\"-ip.bind=0.0.0.0\",\"-master.volumeSizeLimitMB=16\",\"-volume.max=30\",\"-filer\",\"-s3\",\"-metricsPort=9327\"],\"image\":\"chrislusf/seaweedfs:4.41\",\"name\":\"seaweedfs\",\"ports\":[{\"containerPort\":9333,\"name\":\"swfs-master\"},{\"containerPort\":8080,\"name\":\"swfs-volume\"},{\"containerPort\":8888,\"name\":\"swfs-filer\"},{\"containerPort\":8333,\"name\":\"swfs-s3\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/cluster/status\",\"port\":9333},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"256Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"64Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}],\"volumes\":[{\"emptyDir\":{},\"name\":\"data\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T22:50:39Z",
+            "generation": 1,
+            "labels": {
+                "app.kubernetes.io/component": "all-in-one",
+                "app.kubernetes.io/instance": "swfs-ok",
+                "app.kubernetes.io/name": "seaweedfs"
+            },
+            "name": "swfs-ok",
+            "namespace": "rw-seaweedfs",
+            "resourceVersion": "48188",
+            "uid": "2a857b94-7a11-4ef8-b80f-f1050d8fc321"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/component": "all-in-one",
+                    "app.kubernetes.io/instance": "swfs-ok",
+                    "app.kubernetes.io/name": "seaweedfs"
+                }
+            },
+            "serviceName": "swfs-ok",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-ok",
+                        "app.kubernetes.io/name": "seaweedfs"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-ip.bind=0.0.0.0",
+                                "-master.volumeSizeLimitMB=16",
+                                "-volume.max=30",
+                                "-filer",
+                                "-s3",
+                                "-metricsPort=9327"
+                            ],
+                            "image": "chrislusf/seaweedfs:4.41",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "ports": [
+                                {
+                                    "containerPort": 9333,
+                                    "name": "swfs-master",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8080,
+                                    "name": "swfs-volume",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "swfs-filer",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8333,
+                                    "name": "swfs-s3",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/cluster/status",
+                                    "port": 9333,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "volumes": [
+                        {
+                            "emptyDir": {},
+                            "name": "data"
+                        }
+                    ]
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "swfs-ok-5b6f664bf7",
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "swfs-ok-5b6f664bf7",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=seaweedfs,app.kubernetes.io/instance=swfs-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:06:50Z",
+                    "generateName": "swfs-ok-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-ok",
+                        "app.kubernetes.io/name": "seaweedfs",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "swfs-ok-5b6f664bf7",
+                        "statefulset.kubernetes.io/pod-name": "swfs-ok-0"
+                    },
+                    "name": "swfs-ok-0",
+                    "namespace": "rw-seaweedfs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "swfs-ok",
+                            "uid": "2a857b94-7a11-4ef8-b80f-f1050d8fc321"
+                        }
+                    ],
+                    "resourceVersion": "48191",
+                    "uid": "12c88220-246d-4f42-86c2-65413964a27e"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-ip.bind=0.0.0.0",
+                                "-master.volumeSizeLimitMB=16",
+                                "-volume.max=30",
+                                "-filer",
+                                "-s3",
+                                "-metricsPort=9327"
+                            ],
+                            "image": "chrislusf/seaweedfs:4.41",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "ports": [
+                                {
+                                    "containerPort": 9333,
+                                    "name": "swfs-master",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8080,
+                                    "name": "swfs-volume",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "swfs-filer",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8333,
+                                    "name": "swfs-s3",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/cluster/status",
+                                    "port": 9333,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-w89wz",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "swfs-ok-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "swfs-ok",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "emptyDir": {},
+                            "name": "data"
+                        },
+                        {
+                            "name": "kube-api-access-w89wz",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "10m",
+                        "memory": "64Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:06:51Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:06:50Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:06:56Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:06:56Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:06:50Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "10m",
+                                "memory": "64Mi"
+                            },
+                            "containerID": "containerd://84c549a4f90ffe2bb1bdef973842849dbf51f8affc9eb931b12bae67b29f490f",
+                            "image": "docker.io/chrislusf/seaweedfs:4.41",
+                            "imageID": "docker.io/chrislusf/seaweedfs@sha256:43b768cd62b00d132439cda881b93fd1adebf1b315e996e794087743821d771d",
+                            "lastState": {},
+                            "name": "seaweedfs",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T23:06:51Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-w89wz",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.111",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.111"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "256Mi"
+                        },
+                        "requests": {
+                            "memory": "64Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T23:06:50Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-ok-0:9333/proxy/dir/status
+  rc: 0
+  stdout: '{"Topology":{"Max":30,"Free":9,"DataCenters":[{"Id":"DefaultDataCenter","Racks":[{"Id":"DefaultRack","DataNodes":[{"Url":"10.244.0.111:8080","PublicUrl":"10.244.0.111:8080","Volumes":21,"EcShards":0,"Max":30,"VolumeIds":"
+    1-21"}]}]}],"Layouts":[{"replication":"000","ttl":"","writables":[8,9,10,11,12,13,14],"collection":"logs","diskType":"hdd"},{"replication":"000","ttl":"","writables":[15,16,17,18,19,20,21],"collection":"","diskType":"hdd"},{"replication":"000","ttl":"","writables":[1,2,3,4,5,6,7],"collection":"photos","diskType":"hdd"}]},"TopologyId":"4b1ab99f-127c-483e-927b-f1ab03a5da61","Version":"30GB
+    4.41 de34a1a87"}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-ok-0:9333/proxy/vol/status
+  rc: 0
+  stdout: '{"Version":"30GB 4.41 de34a1a87","Volumes":{"DataCenters":{"DefaultDataCenter":{"DefaultRack":{"10.244.0.111:8080":[{"Id":19,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":7,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":11,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":15,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":1,"Size":2000056,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":3,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":4,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":6,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":8,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":9,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":10,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":16,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":5,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":12,"Size":1000056,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747217,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":18,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":20,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":21,"Size":1680,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":2,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":13,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":14,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":17,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""}]}}},"Free":9,"Max":30}}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-ok-0:8080/proxy/status
+  rc: 0
+  stdout: '{"DiskStatuses":[{"dir":"/data","all":977843695616,"used":155825913856,"free":822017781760,"percent_free":84.06433,"percent_used":15.935667}],"Version":"30GB
+    4.41 de34a1a87","Volumes":[{"Id":1,"Size":2000013,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":2,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":3,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":4,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":5,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":6,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":7,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"photos","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":8,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":9,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":10,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":11,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":12,"Size":1000013,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747217,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":13,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":14,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"logs","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747216,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":15,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":16,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":17,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":18,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":19,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":20,"Size":0,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":21,"Size":1643,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793747272,"RemoteStorageName":"","RemoteStorageKey":""}]}'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    slots:
+      max: 30
+      belowMinFree: false
+      dataNodeCount: 1
+    layouts:
+      withoutWritable: 0
+    volumes:
+      readOnlyVolumeCount: 0
+      readOnly: []
+      compactionCandidateCount: 0
+    disk:
+      podCount: 1
+      queriedCount: 1
+      truncated: false
