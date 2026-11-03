@@ -1,0 +1,204 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-argo/applications/failed-sync
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-argo
+  - get
+  - applications.argoproj.io
+  - failed-sync
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "Application",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"failed-sync\",\"namespace\":\"rw-argo\"},\"spec\":{\"destination\":{\"namespace\":\"api\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"platform\",\"sources\":[{\"chart\":\"api\",\"helm\":{\"parameters\":[{\"name\":\"image.tag\",\"value\":\"v3.1.0\"}],\"releaseName\":\"api\",\"valueFiles\":[\"$values/envs/prod/values.yaml\",\"values-extra.yaml\"]},\"repoURL\":\"https://charts.example.test\",\"targetRevision\":\"3.x\"},{\"ref\":\"values\",\"repoURL\":\"https://git.example.test/org/config.git\",\"targetRevision\":\"main\"}],\"syncPolicy\":{\"automated\":{\"prune\":true,\"selfHeal\":true},\"retry\":{\"limit\":5}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:48:12Z",
+            "generation": 1,
+            "name": "failed-sync",
+            "namespace": "rw-argo",
+            "resourceVersion": "14708",
+            "uid": "48c54f0c-6bef-42e4-b8dc-b693e5b2c399"
+        },
+        "spec": {
+            "destination": {
+                "namespace": "api",
+                "server": "https://kubernetes.default.svc"
+            },
+            "project": "platform",
+            "sources": [
+                {
+                    "chart": "api",
+                    "helm": {
+                        "parameters": [
+                            {
+                                "name": "image.tag",
+                                "value": "v3.1.0"
+                            }
+                        ],
+                        "releaseName": "api",
+                        "valueFiles": [
+                            "$values/envs/prod/values.yaml",
+                            "values-extra.yaml"
+                        ]
+                    },
+                    "repoURL": "https://charts.example.test",
+                    "targetRevision": "3.x"
+                },
+                {
+                    "ref": "values",
+                    "repoURL": "https://git.example.test/org/config.git",
+                    "targetRevision": "main"
+                }
+            ],
+            "syncPolicy": {
+                "automated": {
+                    "prune": true,
+                    "selfHeal": true
+                },
+                "retry": {
+                    "limit": 5
+                }
+            }
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T12:58:00Z",
+                    "message": "Failed to load target state: failed to generate manifest for source 1 of 2: rpc error: code = Unknown desc = helm template . failed: Error: values file envs/prod/values.yaml not found",
+                    "type": "ComparisonError"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T12:59:00Z",
+                    "message": "Failed sync attempt: one or more objects failed to apply",
+                    "type": "SyncError"
+                }
+            ],
+            "health": {
+                "status": "Missing"
+            },
+            "history": [
+                {
+                    "deployStartedAt": "2026-11-02T08:00:00Z",
+                    "deployedAt": "2026-11-02T08:00:04Z",
+                    "id": 0,
+                    "initiatedBy": {
+                        "automated": true
+                    },
+                    "revisions": [
+                        "3.0.0",
+                        "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
+                    ],
+                    "sources": [
+                        {
+                            "chart": "api",
+                            "helm": {
+                                "valueFiles": [
+                                    "$values/envs/prod/values.yaml",
+                                    "values-extra.yaml"
+                                ]
+                            },
+                            "repoURL": "https://charts.example.test",
+                            "targetRevision": "3.x"
+                        },
+                        {
+                            "ref": "values",
+                            "repoURL": "https://git.example.test/org/config.git",
+                            "targetRevision": "main"
+                        }
+                    ]
+                }
+            ],
+            "operationState": {
+                "finishedAt": "2026-11-03T12:59:00Z",
+                "message": "one or more objects failed to apply, reason: admission webhook \"policy.example.test\" denied the request: containers must set resource limits",
+                "operation": {
+                    "initiatedBy": {
+                        "automated": true
+                    }
+                },
+                "phase": "Failed",
+                "retryCount": 5,
+                "startedAt": "2026-11-03T12:57:00Z",
+                "syncResult": {
+                    "resources": [
+                        {
+                            "group": "apps",
+                            "kind": "Deployment",
+                            "message": "admission webhook \"policy.example.test\" denied the request: containers must set resource limits",
+                            "name": "api",
+                            "namespace": "api",
+                            "status": "SyncFailed",
+                            "syncPhase": "Sync",
+                            "version": "v1"
+                        },
+                        {
+                            "kind": "Service",
+                            "message": "service/api created",
+                            "name": "api",
+                            "namespace": "api",
+                            "status": "Synced",
+                            "version": "v1"
+                        }
+                    ],
+                    "revisions": [
+                        "3.1.0",
+                        "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
+                    ]
+                }
+            },
+            "reconciledAt": "2026-11-03T13:00:05Z",
+            "resources": [
+                {
+                    "group": "apps",
+                    "health": {
+                        "status": "Missing"
+                    },
+                    "kind": "Deployment",
+                    "name": "api",
+                    "namespace": "api",
+                    "requiresPruning": false,
+                    "status": "OutOfSync",
+                    "version": "v1"
+                },
+                {
+                    "health": {
+                        "status": "Healthy"
+                    },
+                    "kind": "Service",
+                    "name": "api",
+                    "namespace": "api",
+                    "status": "Synced",
+                    "version": "v1"
+                }
+            ],
+            "sourceTypes": [
+                "Helm",
+                "Directory"
+            ],
+            "sync": {
+                "revisions": [
+                    "3.1.0",
+                    "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
+                ],
+                "status": "OutOfSync"
+            }
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    sync: {status: OutOfSync, revisions: ["3.1.0", "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"]}
+    health: {status: Missing}
+    operation: {phase: Failed, retryCount: 5, startedAt: "2026-11-03T12:57:00Z", finishedAt: "2026-11-03T12:59:00Z", automated: true, failureCount: 1}
+    application: {name: failed-sync, project: platform, syncPolicy: {automated: true, prune: true, selfHeal: true, allowEmpty: false, syncOptions: [], retryLimit: 5}}

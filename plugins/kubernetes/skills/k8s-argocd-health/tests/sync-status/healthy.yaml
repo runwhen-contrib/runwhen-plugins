@@ -1,0 +1,138 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-argo/applications/web
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-argo
+  - get
+  - applications.argoproj.io
+  - web
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "Application",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-argo\"},\"spec\":{\"destination\":{\"namespace\":\"web\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"source\":{\"path\":\"deploy/web\",\"repoURL\":\"https://git.example.test/org/web.git\",\"targetRevision\":\"main\"},\"syncPolicy\":{\"automated\":{\"prune\":true,\"selfHeal\":true},\"syncOptions\":[\"CreateNamespace=true\"]}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:48:11Z",
+            "generation": 1,
+            "name": "web",
+            "namespace": "rw-argo",
+            "resourceVersion": "14703",
+            "uid": "36864879-5a73-4796-a971-e33fa5ebdc93"
+        },
+        "spec": {
+            "destination": {
+                "namespace": "web",
+                "server": "https://kubernetes.default.svc"
+            },
+            "project": "default",
+            "source": {
+                "path": "deploy/web",
+                "repoURL": "https://git.example.test/org/web.git",
+                "targetRevision": "main"
+            },
+            "syncPolicy": {
+                "automated": {
+                    "prune": true,
+                    "selfHeal": true
+                },
+                "syncOptions": [
+                    "CreateNamespace=true"
+                ]
+            }
+        },
+        "status": {
+            "health": {
+                "status": "Healthy"
+            },
+            "history": [
+                {
+                    "deployStartedAt": "2026-11-03T10:00:00Z",
+                    "deployedAt": "2026-11-03T10:00:04Z",
+                    "id": 0,
+                    "revision": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+                    "source": {
+                        "path": "deploy/web",
+                        "repoURL": "https://git.example.test/org/web.git",
+                        "targetRevision": "main"
+                    }
+                }
+            ],
+            "operationState": {
+                "finishedAt": "2026-11-03T10:00:04Z",
+                "message": "successfully synced (all tasks run)",
+                "phase": "Succeeded",
+                "startedAt": "2026-11-03T10:00:00Z",
+                "syncResult": {
+                    "resources": [
+                        {
+                            "group": "apps",
+                            "kind": "Deployment",
+                            "message": "deployment.apps/web configured",
+                            "name": "web",
+                            "namespace": "web",
+                            "status": "Synced",
+                            "version": "v1"
+                        }
+                    ],
+                    "revision": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+                }
+            },
+            "reconciledAt": "2026-11-03T10:00:05Z",
+            "resources": [
+                {
+                    "group": "apps",
+                    "health": {
+                        "status": "Healthy"
+                    },
+                    "kind": "Deployment",
+                    "name": "web",
+                    "namespace": "web",
+                    "status": "Synced",
+                    "version": "v1"
+                },
+                {
+                    "health": {
+                        "status": "Healthy"
+                    },
+                    "kind": "Service",
+                    "name": "web",
+                    "namespace": "web",
+                    "status": "Synced",
+                    "version": "v1"
+                },
+                {
+                    "kind": "ConfigMap",
+                    "name": "web-config",
+                    "namespace": "web",
+                    "status": "Synced",
+                    "version": "v1"
+                }
+            ],
+            "sourceType": "Directory",
+            "sync": {
+                "revision": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+                "status": "Synced"
+            }
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    sync: {status: Synced}
+    health: {status: Healthy, message: null}
+    conditions: []
+    operation: {phase: Succeeded, retryCount: 0, failureCount: 0, failures: []}
+    application: {name: web, destination: {server: "https://kubernetes.default.svc", name: null, namespace: web}, resourceCount: 3}
+    sources:
+    - {index: 0, repoURL: "https://git.example.test/org/web.git", path: deploy/web, chart: null, targetRevision: main, ref: null, hasHelm: false}

@@ -1,0 +1,154 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-argo/applications/helm-web
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-argo
+  - get
+  - applications.argoproj.io
+  - helm-web
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "Application",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"helm-web\",\"namespace\":\"rw-argo\"},\"spec\":{\"destination\":{\"namespace\":\"helm-web\",\"server\":\"https://kubernetes.default.svc\"},\"project\":\"default\",\"source\":{\"chart\":\"nginx\",\"helm\":{\"parameters\":[{\"name\":\"image.tag\",\"value\":\"v1.2.3\"}],\"releaseName\":\"web\",\"valueFiles\":[\"values-prod.yaml\"],\"valuesObject\":{\"replicaCount\":2}},\"repoURL\":\"https://charts.example.test\",\"targetRevision\":\"15.x\"},\"syncPolicy\":{\"automated\":{}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:48:11Z",
+            "generation": 1,
+            "name": "helm-web",
+            "namespace": "rw-argo",
+            "resourceVersion": "14704",
+            "uid": "f5332ecd-4a71-429f-98be-2035a2ef32a5"
+        },
+        "spec": {
+            "destination": {
+                "namespace": "helm-web",
+                "server": "https://kubernetes.default.svc"
+            },
+            "project": "default",
+            "source": {
+                "chart": "nginx",
+                "helm": {
+                    "parameters": [
+                        {
+                            "name": "image.tag",
+                            "value": "v1.2.3"
+                        }
+                    ],
+                    "releaseName": "web",
+                    "valueFiles": [
+                        "values-prod.yaml"
+                    ],
+                    "valuesObject": {
+                        "replicaCount": 2
+                    }
+                },
+                "repoURL": "https://charts.example.test",
+                "targetRevision": "15.x"
+            },
+            "syncPolicy": {
+                "automated": {}
+            }
+        },
+        "status": {
+            "health": {
+                "status": "Healthy"
+            },
+            "history": [
+                {
+                    "deployStartedAt": "2026-11-02T09:00:00Z",
+                    "deployedAt": "2026-11-02T09:00:04Z",
+                    "id": 0,
+                    "revision": "15.1.0",
+                    "source": {
+                        "chart": "nginx",
+                        "helm": {
+                            "valueFiles": [
+                                "values-prod.yaml"
+                            ]
+                        },
+                        "repoURL": "https://charts.example.test",
+                        "targetRevision": "15.x"
+                    }
+                },
+                {
+                    "deployStartedAt": "2026-11-03T11:00:00Z",
+                    "deployedAt": "2026-11-03T11:00:04Z",
+                    "id": 1,
+                    "initiatedBy": {
+                        "automated": true
+                    },
+                    "revision": "15.2.0",
+                    "source": {
+                        "chart": "nginx",
+                        "helm": {
+                            "valueFiles": [
+                                "values-prod.yaml"
+                            ]
+                        },
+                        "repoURL": "https://charts.example.test",
+                        "targetRevision": "15.x"
+                    }
+                }
+            ],
+            "operationState": {
+                "finishedAt": "2026-11-03T11:00:04Z",
+                "message": "successfully synced (all tasks run)",
+                "operation": {
+                    "initiatedBy": {
+                        "automated": true
+                    }
+                },
+                "phase": "Succeeded",
+                "startedAt": "2026-11-03T11:00:00Z",
+                "syncResult": {
+                    "resources": [],
+                    "revision": "15.2.0"
+                }
+            },
+            "reconciledAt": "2026-11-03T11:00:05Z",
+            "resources": [
+                {
+                    "group": "apps",
+                    "health": {
+                        "status": "Healthy"
+                    },
+                    "kind": "Deployment",
+                    "name": "web-nginx",
+                    "namespace": "helm-web",
+                    "status": "Synced",
+                    "version": "v1"
+                },
+                {
+                    "health": {
+                        "status": "Healthy"
+                    },
+                    "kind": "Service",
+                    "name": "web-nginx",
+                    "namespace": "helm-web",
+                    "status": "Synced",
+                    "version": "v1"
+                }
+            ],
+            "sourceType": "Helm",
+            "sync": {
+                "revision": "15.2.0",
+                "status": "Synced"
+            }
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    helm: {isHelm: true, sourceCount: 1, sourceTypes: [Helm]}
+    lastDeployed: {historyCount: 2, entry: {id: 1, revision: 15.2.0, deployedAt: "2026-11-03T11:00:04Z", automated: true}}
