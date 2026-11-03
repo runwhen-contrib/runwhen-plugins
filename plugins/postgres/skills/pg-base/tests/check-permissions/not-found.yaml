@@ -16,7 +16,7 @@ inputs:
     privilege: EXECUTE
   - function: pg_catalog.pg_database_size
     privilege: EXECUTE
-now: '2026-11-03T21:25:59.269Z'
+now: '2026-11-03T21:53:08.581Z'
 calls:
 - argv:
   - psql
@@ -27,10 +27,8 @@ calls:
   - -v
   - ON_ERROR_STOP=1
   - -c
-  - SET statement_timeout = 30000; SET default_transaction_read_only = on
-  - -c
   - |-
-    SELECT json_build_object(
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
       'user', current_user::text,
       'superuser', current_setting('is_superuser') = 'on',
       'databases', (
@@ -45,12 +43,14 @@ calls:
         FROM pg_database d),
       'roles', (
         SELECT coalesce(json_agg(json_build_object(
-          'role', r,
-          'exists', to_regrole(r) IS NOT NULL,
-          'usage', coalesce(pg_has_role(current_user, to_regrole(r), 'USAGE'), false),
-          'member', coalesce(pg_has_role(current_user, to_regrole(r), 'MEMBER'), false)
-        ) ORDER BY r), '[]'::json)
-        FROM unnest(ARRAY[$q0$pg_monitor$q0$, $q0$pg_read_all_stats$q0$]::text[]) AS r),
+          'role', q.r,
+          'exists', q.oid IS NOT NULL,
+          'usage', coalesce(pg_has_role(current_user, q.oid, 'USAGE'), false),
+          'member', coalesce(pg_has_role(current_user, q.oid, 'MEMBER'), false)
+        ) ORDER BY q.r), '[]'::json)
+        FROM (
+          SELECT r, (SELECT oid FROM pg_roles WHERE rolname = r) AS oid
+          FROM unnest(ARRAY[$q0$pg_monitor$q0$, $q0$pg_read_all_stats$q0$]::text[]) AS r) q),
       'functions', (
         SELECT coalesce(json_agg(json_build_object(
           'function', f,
@@ -63,7 +63,7 @@ calls:
             WHERE n.nspname || '.' || p.proname = f)
         ) ORDER BY f), '[]'::json)
         FROM unnest(ARRAY[$q0$pg_catalog.pg_control_system$q0$, $q0$pg_catalog.pg_database_size$q0$]::text[]) AS f)
-    )
+    ); COMMIT;
   rc: 2
   stdout: ''
   stderr: |
