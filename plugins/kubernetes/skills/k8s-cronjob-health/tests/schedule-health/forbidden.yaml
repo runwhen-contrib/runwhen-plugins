@@ -1,0 +1,24 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-cron/cronjobs/forbid-long
+inputs:
+  since: 3650d
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-cron
+  - get
+  - cronjobs.batch
+  - forbid-long
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): cronjobs.batch "forbid-long" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "cronjobs" in API group "batch" in the namespace "rw-cron"
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

@@ -1,0 +1,1079 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-cron/cronjobs/forbid-long
+inputs:
+  since: 3650d
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-cron
+  - get
+  - cronjobs.batch
+  - forbid-long
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "batch/v1",
+        "kind": "CronJob",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"forbid-long\",\"namespace\":\"rw-cron\"},\"spec\":{\"concurrencyPolicy\":\"Forbid\",\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 3600\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"* * * * *\",\"startingDeadlineSeconds\":90}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:50:14Z",
+            "generation": 1,
+            "name": "forbid-long",
+            "namespace": "rw-cron",
+            "resourceVersion": "15116",
+            "uid": "96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff"
+        },
+        "spec": {
+            "concurrencyPolicy": "Forbid",
+            "failedJobsHistoryLimit": 1,
+            "jobTemplate": {
+                "metadata": {},
+                "spec": {
+                    "backoffLimit": 0,
+                    "template": {
+                        "metadata": {},
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "sleep 3600"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                }
+            },
+            "schedule": "* * * * *",
+            "startingDeadlineSeconds": 90,
+            "successfulJobsHistoryLimit": 3,
+            "suspend": false
+        },
+        "status": {
+            "active": [
+                {
+                    "apiVersion": "batch/v1",
+                    "kind": "Job",
+                    "name": "forbid-long-29895591",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "15113",
+                    "uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+                }
+            ],
+            "lastScheduleTime": "2026-11-03T19:51:00Z"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-cron
+  - get
+  - jobs.batch
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T19:59:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T19:59:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "6f48b0e8-5c2a-401d-95b7-fb2ff86523a3",
+                        "batch.kubernetes.io/job-name": "always-fails-29895599",
+                        "controller-uid": "6f48b0e8-5c2a-401d-95b7-fb2ff86523a3",
+                        "job-name": "always-fails-29895599"
+                    },
+                    "name": "always-fails-29895599",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "always-fails",
+                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                        }
+                    ],
+                    "resourceVersion": "16470",
+                    "uid": "6f48b0e8-5c2a-401d-95b7-fb2ff86523a3"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "6f48b0e8-5c2a-401d-95b7-fb2ff86523a3"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "6f48b0e8-5c2a-401d-95b7-fb2ff86523a3",
+                                "batch.kubernetes.io/job-name": "always-fails-29895599",
+                                "controller-uid": "6f48b0e8-5c2a-401d-95b7-fb2ff86523a3",
+                                "job-name": "always-fails-29895599"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo about to fail; exit 3"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": "2026-11-03T19:59:04Z",
+                            "lastTransitionTime": "2026-11-03T19:59:04Z",
+                            "message": "Job has reached the specified backoff limit",
+                            "reason": "BackoffLimitExceeded",
+                            "status": "True",
+                            "type": "FailureTarget"
+                        },
+                        {
+                            "lastProbeTime": "2026-11-03T19:59:04Z",
+                            "lastTransitionTime": "2026-11-03T19:59:04Z",
+                            "message": "Job has reached the specified backoff limit",
+                            "reason": "BackoffLimitExceeded",
+                            "status": "True",
+                            "type": "Failed"
+                        }
+                    ],
+                    "failed": 1,
+                    "ready": 0,
+                    "startTime": "2026-11-03T19:59:00Z",
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:00:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:00:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
+                        "batch.kubernetes.io/job-name": "always-fails-29895600",
+                        "controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
+                        "job-name": "always-fails-29895600"
+                    },
+                    "name": "always-fails-29895600",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "always-fails",
+                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                        }
+                    ],
+                    "resourceVersion": "16612",
+                    "uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
+                                "batch.kubernetes.io/job-name": "always-fails-29895600",
+                                "controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
+                                "job-name": "always-fails-29895600"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo about to fail; exit 3"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": "2026-11-03T20:00:05Z",
+                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "message": "Job has reached the specified backoff limit",
+                            "reason": "BackoffLimitExceeded",
+                            "status": "True",
+                            "type": "FailureTarget"
+                        },
+                        {
+                            "lastProbeTime": "2026-11-03T20:00:05Z",
+                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "message": "Job has reached the specified backoff limit",
+                            "reason": "BackoffLimitExceeded",
+                            "status": "True",
+                            "type": "Failed"
+                        }
+                    ],
+                    "failed": 1,
+                    "ready": 0,
+                    "startTime": "2026-11-03T20:00:00Z",
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:01:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:01:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
+                        "batch.kubernetes.io/job-name": "always-fails-29895601",
+                        "controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
+                        "job-name": "always-fails-29895601"
+                    },
+                    "name": "always-fails-29895601",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "always-fails",
+                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                        }
+                    ],
+                    "resourceVersion": "16744",
+                    "uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
+                                "batch.kubernetes.io/job-name": "always-fails-29895601",
+                                "controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
+                                "job-name": "always-fails-29895601"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo about to fail; exit 3"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": "2026-11-03T20:01:03Z",
+                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "message": "Job has reached the specified backoff limit",
+                            "reason": "BackoffLimitExceeded",
+                            "status": "True",
+                            "type": "FailureTarget"
+                        },
+                        {
+                            "lastProbeTime": "2026-11-03T20:01:03Z",
+                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "message": "Job has reached the specified backoff limit",
+                            "reason": "BackoffLimitExceeded",
+                            "status": "True",
+                            "type": "Failed"
+                        }
+                    ],
+                    "failed": 1,
+                    "ready": 0,
+                    "startTime": "2026-11-03T20:01:00Z",
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:02:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:02:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
+                        "batch.kubernetes.io/job-name": "always-fails-29895602",
+                        "controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
+                        "job-name": "always-fails-29895602"
+                    },
+                    "name": "always-fails-29895602",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "always-fails",
+                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                        }
+                    ],
+                    "resourceVersion": "16843",
+                    "uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
+                                "batch.kubernetes.io/job-name": "always-fails-29895602",
+                                "controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
+                                "job-name": "always-fails-29895602"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo about to fail; exit 3"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "active": 1,
+                    "ready": 0,
+                    "startTime": "2026-11-03T20:02:00Z",
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T19:51:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T19:51:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
+                        "batch.kubernetes.io/job-name": "forbid-long-29895591",
+                        "controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
+                        "job-name": "forbid-long-29895591"
+                    },
+                    "name": "forbid-long-29895591",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "forbid-long",
+                            "uid": "96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff"
+                        }
+                    ],
+                    "resourceVersion": "15160",
+                    "uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
+                                "batch.kubernetes.io/job-name": "forbid-long-29895591",
+                                "controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
+                                "job-name": "forbid-long-29895591"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "sleep 3600"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "active": 1,
+                    "ready": 1,
+                    "startTime": "2026-11-03T19:51:00Z",
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T19:59:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T19:59:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "b20e9ce5-95fe-4084-921c-a7fd9d0bc8c3",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895599",
+                        "controller-uid": "b20e9ce5-95fe-4084-921c-a7fd9d0bc8c3",
+                        "job-name": "ok-every-minute-29895599"
+                    },
+                    "name": "ok-every-minute-29895599",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "ok-every-minute",
+                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                        }
+                    ],
+                    "resourceVersion": "16465",
+                    "uid": "b20e9ce5-95fe-4084-921c-a7fd9d0bc8c3"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "b20e9ce5-95fe-4084-921c-a7fd9d0bc8c3"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "b20e9ce5-95fe-4084-921c-a7fd9d0bc8c3",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895599",
+                                "controller-uid": "b20e9ce5-95fe-4084-921c-a7fd9d0bc8c3",
+                                "job-name": "ok-every-minute-29895599"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo ok"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "completionTime": "2026-11-03T19:59:04Z",
+                    "conditions": [
+                        {
+                            "lastProbeTime": "2026-11-03T19:59:04Z",
+                            "lastTransitionTime": "2026-11-03T19:59:04Z",
+                            "message": "Reached expected number of succeeded pods",
+                            "reason": "CompletionsReached",
+                            "status": "True",
+                            "type": "SuccessCriteriaMet"
+                        },
+                        {
+                            "lastProbeTime": "2026-11-03T19:59:04Z",
+                            "lastTransitionTime": "2026-11-03T19:59:04Z",
+                            "message": "Reached expected number of succeeded pods",
+                            "reason": "CompletionsReached",
+                            "status": "True",
+                            "type": "Complete"
+                        }
+                    ],
+                    "ready": 0,
+                    "startTime": "2026-11-03T19:59:00Z",
+                    "succeeded": 1,
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:00:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:00:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895600",
+                        "controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
+                        "job-name": "ok-every-minute-29895600"
+                    },
+                    "name": "ok-every-minute-29895600",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "ok-every-minute",
+                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                        }
+                    ],
+                    "resourceVersion": "16613",
+                    "uid": "a381b4f7-8495-4257-a3d2-05c33795590d"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895600",
+                                "controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
+                                "job-name": "ok-every-minute-29895600"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo ok"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "completionTime": "2026-11-03T20:00:05Z",
+                    "conditions": [
+                        {
+                            "lastProbeTime": "2026-11-03T20:00:05Z",
+                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "message": "Reached expected number of succeeded pods",
+                            "reason": "CompletionsReached",
+                            "status": "True",
+                            "type": "SuccessCriteriaMet"
+                        },
+                        {
+                            "lastProbeTime": "2026-11-03T20:00:05Z",
+                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "message": "Reached expected number of succeeded pods",
+                            "reason": "CompletionsReached",
+                            "status": "True",
+                            "type": "Complete"
+                        }
+                    ],
+                    "ready": 0,
+                    "startTime": "2026-11-03T20:00:00Z",
+                    "succeeded": 1,
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:01:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:01:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895601",
+                        "controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
+                        "job-name": "ok-every-minute-29895601"
+                    },
+                    "name": "ok-every-minute-29895601",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "ok-every-minute",
+                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                        }
+                    ],
+                    "resourceVersion": "16743",
+                    "uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895601",
+                                "controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
+                                "job-name": "ok-every-minute-29895601"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo ok"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "completionTime": "2026-11-03T20:01:03Z",
+                    "conditions": [
+                        {
+                            "lastProbeTime": "2026-11-03T20:01:03Z",
+                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "message": "Reached expected number of succeeded pods",
+                            "reason": "CompletionsReached",
+                            "status": "True",
+                            "type": "SuccessCriteriaMet"
+                        },
+                        {
+                            "lastProbeTime": "2026-11-03T20:01:03Z",
+                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "message": "Reached expected number of succeeded pods",
+                            "reason": "CompletionsReached",
+                            "status": "True",
+                            "type": "Complete"
+                        }
+                    ],
+                    "ready": 0,
+                    "startTime": "2026-11-03T20:01:00Z",
+                    "succeeded": 1,
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            },
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "annotations": {
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:02:00Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:02:00Z",
+                    "generation": 1,
+                    "labels": {
+                        "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895602",
+                        "controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
+                        "job-name": "ok-every-minute-29895602"
+                    },
+                    "name": "ok-every-minute-29895602",
+                    "namespace": "rw-cron",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "batch/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "CronJob",
+                            "name": "ok-every-minute",
+                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                        }
+                    ],
+                    "resourceVersion": "16844",
+                    "uid": "742517cf-51a1-4afc-8668-b78b1edf7e27"
+                },
+                "spec": {
+                    "backoffLimit": 0,
+                    "completionMode": "NonIndexed",
+                    "completions": 1,
+                    "manualSelector": false,
+                    "parallelism": 1,
+                    "podReplacementPolicy": "TerminatingOrFailed",
+                    "selector": {
+                        "matchLabels": {
+                            "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27"
+                        }
+                    },
+                    "suspend": false,
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895602",
+                                "controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
+                                "job-name": "ok-every-minute-29895602"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "echo ok"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "job",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Never",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "active": 1,
+                    "ready": 0,
+                    "startTime": "2026-11-03T20:02:00Z",
+                    "terminating": 0,
+                    "uncountedTerminatedPods": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-cron
+  - get
+  - events
+  - --field-selector
+  - involvedObject.uid=96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T19:51:00Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "forbid-long",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "15030",
+                    "uid": "96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:51:00Z",
+                "message": "Created job forbid-long-29895591",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T19:51:00Z",
+                    "name": "forbid-long.18e4a0e5bb4de1b6",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "15118",
+                    "uid": "a17eee8b-b9a2-41c4-a053-14eb87c836b4"
+                },
+                "reason": "SuccessfulCreate",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 11,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T19:52:00Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "forbid-long",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "15116",
+                    "uid": "96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:02:00Z",
+                "message": "Not starting job because prior execution is running and concurrency policy is Forbid",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T19:52:00Z",
+                    "name": "forbid-long.18e4a0f3b0999439",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "16837",
+                    "uid": "9624047d-4ca2-4f80-9090-9e297e231ba9"
+                },
+                "reason": "JobAlreadyActive",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    schedule:
+      suspended: false
+      concurrencyPolicy: Forbid
+      startingDeadlineSeconds: 90
+      lastScheduleTime: '2026-11-03T19:51:00Z'
+      lastSuccessfulTime: null
+      successOlderThanLastSchedule: true
+      activeCount: 1
+      forbidBlocked: true
+      behindSchedule: true
+    events:
+    - type: Normal
+      reason: JobAlreadyActive
+      count: 11
+      firstSeen: '2026-11-03T19:52:00Z'
+      lastSeen: '2026-11-03T20:02:00Z'
+      message: Not starting job because prior execution is running and concurrency policy is Forbid
+      truncated: false
