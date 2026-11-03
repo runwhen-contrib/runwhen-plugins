@@ -1,5 +1,5 @@
-from fetch import load_workload
-from workload import cap, probe_config
+from k8s_workload_health.fetch import load_workload
+from k8s_workload_health.workload import cap, probe_config
 
 
 def main(ctx):

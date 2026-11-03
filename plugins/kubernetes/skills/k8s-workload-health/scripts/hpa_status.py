@@ -1,6 +1,6 @@
-from fetch import load_workload
-from k8s import kubectl_json
-from workload import cap, hpa_status
+from k8s_workload_health.fetch import load_workload
+from k8s_workload_health.k8s import kubectl_json
+from k8s_workload_health.workload import cap, hpa_status
 
 
 def main(ctx):

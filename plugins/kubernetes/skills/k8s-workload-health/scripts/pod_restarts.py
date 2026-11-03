@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from fetch import load_owned
-from workload import cap, pod_restarts
+from k8s_workload_health.fetch import load_owned
+from k8s_workload_health.workload import cap, pod_restarts
 
 
 def main(ctx, since="1h"):

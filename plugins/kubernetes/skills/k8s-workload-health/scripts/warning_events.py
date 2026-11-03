@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from fetch import load_owned
-from k8s import kubectl_json
-from workload import related_names, warning_events
+from k8s_workload_health.fetch import load_owned
+from k8s_workload_health.k8s import kubectl_json
+from k8s_workload_health.workload import related_names, warning_events
 
 
 def main(ctx, since="1h"):

@@ -1,5 +1,5 @@
-from fetch import load_revisions, load_workload
-from workload import cap, revision_history, rollout_status
+from k8s_workload_health.fetch import load_revisions, load_workload
+from k8s_workload_health.workload import cap, revision_history, rollout_status
 
 
 def main(ctx):

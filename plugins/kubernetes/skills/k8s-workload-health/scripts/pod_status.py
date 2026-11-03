@@ -1,5 +1,5 @@
-from fetch import load_owned
-from workload import cap, pod_counts, pod_status
+from k8s_workload_health.fetch import load_owned
+from k8s_workload_health.workload import cap, pod_counts, pod_status
 
 
 def main(ctx):

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-import workload as w
+from k8s_workload_health import workload as w
 
 DATA = Path(__file__).parent / "data" / "k8s_workload_health"
 NOW = datetime(2026, 11, 3, 18, 10, tzinfo=timezone.utc)

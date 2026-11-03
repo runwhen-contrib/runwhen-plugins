@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from fetch import load_revisions, load_workload
-from workload import cap, config_changes
+from k8s_workload_health.fetch import load_revisions, load_workload
+from k8s_workload_health.workload import cap, config_changes
 
 
 def main(ctx, since="1h"):

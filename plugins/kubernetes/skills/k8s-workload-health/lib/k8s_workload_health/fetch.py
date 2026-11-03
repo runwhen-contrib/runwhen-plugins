@@ -1,7 +1,7 @@
 """Fetching the target workload and the objects it owns (the only I/O besides k8s.py)."""
 
-from k8s import kubectl_json
-from workload import DAEMONSET, DEPLOYMENT, STATEFULSET, owned_pods, owned_revisions, selector_string
+from k8s_workload_health.k8s import kubectl_json
+from k8s_workload_health.workload import DAEMONSET, DEPLOYMENT, STATEFULSET, owned_pods, owned_revisions, selector_string
 
 # ctx.resource.type -> (Kind, kubectl resource)
 TARGETS = {
