@@ -31,8 +31,10 @@ def number(value):
 
 
 def view(answers, now, limit, overdue_intervals):
-    """One entry per (file, group name) across the pods that answered; the worst reading wins."""
-    groups, failing = {}, {}
+    """One entry per (file, group name) across the pods that answered; the worst reading wins:
+    the most unhealthy rules, the longest evaluation, the oldest last evaluation, and the
+    exceeds-interval and overdue flags true if any pod says so."""
+    groups, failing, exceeds, overdue, oldest, longest = {}, {}, {}, {}, {}, {}
     for _pod, doc in answers:
         for group in doc:
             key = (group.get("file"), group.get("name"))
@@ -51,16 +53,20 @@ def view(answers, now, limit, overdue_intervals):
                 "lastEvaluationAgeSeconds": age,
                 "ruleCount": len(rules),
                 "unhealthyRuleCount": len(bad),
-                "evaluationExceedsInterval": took > interval
-                if took is not None and interval
-                else None,
-                "evaluationOverdue": (
-                    age > overdue_intervals * interval if age is not None and interval else None
-                ),
+                "evaluationExceedsInterval": None,
+                "evaluationOverdue": None,
             }
             current = groups.get(key)
             if current is None or row["unhealthyRuleCount"] > current["unhealthyRuleCount"]:
                 groups[key] = row
+            if took is not None and (longest.get(key) is None or took > longest[key]):
+                longest[key] = took
+            if took is not None and interval:
+                exceeds[key] = exceeds.get(key, False) or took > interval
+            if age is not None and interval:
+                overdue[key] = overdue.get(key, False) or age > overdue_intervals * interval
+            if age is not None and (key not in oldest or age > oldest[key][0]):
+                oldest[key] = (age, iso(evaluated))
             for rule in bad:
                 rkey = key + (rule.get("name"), rule.get("type"))
                 if rkey in failing:
@@ -81,6 +87,12 @@ def view(answers, now, limit, overdue_intervals):
                     "evaluationTimeSeconds": number(rule.get("evaluationTime")),
                     "lastEvaluation": iso(last),
                 }
+    for key, row in groups.items():
+        row["evaluationExceedsInterval"] = exceeds.get(key)
+        row["evaluationOverdue"] = overdue.get(key)
+        row["evaluationTimeSeconds"] = longest.get(key)
+        if key in oldest:
+            row["lastEvaluationAgeSeconds"], row["lastEvaluation"] = oldest[key]
     group_rows = sorted(
         groups.values(),
         key=lambda g: (-g["unhealthyRuleCount"], str(g["file"]), str(g["name"])),

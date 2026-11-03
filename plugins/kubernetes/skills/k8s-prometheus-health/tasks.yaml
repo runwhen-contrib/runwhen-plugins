@@ -21,9 +21,13 @@ tasks:
       (200 is true, 503 is false; any other reply is an error, never true),
       /api/v1/status/runtimeinfo (start time, last config reload time and whether it
       succeeded, WAL corruption count, goroutines, retention) and /api/v1/status/tsdb
-      (head series and chunks). A pod that is not Running is listed and not asked. A pod
-      that cannot be reached is an error scoped to it and its fields stay null; when no
-      pod answers anything the task fails.
+      (head series and chunks), and the operator's Available and Reconciled conditions
+      from the CR. A pod that is not Running is listed and not asked (at most 10 are asked,
+      one per shard first). A pod that cannot be reached is an error scoped to it and its
+      fields stay null; when no pod answers anything the task fails; a CR that expects
+      pods (replicas times shards above 0) with none Running gives the pod list and an
+      unreachable error scoped pods (partial). After 100 seconds the pods not yet asked
+      get a timeout error.
     script: scripts/server_status.py
     timeout: 120s
     tags: [prometheus, health, ready, tsdb, config-reload]
@@ -43,7 +47,8 @@ tasks:
       pool, and the targets that are down or unknown or whose last scrape is more than
       overdueIntervals scrape intervals old, with the last scrape error (query strings
       and userinfo removed from URLs, cut at 1024 characters), the last scrape time and
-      its age against the run's reference time. discoveredLabels are never read.
+      its age against the run's reference time (the oldest across pods). Targets are told
+      apart by scrape pool and full scrape URL. discoveredLabels are never read.
     script: scripts/targets.py
     timeout: 120s
     tags: [prometheus, targets, scrape, up]
@@ -83,9 +88,12 @@ tasks:
       serviceMonitor/<namespace>/<name>/<n>). It also asks, with SubjectAccessReviews for the
       ServiceAccount the Prometheus runs as, whether that account may list and watch the
       services, pods and endpoints (or endpointslices) in each namespace the selected
-      ServiceMonitors point at; the reviews are read-only and need no impersonation. A
+      ServiceMonitors point at; the reviews are read-only. A
       cluster-wide list of ServiceMonitors and of namespaces is needed when the namespace
-      selector is set; when forbidden the CR's own namespace is used and complete is false.
+      selector is set; when forbidden the CR's own namespace is used, complete is false and
+      a note says ServiceMonitors in other namespaces were not considered. A ServiceMonitor
+      with namespaceSelector.any is checked cluster-wide. Role: spec.serviceDiscoveryRole,
+      Endpoints when unset.
     script: scripts/servicemonitor_coverage.py
     timeout: 120s
     tags: [prometheus, servicemonitor, coverage, rbac]

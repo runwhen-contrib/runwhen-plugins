@@ -3,7 +3,7 @@ targets, and whether its ServiceAccount can discover in the namespaces they poin
 
 import json
 
-from k8s_prometheus_health.common import NESTED_LIMIT, cap
+from k8s_prometheus_health.common import NESTED_LIMIT, cap, truncate
 from k8s_prometheus_health.errors import RwError
 from k8s_prometheus_health.selectors import matches
 
@@ -62,8 +62,9 @@ def pool_prefix(sm):
     return f"serviceMonitor/{sm['metadata']['namespace']}/{sm['metadata']['name']}/"
 
 
-def view(prom, sms, ns_labels, targets, limit, complete):
-    """The coverage output. `targets` is the merged target table of targets.merge."""
+def view(prom, sms, ns_labels, targets, limit, complete, notes=()):
+    """The coverage output. `targets` is the merged target table of targets.merge (one entry per
+    scrape pool and raw scrape URL, so targets that differ only by query string count apart)."""
     rows = []
     for sm in sorted(sms, key=lambda s: (s["metadata"]["namespace"], s["metadata"]["name"])):
         selected, reason = selection(prom, sm, ns_labels)
@@ -94,6 +95,7 @@ def view(prom, sms, ns_labels, targets, limit, complete):
             "namespaceScope": selector_scope(prom),
         },
         "complete": complete,
+        "notes": list(notes),
         "serviceMonitorCount": len(rows),
         "selectedCount": len(selected_rows),
         "notSelectedCount": sum(1 for r in rows if r["selected"] is False),
@@ -118,16 +120,17 @@ def discovery_resources(prom):
 def target_namespaces(prom, sms, selections):
     """(sorted namespaces, notes): the namespaces the selected ServiceMonitors point their
     Services at (their own, `namespaceSelector.matchNames`), capped; `any: true` cannot be
-    enumerated and is noted."""
+    enumerated and is checked cluster-wide (namespace "", a cluster-scoped review)."""
     spaces, notes = set(), []
     for sm in sms:
         if not selections[(sm["metadata"]["namespace"], sm["metadata"]["name"])]:
             continue
         chosen = (sm.get("spec") or {}).get("namespaceSelector") or {}
         if chosen.get("any"):
+            spaces.add("")
             notes.append(
                 f"{sm['metadata']['namespace']}/{sm['metadata']['name']} has namespaceSelector.any: "
-                "every namespace, not enumerated"
+                'every namespace, checked cluster-wide (namespace "")'
             )
         elif chosen.get("matchNames"):
             spaces.update(chosen["matchNames"])
@@ -179,9 +182,9 @@ def review_list(prom, namespaces):
 
 
 def parse_reviews(text, expected):
-    """The `status.allowed` of each review in `kubectl create -f <List> -o json`, which prints one
-    JSON document per item, not a List. A count other than `expected`, or an item with no boolean
-    `allowed`, is an error: the check did not run."""
+    """[(allowed, evaluationError or None)] of each review in `kubectl create -f <List> -o json`,
+    which prints one JSON document per item, not a List. A count other than `expected`, or an
+    item with no boolean `allowed`, is an error: the check did not run."""
     decoder, pos, allowed = json.JSONDecoder(), 0, []
     text = text or ""
     while True:
@@ -193,10 +196,10 @@ def parse_reviews(text, expected):
             doc, pos = decoder.raw_decode(text, pos)
         except ValueError as exc:
             raise RwError("internal", f"kubectl returned output that is not JSON: {exc}") from None
-        flag = ((doc or {}).get("status") or {}).get("allowed") if isinstance(doc, dict) else None
-        if not isinstance(flag, bool):
+        status = (doc or {}).get("status") or {} if isinstance(doc, dict) else {}
+        if not isinstance(status.get("allowed"), bool):
             raise RwError("internal", "a SubjectAccessReview came back without status.allowed")
-        allowed.append(flag)
+        allowed.append((status["allowed"], status.get("evaluationError") or None))
     if len(allowed) != expected:
         raise RwError("internal", f"expected {expected} SubjectAccessReviews, got {len(allowed)}")
     return allowed
@@ -206,18 +209,26 @@ def access_view(prom, namespaces, notes, order, allowed):
     role, _ = discovery_resources(prom)
     sa_ns, sa_name = service_account(prom)
     table = {}
-    for (namespace, resource, group, verb), flag in zip(order, allowed, strict=True):
+    for (namespace, resource, group, verb), (flag, error) in zip(order, allowed, strict=True):
         row = table.setdefault(
             (namespace, resource),
-            {"namespace": namespace, "resource": resource, "group": group or "core"},
+            {
+                "namespace": namespace,
+                "resource": resource,
+                "group": group or "core",
+                "evaluationError": None,
+                "evaluationErrorTruncated": False,
+            },
         )
         row[verb] = flag
+        if error and row["evaluationError"] is None:
+            row["evaluationError"], row["evaluationErrorTruncated"] = truncate(error)
     checks = cap(list(table.values()), NESTED_LIMIT)
     return {
         "serviceAccount": f"{sa_ns}/{sa_name}",
         "serviceDiscoveryRole": role,
         "namespaces": namespaces,
         "checks": checks,
-        "deniedCount": sum(1 for flag in allowed if not flag),
+        "deniedCount": sum(1 for flag, _ in allowed if not flag),
         "notes": notes,
     }

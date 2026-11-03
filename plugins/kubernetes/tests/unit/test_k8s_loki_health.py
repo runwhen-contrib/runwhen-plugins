@@ -177,8 +177,8 @@ def test_ready_reply_is_never_true_for_unexpected_text():
 
 
 def test_ring_members_rejects_what_is_not_ring_json():
-    shards = ring.ring_members(proxy.Reply(200, json.dumps(load("ring.json"))), "w")
-    assert shards[0]["state"] == "ACTIVE"
+    shards, server_now = ring.ring_members(proxy.Reply(200, json.dumps(load("ring.json"))), "w")
+    assert shards[0]["state"] == "ACTIVE" and server_now == load("ring.json")["now"]
     for body in ("<html><body><h1>Cortex Ruler Status</h1></body></html>", "[]", '{"x":1}', ""):
         with pytest.raises(RwError) as exc:
             ring.ring_members(proxy.Reply(200, body), "w")
@@ -220,6 +220,14 @@ def test_check_inputs_before_any_call():
 
 def test_classify():
     assert k8s.classify(1, UNREACHABLE) == "unreachable"
+    assert (
+        k8s.classify(
+            1,
+            "Unable to connect to the server: net/http: request canceled "
+            "(Client.Timeout exceeded while awaiting headers)",
+        )
+        == "timeout"
+    )
     assert k8s.classify(1, FORBIDDEN.format(r="pods/proxy", v="get")) == "permission_denied"
     assert k8s.classify(1, 'Error from server (NotFound): pods "x" not found') == "not_found"
 
@@ -332,7 +340,7 @@ def test_ring_healthy_single_binary_serves_all_three_rings():
     member = ring_of(env, "/ring")["members"][0]
     assert member["id"] == "loki-0" and member["tokenCount"] == 3 and member["zone"] is None
     assert member["lastHeartbeat"] == "2026-11-03T22:44:40Z"
-    assert member["heartbeatAgeSeconds"] == 10.0  # from ctx.now(), not the wall clock
+    assert member["heartbeatAgeSeconds"] == 5.0  # against the ring page's own `now`
     assert member["registeredAt"] == "2026-11-03T22:44:10Z" and member["readOnly"] is False
 
 
@@ -343,15 +351,57 @@ def test_ring_unhealthy_member_with_an_old_heartbeat():
     assert r["byState"] == {"UNHEALTHY": 1} and r["notActiveCount"] == 1
     [member] = r["members"]
     assert member["state"] == "UNHEALTHY" and member["lastHeartbeat"] == member["registeredAt"]
-    assert member["heartbeatAgeSeconds"] == (CAPTURED - at("2026-11-03T22:44:09Z")).total_seconds()
+    assert member["heartbeatAgeSeconds"] == 36.5  # the page's now (22:44:45.527) less 22:44:09
 
 
-def test_ring_age_follows_ctx_now():
+def without_now(path):
+    doc = load(path)
+    del doc["now"]
+    return (0, json.dumps(doc), "")
+
+
+def test_ring_age_follows_the_ring_now_and_falls_back_to_ctx_now():
     first, _ = run("ring", now=CAPTURED)
     later, _ = run("ring", now=at("2026-11-03T23:44:50Z"))
+    # the ring page's own `now` wins: the run's reference time does not move the age
+    assert ring_of(first, "/ring")["members"][0]["heartbeatAgeSeconds"] == 5.0
+    assert ring_of(later, "/ring")["members"][0]["heartbeatAgeSeconds"] == 5.0
+    replies = {"/ring": without_now("ring.json")}
+    first, _ = run("ring", now=CAPTURED, replies=replies)
+    later, _ = run("ring", now=at("2026-11-03T23:44:50Z"), replies=replies)
+    assert first["errors"] == []
     a = ring_of(first, "/ring")["members"][0]["heartbeatAgeSeconds"]
     b = ring_of(later, "/ring")["members"][0]["heartbeatAgeSeconds"]
-    assert b - a == 3600
+    assert b - a == 3600 and a == 10.0
+
+
+def test_ring_unparseable_timestamps_are_reported_not_a_silent_null():
+    doc = load("ring.json")
+    doc["shards"][0]["timestamp"] = "yesterday"
+    doc["shards"][0]["registered_timestamp"] = 12345
+    env, _ = run("ring", replies={"/ring": (0, json.dumps(doc), "")})
+    assert env["status"] == "partial" and codes(env) == [("internal", "pod/loki-0")]
+    assert "2 member timestamp(s) are not RFC 3339" in env["errors"][0]["message"]
+    member = ring_of(env, "/ring")["members"][0]
+    assert member["lastHeartbeat"] is None and member["heartbeatAgeSeconds"] is None
+    assert member["registeredAt"] is None
+    check_schemas("ring", env)
+    # an unparseable ring `now`: reported, and the run's reference time is used
+    doc = load("ring.json")
+    doc["now"] = "soon"
+    env, _ = run("ring", replies={"/ring": (0, json.dumps(doc), "")})
+    assert env["status"] == "partial" and codes(env) == [("internal", "pod/loki-0")]
+    assert "now 'soon' is not RFC 3339" in env["errors"][0]["message"]
+    assert ring_of(env, "/ring")["members"][0]["heartbeatAgeSeconds"] == 10.0
+
+
+def test_ring_zero_and_absent_timestamps_are_not_errors():
+    doc = load("ring.json")
+    doc["shards"][0]["timestamp"] = "0001-01-01T00:00:00Z"
+    del doc["shards"][0]["registered_timestamp"]
+    env, _ = run("ring", replies={"/ring": (0, json.dumps(doc), "")})
+    assert env["status"] == "ok" and env["errors"] == []
+    assert ring_of(env, "/ring")["members"][0]["lastHeartbeat"] is None
 
 
 def test_ring_members_by_state_and_ordering():
@@ -380,6 +430,18 @@ def test_ring_unserved_paths_are_facts():
         r = ring_of(env, path)
         assert r["served"] is False and r["unservedBy"] == ["loki-0"]
         assert r["members"] == [] and r["memberCount"] == 0 and r["viewedFrom"] is None
+    check_schemas("ring", env)
+
+
+def test_ring_no_path_served_by_any_pod_is_a_dependency_error():
+    replies = {p: (1, "", NO_ROUTE) for p in RING_PATHS}
+    env, _ = run("ring", replies=replies)
+    assert env["status"] == "partial" and codes(env) == [("dependency", "rings")]
+    assert (
+        "no ring served; is this a Loki component that runs a ring?"
+        in (env["errors"][0]["message"])
+    )
+    assert all(ring_of(env, p)["served"] is False for p in RING_PATHS)
     check_schemas("ring", env)
 
 
@@ -474,6 +536,97 @@ def test_the_type_falls_back_to_the_plural_of_the_path():
     }
     env, _ = run("ready", res=res)
     assert env["status"] == "ok"
+
+
+# ------------------------------------------------------------ deadline ----
+
+
+class Clocked:
+    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock and answer
+    through `answer(index, argv)` -> (returncode, stdout, stderr)."""
+
+    def __init__(self, answer, step=30):
+        self.now = 0.0
+        self.step = step
+        self.answer = answer
+        self.calls = []
+        self.errors = []
+
+    def clock(self):
+        return self.now
+
+    def run(self, argv, check=True, **_):
+        self.calls.append(list(argv))
+        rc, out, err = self.answer(len(self.calls) - 1, argv)
+        self.now += self.step
+        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+
+    def error(self, code, message, scope=None, **_):
+        self.errors.append((code, scope, message))
+
+
+CLIENT_TIMEOUT = (
+    "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)"
+)
+WORKLOAD = {
+    "kind": "StatefulSet",
+    "metadata": {"name": "loki", "namespace": NS},
+    "spec": {"replicas": 6},
+    "status": {"readyReplicas": 6},
+}
+
+
+def loki_pods(n):
+    return [
+        {"metadata": {"name": f"loki-{i}"}, "status": {"phase": "Running"}, "spec": {}}
+        for i in range(n)
+    ]
+
+
+def test_ready_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
+    ctx = Clocked(lambda i, argv: (0, "ready\n", ""))
+    budget = fetch.Budget(clock=ctx.clock)
+    out = ready.view(ctx, WORKLOAD, loki_pods(6), "http", None, 200, budget)
+    # 0s, 30s, 60s, 90s: four asks; the fourth is limited to what is left of the 100s
+    assert out["readyCount"] == 4
+    assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
+    assert [(c, s) for c, s, _ in ctx.errors] == [
+        ("timeout", "pod/loki-4"),
+        ("timeout", "pod/loki-5"),
+    ]
+    assert "100s deadline" in ctx.errors[0][2]
+    assert [p["ready"] for p in out["pods"][4:]] == [None, None]
+
+
+def test_ready_three_consecutive_timeouts_stop_asking():
+    ctx = Clocked(lambda i, argv: (0, "ready\n", "") if i == 0 else (1, "", CLIENT_TIMEOUT), step=1)
+    budget = fetch.Budget(clock=ctx.clock)
+    out = ready.view(ctx, WORKLOAD, loki_pods(6), "http", None, 200, budget)
+    assert len(ctx.calls) == 4 and out["readyCount"] == 1
+    assert [c for c, _, _ in ctx.errors] == ["timeout"] * 5
+    assert "3 consecutive pods timed out" in ctx.errors[3][2]
+
+
+RING_OK = (0, json.dumps({"shards": [], "now": "2026-11-03T22:44:45Z"}), "")
+
+
+def test_ring_the_deadline_leaves_the_remaining_paths_served_null_with_a_timeout_error():
+    ctx = Clocked(lambda i, argv: RING_OK)
+    budget = fetch.Budget(clock=ctx.clock)
+    paths = [f"/r{i}/ring" for i in range(5)]
+    out = ring.collect(ctx, WORKLOAD, loki_pods(1), "http", None, paths, CAPTURED, 200, budget)
+    assert [r["served"] for r in out["rings"]] == [True, True, True, True, None]
+    assert [(c, s) for c, s, _ in ctx.errors] == [("timeout", "pod/loki-0")]
+    assert "100s deadline" in ctx.errors[0][2]
+
+
+def test_ring_three_consecutive_timeouts_stop_asking_the_path():
+    ctx = Clocked(lambda i, argv: (1, "", NO_ROUTE) if i == 0 else (1, "", CLIENT_TIMEOUT), step=1)
+    budget = fetch.Budget(clock=ctx.clock)
+    out = ring.collect(ctx, WORKLOAD, loki_pods(6), "http", None, ["/ring"], CAPTURED, 200, budget)
+    assert len(ctx.calls) == 4  # a 404, three timeouts, then no more asks
+    assert out["rings"][0]["served"] is None and out["rings"][0]["unservedBy"] == ["loki-0"]
+    assert [(c, s) for c, s, _ in ctx.errors] == [("timeout", f"pod/loki-{i}") for i in range(1, 6)]
 
 
 # ------------------------------------------------------------ permissions ----

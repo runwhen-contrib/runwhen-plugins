@@ -42,6 +42,58 @@
         },
         "routePrefix": {
           "type": "string"
+        },
+        "expectedReplicas": {
+          "type": "integer",
+          "description": "spec.replicas (1 when unset) times spec.shards (1 when unset): the pods the CR asks for"
+        },
+        "conditions": {
+          "type": "array",
+          "description": "the operator's Available and Reconciled conditions from Prometheus.status.conditions; empty when the operator has set none",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "messageTruncated": {
+                "type": "boolean"
+              },
+              "lastTransitionTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "status",
+              "reason",
+              "message",
+              "messageTruncated",
+              "lastTransitionTime"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
@@ -52,7 +104,9 @@
         "version",
         "scheme",
         "portName",
-        "routePrefix"
+        "routePrefix",
+        "expectedReplicas",
+        "conditions"
       ],
       "additionalProperties": false
     },
@@ -90,7 +144,7 @@
           },
           "queried": {
             "type": "boolean",
-            "description": "false for a pod that is not Running (or beyond the first 10), which is not asked"
+            "description": "false for a pod that is not Running, or a running one beyond the 10 asked, which is not asked"
           },
           "healthy": {
             "type": [
@@ -220,11 +274,16 @@
         ],
         "additionalProperties": false
       }
+    },
+    "podsSkipped": {
+      "type": "integer",
+      "description": "running pods not asked because more than 10 exist (one pod per shard is asked first)"
     }
   },
   "required": [
     "prometheus",
     "podCount",
+    "podsSkipped",
     "truncated",
     "pods"
   ],

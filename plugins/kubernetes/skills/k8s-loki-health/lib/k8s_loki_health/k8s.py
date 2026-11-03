@@ -13,6 +13,7 @@ _CLASSES = (
     ),
     ("dependency", ("the server doesn't have a resource type", "executable file not found")),
     ("not_found", ("notfound", "not found")),
+    ("timeout", ("deadline exceeded", "client.timeout")),
     (
         "unreachable",
         (
@@ -25,7 +26,7 @@ _CLASSES = (
             "tls handshake",
         ),
     ),
-    ("timeout", ("deadline exceeded", "client.timeout", "timed out")),
+    ("timeout", ("timed out",)),
     ("rate_limited", ("429", "too many requests")),
 )
 

@@ -6,7 +6,9 @@ is not an HTTP status but an error line, and the backend's body is lost, so two 
 told apart by their line: 404 ("the server could not find the requested resource": the pod does
 not serve that path, e.g. the ring page of a component it does not run) and 503 ("the server is
 currently unable to handle the request": the pod answered unavailable, which is how Loki says
-/ready is not ready). A pod the API server could not reach ("error trying to reach service") is
+/ready is not ready; an API server that is itself overloaded says the same, and reads as not
+ready here). A backend 403 is not told apart from a missing `pods/proxy` permission: both are
+`permission_denied`. A pod the API server could not reach ("error trying to reach service") is
 `unreachable`, never an HTTP status.
 """
 
@@ -31,13 +33,13 @@ def pod_path(namespace, pod, scheme, port, path):
     return f"/api/v1/namespaces/{namespace}/pods/{scheme}:{pod}:{port}/proxy{path}"
 
 
-def proxy_get(ctx, api_path):
+def proxy_get(ctx, api_path, request_timeout=REQUEST_TIMEOUT):
     """GET through the proxy: a Reply (200, 404 or 503) or RwError.
 
     Forbidden (no `pods/proxy get`), a missing pod or namespace (not_found), an unreachable
     pod and a timeout raise; any other HTTP error from the backend is `internal`.
     """
-    argv = ["kubectl", "get", "--raw", api_path, f"--request-timeout={REQUEST_TIMEOUT}"]
+    argv = ["kubectl", "get", "--raw", api_path, f"--request-timeout={request_timeout}"]
     result = run_unchecked(ctx, argv)
     if not result.returncode:
         return Reply(200, result.stdout or "")

@@ -31,41 +31,51 @@ def active_targets(data, what):
 
 def merge(answers, now, overdue_intervals):
     """One entry per (scrapePool, scrapeUrl) across the pods that answered: replicas scrape the
-    same targets and shards scrape different ones, so a target is as bad as its worst pod. Only
-    the scrape URL with its query string removed is kept; discoveredLabels (which carry relabelled
-    parameters such as tokens) are never read."""
-    merged, seen, down = {}, {}, {}
+    same targets and shards scrape different ones, so a target is as bad as its worst pod: the
+    worst health, the oldest last scrape (with the interval of the pod it came from) and overdue
+    if any pod says so. The key is the scrape URL as the Prometheus reports it, query string
+    included (blackbox-style targets differ only there); only the displayed URL has its query
+    string removed. discoveredLabels (which carry relabelled parameters such as tokens) are never
+    read."""
+    merged, seen, down, oldest, overdue = {}, {}, {}, {}, {}
     for pod, targets in answers:
         for target in targets:
-            url = strip_urls(target.get("scrapeUrl"))
-            key = (target.get("scrapePool"), url)
+            raw_url = target.get("scrapeUrl")
+            key = (target.get("scrapePool"), raw_url)
             health = target.get("health") if target.get("health") in _RANK else "unknown"
             labels = target.get("labels") or {}
             scraped = parse_time(target.get("lastScrape"))
             interval = parse_duration(target.get("scrapeInterval"))
+            age = age_seconds(scraped, now)
             entry = merged.get(key)
             if entry is None or _RANK[health] > _RANK[entry["health"]]:
                 error, error_truncated = truncate(strip_urls(target.get("lastError")) or None)
-                age = age_seconds(scraped, now)
                 merged[key] = {
                     "scrapePool": key[0],
                     "job": strip_urls(labels.get("job")),
                     "instance": strip_urls(labels.get("instance")),
-                    "scrapeUrl": url,
+                    "scrapeUrl": strip_urls(raw_url),
                     "health": health,
                     "lastError": error,
                     "lastErrorTruncated": error_truncated,
                     "lastScrape": iso(scraped),
                     "lastScrapeAgeSeconds": age,
                     "scrapeIntervalSeconds": interval,
-                    "overdue": (
-                        age > overdue_intervals * interval if age is not None and interval else None
-                    ),
+                    "overdue": None,
                 }
+            if age is not None and (key not in oldest or age > oldest[key][0]):
+                oldest[key] = (age, iso(scraped), interval)
+            if age is not None and interval:
+                overdue[key] = overdue.get(key, False) or age > overdue_intervals * interval
             seen.setdefault(key, set()).add(pod)
             if health == "down":
                 down.setdefault(key, []).append(pod)
     for key, entry in merged.items():
+        if key in oldest:
+            entry["lastScrapeAgeSeconds"], entry["lastScrape"], entry["scrapeIntervalSeconds"] = (
+                oldest[key]
+            )
+        entry["overdue"] = overdue.get(key)
         entry["seenOnPods"] = len(seen[key])
         entry["downOnPods"] = down.get(key, [])[:50]
     return merged

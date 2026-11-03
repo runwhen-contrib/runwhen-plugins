@@ -11,8 +11,9 @@ NESTED_LIMIT = 50
 _DURATION = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m|h|d|w|y)")
 _UNITS = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800, "y": 31536000}
 _FRACTION = re.compile(r"(\.\d{6})\d+")
-# scheme://[userinfo@]host/path?query -> scheme://host/path
-_URL = re.compile(r"(https?://)(?:[^\s/@\"']+@)?([^\s\"'?#]*)(?:[?#][^\s\"']*)?")
+# scheme://[userinfo@]host/path?query -> scheme://host/path. The userinfo match is greedy: it
+# runs to the last `@` before the first `/`, `?` or `#`, so a password that contains `@` goes too.
+_URL = re.compile(r"(https?://)(?:[^\s/\"'?#]*@)?([^\s\"'?#]*)(?:[?#][^\s\"']*)?")
 
 
 def cap(items, limit):
@@ -29,7 +30,8 @@ def truncate(text, limit=MESSAGE_LIMIT):
 
 def strip_urls(text):
     """`text` with the query string, fragment and userinfo removed from every http(s) URL in it
-    (a scrape URL or error message can carry a token in either)."""
+    (a scrape URL or error message can carry a token in either). A token inside the path is
+    not recognisable and stays."""
     if text is None:
         return None
     return _URL.sub(lambda m: m.group(1) + m.group(2), str(text))

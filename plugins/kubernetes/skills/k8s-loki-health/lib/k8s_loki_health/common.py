@@ -35,6 +35,16 @@ def parse_time(text):
     return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
 
 
+def unparseable(value):
+    """Whether `value` is present but is not an RFC 3339 timestamp (Go's zero time and an absent
+    value are not: they mean never and unknown)."""
+    if value is None or value == "":
+        return False
+    return not isinstance(value, str) or (
+        not value.startswith("0001-01-01") and parse_time(value) is None
+    )
+
+
 def iso(stamp):
     return stamp.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if stamp else None
 

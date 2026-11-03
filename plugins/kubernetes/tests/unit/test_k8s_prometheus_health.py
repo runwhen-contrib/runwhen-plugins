@@ -13,7 +13,17 @@ from pathlib import Path
 import jsonschema
 import pytest
 import yaml
-from k8s_prometheus_health import common, coverage, k8s, proxy, rules, selectors, status, targets
+from k8s_prometheus_health import (
+    common,
+    coverage,
+    fetch,
+    k8s,
+    proxy,
+    rules,
+    selectors,
+    status,
+    targets,
+)
 from k8s_prometheus_health.errors import RwError
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
@@ -138,6 +148,9 @@ def stubs(cr="rw-prom", fail=None, replies=None, pods=None, sms=None, namespaces
     return out
 
 
+LAST = {}  # facts about the last run() that its return value does not carry
+
+
 def run(task, cr="rw-prom", now=CAPTURED, res=None, settings=None, review=None, **kw):
     """(envelope, calls) of one task on Prometheus `cr`."""
     resource = res or {
@@ -168,6 +181,7 @@ def run(task, cr="rw-prom", now=CAPTURED, res=None, settings=None, review=None, 
 
             tc.ctx.run = run_with_reviews
         env = run_main(script(task), tc)
+        LAST["sar_left"] = (tc.ctx.workdir / "sar-0.json").exists()
     return env, calls
 
 
@@ -196,6 +210,16 @@ def test_strip_urls_removes_query_fragment_and_userinfo():
     assert common.strip_urls(text) == 'Get "http://host:9100/metrics": dial tcp: refused'
     assert common.strip_urls("https://a/b?c=d and http://e/f") == "https://a/b and http://e/f"
     assert common.strip_urls(None) is None
+
+
+def test_strip_urls_userinfo_is_greedy_to_the_last_at_sign_before_the_host():
+    assert common.strip_urls("http://u:p@ss@h:9/m") == "http://h:9/m"
+    assert (
+        common.strip_urls('Get "https://tok@en:x@h/m?a=b": refused') == 'Get "https://h/m": refused'
+    )
+    # an @ in the path is not userinfo and a token in the path is not recognised
+    assert common.strip_urls("http://h/a@b/c") == "http://h/a@b/c"
+    assert common.strip_urls("http://h/tok123/metrics?x=1") == "http://h/tok123/metrics"
 
 
 def test_parse_duration_and_time():
@@ -227,6 +251,14 @@ def test_classify():
     )
     assert k8s.classify(1, "net/http: request canceled (Client.Timeout exceeded)") == "timeout"
     assert k8s.classify(124, "") == "timeout"
+    assert (
+        k8s.classify(
+            1,
+            "Unable to connect to the server: net/http: request canceled "
+            "(Client.Timeout exceeded while awaiting headers)",
+        )
+        == "timeout"
+    )
     assert k8s.classify(1, 'the server doesn\'t have a resource type "x"') == "dependency"
     assert k8s.classify(1, "something odd") == "internal"
 
@@ -449,8 +481,9 @@ def test_rules_merge_replicas_by_group():
 
 def test_parse_reviews_needs_a_boolean_per_item():
     assert coverage.parse_reviews(
-        '{"status":{"allowed":true}}\n{"status":{"allowed":false}}', 2
-    ) == [True, False]
+        '{"status":{"allowed":true}}\n{"status":{"allowed":false,"evaluationError":"no opinion"}}',
+        2,
+    ) == [(True, None), (False, "no opinion")]
     for text, n in (('{"status":{"allowed":true}}', 2), ('{"status":{}}', 1), ("not json", 1)):
         with pytest.raises(RwError):
             coverage.parse_reviews(text, n)
@@ -534,11 +567,73 @@ def test_server_status_nothing_answers_fails():
     assert env["status"] == "failed" and codes(env)[0][0] == "unreachable"
 
 
-def test_server_status_no_pods_is_a_fact():
+def test_server_status_no_queryable_pod_of_a_cr_that_expects_one_is_partial():
     env, _ = run("server-status", cr="rw-prom-idle")
-    assert env["status"] == "ok"
-    assert env["outputs"]["server"]["podCount"] == 0 and env["outputs"]["server"]["pods"] == []
+    assert env["status"] == "partial" and codes(env) == [("unreachable", "pods")]
+    server = env["outputs"]["server"]
+    assert server["podCount"] == 0 and server["podsSkipped"] == 0 and server["pods"] == []
+    assert server["prometheus"]["expectedReplicas"] == 1
     check_schemas("server-status", env)
+
+
+class Errors:
+    """A ctx that only records ctx.error (for functions that do no I/O when no pod is asked)."""
+
+    def __init__(self):
+        self.errors = []
+
+    def error(self, code, message, scope=None, **_):
+        self.errors.append((code, scope))
+
+
+def test_server_status_expected_replicas_default_to_one_times_shards_and_zero_is_fine():
+    ctx = Errors()
+    out = status.collect(ctx, prom_with(replicas=0), [], CAPTURED, 200)
+    assert out["prometheus"]["expectedReplicas"] == 0 and ctx.errors == []
+    out = status.collect(ctx, prom_with(replicas=2, shards=3), [], CAPTURED, 200)
+    assert out["prometheus"]["expectedReplicas"] == 6 and ctx.errors == [("unreachable", "pods")]
+    ctx = Errors()
+    assert (
+        status.collect(ctx, prom_with(), [], CAPTURED, 200)["prometheus"]["expectedReplicas"] == 1
+    )
+    assert ctx.errors == [("unreachable", "pods")]
+    # pods exist but none is Running: still nothing queryable
+    pod = {"metadata": {"name": "p-0"}, "status": {"phase": "Pending"}}
+    ctx = Errors()
+    status.collect(ctx, prom_with(replicas=1), [pod], CAPTURED, 200)
+    assert ctx.errors == [("unreachable", "pods")]
+
+
+def test_server_status_reads_the_operator_conditions():
+    prom = prom_with(replicas=1)
+    prom["status"] = {
+        "conditions": [
+            {
+                "type": "Available",
+                "status": "True",
+                "reason": "",
+                "message": "",
+                "lastTransitionTime": "2026-11-03T22:00:00Z",
+            },
+            {
+                "type": "Reconciled",
+                "status": "False",
+                "reason": "ConfigRejected",
+                "message": "m" * 2000,
+                "lastTransitionTime": "2026-11-03T22:01:00Z",
+            },
+            {"type": "Other", "status": "True"},
+        ]
+    }
+    conds = status.prometheus_view(prom)["conditions"]
+    assert [(c["type"], c["status"]) for c in conds] == [
+        ("Available", "True"),
+        ("Reconciled", "False"),
+    ]
+    assert conds[0]["reason"] is None and conds[0]["message"] is None
+    assert conds[1]["reason"] == "ConfigRejected" and len(conds[1]["message"]) == 1024
+    assert conds[1]["messageTruncated"] is True
+    assert status.prometheus_view(prom_with())["conditions"] == []
 
 
 def test_server_status_a_pod_that_is_not_running_is_listed_and_not_asked():
@@ -721,6 +816,9 @@ def test_coverage_forbidden_cluster_wide_list_falls_back_to_the_own_namespace_an
     cov = env["outputs"]["coverage"]
     assert cov["complete"] is False
     assert {r["namespace"] for r in cov["serviceMonitors"]} == {NS}
+    assert (
+        len(cov["notes"]) == 1 and "other than rw-prometheus were not considered" in cov["notes"][0]
+    )
 
 
 def test_coverage_forbidden_namespaces_leave_selection_undetermined_not_false():
@@ -756,6 +854,237 @@ def test_coverage_unset_namespace_selector_lists_only_the_own_namespace():
     listing = ("kubectl", "-n", NS, "get", "servicemonitors.monitoring.coreos.com", "-o", "json")
     assert listing in calls and ("kubectl", "get", "namespaces", "-o", "json") not in calls
     assert env["outputs"]["serviceAccountAccess"]["namespaces"] == []
+
+
+# ------------------------------------------------------------ review fixes ----
+
+
+def test_targets_that_differ_only_by_query_string_are_three_targets():
+    probes = [
+        target("blackbox", f"http://exporter:9115/probe?target=site{i}&module=http_2xx", "up")
+        for i in range(3)
+    ]
+    probes[1]["health"] = "down"
+    out = targets.view([("pod-0", probes), ("pod-1", probes)], CAPTURED, 200, 3)
+    assert (out["total"], out["up"], out["down"]) == (3, 2, 1)
+    assert {t["scrapeUrl"] for t in out["unhealthy"]} == {"http://exporter:9115/probe"}
+    assert out["pools"][0]["total"] == 3
+    assert "site" not in json.dumps(out) and "module" not in json.dumps(out)
+
+
+def test_coverage_counts_targets_that_differ_only_by_query_string():
+    prefix = f"serviceMonitor/{NS}/sm-probe/0"
+    probes = [target(prefix, f"http://exporter:9115/probe?target=site{i}", "up") for i in range(3)]
+    probes[2]["health"] = "down"
+    merged = targets.merge([("pod-0", probes)], CAPTURED, 3)
+    prom = prom_with(serviceMonitorSelector={})
+    out = coverage.view(prom, [sm_of("sm-probe", {})], None, merged, 200, True)
+    row = out["serviceMonitors"][0]
+    assert (row["activeTargets"], row["targetsDown"]) == (3, 1)
+
+
+def test_targets_overdue_and_age_take_the_worst_pod():
+    fresh = target("p", "http://a/m", "up", scraped="2026-11-03T22:30:30Z")
+    stale = target("p", "http://a/m", "up", scraped="2026-11-03T22:29:00Z")  # 100s old
+    for order in ((fresh, stale), (stale, fresh)):
+        answers = [("pod-0", [order[0]]), ("pod-1", [order[1]])]
+        out = targets.view(answers, CAPTURED, 200, 3)
+        entry = out["unhealthy"][0]
+        assert entry["overdue"] is True and entry["lastScrapeAgeSeconds"] == 100.0
+        assert entry["lastScrape"] == "2026-11-03T22:29:00Z"
+        assert out["overdue"] == 1
+
+
+def test_rules_flags_and_age_take_the_worst_pod():
+    ok = {"name": "a", "type": "recording", "health": "ok", "lastError": ""}
+    good = group("g", [ok], took=0.1, last="2026-11-03T22:30:30Z")
+    slow_stale = group("g", [ok], took=20, last="2026-11-03T22:00:00Z")
+    for order in ((good, slow_stale), (slow_stale, good)):
+        out = rules.view([("p0", [order[0]]), ("p1", [order[1]])], CAPTURED, 200, 3)
+        row = out["groups"][0]
+        assert row["evaluationExceedsInterval"] is True and row["evaluationOverdue"] is True
+        assert row["evaluationTimeSeconds"] == 20
+        assert row["lastEvaluationAgeSeconds"] == 1840.0
+
+
+def live_pod(name, shard=None):
+    labels = {fetch.SHARD_LABEL: shard} if shard is not None else {}
+    return {"metadata": {"name": name, "labels": labels}, "status": {"phase": "Running"}}
+
+
+def test_select_pods_takes_one_per_shard_first_then_replicas_up_to_ten():
+    pods = [live_pod(f"p-{shard}-{i}", str(shard)) for shard in range(3) for i in range(5)]
+    asked, skipped = fetch.select_pods(pods)
+    names = [p["metadata"]["name"] for p in asked]
+    assert len(asked) == 10 and skipped == 5
+    assert {"p-0-0", "p-1-0", "p-2-0"} <= set(names)  # a pod of every shard
+    assert names == sorted(names)
+    # more shards than the cap: the first ten shards
+    many = [live_pod(f"s{i:02d}-0", f"{i:02d}") for i in range(12)]
+    asked, skipped = fetch.select_pods(many)
+    assert [p["metadata"]["name"] for p in asked] == [f"s{i:02d}-0" for i in range(10)]
+    assert skipped == 2
+    # pods that are not Running are neither asked nor counted as skipped
+    pending = {**live_pod("pending-0"), "status": {"phase": "Pending"}}
+    assert fetch.select_pods([pending, live_pod("a-0")]) == ([live_pod("a-0")], 0)
+    assert fetch.pod_stats([pending, live_pod("a-0")]) == {"podCount": 2, "podsSkipped": 0}
+
+
+def test_tasks_report_pod_count_and_pods_skipped_beyond_ten():
+    base = load("pods.json")["items"][0]
+    pods = []
+    for shard in range(2):
+        for i in range(6):
+            pod = json.loads(json.dumps(base))
+            pod["metadata"]["name"] = f"prometheus-s{shard}-{i}"
+            pod["metadata"]["labels"][fetch.SHARD_LABEL] = str(shard)
+            pods.append(pod)
+    for task, output, path in (
+        ("targets", "targets", "/api/v1/targets?state=active"),
+        ("rules", "rules", "/api/v1/rules"),
+        ("servicemonitor-coverage", "coverage", "/api/v1/targets?state=active"),
+    ):
+        env, calls = run(task, pods=pods)
+        assert env["status"] == "ok", env["errors"]
+        check_schemas(task, env)
+        out = env["outputs"][output]
+        assert (out["podCount"], out["podsSkipped"], len(out["queriedPods"])) == (12, 2, 10)
+        assert {"prometheus-s0-0", "prometheus-s1-0"} <= set(out["queriedPods"])
+        assert len([c for c in calls if path in c[3]]) == 10
+    env, _ = run("server-status", pods=pods)
+    server = env["outputs"]["server"]
+    assert (server["podCount"], server["podsSkipped"]) == (12, 2)
+    assert sum(1 for p in server["pods"] if p["queried"]) == 10
+    check_schemas("server-status", env)
+
+
+class Clocked:
+    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock and answer
+    through `answer(index, argv)` -> (returncode, stdout, stderr)."""
+
+    def __init__(self, answer, step=30):
+        self.now = 0.0
+        self.step = step
+        self.answer = answer
+        self.calls = []
+        self.errors = []
+
+    def clock(self):
+        return self.now
+
+    def run(self, argv, check=True, **_):
+        self.calls.append(list(argv))
+        rc, out, err = self.answer(len(self.calls) - 1, argv)
+        self.now += self.step
+        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+
+    def error(self, code, message, scope=None, **_):
+        self.errors.append((code, scope, message))
+
+
+OK_TARGETS = json.dumps({"status": "success", "data": {"activeTargets": []}})
+CLIENT_TIMEOUT = (
+    "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)"
+)
+
+
+def pods_named(n):
+    return [live_pod(f"prometheus-rw-prom-{i}") for i in range(n)]
+
+
+def test_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
+    ctx = Clocked(lambda i, argv: (0, OK_TARGETS, ""))
+    budget = fetch.Budget(clock=ctx.clock)
+    answers = fetch.query_pods(
+        ctx, prom_with(), pods_named(6), targets.PATH, "targets", targets.parse_reply, budget
+    )
+    # 0s, 30s, 60s, 90s: four asks; the fourth is limited to what is left of the 100s
+    assert [a[0] for a in answers] == [f"prometheus-rw-prom-{i}" for i in range(4)]
+    assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
+    assert [(c, s) for c, s, _ in ctx.errors] == [
+        ("timeout", "pod/prometheus-rw-prom-4"),
+        ("timeout", "pod/prometheus-rw-prom-5"),
+    ]
+    assert "100s deadline" in ctx.errors[0][2]
+
+
+def test_three_consecutive_timeouts_stop_asking_the_path():
+    def answer(i, argv):
+        return (0, OK_TARGETS, "") if i == 0 else (1, "", CLIENT_TIMEOUT)
+
+    ctx = Clocked(answer, step=1)
+    budget = fetch.Budget(clock=ctx.clock)
+    answers = fetch.query_pods(
+        ctx, prom_with(), pods_named(6), targets.PATH, "targets", targets.parse_reply, budget
+    )
+    assert [a[0] for a in answers] == ["prometheus-rw-prom-0"]
+    assert len(ctx.calls) == 4  # one answer, three timeouts, then no more asks
+    assert [(c, s) for c, s, _ in ctx.errors] == [
+        ("timeout", "pod/prometheus-rw-prom-1"),
+        ("timeout", "pod/prometheus-rw-prom-2"),
+        ("timeout", "pod/prometheus-rw-prom-3"),
+        ("timeout", "pod/prometheus-rw-prom-4"),
+        ("timeout", "pod/prometheus-rw-prom-5"),
+    ]
+    assert "3 consecutive pods timed out" in ctx.errors[3][2]
+
+
+def test_an_answer_resets_the_consecutive_timeout_count():
+    replies = [(1, "", CLIENT_TIMEOUT)] * 2 + [(0, OK_TARGETS, "")] + [(1, "", CLIENT_TIMEOUT)] * 2
+    ctx = Clocked(lambda i, argv: replies[i], step=1)
+    budget = fetch.Budget(clock=ctx.clock)
+    answers = fetch.query_pods(
+        ctx, prom_with(), pods_named(5), targets.PATH, "targets", targets.parse_reply, budget
+    )
+    assert len(ctx.calls) == 5 and len(answers) == 1
+
+
+def test_the_review_file_is_removed_after_the_reviews_ran_or_failed():
+    run("servicemonitor-coverage")
+    assert LAST["sar_left"] is False
+    run(
+        "servicemonitor-coverage",
+        review=(1, "", FORBIDDEN.format(r="subjectaccessreviews.authorization.k8s.io", v="create")),
+    )
+    assert LAST["sar_left"] is False
+    env, _ = run("servicemonitor-coverage", review=(1, "", "something odd"))
+    assert env["status"] == "failed" and LAST["sar_left"] is False
+
+
+def test_namespace_selector_any_is_checked_cluster_wide():
+    prom = prom_with(serviceMonitorSelector={})
+    sm = sm_of("sm-any", {})
+    sm["spec"] = {"namespaceSelector": {"any": True}}
+    spaces, notes = coverage.target_namespaces(prom, [sm], {(NS, "sm-any"): True})
+    assert spaces == [""] and "cluster-wide" in notes[0]
+    document, order = coverage.review_list(prom, spaces)
+    assert {i["spec"]["resourceAttributes"]["namespace"] for i in document["items"]} == {""}
+    assert all(o[0] == "" for o in order)
+    view = coverage.access_view(prom, spaces, notes, order, [(True, None)] * len(order))
+    assert view["namespaces"] == [""] and view["notes"] == notes
+    # a ServiceMonitor that names namespaces is checked in those, not cluster-wide
+    sm["spec"] = {"namespaceSelector": {"matchNames": ["a", "b"]}}
+    assert coverage.target_namespaces(prom, [sm], {(NS, "sm-any"): True})[0] == ["a", "b"]
+
+
+def test_coverage_reports_the_review_evaluation_error():
+    prom = prom_with()
+    _, order = coverage.review_list(prom, ["n1"])
+    results = [(True, None)] * len(order)
+    results[0] = (False, "x" * 2000)
+    view = coverage.access_view(prom, ["n1"], [], order, results)
+    first = view["checks"][0]
+    assert first["evaluationError"] == "x" * 1024 and first["evaluationErrorTruncated"] is True
+    assert view["checks"][1]["evaluationError"] is None
+    assert view["deniedCount"] == 1
+
+
+def test_service_discovery_role_defaults_to_endpoints_and_is_honoured_when_set():
+    assert coverage.discovery_resources(prom_with())[0] == "Endpoints"
+    assert ("", "endpoints") in coverage.discovery_resources(prom_with())[1]
+    role, resources = coverage.discovery_resources(prom_with(serviceDiscoveryRole="EndpointSlice"))
+    assert role == "EndpointSlice" and ("discovery.k8s.io", "endpointslices") in resources
+    assert ("", "endpoints") not in resources
 
 
 # ------------------------------------------------------------ permissions ----

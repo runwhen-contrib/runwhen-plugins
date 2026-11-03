@@ -132,6 +132,21 @@
     },
     "truncated": {
       "type": "boolean"
+    },
+    "podCount": {
+      "type": "integer",
+      "description": "pods the Prometheus CR owns (label prometheus=<name>)"
+    },
+    "podsSkipped": {
+      "type": "integer",
+      "description": "running pods not asked because more than 10 exist (one pod per shard is asked first)"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "facts about what was not considered, e.g. ServiceMonitors in other namespaces when the cluster-wide list is forbidden"
     }
   },
   "required": [
@@ -144,7 +159,10 @@
     "undeterminedCount",
     "selectedWithoutTargets",
     "serviceMonitors",
-    "truncated"
+    "truncated",
+    "podCount",
+    "podsSkipped",
+    "notes"
   ],
   "additionalProperties": false
 }

@@ -1,6 +1,7 @@
 """Fetching the target workload and talking to its pods (the only I/O besides k8s.py)."""
 
 import re
+import time
 
 from k8s_loki_health.common import MESSAGE_LIMIT
 from k8s_loki_health.errors import RwError
@@ -17,7 +18,46 @@ PORT_NAMES = ("http-metrics", "http", "http-metric")
 SCHEMES = ("http", "https")
 # More pods than this are listed but not queried.
 MAX_QUERIED_PODS = 10
+# Inside the tasks' 120s timeout: after this nothing more is asked, and what was not asked is
+# reported as a timeout.
+TASK_DEADLINE = 100.0
+MAX_CONSECUTIVE_TIMEOUTS = 3
+REQUEST_SECONDS = 30
 _PATH = re.compile(r"^/[A-Za-z0-9_./-]*$")
+
+
+class Budget:
+    """The time a task may spend asking pods: a deadline for the whole task, and a stop for a
+    path whose last MAX_CONSECUTIVE_TIMEOUTS asks (of consecutive pods) all timed out."""
+
+    def __init__(self, seconds=TASK_DEADLINE, clock=time.monotonic):
+        self.seconds = seconds
+        self._clock = clock
+        self._end = clock() + seconds
+        self._timeouts = {}
+
+    def remaining(self):
+        return self._end - self._clock()
+
+    def reason(self, path):
+        """Why `path` may not be asked now, or None."""
+        if self.remaining() < 1:
+            return f"not asked: the task's {self.seconds:g}s deadline was reached"
+        if self._timeouts.get(path, 0) >= MAX_CONSECUTIVE_TIMEOUTS:
+            return f"not asked: {MAX_CONSECUTIVE_TIMEOUTS} consecutive pods timed out on {path}"
+        return None
+
+    def check(self, path):
+        reason = self.reason(path)
+        if reason:
+            raise RwError("timeout", reason)
+
+    def request_timeout(self):
+        """The kubectl --request-timeout for the next ask: never past the deadline."""
+        return f"{max(1, min(REQUEST_SECONDS, int(self.remaining())))}s"
+
+    def record(self, path, timed_out):
+        self._timeouts[path] = self._timeouts.get(path, 0) + 1 if timed_out else 0
 
 
 def target_type(ctx):
@@ -107,18 +147,27 @@ def pod_condition(pod, kind):
     return None
 
 
-def fetch_one(ctx, workload, pod, scheme, port, path):
-    """GET `path` from one pod: a Reply (200, 404 or 503) or RwError."""
-    return proxy_get(
-        ctx,
-        pod_path(
-            workload["metadata"]["namespace"],
-            pod["metadata"]["name"],
-            scheme,
-            pod_port(pod, port),
-            path,
-        ),
+def fetch_one(ctx, workload, pod, scheme, port, path, budget=None):
+    """GET `path` from one pod: a Reply (200, 404 or 503) or RwError. With a `budget`, an ask that
+    is past the deadline, or on a path that timed out for the last pods, raises `timeout`
+    without asking."""
+    api_path = pod_path(
+        workload["metadata"]["namespace"],
+        pod["metadata"]["name"],
+        scheme,
+        pod_port(pod, port),
+        path,
     )
+    if budget is None:
+        return proxy_get(ctx, api_path)
+    budget.check(path)
+    try:
+        reply = proxy_get(ctx, api_path, budget.request_timeout())
+    except RwError as exc:
+        budget.record(path, exc.code == "timeout")
+        raise
+    budget.record(path, False)
+    return reply
 
 
 def queried(pods):

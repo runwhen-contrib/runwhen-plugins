@@ -2,9 +2,9 @@
 
 import re
 
-from k8s_prometheus_health.common import MESSAGE_LIMIT, age_seconds, iso, parse_time
+from k8s_prometheus_health.common import MESSAGE_LIMIT, age_seconds, iso, parse_time, truncate
 from k8s_prometheus_health.errors import RwError
-from k8s_prometheus_health.fetch import MAX_QUERIED_PODS, endpoint, fetch_one, running
+from k8s_prometheus_health.fetch import Budget, endpoint, fetch_one, pod_stats, select_pods
 from k8s_prometheus_health.proxy import api_json
 
 _HEALTHY = re.compile(r"\bhealthy\b")
@@ -59,6 +59,35 @@ def tsdb_view(data):
     }
 
 
+CONDITIONS = ("Available", "Reconciled")
+
+
+def expected_replicas(spec):
+    """The pods the CR asks for: replicas (1 when unset) times shards (1 when unset)."""
+    replicas, shards = spec.get("replicas"), spec.get("shards")
+    return (1 if replicas is None else replicas) * (1 if shards is None else shards)
+
+
+def condition_view(prom):
+    """The operator's Available and Reconciled conditions of `Prometheus.status.conditions`."""
+    rows = []
+    for cond in (prom.get("status") or {}).get("conditions") or []:
+        if cond.get("type") not in CONDITIONS:
+            continue
+        message, cut = truncate(cond.get("message") or None)
+        rows.append(
+            {
+                "type": cond.get("type"),
+                "status": cond.get("status"),
+                "reason": cond.get("reason") or None,
+                "message": message,
+                "messageTruncated": cut,
+                "lastTransitionTime": cond.get("lastTransitionTime"),
+            }
+        )
+    return rows
+
+
 def prometheus_view(prom):
     spec = prom.get("spec") or {}
     scheme, _, prefix = endpoint(prom, {})
@@ -67,6 +96,8 @@ def prometheus_view(prom):
         "namespace": prom["metadata"]["namespace"],
         "replicas": spec.get("replicas"),
         "shards": spec.get("shards"),
+        "expectedReplicas": expected_replicas(spec),
+        "conditions": condition_view(prom),
         "version": spec.get("version"),
         "scheme": scheme,
         "portName": spec.get("portName") or "web",
@@ -98,26 +129,40 @@ def pod_row(pod, prom, probes, runtime, tsdb):
     }
 
 
-def collect(ctx, prom, pods, now, limit):
+def collect(ctx, prom, pods, now, limit, budget=None):
     """The server view. The first failure of a pod (not forbidden) ends that pod's probing, so one
     dead pod is one error, not four. If no running pod answered a single probe the first failure
-    is raised (nothing to report); otherwise the failures are recorded with ctx.error."""
+    is raised (nothing to report); otherwise the failures are recorded with ctx.error. A CR that
+    expects pods (replicas times shards) of which none is queryable is `unreachable` scoped
+    `pods`, so the result is partial, not a clean empty one."""
+    budget = budget or Budget()
+    asked = {p["metadata"]["name"] for p in select_pods(pods)[0]}
     rows, failures, queried = [], [], 0
-    for index, pod in enumerate(pods[:limit]):
-        if index >= MAX_QUERIED_PODS or not running(pod):
+    for pod in pods[:limit]:
+        if pod["metadata"]["name"] not in asked:
             rows.append(pod_row(pod, prom, None, None, None))
             continue
         queried += 1
         probes, runtime, tsdb = {}, None, None
         try:
-            probes["healthy"] = fetch_one(ctx, prom, pod, "/-/healthy", healthy_reply, "/-/healthy")
-            probes["ready"] = fetch_one(ctx, prom, pod, "/-/ready", ready_reply, "/-/ready")
+            probes["healthy"] = fetch_one(
+                ctx, prom, pod, "/-/healthy", healthy_reply, "/-/healthy", budget
+            )
+            probes["ready"] = fetch_one(ctx, prom, pod, "/-/ready", ready_reply, "/-/ready", budget)
             runtime = runtime_view(
-                fetch_one(ctx, prom, pod, "/api/v1/status/runtimeinfo", api_json, "runtimeinfo"),
+                fetch_one(
+                    ctx,
+                    prom,
+                    pod,
+                    "/api/v1/status/runtimeinfo",
+                    api_json,
+                    "runtimeinfo",
+                    budget,
+                ),
                 now,
             )
             tsdb = tsdb_view(
-                fetch_one(ctx, prom, pod, "/api/v1/status/tsdb", api_json, "tsdb status")
+                fetch_one(ctx, prom, pod, "/api/v1/status/tsdb", api_json, "tsdb status", budget)
             )
         except RwError as exc:
             if exc.code == "permission_denied":
@@ -129,9 +174,17 @@ def collect(ctx, prom, pods, now, limit):
         raise RwError(exc.code, exc.message, scope=f"pod/{name}") from exc
     for name, exc in failures:
         ctx.error(exc.code, exc.message[:MESSAGE_LIMIT], scope=f"pod/{name}")
+    expected = expected_replicas(prom.get("spec") or {})
+    if not queried and expected > 0:
+        ctx.error(
+            "unreachable",
+            f"Prometheus {prom['metadata']['name']} expects {expected} replica(s) and "
+            f"{len(pods)} exist, none Running: nothing to query",
+            scope="pods",
+        )
     return {
         "prometheus": prometheus_view(prom),
-        "podCount": len(pods),
+        **pod_stats(pods),
         "truncated": len(pods) > limit,
         "pods": rows,
     }
