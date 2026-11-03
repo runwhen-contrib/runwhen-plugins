@@ -32,41 +32,15 @@ authMethods:
       apiServer: { type: string, default: "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" }
       tokenPath: { type: string, default: /var/run/secrets/kubernetes.io/serviceaccount/token }
       serviceAccount: { type: string, derived: true }
-  # The three cloud methods run integration scripts (auth/*.py) that are not part of this change.
-  gke:
-    title: GKE
-    produces: kubernetes/kubeconfig
-    accepts: [gcp-sa-key, cloud-identity]
-    script: auth/gke.py                      # kubeconfig with an exec entry: gke-gcloud-auth-plugin
-    inputs:
-      project: { type: string, required: true }
-      location: { type: string, required: true }
-      cluster: { type: string, required: true }
-  eks:
-    title: EKS
-    produces: kubernetes/kubeconfig
-    accepts: [aws-access-key, cloud-identity]
-    script: auth/eks.py
-    inputs:
-      region: { type: string, required: true }
-      cluster: { type: string, required: true }
-  aks:
-    title: AKS
-    produces: kubernetes/kubeconfig
-    accepts: [azure-sp, cloud-identity]
-    script: auth/aks.py
-    inputs:
-      resourceGroup: { type: string, required: true }
-      cluster: { type: string, required: true }
+  # gke, eks and aks (script methods, D67) are added with their auth/*.py scripts (CON-5, M3).
 
 # --- what a task may declare and a connection verifies (CD3) ----------------
 permissions:
   schema: ./schemas/rbac-rule.json           # one permission = one RBAC rule (D68)
 
 # --- how the platform plugs this integration in -------------------------------
-entryPoints:
-  discovery: { task: k8s-base/discover, schedule: "*/15 * * * *" }
-  permissionCheck: { task: k8s-base/check-permissions }
-  cli: { task: k8s-base/kubectl }
+# Added with the k8s-base skill (M2, INT-8): discovery k8s-base/discover (*/15), permissionCheck
+# k8s-base/check-permissions, cli k8s-base/kubectl. Until then discovery stays with rw-discovery.
+entryPoints: {}
 
 recognizers: []                              # kubernetes recognizes nothing; postgres and redis recognize kubernetes Services
