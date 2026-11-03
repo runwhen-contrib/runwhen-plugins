@@ -1,0 +1,671 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-istio/deployments/istio-ingressgateway
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-istio
+  - get
+  - deployments.apps
+  - istio-ingressgateway
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "1",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"istio-ingressgateway\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"istio-ingressgateway\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"istio-ingressgateway\",\"istio\":\"ingressgateway\"}},\"spec\":{\"containers\":[{\"image\":\"busybox:does-not-exist-1.20.3\",\"name\":\"istio-proxy\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:30:39Z",
+            "generation": 1,
+            "name": "istio-ingressgateway",
+            "namespace": "rw-istio",
+            "resourceVersion": "21593",
+            "uid": "1de716c9-3308-4c76-96c5-d808e6dd4800"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "istio-ingressgateway"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "istio-ingressgateway",
+                        "istio": "ingressgateway"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "busybox:does-not-exist-1.20.3",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "istio-proxy",
+                            "resources": {},
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            }
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:30:39Z",
+                    "lastUpdateTime": "2026-11-03T20:30:39Z",
+                    "message": "Deployment does not have minimum availability.",
+                    "reason": "MinimumReplicasUnavailable",
+                    "status": "False",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:30:39Z",
+                    "lastUpdateTime": "2026-11-03T20:30:39Z",
+                    "message": "ReplicaSet \"istio-ingressgateway-54dc9677cd\" is progressing.",
+                    "reason": "ReplicaSetUpdated",
+                    "status": "True",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 1,
+            "replicas": 1,
+            "terminatingReplicas": 0,
+            "unavailableReplicas": 1,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-istio
+  - get
+  - replicasets.apps
+  - -l
+  - app=istio-ingressgateway
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/desired-replicas": "1",
+                        "deployment.kubernetes.io/max-replicas": "2",
+                        "deployment.kubernetes.io/revision": "1"
+                    },
+                    "creationTimestamp": "2026-11-03T20:30:39Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "istio-ingressgateway",
+                        "istio": "ingressgateway",
+                        "pod-template-hash": "54dc9677cd"
+                    },
+                    "name": "istio-ingressgateway-54dc9677cd",
+                    "namespace": "rw-istio",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Deployment",
+                            "name": "istio-ingressgateway",
+                            "uid": "1de716c9-3308-4c76-96c5-d808e6dd4800"
+                        }
+                    ],
+                    "resourceVersion": "21583",
+                    "uid": "c58ffe3d-dcd4-4218-9c37-d6165cd92ed4"
+                },
+                "spec": {
+                    "replicas": 1,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "istio-ingressgateway",
+                            "pod-template-hash": "54dc9677cd"
+                        }
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "istio-ingressgateway",
+                                "istio": "ingressgateway",
+                                "pod-template-hash": "54dc9677cd"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "busybox:does-not-exist-1.20.3",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "istio-proxy",
+                                    "resources": {},
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "fullyLabeledReplicas": 1,
+                    "observedGeneration": 1,
+                    "replicas": 1,
+                    "terminatingReplicas": 0
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-istio
+  - get
+  - pods
+  - -l
+  - app=istio-ingressgateway
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:30:39Z",
+                    "generateName": "istio-ingressgateway-54dc9677cd-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "istio-ingressgateway",
+                        "istio": "ingressgateway",
+                        "pod-template-hash": "54dc9677cd"
+                    },
+                    "name": "istio-ingressgateway-54dc9677cd-z7pbr",
+                    "namespace": "rw-istio",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "istio-ingressgateway-54dc9677cd",
+                            "uid": "c58ffe3d-dcd4-4218-9c37-d6165cd92ed4"
+                        }
+                    ],
+                    "resourceVersion": "22647",
+                    "uid": "87433e67-857c-421b-bf74-951c83683b86"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "busybox:does-not-exist-1.20.3",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "istio-proxy",
+                            "resources": {},
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-8r8hc",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-8r8hc",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:30:40Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:30:39Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:30:39Z",
+                            "message": "containers with unready status: [istio-proxy]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:30:39Z",
+                            "message": "containers with unready status: [istio-proxy]",
+                            "observedGeneration": 1,
+                            "reason": "ContainersNotReady",
+                            "status": "False",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T20:30:39Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "image": "busybox:does-not-exist-1.20.3",
+                            "imageID": "",
+                            "lastState": {},
+                            "name": "istio-proxy",
+                            "ready": false,
+                            "restartCount": 0,
+                            "started": false,
+                            "state": {
+                                "waiting": {
+                                    "message": "Back-off pulling image \"busybox:does-not-exist-1.20.3\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/library/busybox:does-not-exist-1.20.3\": failed to resolve reference \"docker.io/library/busybox:does-not-exist-1.20.3\": docker.io/library/busybox:does-not-exist-1.20.3: not found",
+                                    "reason": "ImagePullBackOff"
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-8r8hc",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Pending",
+                    "podIP": "10.244.0.143",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.143"
+                        }
+                    ],
+                    "qosClass": "BestEffort",
+                    "resources": {},
+                    "startTime": "2026-11-03T20:30:39Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - mutatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "admissionregistration.k8s.io/v1",
+                "kind": "MutatingWebhookConfiguration",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"admissionregistration.k8s.io/v1\",\"kind\":\"MutatingWebhookConfiguration\",\"metadata\":{\"annotations\":{},\"name\":\"istio-sidecar-injector\"},\"webhooks\":[{\"admissionReviewVersions\":[\"v1\"],\"clientConfig\":{\"service\":{\"name\":\"istiod\",\"namespace\":\"rw-istio\",\"path\":\"/inject\",\"port\":443}},\"failurePolicy\":\"Ignore\",\"name\":\"rev.namespace.sidecar-injector.istio.io\",\"namespaceSelector\":{\"matchLabels\":{\"rw.test/never-matches\":\"true\"}},\"objectSelector\":{\"matchLabels\":{\"rw.test/never-matches\":\"true\"}},\"rules\":[{\"apiGroups\":[\"\"],\"apiVersions\":[\"v1\"],\"operations\":[\"CREATE\"],\"resources\":[\"pods\"]}],\"sideEffects\":\"None\",\"timeoutSeconds\":10}]}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:30:39Z",
+                    "generation": 1,
+                    "name": "istio-sidecar-injector",
+                    "resourceVersion": "21591",
+                    "uid": "59e0c1d5-19a3-413a-8395-77e204643c18"
+                },
+                "webhooks": [
+                    {
+                        "admissionReviewVersions": [
+                            "v1"
+                        ],
+                        "clientConfig": {
+                            "service": {
+                                "name": "istiod",
+                                "namespace": "rw-istio",
+                                "path": "/inject",
+                                "port": 443
+                            }
+                        },
+                        "failurePolicy": "Ignore",
+                        "matchPolicy": "Equivalent",
+                        "name": "rev.namespace.sidecar-injector.istio.io",
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "rw.test/never-matches": "true"
+                            }
+                        },
+                        "objectSelector": {
+                            "matchLabels": {
+                                "rw.test/never-matches": "true"
+                            }
+                        },
+                        "reinvocationPolicy": "Never",
+                        "rules": [
+                            {
+                                "apiGroups": [
+                                    ""
+                                ],
+                                "apiVersions": [
+                                    "v1"
+                                ],
+                                "operations": [
+                                    "CREATE"
+                                ],
+                                "resources": [
+                                    "pods"
+                                ],
+                                "scope": "*"
+                            }
+                        ],
+                        "sideEffects": "None",
+                        "timeoutSeconds": 10
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - validatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "admissionregistration.k8s.io/v1",
+                "kind": "ValidatingWebhookConfiguration",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"admissionregistration.k8s.io/v1\",\"kind\":\"ValidatingWebhookConfiguration\",\"metadata\":{\"annotations\":{},\"name\":\"istio-validator-rw-istio\"},\"webhooks\":[{\"admissionReviewVersions\":[\"v1\"],\"clientConfig\":{\"service\":{\"name\":\"istiod\",\"namespace\":\"rw-istio\",\"path\":\"/validate\",\"port\":443}},\"failurePolicy\":\"Ignore\",\"name\":\"validation.istio.io\",\"namespaceSelector\":{\"matchLabels\":{\"rw.test/never-matches\":\"true\"}},\"objectSelector\":{\"matchLabels\":{\"rw.test/never-matches\":\"true\"}},\"rules\":[{\"apiGroups\":[\"\"],\"apiVersions\":[\"v1\"],\"operations\":[\"CREATE\"],\"resources\":[\"pods\"]}],\"sideEffects\":\"None\",\"timeoutSeconds\":10}]}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:30:39Z",
+                    "generation": 1,
+                    "name": "istio-validator-rw-istio",
+                    "resourceVersion": "21592",
+                    "uid": "38edce7b-6388-4a00-a95f-4b1cff099014"
+                },
+                "webhooks": [
+                    {
+                        "admissionReviewVersions": [
+                            "v1"
+                        ],
+                        "clientConfig": {
+                            "service": {
+                                "name": "istiod",
+                                "namespace": "rw-istio",
+                                "path": "/validate",
+                                "port": 443
+                            }
+                        },
+                        "failurePolicy": "Ignore",
+                        "matchPolicy": "Equivalent",
+                        "name": "validation.istio.io",
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "rw.test/never-matches": "true"
+                            }
+                        },
+                        "objectSelector": {
+                            "matchLabels": {
+                                "rw.test/never-matches": "true"
+                            }
+                        },
+                        "rules": [
+                            {
+                                "apiGroups": [
+                                    ""
+                                ],
+                                "apiVersions": [
+                                    "v1"
+                                ],
+                                "operations": [
+                                    "CREATE"
+                                ],
+                                "resources": [
+                                    "pods"
+                                ],
+                                "scope": "*"
+                            }
+                        ],
+                        "sideEffects": "None",
+                        "timeoutSeconds": 10
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-istio
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=istiod
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.142"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "istiod-74dcfd9d7b-jkksf",
+                            "namespace": "rw-istio",
+                            "uid": "cbfd95c4-176f-414e-8014-a1b3492d12ce"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T20:30:40Z"
+                    },
+                    "creationTimestamp": "2026-11-03T20:30:39Z",
+                    "generateName": "istiod-",
+                    "generation": 2,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "istiod"
+                    },
+                    "name": "istiod-vgz2r",
+                    "namespace": "rw-istio",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "istiod",
+                            "uid": "583190a1-d5d8-40e5-aff4-cec6f18de79a"
+                        }
+                    ],
+                    "resourceVersion": "21627",
+                    "uid": "18316aea-d28d-4b20-8e5b-940dbcaa8631"
+                },
+                "ports": [
+                    {
+                        "name": "https-webhook",
+                        "port": 15017,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    deployment:
+      name: istio-ingressgateway
+      replicas: 1
+      readyReplicas: 0
+      unavailableReplicas: 1
+    version:
+      container: istio-proxy
+      source: pods
+      tags:
+      - tag: does-not-exist-1.20.3
+        count: 1
+    inspected:
+      pods: 1
