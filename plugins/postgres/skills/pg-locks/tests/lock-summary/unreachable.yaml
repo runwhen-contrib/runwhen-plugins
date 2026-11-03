@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T22:07:19.231Z'
+now: '2026-11-03T22:51:13.803Z'
 calls:
 - argv:
   - psql
@@ -18,15 +18,18 @@ calls:
   - |-
     BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH l AS MATERIALIZED (
       SELECT pid, locktype, database, relation, page, tuple, virtualxid, transactionid, classid,
-             objid, objsubid, mode, granted, fastpath, waitstart
+             objid, objsubid, mode, granted, fastpath,
+             (to_jsonb(pg_locks) ->> 'waitstart')::timestamptz AS waitstart
       FROM pg_locks
       WHERE pid IS DISTINCT FROM pg_backend_pid()
     ), s AS (
-      SELECT current_setting('max_locks_per_transaction')::int AS per_xact,
+      SELECT current_setting('server_version_num')::int AS version,
+             current_setting('max_locks_per_transaction')::int AS per_xact,
              current_setting('max_connections')::int AS conns,
              current_setting('max_prepared_transactions')::int AS prepared
     )
     SELECT json_build_object(
+      'serverVersionNum', (SELECT version FROM s),
       'total', (SELECT count(*) FROM l),
       'granted', (SELECT count(*) FROM l WHERE granted),
       'waiting', (SELECT count(*) FROM l WHERE NOT granted),

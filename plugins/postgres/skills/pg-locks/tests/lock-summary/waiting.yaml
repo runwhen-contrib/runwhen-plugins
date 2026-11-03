@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T22:07:30.250Z'
+now: '2026-11-03T22:51:49.616Z'
 calls:
 - argv:
   - psql
@@ -18,15 +18,18 @@ calls:
   - |-
     BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH l AS MATERIALIZED (
       SELECT pid, locktype, database, relation, page, tuple, virtualxid, transactionid, classid,
-             objid, objsubid, mode, granted, fastpath, waitstart
+             objid, objsubid, mode, granted, fastpath,
+             (to_jsonb(pg_locks) ->> 'waitstart')::timestamptz AS waitstart
       FROM pg_locks
       WHERE pid IS DISTINCT FROM pg_backend_pid()
     ), s AS (
-      SELECT current_setting('max_locks_per_transaction')::int AS per_xact,
+      SELECT current_setting('server_version_num')::int AS version,
+             current_setting('max_locks_per_transaction')::int AS per_xact,
              current_setting('max_connections')::int AS conns,
              current_setting('max_prepared_transactions')::int AS prepared
     )
     SELECT json_build_object(
+      'serverVersionNum', (SELECT version FROM s),
       'total', (SELECT count(*) FROM l),
       'granted', (SELECT count(*) FROM l WHERE granted),
       'waiting', (SELECT count(*) FROM l WHERE NOT granted),
@@ -46,13 +49,14 @@ calls:
     ); COMMIT;
   rc: 0
   stdout: |
-    {"total" : 9, "granted" : 7, "waiting" : 2, "waitingBackends" : 2, "longestWaitMs" : 8810, "byMode" : [{"mode" : "AccessExclusiveLock", "granted" : true, "count" : 1}, {"mode" : "AccessExclusiveLock", "granted" : false, "count" : 2}, {"mode" : "ExclusiveLock", "granted" : true, "count" : 6}], "maxLocksPerTransaction" : 64, "maxConnections" : 100, "maxPreparedTransactions" : 0, "capacity" : 6400, "tableEntries" : 4, "fastPathLocks" : 3}
+    {"serverVersionNum" : 160015, "total" : 9, "granted" : 7, "waiting" : 2, "waitingBackends" : 2, "longestWaitMs" : 6205, "byMode" : [{"mode" : "AccessExclusiveLock", "granted" : true, "count" : 1}, {"mode" : "AccessExclusiveLock", "granted" : false, "count" : 2}, {"mode" : "ExclusiveLock", "granted" : true, "count" : 6}], "maxLocksPerTransaction" : 64, "maxConnections" : 100, "maxPreparedTransactions" : 10, "capacity" : 7040, "tableEntries" : 4, "fastPathLocks" : 3}
   stderr: ''
 expect:
   status: ok
   errorCodes: []
   outputs:
     locks:
+      waitTimesUnavailable: false
       waiting: 2
       waitingBackends: 2
       byMode:
@@ -63,7 +67,7 @@ expect:
     lockTable:
       maxLocksPerTransaction: 64
       maxConnections: 100
-      maxPreparedTransactions: 0
-      capacity: 6400
+      maxPreparedTransactions: 10
+      capacity: 7040
       tableEntries: 4
       estimatedFillRatio: 0.0006

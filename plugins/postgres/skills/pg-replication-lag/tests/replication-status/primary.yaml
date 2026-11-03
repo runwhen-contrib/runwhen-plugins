@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T22:07:55.859Z'
+now: '2026-11-03T22:56:52.754Z'
 calls:
 - argv:
   - psql
@@ -19,11 +19,12 @@ calls:
     BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
       'inRecovery', pg_is_in_recovery(),
       'fullView', pg_has_role(current_user, 'pg_read_all_stats', 'USAGE'),
-      'database', current_database()
+      'database', current_database(),
+      'serverVersionNum', current_setting('server_version_num')::int
     ); COMMIT;
   rc: 0
   stdout: |
-    {"inRecovery" : false, "fullView" : true, "database" : "orders"}
+    {"inRecovery" : false, "fullView" : true, "database" : "orders", "serverVersionNum" : 160015}
   stderr: ''
 - argv:
   - psql
@@ -35,9 +36,18 @@ calls:
   - ON_ERROR_STOP=1
   - -c
   - |-
-    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
-      'currentLsn', pg_current_wal_lsn()::text,
-      'replicas', coalesce((SELECT json_agg(json_build_object(
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; WITH cur AS MATERIALIZED (
+      SELECT pg_current_wal_lsn() AS lsn
+    ), rep AS MATERIALIZED (
+      SELECT * FROM pg_stat_replication
+    ), slots AS MATERIALIZED (
+      SELECT * FROM pg_replication_slots
+    )
+    SELECT json_build_object(
+      'currentLsn', (SELECT lsn::text FROM cur),
+      'replicas', json_build_object(
+        'total', (SELECT count(*) FROM rep),
+        'items', coalesce((SELECT json_agg(json_build_object(
           'pid', r.pid,
           'usename', r.usename::text,
           'applicationName', r.application_name,
@@ -47,25 +57,29 @@ calls:
           'writeLagMs', floor(extract(epoch FROM r.write_lag) * 1000)::bigint,
           'flushLagMs', floor(extract(epoch FROM r.flush_lag) * 1000)::bigint,
           'replayLagMs', floor(extract(epoch FROM r.replay_lag) * 1000)::bigint,
-          'sentLsnBytes', pg_wal_lsn_diff(pg_current_wal_lsn(), r.sent_lsn)::bigint,
-          'writeLsnBytes', pg_wal_lsn_diff(pg_current_wal_lsn(), r.write_lsn)::bigint,
-          'flushLsnBytes', pg_wal_lsn_diff(pg_current_wal_lsn(), r.flush_lsn)::bigint,
-          'replayLsnBytes', pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint
-        ) ORDER BY r.application_name, r.pid) FROM pg_stat_replication r), '[]'::json),
-      'slots', coalesce((SELECT json_agg(json_build_object(
+          'sentLsnBytes', pg_wal_lsn_diff(cur.lsn, r.sent_lsn)::bigint,
+          'writeLsnBytes', pg_wal_lsn_diff(cur.lsn, r.write_lsn)::bigint,
+          'flushLsnBytes', pg_wal_lsn_diff(cur.lsn, r.flush_lsn)::bigint,
+          'replayLsnBytes', pg_wal_lsn_diff(cur.lsn, r.replay_lsn)::bigint
+        ) ORDER BY r.application_name, r.pid)
+        FROM (SELECT * FROM rep ORDER BY application_name, pid LIMIT 200) r CROSS JOIN cur), '[]'::json)),
+      'slots', json_build_object(
+        'total', (SELECT count(*) FROM slots),
+        'items', coalesce((SELECT json_agg(json_build_object(
           'slotName', s.slot_name::text,
           'slotType', s.slot_type,
           'database', s.database::text,
           'active', s.active,
           'activePid', s.active_pid,
           'walStatus', s.wal_status,
-          'retainedWalBytes', pg_wal_lsn_diff(pg_current_wal_lsn(), s.restart_lsn)::bigint,
+          'retainedWalBytes', pg_wal_lsn_diff(cur.lsn, s.restart_lsn)::bigint,
           'safeWalSize', s.safe_wal_size
-        ) ORDER BY s.slot_name) FROM pg_replication_slots s), '[]'::json)
+        ) ORDER BY s.slot_name)
+        FROM (SELECT * FROM slots ORDER BY slot_name LIMIT 200) s CROSS JOIN cur), '[]'::json))
     ); COMMIT;
   rc: 0
   stdout: |
-    {"currentLsn" : "0/34106A0", "replicas" : [{"pid" : 857, "usename" : "rw_replicator", "applicationName" : "walreceiver", "clientAddr" : "172.20.0.3", "state" : "streaming", "syncState" : "async", "writeLagMs" : 4, "flushLagMs" : 7, "replayLagMs" : 66, "sentLsnBytes" : 0, "writeLsnBytes" : 0, "flushLsnBytes" : 0, "replayLsnBytes" : 0}], "slots" : [{"slotName" : "rw_fixture_idle", "slotType" : "physical", "database" : null, "active" : false, "activePid" : null, "walStatus" : "reserved", "retainedWalBytes" : 1175776, "safeWalSize" : null}, {"slotName" : "rw_standby", "slotType" : "physical", "database" : null, "active" : true, "activePid" : 857, "walStatus" : "reserved", "retainedWalBytes" : 0, "safeWalSize" : null}]}
+    {"currentLsn" : "0/318BF68", "replicas" : {"total" : 1, "items" : [{"pid" : 118, "usename" : "rw_replicator", "applicationName" : "walreceiver", "clientAddr" : "172.20.0.3", "state" : "streaming", "syncState" : "async", "writeLagMs" : 1, "flushLagMs" : 1, "replayLagMs" : 2, "sentLsnBytes" : 0, "writeLsnBytes" : 0, "flushLsnBytes" : 0, "replayLsnBytes" : 0}]}, "slots" : {"total" : 2, "items" : [{"slotName" : "rw_fixture_idle", "slotType" : "physical", "database" : null, "active" : false, "activePid" : null, "walStatus" : "reserved", "retainedWalBytes" : 1176856, "safeWalSize" : null}, {"slotName" : "rw_standby", "slotType" : "physical", "database" : null, "active" : true, "activePid" : 118, "walStatus" : "reserved", "retainedWalBytes" : 0, "safeWalSize" : null}]}}
   stderr: ''
 expect:
   status: ok
@@ -86,4 +100,4 @@ expect:
           items:
             $contains:
             - {slotName: rw_standby, slotType: physical, active: true, walStatus: reserved, retainedWalBytes: 0}
-            - {slotName: rw_fixture_idle, slotType: physical, active: false, activePid: null, walStatus: reserved, retainedWalBytes: 1175776}
+            - {slotName: rw_fixture_idle, slotType: physical, active: false, activePid: null, walStatus: reserved, retainedWalBytes: 1176856}

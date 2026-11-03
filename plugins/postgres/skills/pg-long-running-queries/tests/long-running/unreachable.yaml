@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T22:06:39.727Z'
+now: '2026-11-03T22:51:15.896Z'
 calls:
 - argv:
   - psql
@@ -40,6 +40,16 @@ calls:
         AND a.state IN ('active', 'idle in transaction', 'idle in transaction (aborted)')
     ), hits AS (
       SELECT * FROM cand WHERE dur > interval '1 millisecond' * 300000
+    ), lk AS MATERIALIZED (
+      SELECT pid, locktype, granted, database, relation, page, tuple, virtualxid, transactionid,
+             classid, objid, objsubid, virtualtransaction
+      FROM pg_locks
+    ), prep AS (
+      SELECT p.gid, p.prepared, p.owner::text AS owner, p.database::text AS database,
+             t.virtualtransaction AS vxid
+      FROM pg_prepared_xacts p
+      JOIN lk t ON t.pid IS NULL AND t.granted AND t.locktype = 'transactionid'
+               AND t.transactionid = p.transaction
     )
     SELECT json_build_object(
       'fullView', (SELECT full_view FROM cfg),
@@ -59,9 +69,32 @@ calls:
           'waitEvent', wait_event,
           'backendType', backend_type,
           'queryId', query_id,
-          'blockedBy', pg_blocking_pids(pid)
+          'blockedBy', to_json(bp.pids[1:50]),
+          'blockedByTruncated', cardinality(bp.pids) > 50,
+          'preparedTransactions', CASE WHEN 0 = ANY(bp.pids) THEN coalesce((
+              SELECT json_agg(json_build_object(
+                  'gid', x.gid,
+                  'prepared', floor(extract(epoch FROM clock_timestamp() - x.prepared) * 1000)::bigint,
+                  'owner', x.owner,
+                  'database', x.database
+                ) ORDER BY x.prepared, x.gid)
+              FROM (SELECT DISTINCT pr.gid, pr.prepared, pr.owner, pr.database
+                    FROM lk w
+                    JOIN lk hl ON hl.pid IS NULL AND hl.granted AND hl.locktype = w.locktype
+                             AND hl.database IS NOT DISTINCT FROM w.database
+                             AND hl.relation IS NOT DISTINCT FROM w.relation
+                             AND hl.page IS NOT DISTINCT FROM w.page
+                             AND hl.tuple IS NOT DISTINCT FROM w.tuple
+                             AND hl.virtualxid IS NOT DISTINCT FROM w.virtualxid
+                             AND hl.transactionid IS NOT DISTINCT FROM w.transactionid
+                             AND hl.classid IS NOT DISTINCT FROM w.classid
+                             AND hl.objid IS NOT DISTINCT FROM w.objid
+                             AND hl.objsubid IS NOT DISTINCT FROM w.objsubid
+                    JOIN prep pr ON pr.vxid = hl.virtualtransaction
+                    WHERE w.pid = h.pid AND NOT w.granted
+                    LIMIT 50) x), '[]'::json) ELSE '[]'::json END
         ) ORDER BY dur DESC, pid), '[]'::json)
-        FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT 200) h)
+        FROM (SELECT * FROM hits ORDER BY dur DESC, pid LIMIT 200) h CROSS JOIN LATERAL (SELECT pg_blocking_pids(h.pid) AS pids) bp)
     ); COMMIT;
   rc: 2
   stdout: ''

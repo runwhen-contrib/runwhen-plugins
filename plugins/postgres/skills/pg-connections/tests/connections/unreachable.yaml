@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: postgres/instances/orders-db
-now: '2026-11-03T22:06:30.035Z'
+now: '2026-11-03T22:51:09.005Z'
 calls:
 - argv:
   - psql
@@ -25,9 +25,9 @@ calls:
     ), s AS (
       SELECT a.datname, a.usename, a.application_name, a.state, a.backend_type, a.wait_event_type,
              a.xact_start, a.state_change,
-             (a.backend_type = 'client backend'
-               OR (a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL)) AS is_client,
-             NOT (cfg.full_view OR coalesce(pg_has_role(current_user, a.usesysid, 'USAGE'), false)) AS hidden
+             (a.backend_type = 'client backend') AS is_client,
+             (a.backend_type IS NULL AND a.datname IS NOT NULL AND a.usename IS NOT NULL
+               AND NOT (cfg.full_view OR coalesce(pg_has_role(current_user, a.usesysid, 'USAGE'), false))) AS is_hidden
       FROM pg_stat_activity a CROSS JOIN cfg
       WHERE a.pid <> pg_backend_pid()
     ), by_type AS (
@@ -43,7 +43,7 @@ calls:
       'superuserReservedConnections', (SELECT superuser_reserved FROM cfg),
       'reservedConnections', (SELECT reserved FROM cfg),
       'inUse', (SELECT count(*) FROM s WHERE is_client),
-      'hiddenSessions', (SELECT count(*) FROM s WHERE is_client AND hidden),
+      'hiddenSessions', (SELECT count(*) FROM s WHERE is_hidden),
       'byState', (SELECT json_build_object(
           'active', count(*) FILTER (WHERE state = 'active'),
           'idle', count(*) FILTER (WHERE state = 'idle'),
