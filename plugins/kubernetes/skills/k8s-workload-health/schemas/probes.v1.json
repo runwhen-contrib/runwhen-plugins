@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Probe configuration per container and probe",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "container": {
+        "type": "string"
+      },
+      "init": {
+        "type": "boolean"
+      },
+      "probe": {
+        "enum": [
+          "liveness",
+          "readiness",
+          "startup"
+        ]
+      },
+      "present": {
+        "type": "boolean"
+      },
+      "handler": {
+        "enum": [
+          "httpGet",
+          "tcpSocket",
+          "grpc",
+          "exec",
+          null
+        ]
+      },
+      "port": {
+        "type": [
+          "integer",
+          "string",
+          "null"
+        ]
+      },
+      "portDeclared": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "resolvedPort": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "command": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "argCount": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "initialDelaySeconds": {
+        "type": "integer"
+      },
+      "periodSeconds": {
+        "type": "integer"
+      },
+      "timeoutSeconds": {
+        "type": "integer"
+      },
+      "successThreshold": {
+        "type": "integer"
+      },
+      "failureThreshold": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "container",
+      "init",
+      "probe",
+      "present"
+    ],
+    "additionalProperties": false
+  }
+}

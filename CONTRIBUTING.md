@@ -19,3 +19,9 @@ checklist below is the review bar for every ported skill. See
 10. `SKILL.md`: when to use, what each task tells you, how to read the result, what to try next (naming sibling skills by `<plugin>:<skill>/<task>`).
 11. Update `porting/parity.yaml` (bundle → skill/tasks, `status: ported`) and `porting/rate.csv` (bundle, start, end, minutes, classic defects found, review defects).
 12. `rwtask validate plugins/<name>` and `rwtask test plugins/<name>/skills/<skill>` green before review.
+
+## Code conventions
+
+- Python scripts stay thin: fetch with `ctx.run`, compute in `lib/`, return outputs.
+- `lib/` holds one package named after the skill in snake_case (`lib/k8s_workload_health/`), imported as `from k8s_workload_health.<module> import ...`. `lib/` is appended to `sys.path` after site-packages, so bare module names (`k8s`, `workload`) could be shadowed by an installed package.
+- Logic in `lib/` is pure (parsed JSON in, outputs out) and unit-tested in `plugins/<plugin>/tests/unit/` against JSON captured from the kind scenarios (`managedFields` stripped). `tests/` at the plugin root is excluded from the archive.

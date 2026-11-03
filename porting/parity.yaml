@@ -1,6 +1,6 @@
 # Classic rw-cli-codecollection bundle -> V13 skill coverage (CNT-1, CNT-5).
 # Source: rw-cli-codecollection origin/main @ 49ab483. Per-task detail: porting/inventory/*.yaml.
-# status: planned | ported | dropped. A bundle may map to several skills; a skill may absorb several bundles.
+# status: planned | partial | ported | dropped; `ported:` lists the skills of `skills:` that are merged. A bundle may map to several skills; a skill may absorb several bundles.
 # Porters fill `tasks:` (classic task title -> <skill>/<task> or "dropped: <reason>") when they port (CONTRIBUTING.md step 11).
 # Grouping rule: one skill per V13 type set + symptom an engineer would page on; tasks touch only the target and
 # objects inside it (namespace -> its pods; workload -> its pods, ReplicaSets, PVCs, events).
@@ -9,10 +9,10 @@
 
 kubernetes:
   # --- pilot (CNT-3) -----------------------------------------------------------------------------------------
-  - { bundle: k8s-deployment-healthcheck,  skills: [k8s-workload-health, k8s-workload-logs], status: planned, pilot: true }
-  - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: planned, pilot: true,
+  - { bundle: k8s-deployment-healthcheck,  skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true }
+  - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true,
       note: "classic restarts/log-pattern/anomaly/PVC tasks never produce output on main (json.loads on text, undefined var, list vs string, comma-less jq); re-derived, not fixed" }
-  - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: planned, pilot: true }
+  - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: partial, ported: [k8s-workload-health], pilot: true }
   - { bundle: k8s-namespace-healthcheck,   skills: [k8s-namespace-health], status: planned, pilot: true }
   - { bundle: k8s-tail-logs-dynamic,       skills: [k8s-workload-logs], status: planned, pilot: true }
   - { bundle: k8s-app-troubleshoot,        skills: [k8s-workload-logs], status: planned, pilot: true,
@@ -27,7 +27,7 @@ kubernetes:
   - { bundle: k8s-statefulset-ops,         skills: [k8s-workload-ops], status: planned }
   - { bundle: k8s-restart-resource,        skills: [k8s-workload-ops], status: planned, note: "label-selected restart becomes rollout-restart on the target workload" }
   - { bundle: k8s-stacktrace-health,       skills: [k8s-workload-logs], status: planned }
-  - { bundle: k8s-labeledpods-healthcheck, skills: [k8s-workload-health], status: planned, note: "running-pod count is part of rollout-status" }
+  - { bundle: k8s-labeledpods-healthcheck, skills: [k8s-workload-health], status: ported, ported: [k8s-workload-health], note: "running-pod count is part of rollout-status" }
   - { bundle: k8s-cluster-resource-health, skills: [k8s-node-health], status: planned,
       note: "classic task 2 reads files nothing creates; task 1 misreads whole-core CPU as millicores" }
 

@@ -109,4 +109,5 @@ def test_parity_covers_every_k8s_bundle():
     assert len(expected) == 46
     assert sorted(listed) == expected
     for entry in parity["kubernetes"]:
-        assert entry["status"] in {"planned", "ported", "dropped"}
+        assert entry["status"] in {"planned", "partial", "ported", "dropped"}
+        assert set(entry.get("ported", [])) <= set(entry["skills"])
