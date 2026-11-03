@@ -39,7 +39,7 @@ preview before it applies (D23).
 A tag whose plugin directory is missing, or whose version differs from
 `plugin.yaml`, fails the workflow before anything is published.
 
-Until `vars.SDK_REF` is set on the repo (to `contracts-v1` once lane A tags it,
-`v13/plugins` before that), the validate, test, compile and release steps are
-skipped: a tag only runs the tag/version check. No release is ever published
-without its compiled archive.
+The SDK the plugins are validated, replayed and compiled with is pinned in
+`.github/workflows/plugins.yml` (`SDK_REF`; the repo variable `SDK_REF` overrides it). Every skill
+must have recorded fixtures (`skills/<skill>/tests/<task>/*.yaml`): `rwtask test` fails a skill
+without them.
