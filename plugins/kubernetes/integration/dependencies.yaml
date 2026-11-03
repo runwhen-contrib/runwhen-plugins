@@ -1,0 +1,435 @@
+# Converted from rw-discovery packs/kubernetes/pack.yaml `dependencyRules` (origin/main f7f03c4).
+# Changes: from/to `platform: kubernetes` dropped (the default); CRD types use this integration's short
+# names (types.yaml). Edge types are all in the platform's core set, so no `edgeTypes` block.
+# Rules on CRD types match only once discovery finds those CRDs in a cluster.
+rules:
+  # --- ownership ---------------------------------------------------------
+  - id: k8s.owner-owned
+    description: An owner reference (operator CR -> StatefulSet/Service, CronJob -> Job, ...)
+    edgeType: owns
+    from: {types: ["*"]}
+    to: {types: ["*"]}
+    strategy: owner_reference
+    params: {}
+    direction: forward
+    confidence: 1.0
+
+  # --- service routing -----------------------------------------------------
+  - id: k8s.service-routes-to-workload
+    description: Service selector matches a workload's pod-template labels
+    edgeType: routes_to
+    from: {types: [service]}
+    to: {types: [deployment, statefulset, daemonset]}
+    strategy: label_selector
+    params:
+      selector: spec.selector
+      targetLabels: spec.template.metadata.labels
+      scope: sameParent
+    direction: forward
+    confidence: 0.9
+
+  - id: k8s.ingress-routes-to-service
+    description: Ingress backend references a Service
+    edgeType: routes_to
+    from: {types: [ingress]}
+    to: {types: [service]}
+    strategy: reference
+    params:
+      values: "[spec.defaultBackend.service.name, spec.rules[].http.paths[].backend.service.name][] | [?@]"
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.ingress-uses-tls-secret
+    description: Ingress TLS references a Secret
+    edgeType: uses_secret
+    from: {types: [ingress]}
+    to: {types: [secret]}
+    strategy: reference
+    params: {values: "spec.tls[].secretName", scope: sameParent}
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.ingress-provisioned-by-ingressclass
+    description: Ingress references its IngressClass
+    edgeType: provisioned_by
+    from: {types: [ingress]}
+    to: {types: [ingressclass]}
+    strategy: reference
+    params: {values: "spec.ingressClassName", scope: sameRoot}
+    direction: forward
+    confidence: 1.0
+
+  # --- workload -> config/secret/storage/identity ---------------------------
+  #
+  # Split per pod-spec shape, not one rule with `from: [..., cronjob]`: a
+  # CronJob's pod spec lives at `spec.jobTemplate.spec.template.spec`, not
+  # `spec.template.spec` -- the dependency-rule schema has no
+  # `expressionByType` (that's a facet-populator-only mechanism, see
+  # pack.yaml's `k8sSummary` facet above; platform-contract §2 never gives
+  # `params` one), so a rule that read `spec.template.spec...` for CronJob
+  # simply always evaluated to nothing. Each pair below covers
+  # Deployment/StatefulSet/DaemonSet/Job (identical pod-spec shape) plus a
+  # CronJob-specific twin at the deeper path -- and `containers[]` alongside
+  # `initContainers[]` (initContainers can mount the same ConfigMap/Secret
+  # and are otherwise invisible to these rules).
+  - id: k8s.workload-uses-configmap
+    description: Workload references a ConfigMap (volumes, projected, envFrom, env.valueFrom, initContainers)
+    edgeType: uses_config
+    from: {types: [deployment, statefulset, daemonset, job]}
+    to: {types: [configmap]}
+    strategy: reference
+    params:
+      values: >-
+        [spec.template.spec.volumes[].configMap.name,
+         spec.template.spec.volumes[].projected.sources[].configMap.name,
+         spec.template.spec.containers[].envFrom[].configMapRef.name,
+         spec.template.spec.initContainers[].envFrom[].configMapRef.name,
+         spec.template.spec.containers[].env[].valueFrom.configMapKeyRef.name,
+         spec.template.spec.initContainers[].env[].valueFrom.configMapKeyRef.name][] | [?@]
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.cronjob-uses-configmap
+    description: CronJob's job template references a ConfigMap (volumes, projected, envFrom, env.valueFrom, initContainers)
+    edgeType: uses_config
+    from: {types: [cronjob]}
+    to: {types: [configmap]}
+    strategy: reference
+    params:
+      values: >-
+        [spec.jobTemplate.spec.template.spec.volumes[].configMap.name,
+         spec.jobTemplate.spec.template.spec.volumes[].projected.sources[].configMap.name,
+         spec.jobTemplate.spec.template.spec.containers[].envFrom[].configMapRef.name,
+         spec.jobTemplate.spec.template.spec.initContainers[].envFrom[].configMapRef.name,
+         spec.jobTemplate.spec.template.spec.containers[].env[].valueFrom.configMapKeyRef.name,
+         spec.jobTemplate.spec.template.spec.initContainers[].env[].valueFrom.configMapKeyRef.name][] | [?@]
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.workload-uses-secret
+    description: Workload references a Secret (volumes, projected, envFrom, env.valueFrom, imagePullSecrets, initContainers)
+    edgeType: uses_secret
+    from: {types: [deployment, statefulset, daemonset, job]}
+    to: {types: [secret]}
+    strategy: reference
+    params:
+      values: >-
+        [spec.template.spec.volumes[].secret.secretName,
+         spec.template.spec.volumes[].projected.sources[].secret.name,
+         spec.template.spec.containers[].envFrom[].secretRef.name,
+         spec.template.spec.initContainers[].envFrom[].secretRef.name,
+         spec.template.spec.containers[].env[].valueFrom.secretKeyRef.name,
+         spec.template.spec.initContainers[].env[].valueFrom.secretKeyRef.name,
+         spec.template.spec.imagePullSecrets[].name][] | [?@]
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.cronjob-uses-secret
+    description: CronJob's job template references a Secret (volumes, projected, envFrom, env.valueFrom, imagePullSecrets, initContainers)
+    edgeType: uses_secret
+    from: {types: [cronjob]}
+    to: {types: [secret]}
+    strategy: reference
+    params:
+      values: >-
+        [spec.jobTemplate.spec.template.spec.volumes[].secret.secretName,
+         spec.jobTemplate.spec.template.spec.volumes[].projected.sources[].secret.name,
+         spec.jobTemplate.spec.template.spec.containers[].envFrom[].secretRef.name,
+         spec.jobTemplate.spec.template.spec.initContainers[].envFrom[].secretRef.name,
+         spec.jobTemplate.spec.template.spec.containers[].env[].valueFrom.secretKeyRef.name,
+         spec.jobTemplate.spec.template.spec.initContainers[].env[].valueFrom.secretKeyRef.name,
+         spec.jobTemplate.spec.template.spec.imagePullSecrets[].name][] | [?@]
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.workload-mounts-pvc
+    description: Workload references a PersistentVolumeClaim (claimName; StatefulSet claim templates by pattern)
+    edgeType: mounts
+    from: {types: [deployment, statefulset, daemonset, job]}
+    to: {types: [persistentvolumeclaim]}
+    strategy: reference
+    params:
+      values: "spec.template.spec.volumes[].persistentVolumeClaim.claimName"
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.cronjob-mounts-pvc
+    description: CronJob's job template references a PersistentVolumeClaim (claimName)
+    edgeType: mounts
+    from: {types: [cronjob]}
+    to: {types: [persistentvolumeclaim]}
+    strategy: reference
+    params:
+      values: "spec.jobTemplate.spec.template.spec.volumes[].persistentVolumeClaim.claimName"
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.statefulset-volume-claim-template
+    description: StatefulSet volumeClaimTemplates generate one PVC per replica, named "<template>-<sts>-<n>"
+    edgeType: mounts
+    from: {types: [statefulset]}
+    to: {types: [persistentvolumeclaim]}
+    strategy: reference
+    params:
+      values: "spec.volumeClaimTemplates[].metadata.name"
+      scope: sameParent
+      namePattern: "{value}-{fromName}-0"
+    direction: forward
+    confidence: 0.7
+
+  - id: k8s.workload-runs-as-serviceaccount
+    description: Workload runs as its ServiceAccount (default "default")
+    edgeType: runs_as
+    from: {types: [deployment, statefulset, daemonset, job]}
+    to: {types: [serviceaccount]}
+    strategy: reference
+    params:
+      values: "spec.template.spec.serviceAccountName || 'default'"
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.cronjob-runs-as-serviceaccount
+    description: CronJob's job template runs as its ServiceAccount (default "default")
+    edgeType: runs_as
+    from: {types: [cronjob]}
+    to: {types: [serviceaccount]}
+    strategy: reference
+    params:
+      values: "spec.jobTemplate.spec.template.spec.serviceAccountName || 'default'"
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  # --- storage ---------------------------------------------------------------
+  - id: k8s.pvc-bound-to-pv
+    description: PVC bound to its PersistentVolume
+    edgeType: bound_to
+    from: {types: [persistentvolumeclaim]}
+    to: {types: [persistentvolume]}
+    strategy: reference
+    params: {values: "spec.volumeName", scope: sameRoot}
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.pvc-provisioned-by-storageclass
+    description: PVC provisioned by its StorageClass
+    edgeType: provisioned_by
+    from: {types: [persistentvolumeclaim]}
+    to: {types: [storageclass]}
+    strategy: reference
+    params: {values: "spec.storageClassName", scope: sameRoot}
+    direction: forward
+    confidence: 1.0
+
+  # --- scaling / disruption / network policy (reverse) ------------------------
+  - id: k8s.hpa-scales-workload
+    description: HPA scaleTargetRef names the workload it scales
+    edgeType: scaled_by
+    from: {types: [horizontalpodautoscaler]}
+    to: {types: [deployment, statefulset]}
+    strategy: reference
+    params:
+      values: "spec.scaleTargetRef.name"
+      scope: sameParent
+      typeFrom: "spec.scaleTargetRef.kind"
+    direction: reverse
+    confidence: 1.0
+
+  - id: k8s.pdb-protects-workload
+    description: PodDisruptionBudget selector matches a workload's pod-template labels
+    edgeType: protected_by
+    from: {types: [poddisruptionbudget]}
+    to: {types: [deployment, statefulset, daemonset]}
+    strategy: label_selector
+    # policy/v1: an empty selector selects every pod in the namespace.
+    params: {selector: spec.selector, targetLabels: spec.template.metadata.labels, scope: sameParent, emptySelector: all}
+    direction: reverse
+    confidence: 0.9
+
+  - id: k8s.networkpolicy-governs-workload
+    description: NetworkPolicy podSelector matches a workload's pod-template labels
+    edgeType: governed_by
+    from: {types: [networkpolicy]}
+    to: {types: [deployment, statefulset, daemonset]}
+    strategy: label_selector
+    # podSelector: {} selects every pod in the namespace (e.g. default-deny policies).
+    params: {selector: spec.podSelector, targetLabels: spec.template.metadata.labels, scope: sameParent, emptySelector: all}
+    direction: reverse
+    confidence: 0.8
+
+  # --- RBAC --------------------------------------------------------------
+  - id: k8s.serviceaccount-authorized-by-rolebinding
+    description: A RoleBinding names a ServiceAccount subject without a namespace (its own namespace)
+    edgeType: authorized_by
+    from: {types: [rolebinding]}
+    to: {types: [serviceaccount]}
+    strategy: reference
+    params:
+      values: "subjects[?kind=='ServiceAccount' && !namespace].name"
+      scope: sameParent
+    direction: reverse
+    confidence: 0.9
+
+  - id: k8s.serviceaccount-authorized-by-binding-namespaced-subject
+    description: A RoleBinding/ClusterRoleBinding names a ServiceAccount subject with an explicit namespace
+    edgeType: authorized_by
+    from: {types: [rolebinding, clusterrolebinding]}
+    to: {types: [serviceaccount]}
+    strategy: path_template
+    params:
+      values: "subjects[?kind=='ServiceAccount' && namespace].join('/', [namespace, name])"
+      match: "^(?P<ns>[^/]+)/(?P<name>[^/]+)$"
+      template: "{root}/namespaces/{ns}/serviceaccounts/{name}"
+    direction: reverse
+    confidence: 0.9
+
+  - id: k8s.binding-grants-role
+    description: A RoleBinding/ClusterRoleBinding's roleRef names the Role/ClusterRole it grants
+    edgeType: grants
+    from: {types: [rolebinding, clusterrolebinding]}
+    to: {types: [role, clusterrole]}
+    strategy: reference
+    params:
+      values: "roleRef.name"
+      scope: sameRoot
+      typeFrom: "roleRef.kind"
+    direction: forward
+    confidence: 1.0
+
+  # --- GitOps instance labels ---------------------------------------------
+  - id: k8s.managed-by-argocd-application
+    description: Argo CD instance label names the Application that manages this resource
+    edgeType: managed_by
+    from: {types: ["*"]}
+    to: {types: [application]}
+    strategy: reference
+    params: {values: "metadata.labels.\"argocd.argoproj.io/instance\"", scope: sameRoot}
+    direction: forward
+    confidence: 0.8
+
+  - id: k8s.managed-by-flux-kustomization
+    description: Flux instance labels name the Kustomization that manages this resource
+    edgeType: managed_by
+    from: {types: ["*"]}
+    to: {types: [kustomization]}
+    strategy: reference
+    params: {values: "metadata.labels.\"kustomize.toolkit.fluxcd.io/name\"", scope: sameParent}
+    direction: forward
+    confidence: 0.8
+
+  - id: k8s.managed-by-flux-helmrelease
+    description: Flux instance labels name the HelmRelease that manages this resource
+    edgeType: managed_by
+    from: {types: ["*"]}
+    to: {types: [helmrelease]}
+    strategy: reference
+    params: {values: "metadata.labels.\"helm.toolkit.fluxcd.io/name\"", scope: sameParent}
+    direction: forward
+    confidence: 0.8
+
+  # --- cross-platform bridge (dangling until that platform is discovered) ----
+  - id: k8s.serviceaccount-assumes-aws-iam-role
+    description: IRSA annotation names the AWS IAM role a ServiceAccount assumes
+    edgeType: assumes_identity
+    from: {types: [serviceaccount]}
+    to: {platform: aws, types: [iam-role]}
+    strategy: path_template
+    params:
+      values: "metadata.annotations.\"eks.amazonaws.com/role-arn\""
+      match: "arn:aws:iam::(?P<account>[0-9]+):role/(?P<role>.+)"
+      template: "aws/accounts/{account}/iam-roles/{role}"
+    direction: forward
+    confidence: 0.9
+
+  - id: k8s.serviceaccount-assumes-gcp-service-account
+    description: Workload Identity annotation names the GCP service account a ServiceAccount assumes
+    edgeType: assumes_identity
+    from: {types: [serviceaccount]}
+    to: {platform: gcp, types: [service-account]}
+    strategy: path_template
+    params:
+      values: "metadata.annotations.\"iam.gke.io/gcp-service-account\""
+      match: "(?P<email>[^@]+@(?P<project>[a-z0-9-]+)\\.iam\\.gserviceaccount\\.com)"
+      template: "gcp/projects/{project}/service-accounts/{email}"
+    direction: forward
+    confidence: 0.9
+
+  # --- CRD-conditional: activated only when the CRD exists on the cluster ----
+  - id: k8s.certmanager-certificate-uses-secret
+    description: cert-manager Certificate writes its TLS Secret to spec.secretName
+    edgeType: uses_secret
+    from: {types: [certificate]}
+    to: {types: [secret]}
+    strategy: reference
+    params: {values: "spec.secretName", scope: sameParent}
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.certmanager-certificate-provisioned-by-issuer
+    description: cert-manager Certificate references a namespaced Issuer (issuerRef.kind absent or Issuer)
+    edgeType: provisioned_by
+    from: {types: [certificate]}
+    to: {types: [issuer]}
+    strategy: reference
+    params:
+      values: "[spec.issuerRef][?kind != 'ClusterIssuer'].name"
+      scope: sameParent
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.certmanager-certificate-provisioned-by-clusterissuer
+    description: cert-manager Certificate references a cluster-scoped ClusterIssuer
+    edgeType: provisioned_by
+    from: {types: [certificate]}
+    to: {types: [clusterissuer]}
+    strategy: reference
+    params:
+      values: "[spec.issuerRef][?kind == 'ClusterIssuer'].name"
+      scope: sameRoot
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.gatewayapi-httproute-routes-to-service
+    description: Gateway API HTTPRoute backendRefs name the Services it routes to
+    edgeType: routes_to
+    from: {types: [httproute]}
+    to: {types: [service]}
+    strategy: reference
+    params: {values: "spec.rules[].backendRefs[].name", scope: sameParent}  # pack.yaml lacked `spec.`: never matched
+    direction: forward
+    confidence: 1.0
+
+  - id: k8s.gatewayapi-httproute-routes-to-gateway
+    description: Gateway API HTTPRoute parentRefs name the Gateway it attaches to
+    edgeType: routes_to
+    from: {types: [httproute]}
+    to: {types: [gateway]}
+    strategy: reference
+    params: {values: "spec.parentRefs[].name", scope: sameParent}
+    direction: forward
+    confidence: 0.9
+
+  # --- heuristic, P2 ------------------------------------------------------
+  - id: k8s.workload-calls-service-by-dns
+    description: A workload's env/args/ConfigMap values mention a known Service's DNS name or host:port
+    edgeType: calls
+    from: {types: [deployment, statefulset, daemonset, cronjob, job]}
+    to: {types: [service]}
+    strategy: dns_reference
+    # hostKeys: an env var / ConfigMap key named like a host setting whose whole
+    # value is a bare `service` or `service.namespace` (DATABASE_HOST=pgbouncer)
+    # also counts -- without it only FQDNs, URLs and host:port are recognised.
+    params:
+      sources: [env, args, configMaps]
+      confidence: 0.6
+      hostKeys: "(?i)(^|_)(HOST|HOSTNAME|ADDR|ADDRESS|SERVER|ENDPOINT)$"
+    direction: forward
+    confidence: 0.6

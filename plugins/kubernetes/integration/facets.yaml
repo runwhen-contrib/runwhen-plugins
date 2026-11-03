@@ -1,0 +1,270 @@
+# Converted from rw-discovery packs/kubernetes/pack.yaml `facetDefinitions` (origin/main f7f03c4).
+# Changes: `appliesTo.platform` dropped (this platform is implied); every facet gains `schema`;
+# rollup facets name the discovery task output that computes them (rollups.py becomes k8s-base/discover).
+# JMESPath runs over the stored (sanitized) document, never raw objects; status.* is available too.
+facets:
+  # --- generic: apply to every kind, including CRDs nobody has seen ---
+  - key: k8sSummary
+    title: Summary
+    description: >-
+      What `kubectl get` prints for this object -- the columns an operator
+      already looks at first.
+    appliesTo: {types: ["*"]}
+    schema: ./schemas/k8sSummary.v1.json
+    populator:
+      kind: projection
+      expression: "{age: metadata.creationTimestamp}"
+      expressionByType:
+        deployment: "{ready: join('/', [to_string(status.readyReplicas || `0`), to_string(status.replicas || `0`)]), upToDate: status.updatedReplicas, available: status.availableReplicas, age: metadata.creationTimestamp}"
+        statefulset: "{ready: join('/', [to_string(status.readyReplicas || `0`), to_string(status.replicas || `0`)]), age: metadata.creationTimestamp}"
+        daemonset: "{desired: status.desiredNumberScheduled, current: status.currentNumberScheduled, ready: status.numberReady, age: metadata.creationTimestamp}"
+        cronjob: "{schedule: spec.schedule, suspend: spec.suspend, lastSchedule: status.lastScheduleTime, age: metadata.creationTimestamp}"
+        job: "{completions: spec.completions, succeeded: status.succeeded, failed: status.failed, age: metadata.creationTimestamp}"
+        service: "{type: spec.type, clusterIp: spec.clusterIP, ports: spec.ports[].port, age: metadata.creationTimestamp}"
+        ingress: "{class: spec.ingressClassName, hosts: spec.rules[].host, age: metadata.creationTimestamp}"
+        pod: "{phase: status.phase, ready: length(status.containerStatuses[?ready==`true`]), restarts: sum(status.containerStatuses[].restartCount), age: metadata.creationTimestamp}"
+        node: "{ready: status.conditions[?type=='Ready'].status | [0], version: status.nodeInfo.kubeletVersion, age: metadata.creationTimestamp}"
+        persistentvolumeclaim: "{status: status.phase, capacity: status.capacity.storage, storageClass: spec.storageClassName, age: metadata.creationTimestamp}"
+    volatility: config
+
+  - key: k8sConditions
+    title: Conditions
+    description: "`status.conditions[]` -- type, status, reason, message, lastTransitionTime."
+    appliesTo: {types: ["*"]}
+    schema: ./schemas/k8sConditions.v1.json
+    populator:
+      kind: projection
+      expression: "status.conditions[].{type: type, status: status, reason: reason, message: message, lastTransitionTime: lastTransitionTime}"
+    volatility: state
+    ttlSeconds: 900
+
+  - key: k8sOwnership
+    title: Ownership
+    description: >-
+      ownerReferences, managed-by (Helm/Argo/Flux), app.kubernetes.io/*
+      and team-ish labels.
+    appliesTo: {types: ["*"]}
+    schema: ./schemas/k8sOwnership.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {ownerReferences: metadata.ownerReferences[].{kind: kind, name: name, controller: controller},
+         appName: metadata.labels."app.kubernetes.io/name",
+         appInstance: metadata.labels."app.kubernetes.io/instance",
+         managedBy: metadata.labels."app.kubernetes.io/managed-by",
+         helmChart: metadata.labels."helm.sh/chart",
+         helmRelease: metadata.annotations."meta.helm.sh/release-name",
+         argoApp: metadata.labels."argocd.argoproj.io/instance",
+         fluxKustomization: metadata.labels."kustomize.toolkit.fluxcd.io/name"}
+    volatility: config
+
+  # --- kind-specific -----------------------------------------------------------
+  - key: k8sWorkload
+    title: Workload spec
+    description: >-
+      Images, resources, probes, service account and volume summary of a
+      workload.
+    appliesTo: {types: [deployment, statefulset, daemonset, cronjob]}
+    schema: ./schemas/k8sWorkload.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {replicas: spec.replicas,
+         serviceAccount: spec.template.spec.serviceAccountName,
+         hostNetwork: spec.template.spec.hostNetwork,
+         nodeSelector: spec.template.spec.nodeSelector,
+         containers: spec.template.spec.containers[].{name: name, image: image,
+           requests: resources.requests, limits: resources.limits,
+           ports: ports[].containerPort,
+           hasLivenessProbe: !(livenessProbe == null),
+           hasReadinessProbe: !(readinessProbe == null)},
+         initContainers: spec.template.spec.initContainers[].{name: name, image: image},
+         volumes: spec.template.spec.volumes[].name}
+      expressionByType:
+        cronjob: >-
+          {replicas: `1`,
+           serviceAccount: spec.jobTemplate.spec.template.spec.serviceAccountName,
+           hostNetwork: spec.jobTemplate.spec.template.spec.hostNetwork,
+           nodeSelector: spec.jobTemplate.spec.template.spec.nodeSelector,
+           containers: spec.jobTemplate.spec.template.spec.containers[].{name: name, image: image,
+             requests: resources.requests, limits: resources.limits,
+             ports: ports[].containerPort,
+             hasLivenessProbe: !(livenessProbe == null),
+             hasReadinessProbe: !(readinessProbe == null)},
+           initContainers: spec.jobTemplate.spec.template.spec.initContainers[].{name: name, image: image},
+           volumes: spec.jobTemplate.spec.template.spec.volumes[].name}
+    volatility: config
+
+  - key: k8sPods
+    title: Pods
+    description: "Pods by phase, ready, restarts, last termination reasons, nodes, image IDs, oldest/newest."
+    appliesTo: {types: [deployment, statefulset, daemonset, job]}
+    schema: ./schemas/k8sPods.v1.json
+    populator: {kind: rollup, task: k8s-base/discover, output: podRollups, sources: [pod, replicaset]}
+    volatility: state
+    ttlSeconds: 1800
+
+  - key: k8sService
+    title: Service
+    description: "Type, clusterIP, ports, selector, externalName, LB ingress; ready/notReady endpoints."
+    appliesTo: {types: [service]}
+    schema: ./schemas/k8sService.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {type: spec.type, clusterIp: spec.clusterIP, externalName: spec.externalName,
+         ports: spec.ports[].{name: name, port: port, targetPort: targetPort, protocol: protocol},
+         selector: spec.selector,
+         loadBalancerIngress: status.loadBalancer.ingress[].{ip: ip, hostname: hostname}}
+    volatility: config
+
+  - key: k8sServiceEndpoints
+    title: Service endpoints
+    description: "Ready/not-ready endpoint counts from the Service's EndpointSlices."
+    appliesTo: {types: [service]}
+    schema: ./schemas/k8sServiceEndpoints.v1.json
+    populator: {kind: rollup, task: k8s-base/discover, output: serviceEndpointRollups, sources: [endpointslice]}
+    volatility: state
+    ttlSeconds: 900
+
+  - key: k8sIngress
+    title: Ingress
+    description: >-
+      Class, hosts, path -> backend, TLS hosts/secrets, and the annotations
+      that govern body size, timeouts, rewrite, auth and maintenance mode.
+    appliesTo: {types: [ingress]}
+    schema: ./schemas/k8sIngress.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {class: spec.ingressClassName,
+         hosts: spec.rules[].host,
+         rules: spec.rules[].{host: host, paths: http.paths[].{path: path, service: backend.service.name, port: backend.service.port.number}},
+         tls: spec.tls[].{hosts: hosts, secretName: secretName},
+         proxyBodySize: metadata.annotations."nginx.ingress.kubernetes.io/proxy-body-size",
+         proxyReadTimeout: metadata.annotations."nginx.ingress.kubernetes.io/proxy-read-timeout",
+         rewriteTarget: metadata.annotations."nginx.ingress.kubernetes.io/rewrite-target",
+         authUrl: metadata.annotations."nginx.ingress.kubernetes.io/auth-url"}
+    volatility: config
+
+  - key: k8sStorage
+    title: Storage
+    description: "Class, requested/actual capacity, access modes, phase, bound volume, reclaim, provisioner, expansion."
+    appliesTo: {types: [persistentvolumeclaim, persistentvolume, storageclass]}
+    schema: ./schemas/k8sStorage.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {phase: status.phase, capacity: status.capacity.storage,
+         requested: spec.resources.requests.storage,
+         accessModes: spec.accessModes, storageClass: spec.storageClassName,
+         volumeName: spec.volumeName}
+      expressionByType:
+        persistentvolume: "{phase: status.phase, capacity: spec.capacity.storage, accessModes: spec.accessModes, reclaimPolicy: spec.persistentVolumeReclaimPolicy, storageClass: spec.storageClassName}"
+        storageclass: "{provisioner: provisioner, reclaimPolicy: reclaimPolicy, volumeBindingMode: volumeBindingMode, allowVolumeExpansion: allowVolumeExpansion}"
+    volatility: config
+
+  - key: k8sConfigData
+    title: Config data
+    description: >-
+      Key names, sizes and value hashes; Secret type and immutability.
+      ConfigMap values themselves live in the document (`doc.data.*`);
+      Secrets never carry values.
+    appliesTo: {types: [configmap, secret]}
+    schema: ./schemas/k8sConfigData.v1.json
+    populator:
+      kind: projection
+      expression: "{keys: keys(data || `{}`), immutable: immutable, dataHashes: dataHashes}"
+      expressionByType:
+        secret: "{keys: secretKeys, type: type, immutable: immutable}"
+    volatility: config
+
+  - key: k8sRbac
+    title: RBAC
+    description: "Rules as verbs x resources, subjects, roleRef; ServiceAccount automount and pull secrets."
+    appliesTo: {types: [serviceaccount, role, clusterrole, rolebinding, clusterrolebinding]}
+    schema: ./schemas/k8sRbac.v1.json
+    populator:
+      kind: projection
+      expression: "{rules: rules[].{verbs: verbs, apiGroups: apiGroups, resources: resources}}"
+      expressionByType:
+        serviceaccount: "{automountServiceAccountToken: automountServiceAccountToken, imagePullSecrets: imagePullSecrets[].name, secrets: secrets[].name}"
+        rolebinding: "{roleRef: roleRef, subjects: subjects[].{kind: kind, name: name, namespace: namespace}}"
+        clusterrolebinding: "{roleRef: roleRef, subjects: subjects[].{kind: kind, name: name, namespace: namespace}}"
+    volatility: config
+
+  - key: k8sNode
+    title: Node
+    description: "Capacity/allocatable, kubelet/OS/runtime, instance type and zone, taints, conditions, cordoned."
+    appliesTo: {types: [node]}
+    schema: ./schemas/k8sNode.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {capacity: status.capacity, allocatable: status.allocatable,
+         kubeletVersion: status.nodeInfo.kubeletVersion,
+         osImage: status.nodeInfo.osImage,
+         containerRuntime: status.nodeInfo.containerRuntimeVersion,
+         instanceType: metadata.labels."node.kubernetes.io/instance-type",
+         zone: metadata.labels."topology.kubernetes.io/zone",
+         taints: spec.taints,
+         unschedulable: spec.unschedulable,
+         conditions: status.conditions[].{type: type, status: status}}
+    volatility: state
+    ttlSeconds: 900
+
+  - key: k8sAutoscaling
+    title: Autoscaling
+    description: "Target, min/max, current/desired, metrics."
+    appliesTo: {types: [horizontalpodautoscaler]}
+    schema: ./schemas/k8sAutoscaling.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {scaleTargetRef: spec.scaleTargetRef, minReplicas: spec.minReplicas, maxReplicas: spec.maxReplicas,
+         currentReplicas: status.currentReplicas, desiredReplicas: status.desiredReplicas,
+         metrics: spec.metrics[].type}
+    volatility: state
+    ttlSeconds: 900
+
+  - key: k8sCronJob
+    title: CronJob
+    description: "Schedule, suspend, concurrency, last schedule/success; last N job outcomes."
+    appliesTo: {types: [cronjob]}
+    schema: ./schemas/k8sCronJob.v1.json
+    populator:
+      kind: projection
+      expression: >-
+        {schedule: spec.schedule, suspend: spec.suspend,
+         concurrencyPolicy: spec.concurrencyPolicy,
+         lastScheduleTime: status.lastScheduleTime,
+         lastSuccessfulTime: status.lastSuccessfulTime}
+    volatility: config
+
+  - key: k8sCronJobRuns
+    title: CronJob recent runs
+    description: "Last N Job outcomes owned by this CronJob."
+    appliesTo: {types: [cronjob]}
+    schema: ./schemas/k8sCronJobRuns.v1.json
+    populator: {kind: rollup, task: k8s-base/discover, output: cronJobRunRollups, sources: [job]}
+    volatility: state
+    ttlSeconds: 1800
+
+  - key: k8sCluster
+    title: Cluster
+    description: "Server version, distribution, node count, installed API groups."
+    appliesTo: {types: [cluster]}
+    schema: ./schemas/k8sCluster.v1.json
+    populator: {kind: rollup, task: k8s-base/discover, output: clusterRollup, sources: [node]}
+    volatility: state
+    ttlSeconds: 1800
+
+  - key: k8sEvents
+    title: Recent warning events
+    description: "Warning events in the last 60 minutes; pod events attributed to the owning workload."
+    appliesTo: {types: ["*"]}
+    schema: ./schemas/k8sEvents.v1.json
+    populator: {kind: rollup, task: k8s-base/discover, output: eventRollups, sources: [event]}
+    volatility: state
+    ttlSeconds: 900
+
