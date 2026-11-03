@@ -22,8 +22,26 @@ kubernetes:
       note: "'Pods with attached volumes' report-only dump dropped; 'PVs in Terminating' re-derived from deletionTimestamp" }
   - { bundle: k8s-cluster-node-health,     skills: [k8s-node-health], status: ported, ported: [k8s-node-health], pilot: true }
   - { bundle: k8s-ingress-healthcheck,     skills: [k8s-ingress-health], status: ported, ported: [k8s-ingress-health], pilot: true }
-  - { bundle: k8s-deployment-ops,          skills: [k8s-workload-ops], status: planned, pilot: true,
-      note: "classic 'Scale Down Stale ReplicaSets' scales the active RS to 0; not ported as written" }
+  - bundle: k8s-deployment-ops
+    skills: [k8s-workload-ops]
+    status: ported
+    ported: [k8s-workload-ops]
+    pilot: true
+    note: "classic 'Scale Down Stale ReplicaSets' scales the active RS to 0; not ported as written"
+    tasks:
+      "Restart Deployment": k8s-workload-ops/rollout-restart
+      "Force Delete Pods in Deployment": k8s-workload-ops/delete-pods
+      "Rollback Deployment to Previous Version": k8s-workload-ops/rollback
+      "Scale Down Deployment": k8s-workload-ops/scale
+      "Scale Up Deployment by factor": k8s-workload-ops/scale
+      "Clean Up Stale ReplicaSets": "dropped: deletes rollout history (breaks rollback); revisionHistoryLimit is the native mechanism and is reported by rollback"
+      "Scale Down Stale ReplicaSets": "dropped: classic selector matched the active ReplicaSet too and scaled it to 0"
+      "Scale Up HPA by factor": "dropped: not in the pilot; a hpa-bounds task can join k8s-workload-ops in the wave"
+      "Scale Down HPA to Min": "dropped: not in the pilot; a hpa-bounds task can join k8s-workload-ops in the wave"
+      "Increase CPU Resources for Deployment": "k8s-workload-ops/set-resources (explicit cpuRequest/cpuLimit; no VPA guessing)"
+      "Increase Memory Resources for Deployment": "k8s-workload-ops/set-resources (explicit memoryRequest/memoryLimit; no VPA guessing)"
+      "Decrease CPU Resources for Deployment": "k8s-workload-ops/set-resources (explicit values)"
+      "Decrease Memory Resources for Deployment": "k8s-workload-ops/set-resources (explicit values)"
 
   # --- workloads ---------------------------------------------------------------------------------------------
   - { bundle: k8s-statefulset-ops,         skills: [k8s-workload-ops], status: planned }

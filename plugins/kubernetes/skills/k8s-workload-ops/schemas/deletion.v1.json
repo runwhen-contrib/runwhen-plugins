@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pod deletion result",
+  "description": "deleted lists pods kubectl confirmed deleted on a real run; on a dry run it is empty and wouldDelete lists the pods the server confirmed it would delete (applied is false). alreadyGone are requested pods that no longer existed. remainingCount is requested pods neither deleted nor gone because a later batch failed (the failure is also an error on the result). Lists stop at maxItems; counts are not capped.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "ownedCount": {
+      "type": "integer"
+    },
+    "requestedCount": {
+      "type": "integer"
+    },
+    "deletedCount": {
+      "type": "integer"
+    },
+    "wouldDeleteCount": {
+      "type": "integer"
+    },
+    "alreadyGoneCount": {
+      "type": "integer"
+    },
+    "remainingCount": {
+      "type": "integer"
+    },
+    "deletesAll": {
+      "type": "boolean"
+    },
+    "deleted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "wouldDelete": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "alreadyGone": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "node": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terminating": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "ready",
+          "node",
+          "terminating"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "applied",
+    "ownedCount",
+    "requestedCount",
+    "deletedCount",
+    "wouldDeleteCount",
+    "alreadyGoneCount",
+    "remainingCount",
+    "deletesAll",
+    "deleted",
+    "wouldDelete",
+    "alreadyGone",
+    "pods"
+  ],
+  "additionalProperties": false
+}

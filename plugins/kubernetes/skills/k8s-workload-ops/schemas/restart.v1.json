@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rollout restart result",
+  "description": "Rollout restart result. applied is false on a dry run; then restartedAt is null and reasonRecorded, reasonCleared and completed say nothing happened. reasonPresentBefore true with no reason given means a real run clears the old reason annotation. completed is false with a completionReason when the rollout was slow, stuck or not observable. updateStrategy OnDelete means no pod is replaced by the restart; Recreate stops all pods at once.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 256
+    },
+    "reasonRecorded": {
+      "type": "boolean"
+    },
+    "reasonPresentBefore": {
+      "type": "boolean"
+    },
+    "reasonCleared": {
+      "type": "boolean"
+    },
+    "restartedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updateStrategy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revisionBefore": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "revisionAfter": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completionReason": {
+      "enum": [
+        "rolled_out",
+        "timeout",
+        "progress_deadline_exceeded",
+        "update_strategy_on_delete",
+        "not_observed",
+        null
+      ]
+    },
+    "message": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "waitedSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "applied",
+    "reason",
+    "reasonRecorded",
+    "reasonPresentBefore",
+    "reasonCleared",
+    "restartedAt",
+    "updateStrategy",
+    "revisionBefore",
+    "revisionAfter",
+    "completed",
+    "completionReason",
+    "message",
+    "truncated",
+    "waitedSeconds"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scale result",
+  "description": "applied and changed are true only after a real scale; on a dry run both are false and wouldChange says whether the count would change. from/to are the count before and the count asked for. hpas is the autoscalers targeting the workload; null when they could not be listed and overrideHpa was true.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "wouldChange": {
+      "type": "boolean"
+    },
+    "from": {
+      "type": "integer"
+    },
+    "to": {
+      "type": "integer"
+    },
+    "readyBefore": {
+      "type": "integer"
+    },
+    "overrodeHpa": {
+      "type": "boolean"
+    },
+    "hpas": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "minReplicas": {
+            "type": "integer"
+          },
+          "maxReplicas": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "currentReplicas": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "desiredReplicas": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "minReplicas",
+          "maxReplicas",
+          "currentReplicas",
+          "desiredReplicas"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "applied",
+    "changed",
+    "wouldChange",
+    "from",
+    "to",
+    "readyBefore",
+    "overrodeHpa",
+    "hpas"
+  ],
+  "additionalProperties": false
+}
