@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prometheus rule groups",
+  "description": "Rule groups and the rules that failed or have not been evaluated, merged across the pods that answered.",
+  "type": "object",
+  "properties": {
+    "queriedPods": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "groupCount": {
+      "type": "integer"
+    },
+    "ruleCount": {
+      "type": "integer"
+    },
+    "unhealthyGroupCount": {
+      "type": "integer"
+    },
+    "failingRuleCount": {
+      "type": "integer"
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "interval": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "seconds"
+          },
+          "evaluationTimeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "duration of the last evaluation of the group"
+          },
+          "lastEvaluation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastEvaluationAgeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ruleCount": {
+            "type": "integer"
+          },
+          "unhealthyRuleCount": {
+            "type": "integer",
+            "description": "rules whose health is not ok or that have a lastError ('unknown' = not evaluated yet)"
+          },
+          "evaluationExceedsInterval": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the last evaluation took longer than the group's interval"
+          },
+          "evaluationOverdue": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "lastEvaluationAgeSeconds exceeds overdueIntervals times the interval"
+          }
+        },
+        "required": [
+          "name",
+          "file",
+          "interval",
+          "evaluationTimeSeconds",
+          "lastEvaluation",
+          "lastEvaluationAgeSeconds",
+          "ruleCount",
+          "unhealthyRuleCount",
+          "evaluationExceedsInterval",
+          "evaluationOverdue"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "groupsTruncated": {
+      "type": "boolean"
+    },
+    "failingRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "enum": [
+              "alerting",
+              "recording",
+              null
+            ]
+          },
+          "health": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastErrorTruncated": {
+            "type": "boolean"
+          },
+          "query": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "queryTruncated": {
+            "type": "boolean"
+          },
+          "evaluationTimeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lastEvaluation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "group",
+          "file",
+          "name",
+          "type",
+          "health",
+          "lastError",
+          "lastErrorTruncated",
+          "query",
+          "queryTruncated",
+          "evaluationTimeSeconds",
+          "lastEvaluation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "failingRulesTruncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "queriedPods",
+    "groupCount",
+    "ruleCount",
+    "unhealthyGroupCount",
+    "failingRuleCount",
+    "groups",
+    "groupsTruncated",
+    "failingRules",
+    "failingRulesTruncated"
+  ],
+  "additionalProperties": false
+}

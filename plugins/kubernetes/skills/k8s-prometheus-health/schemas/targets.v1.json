@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prometheus active targets",
+  "description": "Active scrape targets merged across the pods that answered (a target is as bad as its worst pod): counts per scrape pool and the targets that are down, unknown or overdue. discoveredLabels are never read.",
+  "type": "object",
+  "properties": {
+    "queriedPods": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "total": {
+      "type": "integer"
+    },
+    "up": {
+      "type": "integer"
+    },
+    "down": {
+      "type": "integer"
+    },
+    "unknown": {
+      "type": "integer"
+    },
+    "overdue": {
+      "type": "integer"
+    },
+    "pools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scrapePool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "up": {
+            "type": "integer"
+          },
+          "down": {
+            "type": "integer"
+          },
+          "unknown": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scrapePool",
+          "up",
+          "down",
+          "unknown",
+          "total"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "poolCount": {
+      "type": "integer"
+    },
+    "poolsTruncated": {
+      "type": "boolean"
+    },
+    "unhealthy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scrapePool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scrapeUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "query string and userinfo removed"
+          },
+          "health": {
+            "enum": [
+              "up",
+              "down",
+              "unknown"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the last scrape error, URL query strings removed, cut at 1024 characters"
+          },
+          "lastErrorTruncated": {
+            "type": "boolean"
+          },
+          "lastScrape": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastScrapeAgeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "ctx.now() minus lastScrape; null when never scraped"
+          },
+          "scrapeIntervalSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "overdue": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "lastScrapeAgeSeconds exceeds overdueIntervals times the scrape interval; null when either is unknown"
+          },
+          "downOnPods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "seenOnPods": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scrapePool",
+          "job",
+          "instance",
+          "scrapeUrl",
+          "health",
+          "lastError",
+          "lastErrorTruncated",
+          "lastScrape",
+          "lastScrapeAgeSeconds",
+          "scrapeIntervalSeconds",
+          "overdue",
+          "downOnPods",
+          "seenOnPods"
+        ],
+        "additionalProperties": false
+      },
+      "description": "targets whose health is not up, or whose last scrape is overdue; down first"
+    },
+    "unhealthyCount": {
+      "type": "integer"
+    },
+    "unhealthyTruncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "queriedPods",
+    "total",
+    "up",
+    "down",
+    "unknown",
+    "overdue",
+    "pools",
+    "poolCount",
+    "poolsTruncated",
+    "unhealthy",
+    "unhealthyCount",
+    "unhealthyTruncated"
+  ],
+  "additionalProperties": false
+}

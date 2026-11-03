@@ -1,0 +1,859 @@
+"""Unit tests for k8s-prometheus-health's lib/ and scripts. Captured JSON comes from the
+`rw-prometheus` namespaces of the kind-rw-plugins scenario
+(plugins/kubernetes/tests/kind/scenarios/30-k8s-prometheus-health.*): a plain prom/prometheus
+Deployment standing in for the operator's StatefulSet, with synthetic monitoring.coreos.com
+CRs. The scripts run through the SDK's test context (`ctx.run` raises on a non-zero exit like the
+real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails)."""
+
+import importlib.util
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+import jsonschema
+import pytest
+import yaml
+from k8s_prometheus_health import common, coverage, k8s, proxy, rules, selectors, status, targets
+from k8s_prometheus_health.errors import RwError
+from runwhen_capability.testing import make_context, run_main, stub_commands
+
+SKILL = Path(__file__).parents[2] / "skills" / "k8s-prometheus-health"
+DATA = Path(__file__).parent / "data" / "k8s_prometheus_health"
+UTC = timezone.utc
+NS = "rw-prometheus"
+CAPTURED = datetime(2026, 11, 3, 22, 30, 40, tzinfo=UTC)  # just after the data was captured
+TASKS = {t["name"]: t for t in yaml.safe_load((SKILL / "tasks.yaml").read_text())["tasks"]}
+SCRIPTS = {
+    "server-status": "server_status",
+    "targets": "targets",
+    "rules": "rules",
+    "servicemonitor-coverage": "servicemonitor_coverage",
+}
+SETTINGS = {"maxItems": 200, "overdueIntervals": 3}
+
+
+def load(name):
+    text = (DATA / name).read_text()
+    return json.loads(text) if name.endswith(".json") else text
+
+
+def at(text):
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+
+POD = load("pods.json")["items"][0]["metadata"]["name"]
+FORBIDDEN = (
+    'Error from server (Forbidden): {r} is forbidden: User "u" cannot {v} resource "{r}" '
+    'in API group "" in the namespace "rw-prometheus"'
+)
+UNREACHABLE = "Error from server (ServiceUnavailable): error trying to reach service: dial tcp 10.244.0.198:9090: connect: connection refused"
+UNAVAILABLE = (
+    "Error from server (ServiceUnavailable): the server is currently unable to handle the request"
+)
+NO_ROUTE = "Error from server (NotFound): the server could not find the requested resource"
+
+
+def script(name):
+    spec = importlib.util.spec_from_file_location(
+        f"prom_{name}", SKILL / "scripts" / f"{SCRIPTS[name]}.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.main
+
+
+def raw(pod, path):
+    return (
+        "kubectl",
+        "get",
+        "--raw",
+        f"/api/v1/namespaces/{NS}/pods/http:{pod}:9090/proxy{path}",
+        "--request-timeout=30s",
+    )
+
+
+def review_output(argv_order, deny_namespace="rw-prometheus-apps"):
+    """What `kubectl create -f <List of SubjectAccessReviews> -o json` prints: one document each."""
+    docs = [
+        {"kind": "SubjectAccessReview", "status": {"allowed": ns != deny_namespace}}
+        for ns, *_ in argv_order
+    ]
+    return "\n".join(json.dumps(d) for d in docs)
+
+
+def stubs(cr="rw-prom", fail=None, replies=None, pods=None, sms=None, namespaces=None):
+    """kubectl answers for a run on Prometheus `cr`. `fail` maps a key to stderr (exit 1);
+    `replies` overrides the body of a proxied path (or maps it to ('fail', stderr))."""
+    fail = fail or {}
+    replies = replies or {}
+    out = {}
+    cr_argv = ("kubectl", "-n", NS, "get", "prometheuses.monitoring.coreos.com", cr, "-o", "json")
+    out[cr_argv] = (
+        (1, "", fail["cr"]) if "cr" in fail else (0, json.dumps(load(f"prometheus_{cr}.json")), "")
+    )
+    pod_argv = (
+        "kubectl",
+        "-n",
+        NS,
+        "get",
+        "pods",
+        "-l",
+        f"app.kubernetes.io/name=prometheus,prometheus={cr}",
+        "-o",
+        "json",
+    )
+    pod_doc = {"items": []} if cr == "rw-prom-idle" else load("pods.json")
+    if pods is not None:
+        pod_doc = {"items": pods}
+    out[pod_argv] = (1, "", fail["pods"]) if "pods" in fail else (0, json.dumps(pod_doc), "")
+    defaults = {
+        "/-/healthy": load("healthy.txt"),
+        "/-/ready": load("ready.txt"),
+        "/api/v1/status/runtimeinfo": json.dumps(load("runtimeinfo.json")),
+        "/api/v1/status/tsdb": json.dumps(load("tsdb.json")),
+        "/api/v1/targets?state=active": json.dumps(load("targets.json")),
+        "/api/v1/rules": json.dumps(load("rules.json")),
+    }
+    for item in pod_doc["items"]:
+        name = item["metadata"]["name"]
+        for path, body in defaults.items():
+            reply = replies.get((name, path), replies.get(path, body))
+            if isinstance(reply, tuple):
+                out[raw(name, path)] = (1, "", reply[1])
+            elif "proxy" in fail:
+                out[raw(name, path)] = (1, "", fail["proxy"])
+            else:
+                out[raw(name, path)] = (0, reply, "")
+    sm_doc = load("servicemonitors_all.json") if sms is None else sms
+    all_argv = ("kubectl", "get", "servicemonitors.monitoring.coreos.com", "-A", "-o", "json")
+    own_argv = ("kubectl", "-n", NS, "get", "servicemonitors.monitoring.coreos.com", "-o", "json")
+    out[all_argv] = (1, "", fail["sm-all"]) if "sm-all" in fail else (0, json.dumps(sm_doc), "")
+    own = {"items": [i for i in sm_doc["items"] if i["metadata"]["namespace"] == NS]}
+    out[own_argv] = (1, "", fail["sm-own"]) if "sm-own" in fail else (0, json.dumps(own), "")
+    ns_argv = ("kubectl", "get", "namespaces", "-o", "json")
+    ns_doc = load("namespaces.json") if namespaces is None else namespaces
+    out[ns_argv] = (
+        (1, "", fail["namespaces"]) if "namespaces" in fail else (0, json.dumps(ns_doc), "")
+    )
+    return out
+
+
+def run(task, cr="rw-prom", now=CAPTURED, res=None, settings=None, review=None, **kw):
+    """(envelope, calls) of one task on Prometheus `cr`."""
+    resource = res or {
+        "cluster": "kind",
+        "namespace": NS,
+        "name": cr,
+        "type": "kubernetes/prometheus",
+        "path": f"kubernetes/clusters/kind/namespaces/{NS}/prometheuses/{cr}",
+    }
+    with make_context(resource=resource, settings=settings or SETTINGS, now=now) as tc:
+        table = stubs(cr, **kw)
+        review_argv = ("kubectl", "create", "-f", "sar-0.json", "-o", "json")
+        table[review_argv] = review or (0, "", "")
+        calls = stub_commands(tc, table)
+        if review is None and task == "servicemonitor-coverage":
+            # answer the review call from the List the script wrote (the file is in ctx.workdir)
+            original = tc.ctx.run
+
+            def run_with_reviews(argv, *a, **k):
+                if tuple(argv) == review_argv:
+                    document = json.loads((tc.ctx.workdir / "sar-0.json").read_text())
+                    wanted = [
+                        (i["spec"]["resourceAttributes"]["namespace"],) for i in document["items"]
+                    ]
+                    table[review_argv] = (0, review_output(wanted), "")
+                    stub_commands(tc, {review_argv: table[review_argv]})
+                return original(argv, *a, **k)
+
+            tc.ctx.run = run_with_reviews
+        env = run_main(script(task), tc)
+    return env, calls
+
+
+def schema_for(task, output):
+    return json.loads((SKILL / TASKS[task]["outputs"][output]["schema"]).read_text())
+
+
+def check_schemas(task, env):
+    for name, value in env["outputs"].items():
+        jsonschema.validate(value, schema_for(task, name), cls=jsonschema.Draft202012Validator)
+
+
+def codes(env):
+    return [(e["code"], e.get("scope")) for e in env["errors"]]
+
+
+def pod_of(env):
+    return env["outputs"]["server"]["pods"][0]
+
+
+# ------------------------------------------------------------ lib: common ----
+
+
+def test_strip_urls_removes_query_fragment_and_userinfo():
+    text = 'Get "http://u:p@host:9100/metrics?token=abc&x=1#f": dial tcp: refused'
+    assert common.strip_urls(text) == 'Get "http://host:9100/metrics": dial tcp: refused'
+    assert common.strip_urls("https://a/b?c=d and http://e/f") == "https://a/b and http://e/f"
+    assert common.strip_urls(None) is None
+
+
+def test_parse_duration_and_time():
+    assert common.parse_duration("15s") == 15
+    assert common.parse_duration("1m30s") == 90
+    assert common.parse_duration("500ms") == 0.5
+    assert common.parse_duration("2h") == 7200
+    assert common.parse_duration("soon") is None and common.parse_duration(None) is None
+    assert common.parse_time("2026-11-03T22:30:32.289007597Z") == at("2026-11-03T22:30:32.289007Z")
+    assert common.parse_time("0001-01-01T00:00:00Z") is None
+    assert common.parse_time("not a time") is None
+    assert common.age_seconds(at("2026-11-03T22:30:00Z"), CAPTURED) == 40.0
+
+
+def test_truncate_flags_the_cut():
+    assert common.truncate("x" * 2000) == ("x" * 1024, True)
+    assert common.truncate("short") == ("short", False)
+    assert common.truncate(None) == (None, False)
+
+
+def test_classify():
+    assert (
+        k8s.classify(1, "Error from server (Forbidden): pods is forbidden") == "permission_denied"
+    )
+    assert k8s.classify(1, 'Error from server (NotFound): pods "x" not found') == "not_found"
+    assert k8s.classify(1, UNREACHABLE) == "unreachable"
+    assert (
+        k8s.classify(1, "Unable to connect to the server: dial tcp: i/o timeout") == "unreachable"
+    )
+    assert k8s.classify(1, "net/http: request canceled (Client.Timeout exceeded)") == "timeout"
+    assert k8s.classify(124, "") == "timeout"
+    assert k8s.classify(1, 'the server doesn\'t have a resource type "x"') == "dependency"
+    assert k8s.classify(1, "something odd") == "internal"
+
+
+# ------------------------------------------------------------ lib: proxy ----
+
+
+class FakeRun:
+    def __init__(self, rc, out="", err=""):
+        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+
+    def run(self, argv, check=True, **_):
+        return self.result
+
+
+def test_proxy_get_tells_the_statuses_apart():
+    assert proxy.proxy_get(FakeRun(0, "ok"), "/x") == proxy.Reply(200, "ok")
+    assert proxy.proxy_get(FakeRun(1, "", NO_ROUTE), "/x").status == 404
+    assert proxy.proxy_get(FakeRun(1, "", UNAVAILABLE), "/x").status == 503
+    for stderr, code in (
+        (UNREACHABLE, "unreachable"),
+        (FORBIDDEN.format(r="pods/proxy", v="get"), "permission_denied"),
+        ('Error from server (NotFound): pods "x" not found', "not_found"),
+    ):
+        with pytest.raises(RwError) as exc:
+            proxy.proxy_get(FakeRun(1, "", stderr), "/x")
+        assert exc.value.code == code
+
+
+def test_api_json_rejects_what_is_not_prometheus_json():
+    assert proxy.api_json(proxy.Reply(200, '{"status":"success","data":{"a":1}}'), "w") == {"a": 1}
+    for body in ("<html>login</html>", '{"status":"error","error":"x"}', "[]", ""):
+        with pytest.raises(RwError) as exc:
+            proxy.api_json(proxy.Reply(200, body), "w")
+        assert exc.value.code == "internal"
+    with pytest.raises(RwError) as exc:
+        proxy.api_json(proxy.Reply(404, ""), "w")
+    assert exc.value.code == "dependency"
+
+
+def test_probe_replies_are_never_true_for_unexpected_text():
+    assert status.healthy_reply(proxy.Reply(200, "Prometheus Server is Healthy.\n"), "w") is True
+    assert status.ready_reply(proxy.Reply(200, "Prometheus Server is Ready.\n"), "w") is True
+    assert status.ready_reply(proxy.Reply(503, ""), "w") is False
+    for reply in (
+        proxy.Reply(200, "<html>sign in</html>"),
+        proxy.Reply(200, "Prometheus Server is not Ready"),
+        proxy.Reply(404, ""),
+    ):
+        with pytest.raises(RwError):
+            status.ready_reply(reply, "w")
+
+
+# ------------------------------------------------------------ lib: selectors ----
+
+
+def test_selectors():
+    labels = {"release": "rw", "tier": "a"}
+    assert selectors.matches({}, labels)
+    assert selectors.matches({"matchLabels": {"release": "rw"}}, labels)
+    assert not selectors.matches({"matchLabels": {"release": "x"}}, labels)
+    assert selectors.matches(
+        {"matchExpressions": [{"key": "tier", "operator": "In", "values": ["a", "b"]}]}, labels
+    )
+    assert not selectors.matches(
+        {"matchExpressions": [{"key": "tier", "operator": "NotIn", "values": ["a"]}]}, labels
+    )
+    assert selectors.matches(
+        {"matchExpressions": [{"key": "release", "operator": "Exists"}]}, labels
+    )
+    assert selectors.matches(
+        {"matchExpressions": [{"key": "zzz", "operator": "DoesNotExist"}]}, labels
+    )
+    with pytest.raises(RwError):
+        selectors.matches({"matchExpressions": [{"key": "a", "operator": "Weird"}]}, labels)
+
+
+def prom_with(**spec):
+    return {"metadata": {"name": "p", "namespace": NS}, "spec": spec}
+
+
+def sm_of(name, labels, namespace=NS):
+    return {"metadata": {"name": name, "namespace": namespace, "labels": labels}, "spec": {}}
+
+
+def test_an_unset_service_monitor_selector_selects_nothing_and_an_empty_one_everything():
+    sm = sm_of("a", {"x": "y"})
+    assert coverage.selection(prom_with(), sm, None)[0] is False
+    assert coverage.selection(prom_with(serviceMonitorSelector={}), sm, None) == (True, None)
+    wrong_ns = sm_of("a", {}, namespace="other")
+    # unset namespace selector: only the Prometheus's own namespace
+    assert coverage.selection(prom_with(serviceMonitorSelector={}), wrong_ns, None)[0] is False
+    # {} : every namespace
+    both = prom_with(serviceMonitorSelector={}, serviceMonitorNamespaceSelector={})
+    assert coverage.selection(both, wrong_ns, None) == (True, None)
+    # by label, labels unknown: undetermined, never selected
+    by_label = prom_with(
+        serviceMonitorSelector={}, serviceMonitorNamespaceSelector={"matchLabels": {"m": "1"}}
+    )
+    assert coverage.selection(by_label, wrong_ns, None)[0] is None
+    assert coverage.selection(by_label, wrong_ns, {"other": {"m": "1"}}) == (True, None)
+    assert coverage.selection(by_label, wrong_ns, {"other": {}})[0] is False
+
+
+# ------------------------------------------------------------ lib: targets and rules ----
+
+
+def target(pool, url, health, error="", scraped="2026-11-03T22:30:30Z", interval="15s", **labels):
+    return {
+        "scrapePool": pool,
+        "scrapeUrl": url,
+        "health": health,
+        "lastError": error,
+        "lastScrape": scraped,
+        "scrapeInterval": interval,
+        "labels": {"job": pool, "instance": url, **labels},
+        "discoveredLabels": {"__param_token": "SECRET"},
+    }
+
+
+def test_targets_merge_replicas_worst_wins_and_secrets_are_not_read():
+    a = target("p", "http://h/m?token=SECRET", "up")
+    b = target("p", "http://h/m?token=SECRET", "down", 'Get "http://h/m?token=SECRET": refused')
+    answers = [("pod-0", [a]), ("pod-1", [b])]
+    out = targets.view(answers, CAPTURED, 200, 3)
+    assert (out["total"], out["up"], out["down"]) == (1, 0, 1)
+    entry = out["unhealthy"][0]
+    assert entry["downOnPods"] == ["pod-1"] and entry["seenOnPods"] == 2
+    assert entry["scrapeUrl"] == "http://h/m"
+    assert "SECRET" not in json.dumps(out) and "token" not in json.dumps(out)
+
+
+def test_targets_overdue_uses_the_scrape_interval_and_ctx_now():
+    fresh = target("p", "http://a/m", "up", scraped="2026-11-03T22:30:30Z")
+    stale = target(
+        "p", "http://b/m", "up", scraped="2026-11-03T22:29:00Z"
+    )  # 100s old, 15s interval
+    never = target("p", "http://c/m", "unknown", scraped="0001-01-01T00:00:00Z")
+    noint = target("p", "http://d/m", "up", scraped="2026-11-03T22:00:00Z", interval=None)
+    out = targets.view([("pod", [fresh, stale, never, noint])], CAPTURED, 200, 3)
+    by_url = {t["scrapeUrl"]: t for t in out["unhealthy"]}
+    assert set(by_url) == {
+        "http://b/m",
+        "http://c/m",
+    }  # fresh and the no-interval one are not listed
+    assert (
+        by_url["http://b/m"]["overdue"] is True
+        and by_url["http://b/m"]["lastScrapeAgeSeconds"] == 100.0
+    )
+    assert by_url["http://c/m"]["lastScrape"] is None and by_url["http://c/m"]["overdue"] is None
+    assert out["overdue"] == 1
+
+
+def test_targets_error_is_cut_and_flagged_and_lists_are_capped():
+    long = target("p", "http://a/m", "down", "e" * 3000)
+    many = [target("p", f"http://h{i}/m", "down", "x") for i in range(5)]
+    out = targets.view([("pod", [long, *many])], CAPTURED, 3, 3)
+    assert len(out["unhealthy"]) == 3 and out["unhealthyTruncated"] and out["unhealthyCount"] == 6
+    cut = [t for t in targets.view([("pod", [long])], CAPTURED, 3, 3)["unhealthy"]][0]
+    assert len(cut["lastError"]) == 1024 and cut["lastErrorTruncated"] is True
+
+
+def test_active_targets_requires_the_list():
+    with pytest.raises(RwError):
+        targets.active_targets({"droppedTargets": []}, "w")
+
+
+def group(name, rules_, interval=15, took=0.1, last="2026-11-03T22:30:30Z"):
+    return {
+        "name": name,
+        "file": "f.yml",
+        "interval": interval,
+        "evaluationTime": took,
+        "lastEvaluation": last,
+        "rules": rules_,
+    }
+
+
+def test_rules_flag_errors_slow_evaluation_and_overdue_groups():
+    ok = {"name": "a", "type": "recording", "health": "ok", "lastError": ""}
+    bad = {
+        "name": "b",
+        "type": "alerting",
+        "health": "err",
+        "lastError": "boom http://x/y?k=v",
+        "query": "up",
+    }
+    unevaluated = {"name": "c", "type": "recording", "health": "unknown"}
+    groups = [
+        group("g1", [ok]),
+        group("g2", [ok, bad, unevaluated], took=20),
+        group("g3", [ok], last="2026-11-03T22:00:00Z"),
+    ]
+    out = rules.view([("pod", groups)], CAPTURED, 200, 3)
+    by_name = {g["name"]: g for g in out["groups"]}
+    assert (
+        by_name["g1"]["unhealthyRuleCount"] == 0
+        and by_name["g1"]["evaluationExceedsInterval"] is False
+    )
+    assert (
+        by_name["g2"]["unhealthyRuleCount"] == 2
+        and by_name["g2"]["evaluationExceedsInterval"] is True
+    )
+    assert (
+        by_name["g3"]["evaluationOverdue"] is True and by_name["g1"]["evaluationOverdue"] is False
+    )
+    assert out["groups"][0]["name"] == "g2"  # failing groups first
+    assert [r["name"] for r in out["failingRules"]] == ["b", "c"]
+    assert out["failingRules"][0]["lastError"] == "boom http://x/y"
+    assert (out["unhealthyGroupCount"], out["failingRuleCount"], out["ruleCount"]) == (1, 2, 5)
+
+
+def test_rules_merge_replicas_by_group():
+    bad = {"name": "b", "type": "recording", "health": "err", "lastError": "x"}
+    out = rules.view([("p0", [group("g", [bad])]), ("p1", [group("g", [bad])])], CAPTURED, 200, 3)
+    assert out["groupCount"] == 1 and out["failingRuleCount"] == 1
+    with pytest.raises(RwError):
+        rules.rule_groups({}, "w")
+
+
+def test_parse_reviews_needs_a_boolean_per_item():
+    assert coverage.parse_reviews(
+        '{"status":{"allowed":true}}\n{"status":{"allowed":false}}', 2
+    ) == [True, False]
+    for text, n in (('{"status":{"allowed":true}}', 2), ('{"status":{}}', 1), ("not json", 1)):
+        with pytest.raises(RwError):
+            coverage.parse_reviews(text, n)
+
+
+def test_review_list_asks_list_and_watch_for_each_resource():
+    prom = prom_with(serviceAccountName="sa1")
+    document, order = coverage.review_list(prom, ["n1"])
+    users = {i["spec"]["user"] for i in document["items"]}
+    assert users == {f"system:serviceaccount:{NS}:sa1"}
+    assert {(o[1], o[3]) for o in order} == {
+        (r, v) for r in ("services", "pods", "endpoints") for v in ("list", "watch")
+    }
+    slice_prom = prom_with(serviceDiscoveryRole="EndpointSlice")
+    _, order = coverage.review_list(slice_prom, ["n1"])
+    assert ("endpointslices", "discovery.k8s.io") in {(o[1], o[2]) for o in order}
+    assert coverage.service_account(prom_with()) == (NS, "default")
+
+
+# ------------------------------------------------------------ scripts: server-status ----
+
+
+def test_server_status_healthy():
+    env, calls = run("server-status")
+    assert env["status"] == "ok" and env["errors"] == []
+    check_schemas("server-status", env)
+    pod = pod_of(env)
+    assert (pod["healthy"], pod["ready"], pod["queried"], pod["port"]) == (True, True, True, 9090)
+    assert pod["runtime"]["reloadConfigSuccess"] is True and pod["runtime"]["corruptionCount"] == 0
+    assert pod["runtime"]["lastConfigAgeSeconds"] > 0  # from ctx.now(), not the wall clock
+    assert pod["tsdb"]["headSeries"] == load("tsdb.json")["data"]["headStats"]["numSeries"]
+    assert env["outputs"]["server"]["prometheus"]["routePrefix"] == "/"
+
+
+def test_server_status_uses_ctx_now_for_ages():
+    first, _ = run("server-status", now=CAPTURED)
+    later, _ = run("server-status", now=at("2026-11-03T23:30:40Z"))
+    a, b = pod_of(first)["runtime"], pod_of(later)["runtime"]
+    assert b["uptimeSeconds"] - a["uptimeSeconds"] == 3600
+
+
+def test_server_status_not_ready_is_false_not_an_error():
+    env, _ = run("server-status", replies={"/-/ready": ("fail", UNAVAILABLE)})
+    assert (
+        env["status"] == "ok" and pod_of(env)["ready"] is False and pod_of(env)["healthy"] is True
+    )
+
+
+def test_server_status_reload_failure_and_corruption_are_reported():
+    info = load("runtimeinfo.json")
+    info["data"].update(reloadConfigSuccess=False, corruptionCount=3)
+    env, _ = run("server-status", replies={"/api/v1/status/runtimeinfo": json.dumps(info)})
+    runtime = pod_of(env)["runtime"]
+    assert runtime["reloadConfigSuccess"] is False and runtime["corruptionCount"] == 3
+
+
+def test_server_status_a_reply_that_is_not_the_expected_text_is_an_error_never_healthy():
+    env, _ = run("server-status", replies={"/-/healthy": "<html>Sign in</html>"})
+    assert env["status"] == "failed" and codes(env) == [("internal", f"pod/{POD}")]
+    assert env["outputs"] == {}
+
+
+def test_server_status_one_dead_pod_is_one_error_and_the_other_still_reports():
+    other = json.loads(json.dumps(load("pods.json")["items"][0]))
+    other["metadata"]["name"] = "prometheus-rw-prom-zzz"
+    pods = [load("pods.json")["items"][0], other]
+    replies = {
+        (other["metadata"]["name"], p): ("fail", UNREACHABLE)
+        for p in ("/-/healthy", "/-/ready", "/api/v1/status/runtimeinfo", "/api/v1/status/tsdb")
+    }
+    env, _ = run("server-status", pods=pods, replies=replies)
+    assert env["status"] == "partial"
+    assert codes(env) == [("unreachable", "pod/prometheus-rw-prom-zzz")]
+    rows = env["outputs"]["server"]["pods"]
+    assert rows[0]["healthy"] is True
+    assert rows[1]["healthy"] is None and rows[1]["ready"] is None and rows[1]["runtime"] is None
+
+
+def test_server_status_nothing_answers_fails():
+    env, _ = run("server-status", fail={"proxy": UNREACHABLE})
+    assert env["status"] == "failed" and codes(env)[0][0] == "unreachable"
+
+
+def test_server_status_no_pods_is_a_fact():
+    env, _ = run("server-status", cr="rw-prom-idle")
+    assert env["status"] == "ok"
+    assert env["outputs"]["server"]["podCount"] == 0 and env["outputs"]["server"]["pods"] == []
+    check_schemas("server-status", env)
+
+
+def test_server_status_a_pod_that_is_not_running_is_listed_and_not_asked():
+    pods = load("pods.json")["items"]
+    pods[0]["status"]["phase"] = "Pending"
+    env, calls = run("server-status", pods=pods)
+    assert pod_of(env)["queried"] is False and pod_of(env)["healthy"] is None
+    assert not [c for c in calls if "--raw" in c]
+
+
+def test_scheme_port_and_route_prefix_follow_the_cr():
+    prom = json.loads(json.dumps(load("prometheus_rw-prom.json")))
+    prom["spec"].update(portName="reloader", routePrefix="/prom/", web={"tlsConfig": {}})
+    pod = json.loads(json.dumps(load("pods.json")["items"][0]))
+    pod["spec"]["containers"][0]["ports"] = [{"name": "reloader", "containerPort": 8080}]
+    from k8s_prometheus_health import fetch
+
+    assert fetch.endpoint(prom, pod) == ("https", 8080, "/prom")
+    assert fetch.endpoint(load("prometheus_rw-prom.json"), {}) == ("http", 9090, "")
+
+
+# ------------------------------------------------------------ scripts: targets and rules ----
+
+
+def test_targets_reports_the_down_target_and_the_pools():
+    env, calls = run("targets")
+    assert env["status"] == "ok"
+    check_schemas("targets", env)
+    out = env["outputs"]["targets"]
+    assert (out["total"], out["up"], out["down"]) == (2, 1, 1)
+    pools = {p["scrapePool"]: p for p in out["pools"]}
+    assert (
+        pools["rw-down"]["down"] == 1 and pools["serviceMonitor/rw-prometheus/sm-ok/0"]["up"] == 1
+    )
+    [down] = out["unhealthy"]
+    assert down["job"] == "rw-down" and "no such host" in down["lastError"]
+    assert "token" not in json.dumps(out)  # the relabelled __param_token is never read
+    assert down["scrapeUrl"].endswith(":9100/metrics")
+
+
+def test_targets_a_healthy_prometheus_lists_nothing_unhealthy():
+    doc = load("targets.json")
+    doc["data"]["activeTargets"] = [t for t in doc["data"]["activeTargets"] if t["health"] == "up"]
+    env, _ = run("targets", replies={"/api/v1/targets?state=active": json.dumps(doc)})
+    out = env["outputs"]["targets"]
+    assert out["total"] == 1 and out["unhealthy"] == [] and out["down"] == 0
+
+
+def test_targets_a_reply_that_is_not_json_fails_and_is_never_an_empty_list():
+    env, _ = run("targets", replies={"/api/v1/targets?state=active": "<html>login</html>"})
+    assert env["status"] == "failed" and codes(env)[0][0] == "internal" and env["outputs"] == {}
+
+
+def test_targets_no_running_pod_is_unreachable_not_zero_targets():
+    env, _ = run("targets", cr="rw-prom-idle")
+    assert env["status"] == "failed" and codes(env) == [("unreachable", None)]
+
+
+def test_rules_reports_the_failing_rule():
+    env, _ = run("rules")
+    assert env["status"] == "ok"
+    check_schemas("rules", env)
+    out = env["outputs"]["rules"]
+    assert (out["groupCount"], out["unhealthyGroupCount"], out["failingRuleCount"]) == (2, 1, 1)
+    [bad] = out["failingRules"]
+    assert (
+        bad["group"] == "rw-broken"
+        and bad["health"] == "err"
+        and "same labelset" in bad["lastError"]
+    )
+    assert out["groups"][0]["name"] == "rw-broken"
+
+
+def test_rules_no_groups_is_a_fact_but_a_missing_list_is_an_error():
+    env, _ = run(
+        "rules",
+        replies={"/api/v1/rules": json.dumps({"status": "success", "data": {"groups": []}})},
+    )
+    assert env["outputs"]["rules"]["groupCount"] == 0 and env["status"] == "ok"
+    env, _ = run("rules", replies={"/api/v1/rules": json.dumps({"status": "success", "data": {}})})
+    assert env["status"] == "failed"
+
+
+@pytest.mark.parametrize("task", ["server-status", "targets", "rules", "servicemonitor-coverage"])
+def test_forbidden_proxy_fails_with_permission_denied(task):
+    forbidden = FORBIDDEN.format(r="pods", v="get")
+    env, _ = run(task, fail={"proxy": forbidden})
+    assert env["status"] == "failed" and codes(env) == [("permission_denied", None)]
+
+
+@pytest.mark.parametrize("task", list(SCRIPTS))
+def test_not_found_and_forbidden_cr(task):
+    env, _ = run(
+        task,
+        cr="rw-prom",
+        fail={
+            "cr": 'Error from server (NotFound): prometheuses.monitoring.coreos.com "rw-prom" not found'
+        },
+    )
+    assert env["status"] == "failed" and codes(env) == [("not_found", None)]
+    env, _ = run(
+        task, fail={"cr": FORBIDDEN.format(r="prometheuses.monitoring.coreos.com", v="get")}
+    )
+    assert env["status"] == "failed" and codes(env) == [("permission_denied", None)]
+    env, _ = run(task, fail={"pods": FORBIDDEN.format(r="pods", v="list")})
+    assert env["status"] == "failed" and codes(env) == [("permission_denied", None)]
+    env, _ = run(
+        task,
+        fail={
+            "cr": UNREACHABLE.replace(
+                "error trying to reach service", "Unable to connect to the server"
+            )
+        },
+    )
+    assert env["status"] == "failed" and codes(env) == [("unreachable", None)]
+
+
+def test_a_target_of_another_type_is_invalid_input():
+    res = {"cluster": "kind", "namespace": NS, "name": "x", "type": "kubernetes/deployment"}
+    env, _ = run("server-status", res=res)
+    assert env["status"] == "failed" and codes(env) == [("invalid_input", None)]
+
+
+# ------------------------------------------------------------ scripts: servicemonitor-coverage ----
+
+
+def test_coverage_selected_and_unselected_service_monitors():
+    env, _ = run("servicemonitor-coverage")
+    assert env["status"] == "ok" and env["errors"] == []
+    check_schemas("servicemonitor-coverage", env)
+    cov = env["outputs"]["coverage"]
+    rows = {(r["namespace"], r["name"]): r for r in cov["serviceMonitors"]}
+    assert cov["complete"] is True and cov["prometheus"]["namespaceScope"] == "selector"
+    assert (cov["serviceMonitorCount"], cov["selectedCount"], cov["notSelectedCount"]) == (5, 3, 2)
+    assert (
+        rows[(NS, "sm-ok")]["activeTargets"] == 1
+        and rows[(NS, "sm-ok")]["endpointsWithTargets"] == 1
+    )
+    assert rows[(NS, "sm-idle")]["selected"] is True and rows[(NS, "sm-idle")]["activeTargets"] == 0
+    assert (
+        rows[(NS, "sm-other")]["selected"] is False
+        and rows[(NS, "sm-other")]["activeTargets"] is None
+    )
+    assert "labels do not match" in rows[(NS, "sm-other")]["notSelectedReason"]
+    assert rows[("rw-prometheus-apps", "sm-apps")]["selected"] is True
+    assert cov["selectedWithoutTargets"] == 2
+
+
+def test_coverage_service_account_access_per_namespace():
+    env, _ = run("servicemonitor-coverage")
+    access = env["outputs"]["serviceAccountAccess"]
+    assert access["serviceAccount"] == f"{NS}/prometheus-rw"
+    assert access["namespaces"] == ["rw-prometheus", "rw-prometheus-apps"]
+    by_ns = {}
+    for check in access["checks"]:
+        by_ns.setdefault(check["namespace"], []).append(check["list"] and check["watch"])
+    assert by_ns == {"rw-prometheus": [True] * 3, "rw-prometheus-apps": [False] * 3}
+    assert access["deniedCount"] == 6
+
+
+def test_coverage_a_selected_service_monitor_with_a_target_is_not_counted_without_targets():
+    doc = load("targets.json")
+    sm_ok = next(t for t in doc["data"]["activeTargets"] if t["scrapePool"].endswith("sm-ok/0"))
+    other = json.loads(json.dumps(sm_ok))
+    other["scrapePool"] = "serviceMonitor/rw-prometheus-apps/sm-apps/0"
+    other["scrapeUrl"] = "http://x:9/metrics"
+    doc["data"]["activeTargets"].append(other)
+    env, _ = run(
+        "servicemonitor-coverage", replies={"/api/v1/targets?state=active": json.dumps(doc)}
+    )
+    cov = env["outputs"]["coverage"]
+    assert cov["selectedWithoutTargets"] == 1
+
+
+def test_coverage_forbidden_cluster_wide_list_falls_back_to_the_own_namespace_and_says_so():
+    env, _ = run(
+        "servicemonitor-coverage", fail={"sm-all": FORBIDDEN.format(r="servicemonitors", v="list")}
+    )
+    assert env["status"] == "partial" and codes(env) == [("permission_denied", "servicemonitors")]
+    cov = env["outputs"]["coverage"]
+    assert cov["complete"] is False
+    assert {r["namespace"] for r in cov["serviceMonitors"]} == {NS}
+
+
+def test_coverage_forbidden_namespaces_leave_selection_undetermined_not_false():
+    env, _ = run(
+        "servicemonitor-coverage", fail={"namespaces": FORBIDDEN.format(r="namespaces", v="list")}
+    )
+    assert env["status"] == "partial" and codes(env) == [("permission_denied", "namespaces")]
+    cov = env["outputs"]["coverage"]
+    assert cov["complete"] is False and cov["undeterminedCount"] == 3 and cov["selectedCount"] == 0
+    assert all(r["selected"] in (None, False) for r in cov["serviceMonitors"])
+
+
+def test_coverage_forbidden_subject_access_reviews_is_scoped_and_the_rest_survives():
+    env, _ = run(
+        "servicemonitor-coverage",
+        review=(1, "", FORBIDDEN.format(r="subjectaccessreviews.authorization.k8s.io", v="create")),
+    )
+    assert env["status"] == "partial" and codes(env) == [
+        ("permission_denied", "subjectaccessreviews")
+    ]
+    assert env["outputs"]["serviceAccountAccess"] is None
+    assert env["outputs"]["coverage"]["selectedCount"] == 3
+    check_schemas("servicemonitor-coverage", env)
+
+
+def test_coverage_unset_namespace_selector_lists_only_the_own_namespace():
+    # rw-prom-idle has no selectors at all (both nil); give it the pods of rw-prom
+    env, calls = run("servicemonitor-coverage", cr="rw-prom-idle", pods=load("pods.json")["items"])
+    cov = env["outputs"]["coverage"]
+    assert cov["prometheus"]["namespaceScope"] == "own" and cov["selectedCount"] == 0
+    assert all(r["selected"] is False for r in cov["serviceMonitors"])
+    assert {r["namespace"] for r in cov["serviceMonitors"]} == {NS}
+    listing = ("kubectl", "-n", NS, "get", "servicemonitors.monitoring.coreos.com", "-o", "json")
+    assert listing in calls and ("kubectl", "get", "namespaces", "-o", "json") not in calls
+    assert env["outputs"]["serviceAccountAccess"]["namespaces"] == []
+
+
+# ------------------------------------------------------------ permissions ----
+
+RESOURCES = {
+    "prometheuses.monitoring.coreos.com": ("monitoring.coreos.com", "prometheuses"),
+    "servicemonitors.monitoring.coreos.com": ("monitoring.coreos.com", "servicemonitors"),
+    "pods": ("", "pods"),
+    "namespaces": ("", "namespaces"),
+}
+VALUE_FLAGS = {"-n", "-o", "-l", "-f", "--request-timeout"}
+
+
+def rbac_needs(argv):
+    """The (apiGroup, resource, verb) triples one kubectl argv needs. Raises on anything it
+    does not know, so a script that issues a new call has to extend this."""
+    flags, positional, it = {}, [], iter(argv[1:])
+    for a in it:
+        if a in VALUE_FLAGS:
+            flags[a] = next(it)
+        elif a.startswith("--request-timeout="):
+            continue
+        elif not a.startswith("-") or a == "-A":
+            positional.append(a)
+    if "--raw" in argv:
+        path = argv[argv.index("--raw") + 1]
+        assert "/pods/" in path and "/proxy/" in path, path
+        return {("", "pods/proxy", "get")}
+    if positional[0] == "create":
+        assert flags["-f"].startswith("sar-"), argv
+        return {("authorization.k8s.io", "subjectaccessreviews", "create")}
+    if positional[0] != "get":
+        raise AssertionError(f"no RBAC mapping for kubectl {positional[0]}: {argv}")
+    group, plural = RESOURCES[positional[1]]
+    named_object = len(positional) > 2 and "-A" not in positional and "-l" not in flags
+    return {(group, plural, "get" if named_object else "list")}
+
+
+def granted(task):
+    return {
+        (g, r, v)
+        for rule in TASKS[task]["permissions"]
+        for g in rule["apiGroups"]
+        for r in rule["resources"]
+        for v in rule["verbs"]
+    }
+
+
+@pytest.mark.parametrize("task", list(SCRIPTS))
+def test_declared_permissions_are_exactly_what_the_scripts_call(task):
+    needed = set()
+    cases = [
+        {},
+        {"fail": {"sm-all": FORBIDDEN.format(r="servicemonitors", v="list")}},
+        {"fail": {"namespaces": FORBIDDEN.format(r="namespaces", v="list")}},
+    ]
+    for kw in cases:
+        for cr in ("rw-prom", "rw-prom-idle"):
+            try:
+                _, calls = run(task, cr=cr, **kw)
+            except AssertionError:
+                continue
+            for argv in calls:
+                needed |= rbac_needs(list(argv))
+    # the own-namespace servicemonitors list is made only for a CR with no namespace selector
+    _, calls = run(task, cr="rw-prom-idle", pods=load("pods.json")["items"])
+    for argv in calls:
+        needed |= rbac_needs(list(argv))
+    assert needed == granted(task), (
+        f"{task}: calls {sorted(needed)}, declares {sorted(granted(task))}"
+    )
+
+
+def test_rbac_needs_maps_the_verbs():
+    base = ["kubectl", "-n", "x", "get"]
+    assert rbac_needs([*base, "prometheuses.monitoring.coreos.com", "p", "-o", "json"]) == {
+        ("monitoring.coreos.com", "prometheuses", "get")
+    }
+    assert rbac_needs([*base, "pods", "-l", "a=b", "-o", "json"]) == {("", "pods", "list")}
+    assert rbac_needs(
+        ["kubectl", "get", "servicemonitors.monitoring.coreos.com", "-A", "-o", "json"]
+    ) == {("monitoring.coreos.com", "servicemonitors", "list")}
+    assert rbac_needs(
+        [
+            "kubectl",
+            "get",
+            "--raw",
+            "/api/v1/namespaces/n/pods/http:p:9090/proxy/-/ready",
+            "--request-timeout=30s",
+        ]
+    ) == {("", "pods/proxy", "get")}
+    with pytest.raises(AssertionError):
+        rbac_needs(["kubectl", "delete", "pods", "p"])
+
+
+def test_all_tasks_only_read():
+    assert all(t["readOnly"] is True for t in TASKS.values())
+    for task in TASKS:
+        assert all(v in ("get", "list", "create") for (_, _, v) in granted(task))
+        creates = {(g, r) for (g, r, v) in granted(task) if v == "create"}
+        assert creates <= {("authorization.k8s.io", "subjectaccessreviews")}

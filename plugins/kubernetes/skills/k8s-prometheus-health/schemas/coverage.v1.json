@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ServiceMonitor coverage",
+  "description": "The ServiceMonitors the Prometheus CR selects (serviceMonitorSelector in the namespaces of serviceMonitorNamespaceSelector) and, for each selected one, how many active targets it produced (pools serviceMonitor/<namespace>/<name>/<n>).",
+  "type": "object",
+  "properties": {
+    "prometheus": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "serviceMonitorSelector": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "serviceMonitorNamespaceSelector": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "namespaceScope": {
+          "enum": [
+            "own",
+            "all",
+            "selector"
+          ],
+          "description": "own: selector unset, only the CR's namespace; all: {}; selector: by namespace labels"
+        }
+      },
+      "required": [
+        "name",
+        "namespace",
+        "serviceMonitorSelector",
+        "serviceMonitorNamespaceSelector",
+        "namespaceScope"
+      ],
+      "additionalProperties": false
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "false when the cluster-wide ServiceMonitor list or the namespace labels could not be read (an error says which)"
+    },
+    "queriedPods": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "serviceMonitorCount": {
+      "type": "integer"
+    },
+    "selectedCount": {
+      "type": "integer"
+    },
+    "notSelectedCount": {
+      "type": "integer"
+    },
+    "undeterminedCount": {
+      "type": "integer"
+    },
+    "selectedWithoutTargets": {
+      "type": "integer",
+      "description": "selected ServiceMonitors with no active target in any pod that answered"
+    },
+    "serviceMonitors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "selected": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "null when it depends on namespace labels that could not be read"
+          },
+          "notSelectedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpointCount": {
+            "type": "integer"
+          },
+          "activeTargets": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "null for a ServiceMonitor that is not selected"
+          },
+          "targetsDown": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "endpointsWithTargets": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "how many of its endpoints have at least one active target"
+          }
+        },
+        "required": [
+          "namespace",
+          "name",
+          "selected",
+          "notSelectedReason",
+          "endpointCount",
+          "activeTargets",
+          "targetsDown",
+          "endpointsWithTargets"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "prometheus",
+    "complete",
+    "queriedPods",
+    "serviceMonitorCount",
+    "selectedCount",
+    "notSelectedCount",
+    "undeterminedCount",
+    "selectedWithoutTargets",
+    "serviceMonitors",
+    "truncated"
+  ],
+  "additionalProperties": false
+}

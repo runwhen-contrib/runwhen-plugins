@@ -1,0 +1,75 @@
+# Instances of the synthetic monitoring.coreos.com CRDs for k8s-prometheus-health (rw-prometheus*).
+#
+# Prometheus rw-prom: backed by the stub Deployment prometheus-rw-prom. Selects ServiceMonitors
+#   labelled release=rw in namespaces labelled monitoring=rw (rw-prometheus, rw-prometheus-apps).
+#   serviceAccountName prometheus-rw has discovery RBAC in rw-prometheus only.
+# Prometheus rw-prom-idle: no pods behind it (an operator that has not created its StatefulSet).
+#   Its selector is nil: it selects no ServiceMonitor at all.
+# ServiceMonitors:
+#   sm-ok         selected; its pool serviceMonitor/rw-prometheus/sm-ok/0 has an active target
+#   sm-idle       selected; no pool, so it produced no target
+#   sm-other      NOT selected (release=other)
+#   sm-apps       selected, in rw-prometheus-apps (where the Prometheus ServiceAccount has no RBAC); no target
+#   sm-clean      only for rw-prom-clean (release=clean); its pool has an active target
+# Prometheus rw-prom-clean (rw-prometheus-apps, backed by prometheus-rw-prom-clean): everything
+#   up, one healthy rule group, selects only release=clean ServiceMonitors in its own namespace,
+#   and its ServiceAccount prometheus-clean has discovery RBAC there.
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata: {name: rw-prom, namespace: rw-prometheus}
+spec:
+  replicas: 1
+  serviceAccountName: prometheus-rw
+  serviceMonitorSelector: {matchLabels: {release: rw}}
+  serviceMonitorNamespaceSelector: {matchLabels: {monitoring: rw}}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata: {name: rw-prom-idle, namespace: rw-prometheus}
+spec:
+  replicas: 1
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: sm-ok, namespace: rw-prometheus, labels: {release: rw}}
+spec:
+  selector: {matchLabels: {app: ok}}
+  endpoints: [{port: web, interval: 15s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: sm-idle, namespace: rw-prometheus, labels: {release: rw}}
+spec:
+  selector: {matchLabels: {app: nothing-has-this-label}}
+  endpoints: [{port: web}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: sm-other, namespace: rw-prometheus, labels: {release: other}}
+spec:
+  selector: {matchLabels: {app: other}}
+  endpoints: [{port: metrics}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: sm-apps, namespace: rw-prometheus-apps, labels: {release: rw}}
+spec:
+  selector: {matchLabels: {app: apps}}
+  namespaceSelector: {matchNames: [rw-prometheus-apps]}
+  endpoints: [{port: metrics}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata: {name: rw-prom-clean, namespace: rw-prometheus-apps}
+spec:
+  replicas: 1
+  serviceAccountName: prometheus-clean
+  serviceMonitorSelector: {matchLabels: {release: clean}}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: sm-clean, namespace: rw-prometheus-apps, labels: {release: clean}}
+spec:
+  selector: {matchLabels: {app: clean}}
+  namespaceSelector: {matchNames: [rw-prometheus-apps]}
+  endpoints: [{port: web}]

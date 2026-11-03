@@ -1,0 +1,102 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (down and failing entries first)
+  overdueIntervals:
+    type: number
+    default: 3
+    description: A target (or rule group) whose last scrape (or evaluation) is more than this many intervals old is overdue
+tasks:
+  - name: server-status
+    title: Server status
+    description: >-
+      For each pod of the Prometheus CR (labels app.kubernetes.io/name=prometheus and
+      prometheus=<name>), through the API server's pod proxy: /-/healthy and /-/ready
+      (200 is true, 503 is false; any other reply is an error, never true),
+      /api/v1/status/runtimeinfo (start time, last config reload time and whether it
+      succeeded, WAL corruption count, goroutines, retention) and /api/v1/status/tsdb
+      (head series and chunks). A pod that is not Running is listed and not asked. A pod
+      that cannot be reached is an error scoped to it and its fields stay null; when no
+      pod answers anything the task fails.
+    script: scripts/server_status.py
+    timeout: 120s
+    tags: [prometheus, health, ready, tsdb, config-reload]
+    readOnly: true
+    permissions:
+      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      server: { schema: ./schemas/server.v1.json, description: "Per pod: healthy, ready, runtime info (reload success, corruptions, last config time) and head series; null where not obtained" }
+
+  - name: targets
+    title: Scrape targets
+    description: >-
+      /api/v1/targets?state=active from every running pod of the Prometheus CR, merged
+      (a target is as bad as its worst pod): targets up, down and unknown per scrape
+      pool, and the targets that are down or unknown or whose last scrape is more than
+      overdueIntervals scrape intervals old, with the last scrape error (query strings
+      and userinfo removed from URLs, cut at 1024 characters), the last scrape time and
+      its age against the run's reference time. discoveredLabels are never read.
+    script: scripts/targets.py
+    timeout: 120s
+    tags: [prometheus, targets, scrape, up]
+    readOnly: true
+    permissions:
+      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      targets: { schema: ./schemas/targets.v1.json, description: "Counts per scrape pool and the down, unknown or overdue targets with their last error and scrape age" }
+
+  - name: rules
+    title: Rule groups
+    description: >-
+      /api/v1/rules from every running pod of the Prometheus CR, merged: every rule group
+      with its interval, how long its last evaluation took and when it ran, the number of
+      rules that are not ok, and the failing rules (health not ok or a lastError, which is
+      the evaluation error, e.g. a duplicate label set or a many-to-many match).
+    script: scripts/rules.py
+    timeout: 120s
+    tags: [prometheus, rules, alerting, recording]
+    readOnly: true
+    permissions:
+      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      rules: { schema: ./schemas/rules.v1.json, description: "Rule groups with evaluation time against interval, and the rules that failed or are not yet evaluated" }
+
+  - name: servicemonitor-coverage
+    title: ServiceMonitor coverage
+    description: >-
+      Which ServiceMonitors the Prometheus CR selects (serviceMonitorSelector within the
+      namespaces of serviceMonitorNamespaceSelector; an unset selector selects nothing, an
+      unset namespace selector means the CR's own namespace) and which it does not, and for
+      each selected one the number of active targets it produced (scrape pools named
+      serviceMonitor/<namespace>/<name>/<n>). It also asks, with SubjectAccessReviews for the
+      ServiceAccount the Prometheus runs as, whether that account may list and watch the
+      services, pods and endpoints (or endpointslices) in each namespace the selected
+      ServiceMonitors point at; the reviews are read-only and need no impersonation. A
+      cluster-wide list of ServiceMonitors and of namespaces is needed when the namespace
+      selector is set; when forbidden the CR's own namespace is used and complete is false.
+    script: scripts/servicemonitor_coverage.py
+    timeout: 120s
+    tags: [prometheus, servicemonitor, coverage, rbac]
+    readOnly: true
+    permissions:
+      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses], verbs: [get] }
+      - { apiGroups: [monitoring.coreos.com], resources: [servicemonitors], verbs: [list] }
+      - { apiGroups: [""], resources: [namespaces], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+      - { apiGroups: [authorization.k8s.io], resources: [subjectaccessreviews], verbs: [create] }
+    outputs:
+      coverage: { schema: ./schemas/coverage.v1.json, description: "ServiceMonitors selected or not, and the active targets each selected one produced" }
+      serviceAccountAccess: { schema: ./schemas/access.v1.json, description: "Whether the Prometheus ServiceAccount may list and watch what discovery needs in the target namespaces; null when the reviews could not be created" }
