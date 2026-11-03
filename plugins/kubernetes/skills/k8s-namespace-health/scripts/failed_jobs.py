@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-
+from k8s_namespace_health.clock import reference_time
 from k8s_namespace_health.common import cap
 from k8s_namespace_health.fetch import check_settings, list_items, load_namespace
 from k8s_namespace_health.jobs import failed_jobs, job_counts
@@ -9,6 +8,6 @@ def main(ctx):
     check_settings(ctx, "max_items", "job_active_max_minutes")
     namespace = load_namespace(ctx)
     jobs = list_items(ctx, namespace, "jobs.batch")
-    now = datetime.now(timezone.utc)
+    now = reference_time(ctx)
     flagged = failed_jobs(jobs, now, ctx.settings.job_active_max_minutes)
     return {"jobs": cap(flagged, ctx.settings.max_items), "counts": job_counts(jobs)}

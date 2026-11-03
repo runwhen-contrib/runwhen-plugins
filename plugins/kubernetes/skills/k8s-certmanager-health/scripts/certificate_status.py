@@ -1,13 +1,12 @@
-from datetime import datetime, timezone
-
 from k8s_certmanager_health.cert import certificate_view, issuer_lookup, issuer_view
+from k8s_certmanager_health.clock import reference_time
 from k8s_certmanager_health.fetch import load_certificate
 from k8s_certmanager_health.k8s import kubectl_json_scoped
 
 
 def main(ctx):
     cert = load_certificate(ctx)
-    view = certificate_view(cert, datetime.now(timezone.utc), ctx.settings.expiry_warning_days)
+    view = certificate_view(cert, reference_time(ctx), ctx.settings.expiry_warning_days)
 
     # The issuer is read apart from the Certificate: a ClusterIssuer is cluster-scoped, so a
     # namespace-scoped identity is forbidden here and still gets the Certificate facts.

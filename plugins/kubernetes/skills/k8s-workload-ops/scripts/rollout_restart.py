@@ -1,6 +1,6 @@
 import json
-from datetime import datetime, timezone
 
+from k8s_workload_ops.clock import reference_time
 from k8s_workload_ops.errors import RwError
 from k8s_workload_ops.fetch import (
     load_revision_state,
@@ -45,7 +45,7 @@ def main(ctx, timeout="120s", reason=None):
     # One merge patch sets the pod template's restartedAt (what `kubectl rollout restart` sets) and
     # the reason annotation together (or clears an older reason), so no half-done state is possible.
     # The dry run sends the identical patch with --dry-run=server.
-    restarted_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    restarted_at = reference_time(ctx).strftime("%Y-%m-%dT%H:%M:%SZ")
     patch = restart_patch(restarted_at, reason)
     kubectl_text(
         ctx,

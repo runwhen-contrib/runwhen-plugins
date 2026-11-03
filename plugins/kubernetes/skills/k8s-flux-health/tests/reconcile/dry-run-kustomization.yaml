@@ -1,0 +1,96 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-flux/kustomizations/apps-ok
+inputs:
+  timeout: 0s
+dryRun: true
+now: '2026-11-03T20:51:18.498Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - kustomizations.kustomize.toolkit.fluxcd.io
+  - apps-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps-ok\",\"namespace\":\"rw-flux\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./apps\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"fleet\"},\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:03:22Z",
+            "generation": 1,
+            "name": "apps-ok",
+            "namespace": "rw-flux",
+            "resourceVersion": "17100",
+            "uid": "241e1421-1bf2-4e02-b062-27f0e76bae6e"
+        },
+        "spec": {
+            "interval": "10m",
+            "path": "./apps",
+            "prune": true,
+            "sourceRef": {
+                "kind": "GitRepository",
+                "name": "fleet"
+            },
+            "suspend": false
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:00:00Z",
+                    "message": "Applied revision: main@sha1:aaaaaaaa",
+                    "observedGeneration": 1,
+                    "reason": "ReconciliationSucceeded",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ],
+            "inventory": {
+                "entries": [
+                    {
+                        "id": "rw-flux_cfg__ConfigMap",
+                        "v": "v1"
+                    },
+                    {
+                        "id": "rw-flux_app_apps_Deployment",
+                        "v": "v1"
+                    }
+                ]
+            },
+            "lastAppliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "lastAttemptedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "lastHandledReconcileAt": "2026-11-03T20:00:00Z",
+            "observedGeneration": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - annotate
+  - kustomizations.kustomize.toolkit.fluxcd.io
+  - apps-ok
+  - reconcile.fluxcd.io/requestedAt=2026-11-03T20:51:18.498000Z
+  - --overwrite
+  - --dry-run=server
+  rc: 0
+  stdout: |
+    kustomization.kustomize.toolkit.fluxcd.io/apps-ok annotated (server dry run)
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"kind": "Kustomization", "name": "apps-ok", "namespace": "rw-flux", "generation": 1, "managedBy": null}
+    reconcile: {"applied": false, "wouldApply": true, "reset": false, "force": false, "requestedAt": null, "completed": null, "completionReason": "dry_run", "waitedSeconds": null, "after": null}

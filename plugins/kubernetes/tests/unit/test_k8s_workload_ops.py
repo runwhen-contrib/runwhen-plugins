@@ -7,6 +7,7 @@ from the captured files and records every call."""
 import copy
 import importlib.util
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -54,6 +55,9 @@ class FakeCommandError(RwError):
         self.stderr = stderr
 
 
+REFERENCE_TIME = datetime(2026, 11, 4, 9, 14, 2, 123000, tzinfo=timezone.utc)
+
+
 class FakeCtx:
     """What a script sees: resource, settings, dry_run, error(), run().
 
@@ -74,6 +78,9 @@ class FakeCtx:
         self.answers = list(answers)
         self.calls = []
         self.errors = []
+
+    def now(self):
+        return REFERENCE_TIME
 
     def error(self, code, message, scope=None, hint=None, details=None):
         self.errors.append({"code": code, "scope": scope, "message": message})
@@ -712,7 +719,8 @@ def test_restart_is_one_patch_then_waits_and_reports_the_new_revision():
     assert (
         r["reason"] == "bad config" and r["reasonRecorded"] is True and r["reasonCleared"] is False
     )
-    assert r["restartedAt"] is not None and r["updateStrategy"] == "RollingUpdate"
+    assert r["restartedAt"] == "2026-11-04T09:14:02Z"  # the run's reference time, not the clock
+    assert r["updateStrategy"] == "RollingUpdate"
     lines = ctx.lines()
     patches = [c for c in ctx.calls if "patch" in c]
     assert len(patches) == 1  # reason and restart annotation in one write: no half-done state
@@ -1506,3 +1514,12 @@ def test_effects_name_the_recreate_and_ondelete_strategies():
         text = " ".join(TASKS[task]["effects"])
         assert "Recreate" in text and "OnDelete" in text, task
     assert "removes an earlier reason" in " ".join(TASKS["rollout-restart"]["effects"])
+
+
+def test_reference_time_falls_back_to_the_wall_clock_without_ctx_now():
+    from k8s_workload_ops.clock import reference_time
+
+    assert reference_time(FakeCtx()) == REFERENCE_TIME
+    before = datetime.now(timezone.utc)
+    got = reference_time(SimpleNamespace())  # an older SDK's context has no now()
+    assert before <= got <= datetime.now(timezone.utc)

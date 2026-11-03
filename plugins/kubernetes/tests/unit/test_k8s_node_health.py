@@ -117,6 +117,9 @@ class FakeCtx:
             max_items=200, utilization_percent=90, pod_limit_percent=90, **settings
         )
 
+    def now(self):
+        return NOW
+
     def run(self, argv):
         self.calls.append(argv)
         for fragment, (rc, out, err) in self.routes:
@@ -143,19 +146,11 @@ UNREACHABLE = (1, "", "Unable to connect to the server: dial tcp 10.0.0.1:6443: 
 NO_METRICS = (1, "", 'error: the server doesn\'t have a resource type "nodes"')
 
 
-class Frozen(datetime):
-    @classmethod
-    def now(cls, tz=None):
-        return NOW if tz else NOW.replace(tzinfo=None)
-
-
 def script(name):
-    """The script module with its clock frozen at NOW (when it reads one)."""
+    """The script module; its context's now() is NOW."""
     spec = importlib.util.spec_from_file_location(f"t_{name}", SKILL / "scripts" / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    if hasattr(mod, "datetime"):
-        mod.datetime = Frozen
     return mod
 
 
