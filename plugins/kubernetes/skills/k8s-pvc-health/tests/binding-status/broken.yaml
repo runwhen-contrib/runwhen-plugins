@@ -1,0 +1,184 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-broken/persistentvolumeclaims/pending
+inputs:
+  since: 3650d
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - persistentvolumeclaims
+  - pending
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"name\":\"pending\",\"namespace\":\"rw-broken\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"does-not-exist\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:03Z",
+            "finalizers": [
+                "kubernetes.io/pvc-protection"
+            ],
+            "name": "pending",
+            "namespace": "rw-broken",
+            "resourceVersion": "623",
+            "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+        },
+        "spec": {
+            "accessModes": [
+                "ReadWriteOnce"
+            ],
+            "resources": {
+                "requests": {
+                    "storage": "100Mi"
+                }
+            },
+            "storageClassName": "does-not-exist",
+            "volumeMode": "Filesystem"
+        },
+        "status": {
+            "phase": "Pending"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - storageclass
+  - does-not-exist
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (NotFound): storageclasses.storage.k8s.io "does-not-exist" not found
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - events
+  - --field-selector
+  - involvedObject.kind=PersistentVolumeClaim,involvedObject.name=pending,involvedObject.uid=d46cd818-685a-4bfa-9f12-a908bec4e858
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "count": 102,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:58:51Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": "pending",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "623",
+                    "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:23:56Z",
+                "message": "storageclass.storage.k8s.io \"does-not-exist\" not found",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:58:51Z",
+                    "name": "pending.18e49ac7211d5d00",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "5680",
+                    "uid": "1d020107-66c2-4e74-a19e-61dbcc10cdbd"
+                },
+                "reason": "ProvisioningFailed",
+                "reportingComponent": "persistentvolume-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "persistentvolume-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 14,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:25:00Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": "pending",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "623",
+                    "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:28:01Z",
+                "message": "storageclass.storage.k8s.io \"does-not-exist\" not found",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:25:00Z",
+                    "name": "pending.18e49c345e06a346",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "6137",
+                    "uid": "90d00864-14e5-4b21-8958-aa8feab16881"
+                },
+                "reason": "ProvisioningFailed",
+                "reportingComponent": "persistentvolume-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "persistentvolume-controller"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 162,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:29:41Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": "pending",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "623",
+                    "uid": "d46cd818-685a-4bfa-9f12-a908bec4e858"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T19:09:42Z",
+                "message": "storageclass.storage.k8s.io \"does-not-exist\" not found",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:29:42Z",
+                    "name": "pending.18e49c75e913882f",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "11014",
+                    "uid": "197938a4-0a01-48c0-8f17-e7cc2241ab18"
+                },
+                "reason": "ProvisioningFailed",
+                "reportingComponent": "persistentvolume-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "persistentvolume-controller"
+                },
+                "type": "Warning"
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    claim: {phase: Pending, storageClassName: does-not-exist, volumeName: null}
+    storageClass: {name: does-not-exist, exists: false}
+    volume: null

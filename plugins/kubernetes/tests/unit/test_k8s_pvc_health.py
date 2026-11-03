@@ -1037,6 +1037,17 @@ def test_pod_vanishing_before_exec_is_internal_not_not_found():
     assert "went away before exec" in exc.value.message
 
 
+def test_container_without_df_is_dependency():
+    # Real kubectl text; the SDK's classifier would call this not_found.
+    missing = (
+        'error: Internal error occurred: error executing command in container: '
+        'failed to exec in container: exec: "df": executable file not found in $PATH'
+    )
+    with pytest.raises(RwError) as exc:
+        script("usage")(FakeCtx("rw-healthy", "data", fail={"exec": missing}))
+    assert exc.value.code == "dependency"
+
+
 BUSYBOX_DF = (DATA / "busybox_df.txt").read_text()
 
 

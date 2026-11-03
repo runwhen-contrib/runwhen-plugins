@@ -30,6 +30,10 @@ def main(ctx):
     try:
         result = run_checked(ctx, argv)
     except RwError as exc:
+        text = str(getattr(exc, "message", "") or exc).lower()
+        if "executable file not found" in text or "no such file or directory" in text:
+            # The container has no `df`: the tool is missing, not the claim or the pod.
+            raise RwError("dependency", f"no df in container {container!r} of pod {pod!r}") from None
         if exc.code == "not_found":
             # not_found means "the claim is missing"; the claim was just read.
             raise RwError("internal", "pod or container went away before exec") from None
