@@ -87,6 +87,7 @@ def test_placeholder_refused_unless_allowed(tmp_path):
         ({"name": "Kube"}, "name"),
         ({"version": "1.0"}, "version"),
         ({"version": 1.0}, "version"),
+        ({"version": "1.0.0+build.5"}, "build metadata"),
         ({"image": "ghcr.io/x/y:1.0"}, "image"),
         ({"image": "ghcr.io/x/y@" + D_INDEX}, "image"),
         ({"image": "https://ghcr.io/x/y"}, "image"),
@@ -142,6 +143,7 @@ def test_parse_tag():
         "runtimes/kubernetes/1.0.0",
         "runtimes/kubernetes/v1.0",
         "runtimes/K/v1.0.0",
+        "runtimes/kubernetes/v1.0.0+build.5",
     ],
 )
 def test_parse_tag_rejects_malformed(tag):

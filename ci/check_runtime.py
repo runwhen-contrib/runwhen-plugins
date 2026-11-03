@@ -53,6 +53,8 @@ def parse_tag(tag: str) -> tuple[str, str]:
     m = TAG_RE.match(tag)
     if not m or not _SEMVER.fullmatch(m["version"]):
         raise ValueError(f"tag {tag!r} does not match runtimes/<name>/vX.Y.Z[-prerelease]")
+    if "+" in m["version"]:
+        raise ValueError(f"tag {tag!r}: build metadata (+...) is not allowed in a runtime version")
     return m["name"], m["version"]
 
 
@@ -97,6 +99,9 @@ def _problems(doc: dict, allow_placeholder: bool) -> list[str]:
             out.append("version: must be a semver 2.0 string")
         elif max(int(m[1]), int(m[2]), int(m[3])) > MAX_SEMVER_PART:
             out.append(f"version: a numeric part is over {MAX_SEMVER_PART}")
+        elif "+" in version:
+            # The version becomes the image tag, and `+` is not valid in a Docker tag.
+            out.append("version: build metadata (+...) is not allowed in a runtime version")
     image = doc.get("image")
     if "image" in doc and not (is_str(image) and _IMAGE.fullmatch(image)):
         out.append("image: must be a repository reference without scheme, tag or digest")

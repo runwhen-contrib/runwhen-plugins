@@ -22,6 +22,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 USER runwhen
 
+# The base labels itself as the rw-task capability. A catalog scan reads those labels off the
+# image, so blank the ones that would make this image look like rw-task (a label cannot be
+# removed in a child image, only emptied) and say what it is.
+LABEL io.runwhen.capability="" \
+      io.runwhen.sbom="" \
+      com.runwhen.capability.manifest.v1="" \
+      com.runwhen.capability.schemas.v1="" \
+      com.runwhen.rw-task.toolbox="" \
+      io.runwhen.runtime="kubernetes"
+
 ARG REVISION=unknown
 ARG CREATED=unknown
 LABEL org.opencontainers.image.title="runwhen-plugins-runtime-kubernetes" \

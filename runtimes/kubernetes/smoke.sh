@@ -11,7 +11,9 @@ curl --version | head -n 1
 git --version
 python3 --version
 
-# CronJob spec.timeZone is resolved with zoneinfo, which needs the tzdata files.
+# CronJob spec.timeZone is resolved with zoneinfo. The system files prove the apt tzdata install:
+# the PyPI tzdata package in the venv would let the zoneinfo call below pass without it.
+test -f /usr/share/zoneinfo/America/New_York
 python3 -c "import zoneinfo; zoneinfo.ZoneInfo('America/New_York')"
 # The SDK and its RE2 dependency.
 python3 -c "import runwhen_capability, re2"

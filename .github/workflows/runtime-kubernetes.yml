@@ -136,6 +136,10 @@ jobs:
           cache-from: |
             type=gha,scope=runtime-kubernetes-linux/amd64
             type=gha,scope=runtime-kubernetes-linux/arm64
+      - name: Smoke the pushed image (native platform)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker run --rm -i --entrypoint sh "${IMAGE}@${DIGEST}" -s < runtimes/kubernetes/smoke.sh
       - name: Digests for runtime.yaml
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -182,5 +186,16 @@ jobs:
           set -euo pipefail
           version="${TAG##*/v}"
           index="$(python -c 'import yaml; print(yaml.safe_load(open("runtimes/kubernetes/runtime.yaml"))["digests"]["index"])')"
+          # Never move a published tag: an existing :X.Y.Z must already be this index.
+          if existing="$(docker buildx imagetools inspect "${IMAGE}:${version}" --format '{{.Manifest.Digest}}' 2>err.txt)"; then
+            if [ "${existing}" != "${index}" ]; then
+              echo "::error::${IMAGE}:${version} exists with index ${existing}, not the ${index} runtime.yaml pins; published tags are never moved" >&2
+              exit 1
+            fi
+          elif ! grep -q 'not found' err.txt; then
+            cat err.txt >&2
+            echo "::error::cannot tell whether ${IMAGE}:${version} exists" >&2
+            exit 1
+          fi
           docker buildx imagetools create --tag "${IMAGE}:${version}" "${IMAGE}@${index}"
           docker buildx imagetools inspect "${IMAGE}:${version}"
