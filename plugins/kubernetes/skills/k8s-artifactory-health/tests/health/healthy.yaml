@@ -1,0 +1,143 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-artifactory/statefulsets/artifactory
+now: '2026-11-03T23:42:28.942Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-artifactory
+  - get
+  - statefulsets.apps
+  - artifactory
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=StatefulSet
+    s:metadata.name=artifactory
+    s:metadata.namespace=rw-artifactory
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app":"artifactory","release":"artifactory","role":"artifactory"}}
+    j:spec.template.metadata.labels={"app":"artifactory","component":"artifactory","release":"artifactory","role":"artifactory"}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-artifactory
+  - get
+  - pods
+  - -l
+  - app=artifactory,release=artifactory,role=artifactory
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=artifactory-0
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    j:metadata.labels={"app":"artifactory","apps.kubernetes.io/pod-index":"0","component":"artifactory","controller-revision-hash":"artifactory-659fb4bbb","release":"artifactory","role":"artifactory","statefulset.kubernetes.io/pod-name":"artifactory-0"}
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:18Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:17Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:24Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:24Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:17Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    k:artifactory=[{"containerPort":8082,"name":"http","protocol":"TCP"},{"containerPort":8081,"name":"http-internal","protocol":"TCP"}]
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-artifactory
+  - get
+  - services
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:spec.type="}{.spec.type}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.ports="}{.spec.ports}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=artifactory
+    s:spec.type=ClusterIP
+    j:spec.selector={"app":"artifactory","release":"artifactory","role":"artifactory"}
+    j:spec.ports=[{"name":"http-router","port":8082,"protocol":"TCP","targetPort":"http"},{"name":"http-artifactory","port":8081,"protocol":"TCP","targetPort":"http-internal"}]
+    @
+    s:metadata.name=artifactory-broken
+    s:spec.type=ClusterIP
+    j:spec.selector={"app":"artifactory","release":"artifactory-broken","role":"artifactory"}
+    j:spec.ports=[{"name":"http-router","port":8082,"protocol":"TCP","targetPort":"http"},{"name":"http-artifactory","port":8081,"protocol":"TCP","targetPort":"http-internal"}]
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-0:8081/proxy/artifactory/api/v1/system/liveness
+  - --request-timeout=30s
+  rc: 0
+  stdout: OK
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-0:8081/proxy/artifactory/api/v1/system/readiness
+  - --request-timeout=30s
+  rc: 0
+  stdout: OK
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-0:8082/proxy/router/api/v1/system/health
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"router":{"node_id":"artifactory-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"}]}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/services/http:artifactory:http-artifactory/proxy/artifactory/api/v1/system/liveness
+  - --request-timeout=30s
+  rc: 0
+  stdout: OK
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/services/http:artifactory:http-artifactory/proxy/artifactory/api/v1/system/readiness
+  - --request-timeout=30s
+  rc: 0
+  stdout: OK
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/services/http:artifactory:http-router/proxy/router/api/v1/system/health
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"router":{"node_id":"artifactory-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"}]}'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    health:
+      workload: {kind: StatefulSet, name: artifactory, replicas: 1, readyReplicas: 1}
+      notOkCount: 0
+      servicesRead: true
+      pods:
+        $containsWhere:
+          name: artifactory-0
+          queried: true
+          liveness: {ok: true, httpStatus: 200}
+          readiness: {ok: true, httpStatus: 200}
+          router: {ok: true, httpStatus: 200}
+      services:
+        $containsWhere:
+          name: artifactory
+          readiness: {ok: true, httpStatus: 200}
