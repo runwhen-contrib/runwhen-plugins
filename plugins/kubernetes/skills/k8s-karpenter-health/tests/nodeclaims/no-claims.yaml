@@ -1,0 +1,105 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/nodepools/orphan-pool
+calls:
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - orphan-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "karpenter.sh/v1",
+        "kind": "NodePool",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodePool\",\"metadata\":{\"annotations\":{},\"name\":\"orphan-pool\"},\"spec\":{\"disruption\":{\"budgets\":[],\"consolidateAfter\":\"1m\",\"consolidationPolicy\":\"WhenEmptyOrUnderutilized\"},\"limits\":{},\"template\":{\"spec\":{\"expireAfter\":\"720h\",\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"gone\"},\"requirements\":[{\"key\":\"karpenter.sh/capacity-type\",\"operator\":\"In\",\"values\":[\"spot\",\"on-demand\"]}]}},\"weight\":1}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:26:50Z",
+            "generation": 1,
+            "name": "orphan-pool",
+            "resourceVersion": "20933",
+            "uid": "6871c7c1-9267-4beb-be93-69dfa3f6287d"
+        },
+        "spec": {
+            "disruption": {
+                "budgets": [],
+                "consolidateAfter": "1m",
+                "consolidationPolicy": "WhenEmptyOrUnderutilized"
+            },
+            "limits": {},
+            "template": {
+                "spec": {
+                    "expireAfter": "720h",
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "gone"
+                    },
+                    "requirements": [
+                        {
+                            "key": "karpenter.sh/capacity-type",
+                            "operator": "In",
+                            "values": [
+                                "spot",
+                                "on-demand"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "weight": 1
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:26:52Z",
+                    "message": "NodeClass not found on cluster",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassNotFound",
+                    "status": "False",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:26:52Z",
+                    "message": "NodeClass not found on cluster",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassNotFound",
+                    "status": "False",
+                    "type": "NodeClassReady"
+                }
+            ]
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - nodeclaims.karpenter.sh
+  - -l
+  - karpenter.sh/nodepool=orphan-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    nodeClaims: []
+    counts: {total: 0, ready: 0, notReady: 0, stuck: 0, byPhase: {}}

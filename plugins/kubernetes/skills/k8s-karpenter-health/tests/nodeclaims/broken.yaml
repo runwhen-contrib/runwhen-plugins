@@ -1,0 +1,306 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/nodepools/broken-pool
+settings:
+  stuckMinutes: 1
+calls:
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - broken-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "karpenter.sh/v1",
+        "kind": "NodePool",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodePool\",\"metadata\":{\"annotations\":{},\"name\":\"broken-pool\"},\"spec\":{\"disruption\":{\"budgets\":[{\"nodes\":\"10%\"}],\"consolidateAfter\":\"1m\",\"consolidationPolicy\":\"WhenEmptyOrUnderutilized\"},\"limits\":{\"cpu\":\"50\"},\"template\":{\"spec\":{\"expireAfter\":\"720h\",\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"broken\"},\"requirements\":[{\"key\":\"karpenter.sh/capacity-type\",\"operator\":\"In\",\"values\":[\"spot\",\"on-demand\"]}]}},\"weight\":1}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:26:50Z",
+            "generation": 1,
+            "name": "broken-pool",
+            "resourceVersion": "20932",
+            "uid": "1b486695-0ea6-4c3f-a577-c6d7a1565a70"
+        },
+        "spec": {
+            "disruption": {
+                "budgets": [
+                    {
+                        "nodes": "10%"
+                    }
+                ],
+                "consolidateAfter": "1m",
+                "consolidationPolicy": "WhenEmptyOrUnderutilized"
+            },
+            "limits": {
+                "cpu": "50"
+            },
+            "template": {
+                "spec": {
+                    "expireAfter": "720h",
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "broken"
+                    },
+                    "requirements": [
+                        {
+                            "key": "karpenter.sh/capacity-type",
+                            "operator": "In",
+                            "values": [
+                                "spot",
+                                "on-demand"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "weight": 1
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:26:51Z",
+                    "message": "NodeClassRef not ready",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassNotReady",
+                    "status": "False",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:26:51Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "ValidationSucceeded",
+                    "status": "True",
+                    "type": "ValidationSucceeded"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:26:51Z",
+                    "message": "NodeClassRef not ready",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassNotReady",
+                    "status": "False",
+                    "type": "NodeClassReady"
+                }
+            ],
+            "resources": {
+                "cpu": "4",
+                "nodes": "1"
+            }
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - nodeclaims.karpenter.sh
+  - -l
+  - karpenter.sh/nodepool=broken-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "karpenter.sh/v1",
+                "kind": "NodeClaim",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodeClaim\",\"metadata\":{\"annotations\":{},\"labels\":{\"karpenter.sh/capacity-type\":\"on-demand\",\"karpenter.sh/nodepool\":\"broken-pool\",\"node.kubernetes.io/instance-type\":\"m5.large\",\"topology.kubernetes.io/zone\":\"us-east-1a\"},\"name\":\"broken-pool-ready1\",\"ownerReferences\":[{\"apiVersion\":\"karpenter.sh/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"NodePool\",\"name\":\"broken-pool\",\"uid\":\"1b486695-0ea6-4c3f-a577-c6d7a1565a70\"}]},\"spec\":{\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"broken\"},\"requirements\":[{\"key\":\"node.kubernetes.io/instance-type\",\"operator\":\"In\",\"values\":[\"m5.large\"]}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:26:54Z",
+                    "generation": 1,
+                    "labels": {
+                        "karpenter.sh/capacity-type": "on-demand",
+                        "karpenter.sh/nodepool": "broken-pool",
+                        "node.kubernetes.io/instance-type": "m5.large",
+                        "topology.kubernetes.io/zone": "us-east-1a"
+                    },
+                    "name": "broken-pool-ready1",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "karpenter.sh/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "NodePool",
+                            "name": "broken-pool",
+                            "uid": "1b486695-0ea6-4c3f-a577-c6d7a1565a70"
+                        }
+                    ],
+                    "resourceVersion": "20944",
+                    "uid": "fd63bc80-14de-43ea-9472-6aec2783bf92"
+                },
+                "spec": {
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "broken"
+                    },
+                    "requirements": [
+                        {
+                            "key": "node.kubernetes.io/instance-type",
+                            "operator": "In",
+                            "values": [
+                                "m5.large"
+                            ]
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:52Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Launched",
+                            "status": "True",
+                            "type": "Launched"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:52Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Registered",
+                            "status": "True",
+                            "type": "Registered"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:52Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Initialized",
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:52Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Ready",
+                            "status": "True",
+                            "type": "Ready"
+                        }
+                    ],
+                    "nodeName": "ip-10-0-3-30.ec2.internal",
+                    "providerID": "aws:///us-east-1a/i-0dddd"
+                }
+            },
+            {
+                "apiVersion": "karpenter.sh/v1",
+                "kind": "NodeClaim",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodeClaim\",\"metadata\":{\"annotations\":{},\"labels\":{\"karpenter.sh/capacity-type\":\"spot\",\"karpenter.sh/nodepool\":\"broken-pool\",\"node.kubernetes.io/instance-type\":\"m5.xlarge\",\"topology.kubernetes.io/zone\":\"us-east-1a\"},\"name\":\"broken-pool-stuck1\",\"ownerReferences\":[{\"apiVersion\":\"karpenter.sh/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"NodePool\",\"name\":\"broken-pool\",\"uid\":\"1b486695-0ea6-4c3f-a577-c6d7a1565a70\"}]},\"spec\":{\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"broken\"},\"requirements\":[{\"key\":\"node.kubernetes.io/instance-type\",\"operator\":\"In\",\"values\":[\"m5.xlarge\"]}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T20:26:54Z",
+                    "generation": 1,
+                    "labels": {
+                        "karpenter.sh/capacity-type": "spot",
+                        "karpenter.sh/nodepool": "broken-pool",
+                        "node.kubernetes.io/instance-type": "m5.xlarge",
+                        "topology.kubernetes.io/zone": "us-east-1a"
+                    },
+                    "name": "broken-pool-stuck1",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "karpenter.sh/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "NodePool",
+                            "name": "broken-pool",
+                            "uid": "1b486695-0ea6-4c3f-a577-c6d7a1565a70"
+                        }
+                    ],
+                    "resourceVersion": "20948",
+                    "uid": "1fc271d7-ab56-4ce0-a8e1-61607c3a6c0a"
+                },
+                "spec": {
+                    "nodeClassRef": {
+                        "group": "karpenter.k8s.aws",
+                        "kind": "EC2NodeClass",
+                        "name": "broken"
+                    },
+                    "requirements": [
+                        {
+                            "key": "node.kubernetes.io/instance-type",
+                            "operator": "In",
+                            "values": [
+                                "m5.xlarge"
+                            ]
+                        }
+                    ]
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:54Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "Launched",
+                            "status": "True",
+                            "type": "Launched"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:54Z",
+                            "message": "Node not registered with cluster",
+                            "observedGeneration": 1,
+                            "reason": "NodeNotFound",
+                            "status": "Unknown",
+                            "type": "Registered"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:54Z",
+                            "message": "Node not registered with cluster",
+                            "observedGeneration": 1,
+                            "reason": "NodeNotFound",
+                            "status": "Unknown",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T20:26:54Z",
+                            "message": "Node not registered with cluster",
+                            "observedGeneration": 1,
+                            "reason": "ReconcilingDependents",
+                            "status": "Unknown",
+                            "type": "Ready"
+                        }
+                    ],
+                    "providerID": "aws:///us-east-1a/i-0eeee"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  # recorded with --setting stuckMinutes=1: the claim is minutes old, the default is 15
+  outputs:
+    counts:
+      total: 2
+      ready: 1
+      notReady: 1
+      stuck: 1
+      byPhase: {Registering: 1, Ready: 1}
+      stuckMinutes: 1.0
+    nodeClaims:
+      $containsWhere:
+        name: broken-pool-stuck1
+        phase: Registering
+        stuck: true
+        nodeName: null
+        registered: {status: Unknown, reason: NodeNotFound}
