@@ -1,0 +1,261 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-flux/helmreleases/podinfo-failed
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - podinfo-failed
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-failed\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.6.0\"}},\"dependsOn\":[{\"name\":\"podinfo-ok\"},{\"name\":\"not-here\"},{\"name\":\"infra\",\"namespace\":\"rw-flux-other\"}],\"interval\":\"10m\",\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 1,
+            "name": "podinfo-failed",
+            "namespace": "rw-flux",
+            "resourceVersion": "14609",
+            "uid": "733eca01-ac3f-4165-b768-f4bb5b1f7473"
+        },
+        "spec": {
+            "chart": {
+                "spec": {
+                    "chart": "podinfo",
+                    "sourceRef": {
+                        "kind": "HelmRepository",
+                        "name": "podinfo"
+                    },
+                    "version": "6.6.0"
+                }
+            },
+            "dependsOn": [
+                {
+                    "name": "podinfo-ok"
+                },
+                {
+                    "name": "not-here"
+                },
+                {
+                    "name": "infra",
+                    "namespace": "rw-flux-other"
+                }
+            ],
+            "interval": "10m",
+            "suspend": false
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:05:00Z",
+                    "message": "Helm upgrade failed for release rw-flux/podinfo-failed with chart podinfo@6.6.0: timed out waiting for the condition",
+                    "observedGeneration": 1,
+                    "reason": "UpgradeFailed",
+                    "status": "False",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:05:00Z",
+                    "message": "Helm upgrade failed: timed out waiting for the condition",
+                    "observedGeneration": 1,
+                    "reason": "UpgradeFailed",
+                    "status": "False",
+                    "type": "Released"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:05:00Z",
+                    "message": "Failed to upgrade after 5 attempt(s)",
+                    "observedGeneration": 1,
+                    "reason": "RetriesExceeded",
+                    "status": "True",
+                    "type": "Stalled"
+                }
+            ],
+            "failures": 5,
+            "history": [
+                {
+                    "appVersion": "6.6.0",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.6.0",
+                    "lastDeployed": "2026-11-03T20:05:00Z",
+                    "name": "podinfo-failed",
+                    "namespace": "rw-flux",
+                    "status": "failed",
+                    "version": 3
+                },
+                {
+                    "appVersion": "6.5.1",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.5.1",
+                    "lastDeployed": "2026-11-03T19:00:00Z",
+                    "name": "podinfo-failed",
+                    "namespace": "rw-flux",
+                    "status": "deployed",
+                    "version": 2
+                }
+            ],
+            "lastAttemptedRevision": "6.6.0",
+            "lastHandledReconcileAt": "2026-11-03T20:05:00Z",
+            "observedGeneration": 1,
+            "upgradeFailures": 5
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - podinfo-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-ok\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.5.x\"}},\"interval\":\"10m\",\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 1,
+            "name": "podinfo-ok",
+            "namespace": "rw-flux",
+            "resourceVersion": "16107",
+            "uid": "c2c561b7-b525-4668-8533-6daa8e0ee485"
+        },
+        "spec": {
+            "chart": {
+                "spec": {
+                    "chart": "podinfo",
+                    "sourceRef": {
+                        "kind": "HelmRepository",
+                        "name": "podinfo"
+                    },
+                    "version": "6.5.x"
+                }
+            },
+            "interval": "10m",
+            "suspend": false
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:00:05Z",
+                    "message": "Helm upgrade succeeded for release rw-flux/podinfo-ok.v2 with chart podinfo@6.5.1",
+                    "observedGeneration": 1,
+                    "reason": "UpgradeSucceeded",
+                    "status": "True",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:00:05Z",
+                    "message": "Helm upgrade succeeded for release rw-flux/podinfo-ok.v2 with chart podinfo@6.5.1",
+                    "observedGeneration": 1,
+                    "reason": "UpgradeSucceeded",
+                    "status": "True",
+                    "type": "Released"
+                }
+            ],
+            "history": [
+                {
+                    "appVersion": "6.5.1",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.5.1",
+                    "lastDeployed": "2026-11-03T20:00:05Z",
+                    "name": "podinfo-ok",
+                    "namespace": "rw-flux",
+                    "status": "deployed",
+                    "version": 2
+                },
+                {
+                    "appVersion": "6.5.0",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.5.0",
+                    "lastDeployed": "2026-11-02T20:00:05Z",
+                    "name": "podinfo-ok",
+                    "namespace": "rw-flux",
+                    "status": "superseded",
+                    "version": 1
+                }
+            ],
+            "lastAttemptedRevision": "6.5.1",
+            "lastHandledReconcileAt": "2026-11-03T20:00:00Z",
+            "observedGeneration": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - not-here
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (NotFound): helmreleases.helm.toolkit.fluxcd.io "not-here" not found
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    state:
+      kind: HelmRelease
+      ready: 'False'
+      readyReason: UpgradeFailed
+      stalled: 'True'
+      stalledReason: RetriesExceeded
+      reconciling: null
+      suspended: false
+    revisions:
+      lastAppliedRevision: 6.5.1
+      appliedSource: status.history
+      lastAttemptedRevision: 6.6.0
+      revisionsDiffer: true
+      neverApplied: false
+    dependencies:
+      count: 3
+      truncated: false
+      items:
+      - name: podinfo-ok
+        namespace: rw-flux
+        read: true
+        exists: true
+        ready: 'True'
+        readyReason: UpgradeSucceeded
+        generationObserved: true
+        suspended: false
+        note: null
+      - name: not-here
+        namespace: rw-flux
+        read: true
+        exists: false
+        ready: null
+        readyReason: null
+        generationObserved: null
+        suspended: null
+        note: the object named in dependsOn does not exist
+      - name: infra
+        namespace: rw-flux-other
+        read: false
+        exists: null
+        ready: null
+        readyReason: null
+        generationObserved: null
+        suspended: null
+        note: 'not read: it is in namespace ''rw-flux-other'', outside the target''s namespace ''rw-flux'''

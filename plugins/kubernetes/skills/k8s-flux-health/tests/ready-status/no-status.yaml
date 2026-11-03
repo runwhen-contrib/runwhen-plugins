@@ -1,0 +1,54 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-flux/helmreleases/podinfo-fresh
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - podinfo-fresh
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-fresh\",\"namespace\":\"rw-flux\"},\"spec\":{\"chartRef\":{\"kind\":\"OCIRepository\",\"name\":\"podinfo\"},\"interval\":\"10m\",\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 1,
+            "name": "podinfo-fresh",
+            "namespace": "rw-flux",
+            "resourceVersion": "14604",
+            "uid": "b4420ce4-bcdf-4aef-825d-edfc700788cc"
+        },
+        "spec": {
+            "chartRef": {
+                "kind": "OCIRepository",
+                "name": "podinfo"
+            },
+            "interval": "10m",
+            "suspend": false
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    state:
+      ready: null
+      conditions: []
+      conditionCount: 0
+      generationObserved: null
+    revisions:
+      lastAppliedRevision: null
+      lastAttemptedRevision: null
+      revisionsDiffer: false
+      neverApplied: true
