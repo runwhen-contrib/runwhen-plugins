@@ -39,9 +39,8 @@ permissions:
   schema: ./schemas/rbac-rule.json           # one permission = one RBAC rule (D68)
 
 # --- how the platform plugs this integration in -------------------------------
-# Still to come with the rest of k8s-base: discovery k8s-base/discover (*/15). Until then
-# discovery stays with rw-discovery.
 entryPoints:
+  discovery: { task: k8s-base/discover, schedule: "*/15 * * * *" }
   cli: { task: k8s-base/kubectl }
   permissionCheck: { task: k8s-base/check-permissions }
 

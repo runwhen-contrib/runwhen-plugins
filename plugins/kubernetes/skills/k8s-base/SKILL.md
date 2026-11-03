@@ -7,12 +7,14 @@ description: >-
   at a specific object, a log tail or an API shape and no kubernetes health skill
   covers it, or to double-check a skill's finding with the raw kubectl output.
   Also the permission check: tests RBAC rules against the connection's identity
-  (granted, partial with namespaces, denied, unverified).
+  (granted, partial with namespaces, denied, unverified). And discovery: lists the
+  cluster's resources for the platform's inventory (the integration's discovery entry
+  point; the platform runs it, an agent rarely needs to).
 runwhen:
-  role: [cli, permission-check]
+  role: [cli, permission-check, discovery]
   appliesTo:
     types: [kubernetes/cluster]
-  tags: [cli, kubectl, permission-check]
+  tags: [cli, kubectl, permission-check, discovery]
 ---
 
 ## When to use
@@ -139,3 +141,29 @@ call it yourself; call it to answer "can this connection do X, and where?".
 - Multi-group rules are a cross product: `apiGroups: ["", apps]` with `resources: [pods,
   deployments]` also asks for `apps/pods`, which does not exist, so the rule is `denied`. Write
   one group per rule.
+
+## discover
+
+The platform runs this task every 15 minutes (the integration's `discovery` entry point) with a
+per-run `runwhen/sync` credential and pushes what it finds to the inventory. Run it yourself only
+to see what discovery would report; without the credential nothing is pushed and the whole sync
+is the `sync` artifact. There is no classic bundle behind it (no parity row).
+
+- It lists every non-ephemeral type in `integration/types.yaml` that the cluster serves
+  (`kubectl api-resources`): namespaces, workloads, services, config, RBAC, storage, nodes and the
+  CRD types the integration names. Pods, events, ReplicaSets and EndpointSlices are never listed.
+  Secrets are never listed or synced (partition `excluded`). ConfigMaps sync key names, sizes and
+  hashes, not values; container `env` literals and exec probe arguments are dropped.
+- Settings: `namespaces` (empty: every namespace it can list; naming some narrows the run and
+  nothing outside them is swept), `maxItems` (2000 per type and namespace; a longer list is cut and
+  its partition `failed`), `maxStringBytes` (4096).
+- Output `summary` (`rw.discovery.summary.v1`): `counts` per type, `partitions` by status,
+  `durationMs`, `errors`, and `root.canonicalKey` (`kubeSystemUid`) when kube-system is readable.
+  Artifact `sync`: the whole `rw.discovery.v1` document (open, item batches, commit).
+- `complete` partitions are the only ones papi sweeps. `forbidden` and `failed` mean that list
+  was not read (a scoped `permission_denied` or other error names the type) and the run is
+  `partial`. `excluded` is not an error: the API is not served here, the type is never synced
+  (Secrets), or the `namespaces` setting left it out. Without permission to list namespaces and no
+  `namespaces` setting, namespaced types are `excluded` with that reason.
+- A named namespace that cannot be read still gets a stub item so its children have a parent; one
+  that does not exist is a scoped `not_found` and is skipped. An unreachable cluster fails the run.

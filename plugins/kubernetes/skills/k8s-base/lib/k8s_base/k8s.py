@@ -31,6 +31,7 @@ _BY_REASON = {
 }
 _UNREACHABLE = (
     "unable to connect",
+    "was refused",  # The connection to the server 127.0.0.1:1 was refused - did you specify ...
     "i/o timeout",
     "connection refused",
     "no such host",
