@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS volumes",
+  "description": "From master /vol/status: volume and replica counts, read-only volumes (one entry per replica), totals per collection (logicalBytes counts one replica per volume id, physicalBytes every replica) and volumes whose deleted bytes are at least garbageThreshold of their size (candidates for vacuum, at most 50, worst first). A read-only volume is one the volume server or an operator marked read-only; a volume that merely reached the size limit stops taking writes without being read-only.",
+  "type": "object",
+  "properties": {
+    "volumeCount": {
+      "type": "integer"
+    },
+    "replicaCount": {
+      "type": "integer"
+    },
+    "readOnlyVolumeCount": {
+      "type": "integer"
+    },
+    "readOnlyReplicaCount": {
+      "type": "integer"
+    },
+    "readOnlyTruncated": {
+      "type": "boolean"
+    },
+    "readOnly": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "fileCount": {
+            "type": "integer"
+          },
+          "replication": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "node",
+          "sizeBytes",
+          "fileCount",
+          "replication",
+          "ttl"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "collectionCount": {
+      "type": "integer"
+    },
+    "collectionsTruncated": {
+      "type": "boolean"
+    },
+    "collections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "volumeCount": {
+            "type": "integer"
+          },
+          "replicaCount": {
+            "type": "integer"
+          },
+          "readOnlyVolumeCount": {
+            "type": "integer"
+          },
+          "logicalBytes": {
+            "type": "integer"
+          },
+          "physicalBytes": {
+            "type": "integer"
+          },
+          "fileCount": {
+            "type": "integer"
+          },
+          "deletedBytes": {
+            "type": "integer"
+          },
+          "garbageRatio": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "collection",
+          "volumeCount",
+          "replicaCount",
+          "readOnlyVolumeCount",
+          "logicalBytes",
+          "physicalBytes",
+          "fileCount",
+          "deletedBytes",
+          "garbageRatio"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "garbageThreshold": {
+      "type": "number"
+    },
+    "compactionCandidateCount": {
+      "type": "integer"
+    },
+    "compactionCandidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "garbageRatio": {
+            "type": "number"
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "deletedBytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "garbageRatio",
+          "sizeBytes",
+          "deletedBytes"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    }
+  },
+  "required": [
+    "volumeCount",
+    "replicaCount",
+    "readOnlyVolumeCount",
+    "readOnlyReplicaCount",
+    "readOnlyTruncated",
+    "readOnly",
+    "collectionCount",
+    "collectionsTruncated",
+    "collections",
+    "garbageThreshold",
+    "compactionCandidateCount",
+    "compactionCandidates"
+  ],
+  "additionalProperties": false
+}

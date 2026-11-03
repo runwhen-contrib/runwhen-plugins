@@ -1,0 +1,158 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    min: 1
+    max: 10000
+    description: Most entries any list output returns
+  maxPods:
+    type: integer
+    default: 20
+    min: 1
+    max: 200
+    description: Most pods of one role that a task asks over HTTP (one request each); the output says when more were Running
+  masterPort: { type: integer, default: 9333, min: 1, max: 65535, description: "Port the master serves HTTP on (the chart's default)" }
+  volumePort: { type: integer, default: 8080, min: 1, max: 65535, description: "Port the volume server serves HTTP on" }
+  filerPort: { type: integer, default: 8888, min: 1, max: 65535, description: "Port the filer serves HTTP on" }
+  s3Port: { type: integer, default: 8333, min: 1, max: 65535, description: "Port the S3 gateway serves on" }
+  scheme:
+    type: enum
+    enum: [http, https]
+    default: http
+    description: "Scheme the API server uses to reach the pods (https when SeaweedFS serves TLS on those ports; the API server does not verify the certificate)"
+tasks:
+  - name: cluster-status
+    title: SeaweedFS cluster status
+    description: >-
+      The release's StatefulSets and Deployments (desired against ready replicas,
+      images) and pods (phase, ready, restarts, every container including init
+      containers, and which roles each serves), and what each Running master pod says
+      about itself through the API server's pod proxy: /cluster/healthz, whether it
+      claims leadership, the leader it names and the raft peers. Reports whether the
+      masters agree on one leader. A pod that is not Running is listed with the reason
+      it was not asked. For a StatefulSet target the release is that StatefulSet's
+      app.kubernetes.io/instance label; for a namespace target it is the one release
+      there, or the release input.
+    script: scripts/cluster_status.py
+    tags: [seaweedfs, storage, master, raft, leader, replicas]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets], verbs: [get, list] }
+      - { apiGroups: [apps], resources: [deployments], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    inputs:
+      release: { type: string, required: false, description: "app.kubernetes.io/instance of the release. Needed for a namespace target holding several releases; for a StatefulSet target it must match that StatefulSet's" }
+    outputs:
+      release: { schema: ./schemas/release.v1.json, description: "Workloads and pods of the release with roles, readiness and containers" }
+      master: { schema: ./schemas/master.v1.json, description: "Per master pod health and leadership, and whether the masters agree" }
+
+  - name: volumes
+    title: SeaweedFS volumes and capacity
+    description: >-
+      From the master's /dir/status and /vol/status: volume slots (max, free, used, per
+      data node, against minFreeVolumeSlots), the writable volumes of each collection /
+      replication / TTL layout, every read-only volume, totals and garbage per collection,
+      and volumes whose deleted bytes reach garbageThreshold of their size. From each
+      Running volume server's /status: its disks (size, used, free, percent) against
+      minFreeDiskPercent. Reads only; it states the facts and leaves judging them to you.
+    script: scripts/volumes.py
+    tags: [seaweedfs, storage, volumes, capacity, slots, readonly, garbage]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    settings:
+      minFreeVolumeSlots: { type: integer, default: 1, min: 0, description: "belowMinFree is true when the master's free volume slots are fewer than this" }
+      minFreeDiskPercent: { type: number, default: 10, min: 0, max: 100, description: "A disk with a lower percent free is marked belowMinFree" }
+      garbageThreshold: { type: number, default: 0.3, min: 0, max: 1, description: "Volumes whose deleted bytes / size reach this are listed as compaction candidates (the master's own default is 0.3)" }
+    inputs:
+      release: { type: string, required: false, description: "app.kubernetes.io/instance of the release (see cluster-status)" }
+    outputs:
+      slots: { schema: ./schemas/slots.v1.json, description: "Max, free and used volume slots, per data node" }
+      layouts: { schema: ./schemas/layouts.v1.json, description: "Writable volumes per collection, replication, TTL and disk type" }
+      volumes: { schema: ./schemas/volumes.v1.json, description: "Read-only volumes, per-collection totals and compaction candidates" }
+      disk: { schema: ./schemas/disk.v1.json, description: "Disk usage of each Running volume server" }
+
+  - name: filer-status
+    title: SeaweedFS filer and volume server registration
+    description: >-
+      Whether each Running filer pod answers /healthz and serves its root entry, and
+      whether each volume-role pod is registered with the master (its pod IP among the
+      data nodes in the master's /dir/status), with the data nodes that no pod of the
+      release explains. Reads only. The filer's connection to the master is not
+      readable over HTTP; the volume server registration is the master's own view.
+    script: scripts/filer_status.py
+    tags: [seaweedfs, storage, filer, volume, registration, topology]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    inputs:
+      release: { type: string, required: false, description: "app.kubernetes.io/instance of the release (see cluster-status)" }
+    outputs:
+      filer: { schema: ./schemas/filer.v1.json, description: "Per filer pod: healthz and whether the root entry is readable" }
+      volumeServers: { schema: ./schemas/volume-servers.v1.json, description: "Volume-role pods against the master's data nodes; null when the master could not be read" }
+
+  - name: buckets
+    title: SeaweedFS buckets, quotas and anonymous access
+    description: >-
+      Every collection with volumes on the master (a bucket's volumes are its collection)
+      with bytes used, the filer entry's quota (state, limit, percent used) and the names
+      of its extended attributes, and whether an unauthenticated S3 list of the bucket is
+      allowed or denied; plus whether an unauthenticated ListBuckets is allowed. The
+      anonymous probes are unauthenticated GETs through the pod proxy; nothing is
+      written. Names only, never attribute values.
+    script: scripts/buckets.py
+    tags: [seaweedfs, storage, s3, buckets, quota, anonymous]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    settings:
+      maxBuckets: { type: integer, default: 50, min: 1, max: 500, description: "Most buckets inspected (two requests each); the output says how many there were" }
+    inputs:
+      release: { type: string, required: false, description: "app.kubernetes.io/instance of the release (see cluster-status)" }
+    outputs:
+      buckets: { schema: ./schemas/buckets.v1.json, description: "Per bucket usage, quota and anonymous list result" }
+      gateway: { schema: ./schemas/gateway.v1.json, description: "S3 gateway pods and whether an unauthenticated ListBuckets is allowed" }
+
+  - name: s3-check
+    title: S3 gateway write check
+    description: >-
+      Puts one small object to a dedicated bucket (runwhen-s3-check, created if absent and
+      removed again) through the S3 gateway, reads it back and compares it, deletes it and
+      confirms it is gone, then removes the bucket if this run created it. Requests go
+      through the API server's pod proxy WITHOUT credentials: the task holds no S3 key and
+      never reads Secrets. A gateway that refuses an anonymous write (HTTP 401/403) makes
+      the task skip with that reason and nothing is written; a gateway that accepts it is
+      reported as anonymousWrite true. The cleanup always runs. A dry run only lists the
+      bucket (a read) and reports the plan.
+    script: scripts/s3_check.py
+    tags: [seaweedfs, storage, s3, write, probe]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    effects:
+      - "Creates the bucket given by the bucket input (default runwhen-s3-check) when it does not exist, and deletes it again at the end of the same run."
+      - "Writes one object of about 40 bytes under runwhen-s3-check/ in that bucket, then deletes it. In a bucket that already existed only this object is touched."
+      - "Collection volumes the gateway allocates for a new bucket take free volume slots until the bucket is deleted."
+      - "Every request is made without S3 credentials, so a gateway that has identities configured refuses it and the task is skipped; one that accepts anonymous writes accepts this one."
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get, update, delete] }
+    inputs:
+      release: { type: string, required: false, description: "app.kubernetes.io/instance of the release (see cluster-status)" }
+      bucket: { type: string, default: runwhen-s3-check, description: "Bucket to probe in: created and removed by this run when absent. An existing bucket is never deleted, only the probe object in it" }
+    outputs:
+      probe: { schema: ./schemas/probe.v1.json, description: "Steps taken, whether the object read back matched, anonymous write acceptance and whether the cleanup left anything" }

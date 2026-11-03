@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS master leadership",
+  "description": "Per master pod: /cluster/healthz (ok, or unhealthy when the pod answered with an error status), whether it claims leadership, the leader it names, and raft peers (null when the master does not report Peers, as a single master does). leaderCount is how many queried masters claim leadership (1 is normal); leaderAgreement is whether every queried master names the same leader (null when none was queried). A master that was not queried has queried false and the reason.",
+  "type": "object",
+  "properties": {
+    "podCount": {
+      "type": "integer"
+    },
+    "queriedCount": {
+      "type": "integer"
+    },
+    "leaderCount": {
+      "type": "integer"
+    },
+    "leaders": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50
+    },
+    "leaderReported": {
+      "type": "boolean"
+    },
+    "leaderAgreement": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "queried": {
+            "type": "boolean"
+          },
+          "notQueriedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "healthz": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isLeader": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "leader": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "peers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "peerCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "maxVolumeId": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pod",
+          "queried",
+          "notQueriedReason",
+          "healthz",
+          "isLeader",
+          "leader",
+          "peers",
+          "peerCount",
+          "maxVolumeId"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    }
+  },
+  "required": [
+    "podCount",
+    "queriedCount",
+    "leaderCount",
+    "leaders",
+    "leaderReported",
+    "leaderAgreement",
+    "members"
+  ],
+  "additionalProperties": false
+}
