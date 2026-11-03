@@ -669,17 +669,10 @@ def named(items, name):
     return next(i for i in items if i["metadata"]["name"] == name)
 
 
-def script(name, now=CAPTURED):
+def script(name):
     spec = importlib.util.spec_from_file_location(f"cj_{name}", SKILL / "scripts" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-
-    class At(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
-
-    module.datetime = At
     return module.main
 
 
@@ -747,9 +740,9 @@ def run(
     task, name, fail=None, code="permission_denied", now=CAPTURED, settings=None, res=None, **inputs
 ):
     """(envelope, calls) for a task run on cronjob `name`."""
-    with make_context(resource=res or resource(name), settings=settings or SETTINGS) as tc:
+    with make_context(resource=res or resource(name), settings=settings or SETTINGS, now=now) as tc:
         calls = stub_commands(tc, stubs(name, fail, code))
-        env = run_main(script(task, now), tc, **inputs)
+        env = run_main(script(task), tc, **inputs)
     return env, calls
 
 
@@ -1026,7 +1019,7 @@ def test_a_schedule_that_cannot_be_evaluated_is_an_error_with_the_other_facts_ke
     broken["spec"]["schedule"] = "61 * * * *"
     stub = stubs("paused")
     stub[argvs("paused")["cronjob"]] = (0, json.dumps(broken), "")
-    with make_context(resource=resource("paused"), settings=SETTINGS) as tc:
+    with make_context(resource=resource("paused"), settings=SETTINGS, now=CAPTURED) as tc:
         stub_commands(tc, stub)
         env = run_main(script("schedule_health"), tc)
     assert env["status"] == "partial" and codes(env) == [("internal", "schedule")]
@@ -1040,7 +1033,7 @@ def test_a_schedule_that_never_fires_is_a_scoped_error_with_the_facts_kept():
     never["spec"]["schedule"] = "0 0 31 2 *"
     stub = stubs("ok-every-minute")
     stub[argvs("ok-every-minute")["cronjob"]] = (0, json.dumps(never), "")
-    with make_context(resource=resource("ok-every-minute"), settings=SETTINGS) as tc:
+    with make_context(resource=resource("ok-every-minute"), settings=SETTINGS, now=CAPTURED) as tc:
         stub_commands(tc, stub)
         env = run_main(script("schedule_health"), tc)
     assert env["status"] == "partial" and codes(env) == [("invalid_input", "schedule")]
@@ -1080,7 +1073,7 @@ def test_since_accepts_milliseconds_and_combinations():
 def test_an_error_message_is_bounded():
     stub = stubs("always-fails")
     stub[argvs("always-fails")["pods"]] = (1, "", "Error from server (Forbidden): " + "x" * 5000)
-    with make_context(resource=resource("always-fails"), settings=SETTINGS) as tc:
+    with make_context(resource=resource("always-fails"), settings=SETTINGS, now=CAPTURED) as tc:
         stub_commands(tc, stub)
         env = run_main(script("recent_runs"), tc)
     assert env["status"] == "partial" and len(env["errors"][0]["message"]) <= 1024
@@ -1171,3 +1164,25 @@ def test_rbac_needs_maps_the_verbs():
 def test_both_tasks_only_read():
     assert all(t["readOnly"] is True for t in TASKS)
     assert all(v in ("get", "list") for t in TASK_SCRIPTS for (_, _, v) in granted(t))
+
+
+def test_the_reference_time_comes_from_ctx_now_and_the_wall_clock_is_only_a_fallback():
+    env, _ = run("schedule_health", "paused", now=at("2026-11-03T19:55:15Z"))
+    assert env["outputs"]["schedule"]["lastExpectedFire"] == "2026-11-03T19:55:00Z"
+    env, _ = run("schedule_health", "paused", now=at("2026-11-03T21:02:00Z"))
+    assert env["outputs"]["schedule"]["lastExpectedFire"] == "2026-11-03T21:00:00Z"
+
+    class NoNow:  # a stand-in context from before ctx.now existed
+        def __init__(self, ctx):
+            self._ctx = ctx
+
+        def __getattr__(self, name):
+            if name == "now":
+                raise AttributeError(name)
+            return getattr(self._ctx, name)
+
+    with make_context(resource=resource("paused"), settings=SETTINGS) as tc:
+        stub_commands(tc, stubs("paused"))
+        with tc.environ():
+            out = script("schedule_health")(NoNow(tc.ctx))
+    assert out["schedule"]["suspended"] is True

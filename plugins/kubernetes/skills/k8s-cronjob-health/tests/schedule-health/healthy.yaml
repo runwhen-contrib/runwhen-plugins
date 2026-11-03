@@ -1,9 +1,10 @@
 # Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
 # tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
-# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-cron/cronjobs/ok-every-minute
-inputs:
-  since: 3650d
+now: '2026-11-03T20:44:54.913Z'
 calls:
 - argv:
   - kubectl
@@ -23,12 +24,12 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"ok-every-minute\",\"namespace\":\"rw-cron\"},\"spec\":{\"failedJobsHistoryLimit\":1,\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo ok\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"* * * * *\",\"successfulJobsHistoryLimit\":3}}\n"
             },
-            "creationTimestamp": "2026-11-03T19:50:14Z",
+            "creationTimestamp": "2026-11-03T20:06:13Z",
             "generation": 1,
             "name": "ok-every-minute",
             "namespace": "rw-cron",
-            "resourceVersion": "16749",
-            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+            "resourceVersion": "24077",
+            "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
         },
         "spec": {
             "concurrencyPolicy": "Allow",
@@ -69,8 +70,8 @@ calls:
             "suspend": false
         },
         "status": {
-            "lastScheduleTime": "2026-11-03T20:01:00Z",
-            "lastSuccessfulTime": "2026-11-03T20:01:03Z"
+            "lastScheduleTime": "2026-11-03T20:44:00Z",
+            "lastSuccessfulTime": "2026-11-03T20:44:03Z"
         }
     }
   stderr: ''
@@ -81,7 +82,7 @@ calls:
   - get
   - events
   - --field-selector
-  - involvedObject.uid=7c5a8267-a6d2-4d7a-9698-d45ccabe9b68
+  - involvedObject.uid=66898261-c2de-4c4e-b640-8cf1184c56db
   - -o
   - json
   rc: 0
@@ -93,24 +94,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:51:00Z",
+                "firstTimestamp": "2026-11-03T20:07:00Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15027",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "17748",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:51:00Z",
-                "message": "Created job ok-every-minute-29895591",
+                "lastTimestamp": "2026-11-03T20:07:00Z",
+                "message": "Created job ok-every-minute-29895607",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:51:00Z",
-                    "name": "ok-every-minute.18e4a0e5bbb83f5e",
+                    "creationTimestamp": "2026-11-03T20:07:00Z",
+                    "name": "ok-every-minute.18e4a1c54be685ef",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15121",
-                    "uid": "c14b7c82-8004-4c62-9721-00f82f22c944"
+                    "resourceVersion": "17827",
+                    "uid": "60b1ec39-0d19-4d3f-91ca-68ac51f66d42"
                 },
                 "reason": "SuccessfulCreate",
                 "reportingComponent": "cronjob-controller",
@@ -124,24 +125,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:51:05Z",
+                "firstTimestamp": "2026-11-03T20:07:04Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15119",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "17820",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:51:05Z",
-                "message": "Saw completed job: ok-every-minute-29895591, condition: Complete",
+                "lastTimestamp": "2026-11-03T20:07:04Z",
+                "message": "Saw completed job: ok-every-minute-29895607, condition: Complete",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:51:05Z",
-                    "name": "ok-every-minute.18e4a0e6efb05e04",
+                    "creationTimestamp": "2026-11-03T20:07:04Z",
+                    "name": "ok-every-minute.18e4a1c641fb54e2",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15180",
-                    "uid": "b9b1d61a-5261-4baa-a35e-aebffb74652f"
+                    "resourceVersion": "17879",
+                    "uid": "a2bb35ce-4afe-4f68-8222-2a02880ae7aa"
                 },
                 "reason": "SawCompletedJob",
                 "reportingComponent": "cronjob-controller",
@@ -155,24 +156,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:52:00Z",
+                "firstTimestamp": "2026-11-03T20:08:00Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15179",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "17877",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:52:00Z",
-                "message": "Created job ok-every-minute-29895592",
+                "lastTimestamp": "2026-11-03T20:08:00Z",
+                "message": "Created job ok-every-minute-29895608",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:52:00Z",
-                    "name": "ok-every-minute.18e4a0f3b11e9fa1",
+                    "creationTimestamp": "2026-11-03T20:08:00Z",
+                    "name": "ok-every-minute.18e4a1d335b31c3f",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15273",
-                    "uid": "74f8c8c5-cbc7-4cd2-a49f-648a922163a2"
+                    "resourceVersion": "18000",
+                    "uid": "58ddf01d-4e10-4219-b7ae-d35bee3d3782"
                 },
                 "reason": "SuccessfulCreate",
                 "reportingComponent": "cronjob-controller",
@@ -186,24 +187,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:52:03Z",
+                "firstTimestamp": "2026-11-03T20:08:04Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15271",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "17998",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:52:03Z",
-                "message": "Saw completed job: ok-every-minute-29895592, condition: Complete",
+                "lastTimestamp": "2026-11-03T20:08:04Z",
+                "message": "Saw completed job: ok-every-minute-29895608, condition: Complete",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:52:03Z",
-                    "name": "ok-every-minute.18e4a0f47b400734",
+                    "creationTimestamp": "2026-11-03T20:08:04Z",
+                    "name": "ok-every-minute.18e4a1d4239b1f56",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15310",
-                    "uid": "930c3c1c-4dbb-47b3-ad42-5848736bbe2a"
+                    "resourceVersion": "18036",
+                    "uid": "e1caaed1-0018-4187-b6d8-83e9aba4e2b6"
                 },
                 "reason": "SawCompletedJob",
                 "reportingComponent": "cronjob-controller",
@@ -217,24 +218,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:53:00Z",
+                "firstTimestamp": "2026-11-03T20:09:00Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15309",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18037",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:53:00Z",
-                "message": "Created job ok-every-minute-29895593",
+                "lastTimestamp": "2026-11-03T20:09:00Z",
+                "message": "Created job ok-every-minute-29895609",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:53:00Z",
-                    "name": "ok-every-minute.18e4a101aa4bad75",
+                    "creationTimestamp": "2026-11-03T20:09:00Z",
+                    "name": "ok-every-minute.18e4a1e131151b3c",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15429",
-                    "uid": "53b4783c-c415-44a8-a1d4-cc429423fff6"
+                    "resourceVersion": "18302",
+                    "uid": "1ac07816-2d24-40ff-a82a-39b3bad1b4a5"
                 },
                 "reason": "SuccessfulCreate",
                 "reportingComponent": "cronjob-controller",
@@ -248,24 +249,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:53:04Z",
+                "firstTimestamp": "2026-11-03T20:09:04Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15430",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18300",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:53:04Z",
-                "message": "Saw completed job: ok-every-minute-29895593, condition: Complete",
+                "lastTimestamp": "2026-11-03T20:09:04Z",
+                "message": "Saw completed job: ok-every-minute-29895609, condition: Complete",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:53:04Z",
-                    "name": "ok-every-minute.18e4a102a28773c5",
+                    "creationTimestamp": "2026-11-03T20:09:04Z",
+                    "name": "ok-every-minute.18e4a1e2471779aa",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15482",
-                    "uid": "662097d5-9c57-4d6f-b343-7421af6c4691"
+                    "resourceVersion": "18350",
+                    "uid": "dbbb3804-b621-43a6-af00-554c1eb442be"
                 },
                 "reason": "SawCompletedJob",
                 "reportingComponent": "cronjob-controller",
@@ -279,24 +280,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:54:00Z",
+                "firstTimestamp": "2026-11-03T20:10:00Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15481",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18349",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:54:00Z",
-                "message": "Created job ok-every-minute-29895594",
+                "lastTimestamp": "2026-11-03T20:10:00Z",
+                "message": "Created job ok-every-minute-29895610",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:54:00Z",
-                    "name": "ok-every-minute.18e4a10fa3bb5540",
+                    "creationTimestamp": "2026-11-03T20:10:00Z",
+                    "name": "ok-every-minute.18e4a1ef2b9215a5",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15624",
-                    "uid": "111a2787-8338-439a-ad17-9835e279ff9a"
+                    "resourceVersion": "18456",
+                    "uid": "b48fbfb0-8350-48d8-91a2-2473ab3fc2a1"
                 },
                 "reason": "SuccessfulCreate",
                 "reportingComponent": "cronjob-controller",
@@ -310,24 +311,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:54:04Z",
+                "firstTimestamp": "2026-11-03T20:10:04Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15623",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18455",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:54:04Z",
-                "message": "Deleted job ok-every-minute-29895591",
+                "lastTimestamp": "2026-11-03T20:10:04Z",
+                "message": "Deleted job ok-every-minute-29895607",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:54:04Z",
-                    "name": "ok-every-minute.18e4a110a5b9b290",
+                    "creationTimestamp": "2026-11-03T20:10:04Z",
+                    "name": "ok-every-minute.18e4a1f01cb352b5",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15668",
-                    "uid": "3f3aaa38-43ce-45cd-a19c-39650102158b"
+                    "resourceVersion": "18505",
+                    "uid": "b96d1249-84dd-4b00-9895-8f46baaf6b8f"
                 },
                 "reason": "SuccessfulDelete",
                 "reportingComponent": "cronjob-controller",
@@ -341,24 +342,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:54:04Z",
+                "firstTimestamp": "2026-11-03T20:10:04Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15623",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18455",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:54:04Z",
-                "message": "Saw completed job: ok-every-minute-29895594, condition: Complete",
+                "lastTimestamp": "2026-11-03T20:10:04Z",
+                "message": "Saw completed job: ok-every-minute-29895610, condition: Complete",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:54:04Z",
-                    "name": "ok-every-minute.18e4a110a5b9d2ca",
+                    "creationTimestamp": "2026-11-03T20:10:04Z",
+                    "name": "ok-every-minute.18e4a1f01cb3a8f9",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15670",
-                    "uid": "86f27c40-97ac-4531-b24a-75491b418559"
+                    "resourceVersion": "18506",
+                    "uid": "4cc7517b-5125-4496-8494-3d47839d11b2"
                 },
                 "reason": "SawCompletedJob",
                 "reportingComponent": "cronjob-controller",
@@ -372,24 +373,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:55:00Z",
+                "firstTimestamp": "2026-11-03T20:11:00Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15666",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18502",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:55:00Z",
-                "message": "Created job ok-every-minute-29895595",
+                "lastTimestamp": "2026-11-03T20:11:00Z",
+                "message": "Created job ok-every-minute-29895611",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:55:00Z",
-                    "name": "ok-every-minute.18e4a11d9d11c71b",
+                    "creationTimestamp": "2026-11-03T20:11:00Z",
+                    "name": "ok-every-minute.18e4a1fd25e9af88",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15780",
-                    "uid": "2708352b-13d0-43e1-88d3-dbf1fe416bbd"
+                    "resourceVersion": "18606",
+                    "uid": "200b1b6b-dee5-4d85-a2ef-586bd4726607"
                 },
                 "reason": "SuccessfulCreate",
                 "reportingComponent": "cronjob-controller",
@@ -403,396 +404,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:55:04Z",
+                "firstTimestamp": "2026-11-03T20:11:06Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15772",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18604",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:55:04Z",
-                "message": "Deleted job ok-every-minute-29895592",
+                "lastTimestamp": "2026-11-03T20:11:06Z",
+                "message": "Deleted job ok-every-minute-29895608",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:55:04Z",
-                    "name": "ok-every-minute.18e4a11e9af39ef1",
+                    "creationTimestamp": "2026-11-03T20:11:06Z",
+                    "name": "ok-every-minute.18e4a1feb5edc9e6",
                     "namespace": "rw-cron",
-                    "resourceVersion": "15820",
-                    "uid": "1991ce60-b3ce-4ea6-abc8-b1c6a06069c4"
-                },
-                "reason": "SuccessfulDelete",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:55:04Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15772",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:55:04Z",
-                "message": "Saw completed job: ok-every-minute-29895595, condition: Complete",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:55:04Z",
-                    "name": "ok-every-minute.18e4a11e9af3b926",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15821",
-                    "uid": "baa3b28b-e9c9-4489-bcf9-e950d9c6172f"
-                },
-                "reason": "SawCompletedJob",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:56:00Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15819",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:56:00Z",
-                "message": "Created job ok-every-minute-29895596",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:56:00Z",
-                    "name": "ok-every-minute.18e4a12b96d149c6",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15911",
-                    "uid": "5879a151-aaee-4d4f-81de-32e775e3b4d0"
-                },
-                "reason": "SuccessfulCreate",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:56:06Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15912",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:56:06Z",
-                "message": "Deleted job ok-every-minute-29895593",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:56:06Z",
-                    "name": "ok-every-minute.18e4a12d0b7f85b7",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15964",
-                    "uid": "20dd28cd-0585-4301-a26e-d6b779cc0f95"
-                },
-                "reason": "SuccessfulDelete",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:56:06Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15912",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:56:06Z",
-                "message": "Saw completed job: ok-every-minute-29895596, condition: Complete",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:56:06Z",
-                    "name": "ok-every-minute.18e4a12d0b8051a7",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15967",
-                    "uid": "981a60ad-408e-40ef-8b2d-2993333c5367"
-                },
-                "reason": "SawCompletedJob",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:57:00Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "15965",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:57:00Z",
-                "message": "Created job ok-every-minute-29895597",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:57:00Z",
-                    "name": "ok-every-minute.18e4a13997e6262a",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16124",
-                    "uid": "d7eefbdc-8f15-4121-b4c7-b91b1aa9fdb7"
-                },
-                "reason": "SuccessfulCreate",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:57:06Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16123",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:57:06Z",
-                "message": "Deleted job ok-every-minute-29895594",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:57:06Z",
-                    "name": "ok-every-minute.18e4a13af4b6bbf4",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16173",
-                    "uid": "7749ea19-ca88-4d15-8f3c-59d57463dedb"
-                },
-                "reason": "SuccessfulDelete",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:57:06Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16123",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:57:06Z",
-                "message": "Saw completed job: ok-every-minute-29895597, condition: Complete",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:57:06Z",
-                    "name": "ok-every-minute.18e4a13af4b6f3f2",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16174",
-                    "uid": "f4e0c27b-0f8d-4fd9-b456-706376babbf1"
-                },
-                "reason": "SawCompletedJob",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:58:00Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16169",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:58:00Z",
-                "message": "Created job ok-every-minute-29895598",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:58:00Z",
-                    "name": "ok-every-minute.18e4a147958e548a",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16272",
-                    "uid": "ef851733-da02-4839-8eb8-65b923dbfb5f"
-                },
-                "reason": "SuccessfulCreate",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:58:04Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16273",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:58:04Z",
-                "message": "Deleted job ok-every-minute-29895595",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:58:04Z",
-                    "name": "ok-every-minute.18e4a1488db4dd07",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16316",
-                    "uid": "287b75c4-bc29-4f2f-82e8-8e97acf731fc"
-                },
-                "reason": "SuccessfulDelete",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:58:04Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16273",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:58:04Z",
-                "message": "Saw completed job: ok-every-minute-29895598, condition: Complete",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:58:04Z",
-                    "name": "ok-every-minute.18e4a1488db55813",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16320",
-                    "uid": "3bd704a6-ad95-457d-b49c-937c2e13ac1d"
-                },
-                "reason": "SawCompletedJob",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:59:00Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16317",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:59:00Z",
-                "message": "Created job ok-every-minute-29895599",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:59:00Z",
-                    "name": "ok-every-minute.18e4a1557b494ce1",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16430",
-                    "uid": "ff27d9aa-48b9-45e5-939b-004351c9625e"
-                },
-                "reason": "SuccessfulCreate",
-                "reportingComponent": "cronjob-controller",
-                "reportingInstance": "",
-                "source": {
-                    "component": "cronjob-controller"
-                },
-                "type": "Normal"
-            },
-            {
-                "apiVersion": "v1",
-                "count": 1,
-                "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:59:04Z",
-                "involvedObject": {
-                    "apiVersion": "batch/v1",
-                    "kind": "CronJob",
-                    "name": "ok-every-minute",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16429",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
-                },
-                "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:59:04Z",
-                "message": "Deleted job ok-every-minute-29895596",
-                "metadata": {
-                    "creationTimestamp": "2026-11-03T19:59:04Z",
-                    "name": "ok-every-minute.18e4a15671d4d65c",
-                    "namespace": "rw-cron",
-                    "resourceVersion": "16472",
-                    "uid": "e57e1778-40c2-43a5-9a70-c1d373c50155"
+                    "resourceVersion": "18663",
+                    "uid": "56bbf605-c135-46c8-b13a-fafea5954f3f"
                 },
                 "reason": "SuccessfulDelete",
                 "reportingComponent": "cronjob-controller",
@@ -806,24 +435,24 @@ calls:
                 "apiVersion": "v1",
                 "count": 2,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T19:59:04Z",
+                "firstTimestamp": "2026-11-03T20:11:06Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "16429",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18604",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T19:59:04Z",
-                "message": "Saw completed job: ok-every-minute-29895599, condition: Complete",
+                "lastTimestamp": "2026-11-03T20:11:06Z",
+                "message": "Saw completed job: ok-every-minute-29895611, condition: Complete",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:59:04Z",
-                    "name": "ok-every-minute.18e4a15671d542ec",
+                    "creationTimestamp": "2026-11-03T20:11:06Z",
+                    "name": "ok-every-minute.18e4a1feb5ee0ad7",
                     "namespace": "rw-cron",
-                    "resourceVersion": "16478",
-                    "uid": "62b351e3-41df-4568-88bd-f8eec93f74b1"
+                    "resourceVersion": "18665",
+                    "uid": "15391fe6-bea7-487e-bd2a-940773d13bf2"
                 },
                 "reason": "SawCompletedJob",
                 "reportingComponent": "cronjob-controller",
@@ -837,27 +466,27 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T20:00:00Z",
+                "firstTimestamp": "2026-11-03T20:12:00Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "16471",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18661",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T20:00:00Z",
-                "message": "(combined from similar events): Created job ok-every-minute-29895600",
+                "lastTimestamp": "2026-11-03T20:12:00Z",
+                "message": "Created job ok-every-minute-29895612",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:00:00Z",
-                    "name": "ok-every-minute.18e4a16379725472",
+                    "creationTimestamp": "2026-11-03T20:12:00Z",
+                    "name": "ok-every-minute.18e4a20b404231b2",
                     "namespace": "rw-cron",
-                    "resourceVersion": "16573",
-                    "uid": "e1cc19c7-0eaf-4fdd-a743-53acd05e307a"
+                    "resourceVersion": "18755",
+                    "uid": "01848525-3dd1-44dc-9126-bbda7b515236"
                 },
                 "reason": "SuccessfulCreate",
-                "reportingComponent": "",
+                "reportingComponent": "cronjob-controller",
                 "reportingInstance": "",
                 "source": {
                     "component": "cronjob-controller"
@@ -868,27 +497,368 @@ calls:
                 "apiVersion": "v1",
                 "count": 1,
                 "eventTime": null,
-                "firstTimestamp": "2026-11-03T20:01:03Z",
+                "firstTimestamp": "2026-11-03T20:12:06Z",
                 "involvedObject": {
                     "apiVersion": "batch/v1",
                     "kind": "CronJob",
                     "name": "ok-every-minute",
                     "namespace": "rw-cron",
-                    "resourceVersion": "16703",
-                    "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                    "resourceVersion": "18756",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                 },
                 "kind": "Event",
-                "lastTimestamp": "2026-11-03T20:01:03Z",
-                "message": "Deleted job ok-every-minute-29895598",
+                "lastTimestamp": "2026-11-03T20:12:06Z",
+                "message": "Deleted job ok-every-minute-29895609",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:01:03Z",
-                    "name": "ok-every-minute.18e4a17223d9017d",
+                    "creationTimestamp": "2026-11-03T20:12:06Z",
+                    "name": "ok-every-minute.18e4a20c76c502cb",
                     "namespace": "rw-cron",
-                    "resourceVersion": "16748",
-                    "uid": "1f22c139-c168-48b7-8385-01f3304af5db"
+                    "resourceVersion": "18809",
+                    "uid": "a219699c-c4f9-4624-8b4d-b2af68c9f3a4"
                 },
                 "reason": "SuccessfulDelete",
                 "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:12:06Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18756",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:12:06Z",
+                "message": "Saw completed job: ok-every-minute-29895612, condition: Complete",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:12:06Z",
+                    "name": "ok-every-minute.18e4a20c76c51365",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18812",
+                    "uid": "9fc18867-4b4e-48ad-a893-bd6ad844f52c"
+                },
+                "reason": "SawCompletedJob",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:13:00Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18807",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:13:00Z",
+                "message": "Created job ok-every-minute-29895613",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:13:00Z",
+                    "name": "ok-every-minute.18e4a21917b998c4",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18910",
+                    "uid": "8c45a82b-0101-4a5d-beb9-b4fdeb33e708"
+                },
+                "reason": "SuccessfulCreate",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:13:05Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18912",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:13:05Z",
+                "message": "Deleted job ok-every-minute-29895610",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:13:05Z",
+                    "name": "ok-every-minute.18e4a21a430414a5",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18964",
+                    "uid": "86fcf99f-cad8-4c95-aa77-ba82362eef71"
+                },
+                "reason": "SuccessfulDelete",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:13:05Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18912",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:13:05Z",
+                "message": "Saw completed job: ok-every-minute-29895613, condition: Complete",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:13:05Z",
+                    "name": "ok-every-minute.18e4a21a43043ea3",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18969",
+                    "uid": "25116288-293c-48f9-891f-2b0a0ad11988"
+                },
+                "reason": "SawCompletedJob",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:14:00Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "18962",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:14:00Z",
+                "message": "Created job ok-every-minute-29895614",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:14:00Z",
+                    "name": "ok-every-minute.18e4a2270acd5e9a",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19080",
+                    "uid": "43a46313-983b-4ee5-9ed9-037ee0725ddd"
+                },
+                "reason": "SuccessfulCreate",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:14:07Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19082",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:14:07Z",
+                "message": "Deleted job ok-every-minute-29895611",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:14:07Z",
+                    "name": "ok-every-minute.18e4a228a3038418",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19143",
+                    "uid": "409fe9a2-e2d2-4e6a-92a0-a39ea1d152ab"
+                },
+                "reason": "SuccessfulDelete",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:14:07Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19082",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:14:07Z",
+                "message": "Saw completed job: ok-every-minute-29895614, condition: Complete",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:14:07Z",
+                    "name": "ok-every-minute.18e4a228a303c4e0",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19145",
+                    "uid": "28b5af7d-f0bf-43b4-a222-cab15c30dd38"
+                },
+                "reason": "SawCompletedJob",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:15:00Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19144",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:15:00Z",
+                "message": "Created job ok-every-minute-29895615",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:15:00Z",
+                    "name": "ok-every-minute.18e4a23500db2297",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19236",
+                    "uid": "f682d4d1-232c-4022-bea7-898cd82a75de"
+                },
+                "reason": "SuccessfulCreate",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:15:06Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19235",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:15:06Z",
+                "message": "Deleted job ok-every-minute-29895612",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:15:06Z",
+                    "name": "ok-every-minute.18e4a23665331749",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19288",
+                    "uid": "edad64a4-5598-46ca-9629-76371f08f92e"
+                },
+                "reason": "SuccessfulDelete",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:17:03Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19505",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:17:03Z",
+                "message": "Deleted job ok-every-minute-29895614",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:17:03Z",
+                    "name": "ok-every-minute.18e4a251d552faca",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "19549",
+                    "uid": "f336d426-aab6-4bbf-a49d-8c057aa7b051"
+                },
+                "reason": "SuccessfulDelete",
+                "reportingComponent": "cronjob-controller",
+                "reportingInstance": "",
+                "source": {
+                    "component": "cronjob-controller"
+                },
+                "type": "Normal"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 24,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T20:19:03Z",
+                "involvedObject": {
+                    "apiVersion": "batch/v1",
+                    "kind": "CronJob",
+                    "name": "ok-every-minute",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "20205",
+                    "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T20:42:03Z",
+                "message": "(combined from similar events): Deleted job ok-every-minute-29895639",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T20:22:07Z",
+                    "name": "ok-every-minute.18e4a26d9bb6eb8b",
+                    "namespace": "rw-cron",
+                    "resourceVersion": "23753",
+                    "uid": "c07a2cde-78b5-446c-8cc8-5441831855f4"
+                },
+                "reason": "SuccessfulDelete",
+                "reportingComponent": "",
                 "reportingInstance": "",
                 "source": {
                     "component": "cronjob-controller"
@@ -908,12 +878,18 @@ expect:
   outputs:
     schedule:
       suspended: false
-      schedule: '* * * * *'
+      schedule: "* * * * *"
       timeZone: null
-      concurrencyPolicy: Allow
+      concurrencyPolicy: "Allow"
       startingDeadlineSeconds: null
       activeCount: 0
       forbidBlocked: false
-      evaluatedTimeZone: UTC
+      evaluatedTimeZone: "UTC"
+      lastExpectedFire: "2026-11-03T20:44:00Z"
+      nextExpectedFire: "2026-11-03T20:45:00Z"
+      missedFires: 0
+      behindSchedule: false
+      missedSince: false
+      neverFires: false
     activeJobs: []
     events: []

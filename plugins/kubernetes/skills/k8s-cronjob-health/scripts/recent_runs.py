@@ -16,7 +16,7 @@ def main(ctx, since="24h"):
     check_settings(ctx, "max_items")
     cronjob = load_cronjob(ctx)
     jobs = list_jobs(ctx)
-    now = datetime.now(timezone.utc)
+    now = ctx.now() if hasattr(ctx, "now") else datetime.now(timezone.utc)
     # the pods only say how each run's containers ended: skipped when the CronJob has no Jobs
     pods = list_pods_of_jobs_secondary(ctx) if owned_jobs(jobs, cronjob) else []
     runs, counts = recent_runs(cronjob, jobs, pods, since, now)

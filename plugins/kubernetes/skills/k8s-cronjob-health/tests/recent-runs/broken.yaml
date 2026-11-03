@@ -1,9 +1,10 @@
 # Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
 # tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
-# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-cron/cronjobs/always-fails
-inputs:
-  since: 3650d
+now: '2026-11-03T20:45:05.016Z'
 calls:
 - argv:
   - kubectl
@@ -23,12 +24,12 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"CronJob\",\"metadata\":{\"annotations\":{},\"name\":\"always-fails\",\"namespace\":\"rw-cron\"},\"spec\":{\"failedJobsHistoryLimit\":3,\"jobTemplate\":{\"spec\":{\"backoffLimit\":0,\"template\":{\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo about to fail; exit 3\"],\"image\":\"busybox:1.36\",\"name\":\"job\"}],\"restartPolicy\":\"Never\"}}}},\"schedule\":\"* * * * *\",\"successfulJobsHistoryLimit\":1}}\n"
             },
-            "creationTimestamp": "2026-11-03T19:50:14Z",
+            "creationTimestamp": "2026-11-03T20:06:13Z",
             "generation": 1,
             "name": "always-fails",
             "namespace": "rw-cron",
-            "resourceVersion": "16881",
-            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+            "resourceVersion": "24240",
+            "uid": "a30ce8ad-b6ca-471e-87f6-7cf81d24f825"
         },
         "spec": {
             "concurrencyPolicy": "Allow",
@@ -69,7 +70,7 @@ calls:
             "suspend": false
         },
         "status": {
-            "lastScheduleTime": "2026-11-03T20:02:00Z"
+            "lastScheduleTime": "2026-11-03T20:45:00Z"
         }
     }
   stderr: ''
@@ -91,17 +92,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:00:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:43:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T20:00:00Z",
+                    "creationTimestamp": "2026-11-03T20:43:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
-                        "batch.kubernetes.io/job-name": "always-fails-29895600",
-                        "controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
-                        "job-name": "always-fails-29895600"
+                        "batch.kubernetes.io/controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f",
+                        "batch.kubernetes.io/job-name": "always-fails-29895643",
+                        "controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f",
+                        "job-name": "always-fails-29895643"
                     },
-                    "name": "always-fails-29895600",
+                    "name": "always-fails-29895643",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -110,11 +111,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "always-fails",
-                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                            "uid": "a30ce8ad-b6ca-471e-87f6-7cf81d24f825"
                         }
                     ],
-                    "resourceVersion": "16612",
-                    "uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a"
+                    "resourceVersion": "23906",
+                    "uid": "d8f98662-2888-4671-9574-c2597b106a3f"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -125,17 +126,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a"
+                            "batch.kubernetes.io/controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
-                                "batch.kubernetes.io/job-name": "always-fails-29895600",
-                                "controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
-                                "job-name": "always-fails-29895600"
+                                "batch.kubernetes.io/controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f",
+                                "batch.kubernetes.io/job-name": "always-fails-29895643",
+                                "controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f",
+                                "job-name": "always-fails-29895643"
                             }
                         },
                         "spec": {
@@ -165,16 +166,16 @@ calls:
                 "status": {
                     "conditions": [
                         {
-                            "lastProbeTime": "2026-11-03T20:00:05Z",
-                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "lastProbeTime": "2026-11-03T20:43:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:03Z",
                             "message": "Job has reached the specified backoff limit",
                             "reason": "BackoffLimitExceeded",
                             "status": "True",
                             "type": "FailureTarget"
                         },
                         {
-                            "lastProbeTime": "2026-11-03T20:00:05Z",
-                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "lastProbeTime": "2026-11-03T20:43:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:03Z",
                             "message": "Job has reached the specified backoff limit",
                             "reason": "BackoffLimitExceeded",
                             "status": "True",
@@ -183,7 +184,7 @@ calls:
                     ],
                     "failed": 1,
                     "ready": 0,
-                    "startTime": "2026-11-03T20:00:00Z",
+                    "startTime": "2026-11-03T20:43:00Z",
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
                 }
@@ -193,17 +194,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:01:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:44:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T20:01:00Z",
+                    "creationTimestamp": "2026-11-03T20:44:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
-                        "batch.kubernetes.io/job-name": "always-fails-29895601",
-                        "controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
-                        "job-name": "always-fails-29895601"
+                        "batch.kubernetes.io/controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3",
+                        "batch.kubernetes.io/job-name": "always-fails-29895644",
+                        "controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3",
+                        "job-name": "always-fails-29895644"
                     },
-                    "name": "always-fails-29895601",
+                    "name": "always-fails-29895644",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -212,11 +213,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "always-fails",
-                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                            "uid": "a30ce8ad-b6ca-471e-87f6-7cf81d24f825"
                         }
                     ],
-                    "resourceVersion": "16744",
-                    "uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b"
+                    "resourceVersion": "24072",
+                    "uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -227,17 +228,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b"
+                            "batch.kubernetes.io/controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
-                                "batch.kubernetes.io/job-name": "always-fails-29895601",
-                                "controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
-                                "job-name": "always-fails-29895601"
+                                "batch.kubernetes.io/controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3",
+                                "batch.kubernetes.io/job-name": "always-fails-29895644",
+                                "controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3",
+                                "job-name": "always-fails-29895644"
                             }
                         },
                         "spec": {
@@ -267,16 +268,16 @@ calls:
                 "status": {
                     "conditions": [
                         {
-                            "lastProbeTime": "2026-11-03T20:01:03Z",
-                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "lastProbeTime": "2026-11-03T20:44:03Z",
+                            "lastTransitionTime": "2026-11-03T20:44:03Z",
                             "message": "Job has reached the specified backoff limit",
                             "reason": "BackoffLimitExceeded",
                             "status": "True",
                             "type": "FailureTarget"
                         },
                         {
-                            "lastProbeTime": "2026-11-03T20:01:03Z",
-                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "lastProbeTime": "2026-11-03T20:44:03Z",
+                            "lastTransitionTime": "2026-11-03T20:44:03Z",
                             "message": "Job has reached the specified backoff limit",
                             "reason": "BackoffLimitExceeded",
                             "status": "True",
@@ -285,7 +286,7 @@ calls:
                     ],
                     "failed": 1,
                     "ready": 0,
-                    "startTime": "2026-11-03T20:01:00Z",
+                    "startTime": "2026-11-03T20:44:00Z",
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
                 }
@@ -295,17 +296,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:02:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:45:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T20:02:00Z",
+                    "creationTimestamp": "2026-11-03T20:45:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
-                        "batch.kubernetes.io/job-name": "always-fails-29895602",
-                        "controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
-                        "job-name": "always-fails-29895602"
+                        "batch.kubernetes.io/controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a",
+                        "batch.kubernetes.io/job-name": "always-fails-29895645",
+                        "controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a",
+                        "job-name": "always-fails-29895645"
                     },
-                    "name": "always-fails-29895602",
+                    "name": "always-fails-29895645",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -314,11 +315,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "always-fails",
-                            "uid": "e66d871a-1ed9-4011-a687-86eeca82510d"
+                            "uid": "a30ce8ad-b6ca-471e-87f6-7cf81d24f825"
                         }
                     ],
-                    "resourceVersion": "16875",
-                    "uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99"
+                    "resourceVersion": "24235",
+                    "uid": "79525afb-5c12-437c-98c1-a43d3512f61a"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -329,17 +330,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99"
+                            "batch.kubernetes.io/controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
-                                "batch.kubernetes.io/job-name": "always-fails-29895602",
-                                "controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
-                                "job-name": "always-fails-29895602"
+                                "batch.kubernetes.io/controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a",
+                                "batch.kubernetes.io/job-name": "always-fails-29895645",
+                                "controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a",
+                                "job-name": "always-fails-29895645"
                             }
                         },
                         "spec": {
@@ -369,16 +370,16 @@ calls:
                 "status": {
                     "conditions": [
                         {
-                            "lastProbeTime": "2026-11-03T20:02:04Z",
-                            "lastTransitionTime": "2026-11-03T20:02:04Z",
+                            "lastProbeTime": "2026-11-03T20:45:02Z",
+                            "lastTransitionTime": "2026-11-03T20:45:02Z",
                             "message": "Job has reached the specified backoff limit",
                             "reason": "BackoffLimitExceeded",
                             "status": "True",
                             "type": "FailureTarget"
                         },
                         {
-                            "lastProbeTime": "2026-11-03T20:02:04Z",
-                            "lastTransitionTime": "2026-11-03T20:02:04Z",
+                            "lastProbeTime": "2026-11-03T20:45:02Z",
+                            "lastTransitionTime": "2026-11-03T20:45:02Z",
                             "message": "Job has reached the specified backoff limit",
                             "reason": "BackoffLimitExceeded",
                             "status": "True",
@@ -387,7 +388,7 @@ calls:
                     ],
                     "failed": 1,
                     "ready": 0,
-                    "startTime": "2026-11-03T20:02:00Z",
+                    "startTime": "2026-11-03T20:45:00Z",
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
                 }
@@ -397,17 +398,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T19:51:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:07:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T19:51:00Z",
+                    "creationTimestamp": "2026-11-03T20:07:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
-                        "batch.kubernetes.io/job-name": "forbid-long-29895591",
-                        "controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
-                        "job-name": "forbid-long-29895591"
+                        "batch.kubernetes.io/controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7",
+                        "batch.kubernetes.io/job-name": "forbid-long-29895607",
+                        "controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7",
+                        "job-name": "forbid-long-29895607"
                     },
-                    "name": "forbid-long-29895591",
+                    "name": "forbid-long-29895607",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -416,11 +417,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "forbid-long",
-                            "uid": "96fc5ac0-9e4f-4af8-bab2-e0d6f84802ff"
+                            "uid": "39a79747-e34c-4f80-8646-fe1736ceb56c"
                         }
                     ],
-                    "resourceVersion": "15160",
-                    "uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+                    "resourceVersion": "17862",
+                    "uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -431,17 +432,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+                            "batch.kubernetes.io/controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
-                                "batch.kubernetes.io/job-name": "forbid-long-29895591",
-                                "controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
-                                "job-name": "forbid-long-29895591"
+                                "batch.kubernetes.io/controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7",
+                                "batch.kubernetes.io/job-name": "forbid-long-29895607",
+                                "controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7",
+                                "job-name": "forbid-long-29895607"
                             }
                         },
                         "spec": {
@@ -471,7 +472,7 @@ calls:
                 "status": {
                     "active": 1,
                     "ready": 1,
-                    "startTime": "2026-11-03T19:51:00Z",
+                    "startTime": "2026-11-03T20:07:00Z",
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
                 }
@@ -481,17 +482,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:00:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:43:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T20:00:00Z",
+                    "creationTimestamp": "2026-11-03T20:43:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
-                        "batch.kubernetes.io/job-name": "ok-every-minute-29895600",
-                        "controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
-                        "job-name": "ok-every-minute-29895600"
+                        "batch.kubernetes.io/controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895643",
+                        "controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc",
+                        "job-name": "ok-every-minute-29895643"
                     },
-                    "name": "ok-every-minute-29895600",
+                    "name": "ok-every-minute-29895643",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -500,11 +501,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "ok-every-minute",
-                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                            "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                         }
                     ],
-                    "resourceVersion": "16613",
-                    "uid": "a381b4f7-8495-4257-a3d2-05c33795590d"
+                    "resourceVersion": "23904",
+                    "uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -515,17 +516,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d"
+                            "batch.kubernetes.io/controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
-                                "batch.kubernetes.io/job-name": "ok-every-minute-29895600",
-                                "controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
-                                "job-name": "ok-every-minute-29895600"
+                                "batch.kubernetes.io/controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895643",
+                                "controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc",
+                                "job-name": "ok-every-minute-29895643"
                             }
                         },
                         "spec": {
@@ -553,19 +554,19 @@ calls:
                     }
                 },
                 "status": {
-                    "completionTime": "2026-11-03T20:00:05Z",
+                    "completionTime": "2026-11-03T20:43:03Z",
                     "conditions": [
                         {
-                            "lastProbeTime": "2026-11-03T20:00:05Z",
-                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "lastProbeTime": "2026-11-03T20:43:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:03Z",
                             "message": "Reached expected number of succeeded pods",
                             "reason": "CompletionsReached",
                             "status": "True",
                             "type": "SuccessCriteriaMet"
                         },
                         {
-                            "lastProbeTime": "2026-11-03T20:00:05Z",
-                            "lastTransitionTime": "2026-11-03T20:00:05Z",
+                            "lastProbeTime": "2026-11-03T20:43:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:03Z",
                             "message": "Reached expected number of succeeded pods",
                             "reason": "CompletionsReached",
                             "status": "True",
@@ -573,7 +574,7 @@ calls:
                         }
                     ],
                     "ready": 0,
-                    "startTime": "2026-11-03T20:00:00Z",
+                    "startTime": "2026-11-03T20:43:00Z",
                     "succeeded": 1,
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
@@ -584,17 +585,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:01:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:44:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T20:01:00Z",
+                    "creationTimestamp": "2026-11-03T20:44:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
-                        "batch.kubernetes.io/job-name": "ok-every-minute-29895601",
-                        "controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
-                        "job-name": "ok-every-minute-29895601"
+                        "batch.kubernetes.io/controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895644",
+                        "controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c",
+                        "job-name": "ok-every-minute-29895644"
                     },
-                    "name": "ok-every-minute-29895601",
+                    "name": "ok-every-minute-29895644",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -603,11 +604,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "ok-every-minute",
-                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                            "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                         }
                     ],
-                    "resourceVersion": "16743",
-                    "uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e"
+                    "resourceVersion": "24071",
+                    "uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -618,17 +619,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e"
+                            "batch.kubernetes.io/controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
-                                "batch.kubernetes.io/job-name": "ok-every-minute-29895601",
-                                "controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
-                                "job-name": "ok-every-minute-29895601"
+                                "batch.kubernetes.io/controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895644",
+                                "controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c",
+                                "job-name": "ok-every-minute-29895644"
                             }
                         },
                         "spec": {
@@ -656,19 +657,19 @@ calls:
                     }
                 },
                 "status": {
-                    "completionTime": "2026-11-03T20:01:03Z",
+                    "completionTime": "2026-11-03T20:44:03Z",
                     "conditions": [
                         {
-                            "lastProbeTime": "2026-11-03T20:01:03Z",
-                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "lastProbeTime": "2026-11-03T20:44:03Z",
+                            "lastTransitionTime": "2026-11-03T20:44:03Z",
                             "message": "Reached expected number of succeeded pods",
                             "reason": "CompletionsReached",
                             "status": "True",
                             "type": "SuccessCriteriaMet"
                         },
                         {
-                            "lastProbeTime": "2026-11-03T20:01:03Z",
-                            "lastTransitionTime": "2026-11-03T20:01:03Z",
+                            "lastProbeTime": "2026-11-03T20:44:03Z",
+                            "lastTransitionTime": "2026-11-03T20:44:03Z",
                             "message": "Reached expected number of succeeded pods",
                             "reason": "CompletionsReached",
                             "status": "True",
@@ -676,7 +677,7 @@ calls:
                         }
                     ],
                     "ready": 0,
-                    "startTime": "2026-11-03T20:01:00Z",
+                    "startTime": "2026-11-03T20:44:00Z",
                     "succeeded": 1,
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
@@ -687,17 +688,17 @@ calls:
                 "kind": "Job",
                 "metadata": {
                     "annotations": {
-                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:02:00Z"
+                        "batch.kubernetes.io/cronjob-scheduled-timestamp": "2026-11-03T20:45:00Z"
                     },
-                    "creationTimestamp": "2026-11-03T20:02:00Z",
+                    "creationTimestamp": "2026-11-03T20:45:00Z",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
-                        "batch.kubernetes.io/job-name": "ok-every-minute-29895602",
-                        "controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
-                        "job-name": "ok-every-minute-29895602"
+                        "batch.kubernetes.io/controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895645",
+                        "controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1",
+                        "job-name": "ok-every-minute-29895645"
                     },
-                    "name": "ok-every-minute-29895602",
+                    "name": "ok-every-minute-29895645",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -706,11 +707,11 @@ calls:
                             "controller": true,
                             "kind": "CronJob",
                             "name": "ok-every-minute",
-                            "uid": "7c5a8267-a6d2-4d7a-9698-d45ccabe9b68"
+                            "uid": "66898261-c2de-4c4e-b640-8cf1184c56db"
                         }
                     ],
-                    "resourceVersion": "16873",
-                    "uid": "742517cf-51a1-4afc-8668-b78b1edf7e27"
+                    "resourceVersion": "24229",
+                    "uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1"
                 },
                 "spec": {
                     "backoffLimit": 0,
@@ -721,17 +722,17 @@ calls:
                     "podReplacementPolicy": "TerminatingOrFailed",
                     "selector": {
                         "matchLabels": {
-                            "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27"
+                            "batch.kubernetes.io/controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1"
                         }
                     },
                     "suspend": false,
                     "template": {
                         "metadata": {
                             "labels": {
-                                "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
-                                "batch.kubernetes.io/job-name": "ok-every-minute-29895602",
-                                "controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
-                                "job-name": "ok-every-minute-29895602"
+                                "batch.kubernetes.io/controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1",
+                                "batch.kubernetes.io/job-name": "ok-every-minute-29895645",
+                                "controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1",
+                                "job-name": "ok-every-minute-29895645"
                             }
                         },
                         "spec": {
@@ -759,19 +760,19 @@ calls:
                     }
                 },
                 "status": {
-                    "completionTime": "2026-11-03T20:02:04Z",
+                    "completionTime": "2026-11-03T20:45:02Z",
                     "conditions": [
                         {
-                            "lastProbeTime": "2026-11-03T20:02:04Z",
-                            "lastTransitionTime": "2026-11-03T20:02:04Z",
+                            "lastProbeTime": "2026-11-03T20:45:02Z",
+                            "lastTransitionTime": "2026-11-03T20:45:02Z",
                             "message": "Reached expected number of succeeded pods",
                             "reason": "CompletionsReached",
                             "status": "True",
                             "type": "SuccessCriteriaMet"
                         },
                         {
-                            "lastProbeTime": "2026-11-03T20:02:04Z",
-                            "lastTransitionTime": "2026-11-03T20:02:04Z",
+                            "lastProbeTime": "2026-11-03T20:45:02Z",
+                            "lastTransitionTime": "2026-11-03T20:45:02Z",
                             "message": "Reached expected number of succeeded pods",
                             "reason": "CompletionsReached",
                             "status": "True",
@@ -779,7 +780,7 @@ calls:
                         }
                     ],
                     "ready": 0,
-                    "startTime": "2026-11-03T20:02:00Z",
+                    "startTime": "2026-11-03T20:45:00Z",
                     "succeeded": 1,
                     "terminating": 0,
                     "uncountedTerminatedPods": {}
@@ -811,16 +812,16 @@ calls:
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:00:00Z",
-                    "generateName": "always-fails-29895600-",
+                    "creationTimestamp": "2026-11-03T20:43:00Z",
+                    "generateName": "always-fails-29895643-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
-                        "batch.kubernetes.io/job-name": "always-fails-29895600",
-                        "controller-uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a",
-                        "job-name": "always-fails-29895600"
+                        "batch.kubernetes.io/controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f",
+                        "batch.kubernetes.io/job-name": "always-fails-29895643",
+                        "controller-uid": "d8f98662-2888-4671-9574-c2597b106a3f",
+                        "job-name": "always-fails-29895643"
                     },
-                    "name": "always-fails-29895600-gchbk",
+                    "name": "always-fails-29895643-cr6mg",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -828,12 +829,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "always-fails-29895600",
-                            "uid": "7b4cca0f-8819-4f10-8419-adafe5a7e18a"
+                            "name": "always-fails-29895643",
+                            "uid": "d8f98662-2888-4671-9574-c2597b106a3f"
                         }
                     ],
-                    "resourceVersion": "16610",
-                    "uid": "0876341b-7368-440f-b0ef-d1cbbd0b8dd6"
+                    "resourceVersion": "23903",
+                    "uid": "e9d425f3-e4d5-460f-b571-15834b4943db"
                 },
                 "spec": {
                     "containers": [
@@ -852,7 +853,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-bx5fk",
+                                    "name": "kube-api-access-dg8bc",
                                     "readOnly": true
                                 }
                             ]
@@ -885,7 +886,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-bx5fk",
+                            "name": "kube-api-access-dg8bc",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -928,7 +929,7 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:04Z",
+                            "lastTransitionTime": "2026-11-03T20:43:02Z",
                             "message": "pod sandbox is not ready",
                             "observedGeneration": 1,
                             "reason": "PodSandboxNotReady",
@@ -937,14 +938,14 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:00Z",
+                            "lastTransitionTime": "2026-11-03T20:43:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "Initialized"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:01Z",
                             "observedGeneration": 1,
                             "reason": "PodFailed",
                             "status": "False",
@@ -952,7 +953,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:01Z",
                             "observedGeneration": 1,
                             "reason": "PodFailed",
                             "status": "False",
@@ -960,7 +961,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:00Z",
+                            "lastTransitionTime": "2026-11-03T20:43:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -968,7 +969,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://e98afba87a7453b2fec9d05aa0351438772afa23c3df45c46794c0232de7f888",
+                            "containerID": "containerd://e52041bccfeccfe72aa90eee249d4f8b770a93cf40ab7ea7315208a8e4db1e29",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -979,11 +980,11 @@ calls:
                             "started": false,
                             "state": {
                                 "terminated": {
-                                    "containerID": "containerd://e98afba87a7453b2fec9d05aa0351438772afa23c3df45c46794c0232de7f888",
+                                    "containerID": "containerd://e52041bccfeccfe72aa90eee249d4f8b770a93cf40ab7ea7315208a8e4db1e29",
                                     "exitCode": 3,
-                                    "finishedAt": "2026-11-03T20:00:02Z",
+                                    "finishedAt": "2026-11-03T20:43:00Z",
                                     "reason": "Error",
-                                    "startedAt": "2026-11-03T20:00:02Z"
+                                    "startedAt": "2026-11-03T20:43:00Z"
                                 }
                             },
                             "user": {
@@ -999,7 +1000,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-bx5fk",
+                                    "name": "kube-api-access-dg8bc",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -1014,31 +1015,31 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Failed",
-                    "podIP": "10.244.0.73",
+                    "podIP": "10.244.0.176",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.73"
+                            "ip": "10.244.0.176"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T20:00:00Z"
+                    "startTime": "2026-11-03T20:43:00Z"
                 }
             },
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:01:00Z",
-                    "generateName": "always-fails-29895601-",
+                    "creationTimestamp": "2026-11-03T20:44:00Z",
+                    "generateName": "always-fails-29895644-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
-                        "batch.kubernetes.io/job-name": "always-fails-29895601",
-                        "controller-uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b",
-                        "job-name": "always-fails-29895601"
+                        "batch.kubernetes.io/controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3",
+                        "batch.kubernetes.io/job-name": "always-fails-29895644",
+                        "controller-uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3",
+                        "job-name": "always-fails-29895644"
                     },
-                    "name": "always-fails-29895601-gwt5l",
+                    "name": "always-fails-29895644-9pjsj",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -1046,12 +1047,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "always-fails-29895601",
-                            "uid": "abf81f3e-773a-4f58-a7cf-18f5ed45fb4b"
+                            "name": "always-fails-29895644",
+                            "uid": "068f9f5f-3ea2-4a0f-bd30-e48ab91efff3"
                         }
                     ],
-                    "resourceVersion": "16742",
-                    "uid": "68f95c2f-db46-462c-b695-869e791edd0f"
+                    "resourceVersion": "24070",
+                    "uid": "37597a0c-62ee-4d40-96d2-1c12cc2b4da9"
                 },
                 "spec": {
                     "containers": [
@@ -1070,7 +1071,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-brc87",
+                                    "name": "kube-api-access-t6xh4",
                                     "readOnly": true
                                 }
                             ]
@@ -1103,7 +1104,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-brc87",
+                            "name": "kube-api-access-t6xh4",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -1146,7 +1147,7 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:02Z",
+                            "lastTransitionTime": "2026-11-03T20:44:02Z",
                             "message": "pod sandbox is not ready",
                             "observedGeneration": 1,
                             "reason": "PodSandboxNotReady",
@@ -1155,14 +1156,14 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:00Z",
+                            "lastTransitionTime": "2026-11-03T20:44:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "Initialized"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:01Z",
+                            "lastTransitionTime": "2026-11-03T20:44:01Z",
                             "observedGeneration": 1,
                             "reason": "PodFailed",
                             "status": "False",
@@ -1170,7 +1171,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:01Z",
+                            "lastTransitionTime": "2026-11-03T20:44:01Z",
                             "observedGeneration": 1,
                             "reason": "PodFailed",
                             "status": "False",
@@ -1178,7 +1179,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:00Z",
+                            "lastTransitionTime": "2026-11-03T20:44:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -1186,7 +1187,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://f96eb54df60a2d2923af7b7ed5a43b198c6d6b2bad9e9ea883f06ce650422ea2",
+                            "containerID": "containerd://9d6680dd2253671640ae9c5d11801232bdabe93329d9d6e854d193b94078a5a7",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -1197,11 +1198,11 @@ calls:
                             "started": false,
                             "state": {
                                 "terminated": {
-                                    "containerID": "containerd://f96eb54df60a2d2923af7b7ed5a43b198c6d6b2bad9e9ea883f06ce650422ea2",
+                                    "containerID": "containerd://9d6680dd2253671640ae9c5d11801232bdabe93329d9d6e854d193b94078a5a7",
                                     "exitCode": 3,
-                                    "finishedAt": "2026-11-03T20:01:00Z",
+                                    "finishedAt": "2026-11-03T20:44:00Z",
                                     "reason": "Error",
-                                    "startedAt": "2026-11-03T20:01:00Z"
+                                    "startedAt": "2026-11-03T20:44:00Z"
                                 }
                             },
                             "user": {
@@ -1217,7 +1218,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-brc87",
+                                    "name": "kube-api-access-t6xh4",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -1232,31 +1233,31 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Failed",
-                    "podIP": "10.244.0.75",
+                    "podIP": "10.244.0.178",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.75"
+                            "ip": "10.244.0.178"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T20:01:00Z"
+                    "startTime": "2026-11-03T20:44:00Z"
                 }
             },
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:02:00Z",
-                    "generateName": "always-fails-29895602-",
+                    "creationTimestamp": "2026-11-03T20:45:00Z",
+                    "generateName": "always-fails-29895645-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
-                        "batch.kubernetes.io/job-name": "always-fails-29895602",
-                        "controller-uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99",
-                        "job-name": "always-fails-29895602"
+                        "batch.kubernetes.io/controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a",
+                        "batch.kubernetes.io/job-name": "always-fails-29895645",
+                        "controller-uid": "79525afb-5c12-437c-98c1-a43d3512f61a",
+                        "job-name": "always-fails-29895645"
                     },
-                    "name": "always-fails-29895602-4vqc7",
+                    "name": "always-fails-29895645-jh7w7",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -1264,12 +1265,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "always-fails-29895602",
-                            "uid": "d5b622b8-349b-432c-8e27-7b21a30d0c99"
+                            "name": "always-fails-29895645",
+                            "uid": "79525afb-5c12-437c-98c1-a43d3512f61a"
                         }
                     ],
-                    "resourceVersion": "16874",
-                    "uid": "32c745d4-b85e-4116-b370-55fb7a1b8bef"
+                    "resourceVersion": "24233",
+                    "uid": "6c2c8be6-a081-4a7a-93f1-785a874bb2fc"
                 },
                 "spec": {
                     "containers": [
@@ -1288,7 +1289,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-qlmpd",
+                                    "name": "kube-api-access-x8qh2",
                                     "readOnly": true
                                 }
                             ]
@@ -1321,7 +1322,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-qlmpd",
+                            "name": "kube-api-access-x8qh2",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -1364,7 +1365,7 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:03Z",
+                            "lastTransitionTime": "2026-11-03T20:45:01Z",
                             "message": "pod sandbox is not ready",
                             "observedGeneration": 1,
                             "reason": "PodSandboxNotReady",
@@ -1373,14 +1374,14 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:00Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "Initialized"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:01Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "reason": "PodFailed",
                             "status": "False",
@@ -1388,7 +1389,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:01Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "reason": "PodFailed",
                             "status": "False",
@@ -1396,7 +1397,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:00Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -1404,7 +1405,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://619d5c5cb2cbbb48ef3788a76042938577a7b8646278028ec74ad8a1fcbb7b34",
+                            "containerID": "containerd://b7d695a4451ed8069198556b4872c7778fd9593d2ee54983d69032913568f6ea",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -1415,11 +1416,11 @@ calls:
                             "started": false,
                             "state": {
                                 "terminated": {
-                                    "containerID": "containerd://619d5c5cb2cbbb48ef3788a76042938577a7b8646278028ec74ad8a1fcbb7b34",
+                                    "containerID": "containerd://b7d695a4451ed8069198556b4872c7778fd9593d2ee54983d69032913568f6ea",
                                     "exitCode": 3,
-                                    "finishedAt": "2026-11-03T20:02:01Z",
+                                    "finishedAt": "2026-11-03T20:45:00Z",
                                     "reason": "Error",
-                                    "startedAt": "2026-11-03T20:02:01Z"
+                                    "startedAt": "2026-11-03T20:45:00Z"
                                 }
                             },
                             "user": {
@@ -1435,7 +1436,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-qlmpd",
+                                    "name": "kube-api-access-x8qh2",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -1450,34 +1451,34 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Failed",
-                    "podIP": "10.244.0.77",
+                    "podIP": "10.244.0.180",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.77"
+                            "ip": "10.244.0.180"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T20:02:00Z"
+                    "startTime": "2026-11-03T20:45:00Z"
                 }
             },
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T19:51:00Z",
+                    "creationTimestamp": "2026-11-03T20:07:00Z",
                     "finalizers": [
                         "batch.kubernetes.io/job-tracking"
                     ],
-                    "generateName": "forbid-long-29895591-",
+                    "generateName": "forbid-long-29895607-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
-                        "batch.kubernetes.io/job-name": "forbid-long-29895591",
-                        "controller-uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9",
-                        "job-name": "forbid-long-29895591"
+                        "batch.kubernetes.io/controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7",
+                        "batch.kubernetes.io/job-name": "forbid-long-29895607",
+                        "controller-uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7",
+                        "job-name": "forbid-long-29895607"
                     },
-                    "name": "forbid-long-29895591-768vr",
+                    "name": "forbid-long-29895607-nt6bj",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -1485,12 +1486,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "forbid-long-29895591",
-                            "uid": "92c965ac-8db2-4959-8ff3-7ac54686c3c9"
+                            "name": "forbid-long-29895607",
+                            "uid": "a6041942-a27d-4dce-8e05-90c6d0f20dc7"
                         }
                     ],
-                    "resourceVersion": "15154",
-                    "uid": "604e642b-ab45-4ea1-96b0-e1e2c6c09694"
+                    "resourceVersion": "17859",
+                    "uid": "f1fc1c57-5300-42a7-a407-d0e3589766ae"
                 },
                 "spec": {
                     "containers": [
@@ -1509,7 +1510,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-kvb2n",
+                                    "name": "kube-api-access-mw76p",
                                     "readOnly": true
                                 }
                             ]
@@ -1542,7 +1543,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-kvb2n",
+                            "name": "kube-api-access-mw76p",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -1585,35 +1586,35 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T19:51:01Z",
+                            "lastTransitionTime": "2026-11-03T20:07:01Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodReadyToStartContainers"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T19:51:00Z",
+                            "lastTransitionTime": "2026-11-03T20:07:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "Initialized"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T19:51:01Z",
+                            "lastTransitionTime": "2026-11-03T20:07:01Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "Ready"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T19:51:01Z",
+                            "lastTransitionTime": "2026-11-03T20:07:01Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "ContainersReady"
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T19:51:00Z",
+                            "lastTransitionTime": "2026-11-03T20:07:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -1621,7 +1622,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://0a6fbf4f4404c212fabda6fefba108e6b71b34484a98a96586b4f9afb52f4117",
+                            "containerID": "containerd://b686b7bcfbb3c0c4c3ba2392af8d13ecd4db1a8c6b7c5027ce2e4f56c1f46f60",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -1632,7 +1633,7 @@ calls:
                             "started": true,
                             "state": {
                                 "running": {
-                                    "startedAt": "2026-11-03T19:51:01Z"
+                                    "startedAt": "2026-11-03T20:07:01Z"
                                 }
                             },
                             "user": {
@@ -1648,7 +1649,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-kvb2n",
+                                    "name": "kube-api-access-mw76p",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -1663,31 +1664,31 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Running",
-                    "podIP": "10.244.0.55",
+                    "podIP": "10.244.0.86",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.55"
+                            "ip": "10.244.0.86"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T19:51:00Z"
+                    "startTime": "2026-11-03T20:07:00Z"
                 }
             },
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:00:00Z",
-                    "generateName": "ok-every-minute-29895600-",
+                    "creationTimestamp": "2026-11-03T20:43:00Z",
+                    "generateName": "ok-every-minute-29895643-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
-                        "batch.kubernetes.io/job-name": "ok-every-minute-29895600",
-                        "controller-uid": "a381b4f7-8495-4257-a3d2-05c33795590d",
-                        "job-name": "ok-every-minute-29895600"
+                        "batch.kubernetes.io/controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895643",
+                        "controller-uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc",
+                        "job-name": "ok-every-minute-29895643"
                     },
-                    "name": "ok-every-minute-29895600-h9gxx",
+                    "name": "ok-every-minute-29895643-tdj6s",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -1695,12 +1696,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "ok-every-minute-29895600",
-                            "uid": "a381b4f7-8495-4257-a3d2-05c33795590d"
+                            "name": "ok-every-minute-29895643",
+                            "uid": "9b6be157-8cb8-4ccb-ac33-459679bf3fdc"
                         }
                     ],
-                    "resourceVersion": "16611",
-                    "uid": "e6ecf325-2a67-4c2c-a965-afe7f09720b5"
+                    "resourceVersion": "23902",
+                    "uid": "08e5f497-0bb1-4531-87fa-6a14d650d338"
                 },
                 "spec": {
                     "containers": [
@@ -1719,7 +1720,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-m5pth",
+                                    "name": "kube-api-access-8dfhb",
                                     "readOnly": true
                                 }
                             ]
@@ -1752,7 +1753,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-m5pth",
+                            "name": "kube-api-access-8dfhb",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -1795,7 +1796,7 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:04Z",
+                            "lastTransitionTime": "2026-11-03T20:43:02Z",
                             "message": "pod sandbox is not ready",
                             "observedGeneration": 1,
                             "reason": "PodSandboxNotReady",
@@ -1804,7 +1805,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:00Z",
+                            "lastTransitionTime": "2026-11-03T20:43:00Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "True",
@@ -1812,7 +1813,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:01Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "False",
@@ -1820,7 +1821,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:03Z",
+                            "lastTransitionTime": "2026-11-03T20:43:01Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "False",
@@ -1828,7 +1829,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:00:00Z",
+                            "lastTransitionTime": "2026-11-03T20:43:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -1836,7 +1837,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://a74ac29431d3ce850e65585705b4f8958690871432d8ace4d2240684dbdc1fc5",
+                            "containerID": "containerd://deb971c6ca4ad110ecae3130576f34a53cadf4894418bdffea4f05033b7befc8",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -1847,11 +1848,11 @@ calls:
                             "started": false,
                             "state": {
                                 "terminated": {
-                                    "containerID": "containerd://a74ac29431d3ce850e65585705b4f8958690871432d8ace4d2240684dbdc1fc5",
+                                    "containerID": "containerd://deb971c6ca4ad110ecae3130576f34a53cadf4894418bdffea4f05033b7befc8",
                                     "exitCode": 0,
-                                    "finishedAt": "2026-11-03T20:00:02Z",
+                                    "finishedAt": "2026-11-03T20:43:00Z",
                                     "reason": "Completed",
-                                    "startedAt": "2026-11-03T20:00:02Z"
+                                    "startedAt": "2026-11-03T20:43:00Z"
                                 }
                             },
                             "user": {
@@ -1867,7 +1868,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-m5pth",
+                                    "name": "kube-api-access-8dfhb",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -1882,31 +1883,31 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Succeeded",
-                    "podIP": "10.244.0.74",
+                    "podIP": "10.244.0.175",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.74"
+                            "ip": "10.244.0.175"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T20:00:00Z"
+                    "startTime": "2026-11-03T20:43:00Z"
                 }
             },
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:01:00Z",
-                    "generateName": "ok-every-minute-29895601-",
+                    "creationTimestamp": "2026-11-03T20:44:00Z",
+                    "generateName": "ok-every-minute-29895644-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
-                        "batch.kubernetes.io/job-name": "ok-every-minute-29895601",
-                        "controller-uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e",
-                        "job-name": "ok-every-minute-29895601"
+                        "batch.kubernetes.io/controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895644",
+                        "controller-uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c",
+                        "job-name": "ok-every-minute-29895644"
                     },
-                    "name": "ok-every-minute-29895601-762ss",
+                    "name": "ok-every-minute-29895644-xnpm6",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -1914,12 +1915,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "ok-every-minute-29895601",
-                            "uid": "e5bd37f3-5491-411d-8425-1f0e4f51eb0e"
+                            "name": "ok-every-minute-29895644",
+                            "uid": "cb55a472-7d5e-47a3-bb9b-7d0a0417025c"
                         }
                     ],
-                    "resourceVersion": "16741",
-                    "uid": "699a6487-0a98-4644-a11e-fb1c581985c2"
+                    "resourceVersion": "24069",
+                    "uid": "88d4ab54-dbb5-4c8b-94d3-2b5c567c40d0"
                 },
                 "spec": {
                     "containers": [
@@ -1938,7 +1939,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-h6spf",
+                                    "name": "kube-api-access-hvzd6",
                                     "readOnly": true
                                 }
                             ]
@@ -1971,7 +1972,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-h6spf",
+                            "name": "kube-api-access-hvzd6",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -2014,7 +2015,7 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:02Z",
+                            "lastTransitionTime": "2026-11-03T20:44:02Z",
                             "message": "pod sandbox is not ready",
                             "observedGeneration": 1,
                             "reason": "PodSandboxNotReady",
@@ -2023,7 +2024,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:00Z",
+                            "lastTransitionTime": "2026-11-03T20:44:00Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "True",
@@ -2031,7 +2032,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:01Z",
+                            "lastTransitionTime": "2026-11-03T20:44:01Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "False",
@@ -2039,7 +2040,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:01Z",
+                            "lastTransitionTime": "2026-11-03T20:44:01Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "False",
@@ -2047,7 +2048,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:01:00Z",
+                            "lastTransitionTime": "2026-11-03T20:44:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -2055,7 +2056,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://8b2651c50a04db1545bf77f7995d15acae75c08070383c82eabd8c2ff581e9e4",
+                            "containerID": "containerd://03c133974bd28b9183161bce45f0637bdab4ea7f3f0a9ad0212c1c5f9ece4d30",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -2066,11 +2067,11 @@ calls:
                             "started": false,
                             "state": {
                                 "terminated": {
-                                    "containerID": "containerd://8b2651c50a04db1545bf77f7995d15acae75c08070383c82eabd8c2ff581e9e4",
+                                    "containerID": "containerd://03c133974bd28b9183161bce45f0637bdab4ea7f3f0a9ad0212c1c5f9ece4d30",
                                     "exitCode": 0,
-                                    "finishedAt": "2026-11-03T20:01:00Z",
+                                    "finishedAt": "2026-11-03T20:44:00Z",
                                     "reason": "Completed",
-                                    "startedAt": "2026-11-03T20:01:00Z"
+                                    "startedAt": "2026-11-03T20:44:00Z"
                                 }
                             },
                             "user": {
@@ -2086,7 +2087,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-h6spf",
+                                    "name": "kube-api-access-hvzd6",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -2101,31 +2102,31 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Succeeded",
-                    "podIP": "10.244.0.76",
+                    "podIP": "10.244.0.177",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.76"
+                            "ip": "10.244.0.177"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T20:01:00Z"
+                    "startTime": "2026-11-03T20:44:00Z"
                 }
             },
             {
                 "apiVersion": "v1",
                 "kind": "Pod",
                 "metadata": {
-                    "creationTimestamp": "2026-11-03T20:02:00Z",
-                    "generateName": "ok-every-minute-29895602-",
+                    "creationTimestamp": "2026-11-03T20:45:00Z",
+                    "generateName": "ok-every-minute-29895645-",
                     "generation": 1,
                     "labels": {
-                        "batch.kubernetes.io/controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
-                        "batch.kubernetes.io/job-name": "ok-every-minute-29895602",
-                        "controller-uid": "742517cf-51a1-4afc-8668-b78b1edf7e27",
-                        "job-name": "ok-every-minute-29895602"
+                        "batch.kubernetes.io/controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1",
+                        "batch.kubernetes.io/job-name": "ok-every-minute-29895645",
+                        "controller-uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1",
+                        "job-name": "ok-every-minute-29895645"
                     },
-                    "name": "ok-every-minute-29895602-22xw8",
+                    "name": "ok-every-minute-29895645-d5bxm",
                     "namespace": "rw-cron",
                     "ownerReferences": [
                         {
@@ -2133,12 +2134,12 @@ calls:
                             "blockOwnerDeletion": true,
                             "controller": true,
                             "kind": "Job",
-                            "name": "ok-every-minute-29895602",
-                            "uid": "742517cf-51a1-4afc-8668-b78b1edf7e27"
+                            "name": "ok-every-minute-29895645",
+                            "uid": "434e3a78-51a4-4a69-8678-edb58f07e6c1"
                         }
                     ],
-                    "resourceVersion": "16871",
-                    "uid": "4785ec51-fd10-495f-91c6-450e220d12ef"
+                    "resourceVersion": "24228",
+                    "uid": "592b81bd-4714-442b-a8e4-253fd46de105"
                 },
                 "spec": {
                     "containers": [
@@ -2157,7 +2158,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-jqb5h",
+                                    "name": "kube-api-access-bxz5x",
                                     "readOnly": true
                                 }
                             ]
@@ -2190,7 +2191,7 @@ calls:
                     ],
                     "volumes": [
                         {
-                            "name": "kube-api-access-jqb5h",
+                            "name": "kube-api-access-bxz5x",
                             "projected": {
                                 "defaultMode": 420,
                                 "sources": [
@@ -2233,7 +2234,7 @@ calls:
                     "conditions": [
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:03Z",
+                            "lastTransitionTime": "2026-11-03T20:45:01Z",
                             "message": "pod sandbox is not ready",
                             "observedGeneration": 1,
                             "reason": "PodSandboxNotReady",
@@ -2242,7 +2243,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:00Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "True",
@@ -2250,7 +2251,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:01Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "False",
@@ -2258,7 +2259,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:01Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "reason": "PodCompleted",
                             "status": "False",
@@ -2266,7 +2267,7 @@ calls:
                         },
                         {
                             "lastProbeTime": null,
-                            "lastTransitionTime": "2026-11-03T20:02:00Z",
+                            "lastTransitionTime": "2026-11-03T20:45:00Z",
                             "observedGeneration": 1,
                             "status": "True",
                             "type": "PodScheduled"
@@ -2274,7 +2275,7 @@ calls:
                     ],
                     "containerStatuses": [
                         {
-                            "containerID": "containerd://b1f95f7d764ae3f35c07b4740d3de1a8f83ec68a59585f60d14a13bccda92c85",
+                            "containerID": "containerd://f087800c8fd6cb33db714e9ead541df7cf521dc56a3726c7a50c7f91ffcf48cb",
                             "image": "docker.io/library/busybox:1.36",
                             "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
                             "lastState": {},
@@ -2285,11 +2286,11 @@ calls:
                             "started": false,
                             "state": {
                                 "terminated": {
-                                    "containerID": "containerd://b1f95f7d764ae3f35c07b4740d3de1a8f83ec68a59585f60d14a13bccda92c85",
+                                    "containerID": "containerd://f087800c8fd6cb33db714e9ead541df7cf521dc56a3726c7a50c7f91ffcf48cb",
                                     "exitCode": 0,
-                                    "finishedAt": "2026-11-03T20:02:01Z",
+                                    "finishedAt": "2026-11-03T20:45:00Z",
                                     "reason": "Completed",
-                                    "startedAt": "2026-11-03T20:02:01Z"
+                                    "startedAt": "2026-11-03T20:45:00Z"
                                 }
                             },
                             "user": {
@@ -2305,7 +2306,7 @@ calls:
                             "volumeMounts": [
                                 {
                                     "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
-                                    "name": "kube-api-access-jqb5h",
+                                    "name": "kube-api-access-bxz5x",
                                     "readOnly": true,
                                     "recursiveReadOnly": "Disabled"
                                 }
@@ -2320,15 +2321,15 @@ calls:
                     ],
                     "observedGeneration": 1,
                     "phase": "Succeeded",
-                    "podIP": "10.244.0.78",
+                    "podIP": "10.244.0.179",
                     "podIPs": [
                         {
-                            "ip": "10.244.0.78"
+                            "ip": "10.244.0.179"
                         }
                     ],
                     "qosClass": "BestEffort",
                     "resources": {},
-                    "startTime": "2026-11-03T20:02:00Z"
+                    "startTime": "2026-11-03T20:45:00Z"
                 }
             }
         ],
@@ -2350,3 +2351,4 @@ expect:
       active: 0
       activeBeforeWindow: 0
       latestStatus: failed
+      latestStartTime: '2026-11-03T20:45:00Z'

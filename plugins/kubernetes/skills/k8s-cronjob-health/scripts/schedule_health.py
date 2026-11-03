@@ -22,7 +22,7 @@ def main(ctx, since="1h"):
     check_duration(since)
     check_settings(ctx, "max_items", "late_grace_seconds")
     cronjob = load_cronjob(ctx)
-    now = datetime.now(timezone.utc)
+    now = ctx.now() if hasattr(ctx, "now") else datetime.now(timezone.utc)
     try:
         evaluated = evaluate(cronjob, now, since, ctx.settings.late_grace_seconds)
     except ScheduleError as exc:
