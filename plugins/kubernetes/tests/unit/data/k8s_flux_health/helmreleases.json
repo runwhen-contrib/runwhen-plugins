@@ -1,0 +1,257 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-failed\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.6.0\"}},\"dependsOn\":[{\"name\":\"podinfo-ok\"},{\"name\":\"not-here\"},{\"name\":\"infra\",\"namespace\":\"rw-flux-other\"}],\"interval\":\"10m\",\"suspend\":false}}\n"
+                },
+                "creationTimestamp": "2026-11-03T19:47:32Z",
+                "generation": 1,
+                "name": "podinfo-failed",
+                "namespace": "rw-flux",
+                "resourceVersion": "14609",
+                "uid": "733eca01-ac3f-4165-b768-f4bb5b1f7473"
+            },
+            "spec": {
+                "chart": {
+                    "spec": {
+                        "chart": "podinfo",
+                        "sourceRef": {
+                            "kind": "HelmRepository",
+                            "name": "podinfo"
+                        },
+                        "version": "6.6.0"
+                    }
+                },
+                "dependsOn": [
+                    {
+                        "name": "podinfo-ok"
+                    },
+                    {
+                        "name": "not-here"
+                    },
+                    {
+                        "name": "infra",
+                        "namespace": "rw-flux-other"
+                    }
+                ],
+                "interval": "10m",
+                "suspend": false
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-03T20:05:00Z",
+                        "message": "Helm upgrade failed for release rw-flux/podinfo-failed with chart podinfo@6.6.0: timed out waiting for the condition",
+                        "observedGeneration": 1,
+                        "reason": "UpgradeFailed",
+                        "status": "False",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-03T20:05:00Z",
+                        "message": "Helm upgrade failed: timed out waiting for the condition",
+                        "observedGeneration": 1,
+                        "reason": "UpgradeFailed",
+                        "status": "False",
+                        "type": "Released"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-03T20:05:00Z",
+                        "message": "Failed to upgrade after 5 attempt(s)",
+                        "observedGeneration": 1,
+                        "reason": "RetriesExceeded",
+                        "status": "True",
+                        "type": "Stalled"
+                    }
+                ],
+                "failures": 5,
+                "history": [
+                    {
+                        "appVersion": "6.6.0",
+                        "chartName": "podinfo",
+                        "chartVersion": "6.6.0",
+                        "lastDeployed": "2026-11-03T20:05:00Z",
+                        "name": "podinfo-failed",
+                        "namespace": "rw-flux",
+                        "status": "failed",
+                        "version": 3
+                    },
+                    {
+                        "appVersion": "6.5.1",
+                        "chartName": "podinfo",
+                        "chartVersion": "6.5.1",
+                        "lastDeployed": "2026-11-03T19:00:00Z",
+                        "name": "podinfo-failed",
+                        "namespace": "rw-flux",
+                        "status": "deployed",
+                        "version": 2
+                    }
+                ],
+                "lastAttemptedRevision": "6.6.0",
+                "lastHandledReconcileAt": "2026-11-03T20:05:00Z",
+                "observedGeneration": 1,
+                "upgradeFailures": 5
+            }
+        },
+        {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-fresh\",\"namespace\":\"rw-flux\"},\"spec\":{\"chartRef\":{\"kind\":\"OCIRepository\",\"name\":\"podinfo\"},\"interval\":\"10m\",\"suspend\":false}}\n"
+                },
+                "creationTimestamp": "2026-11-03T19:47:32Z",
+                "generation": 1,
+                "name": "podinfo-fresh",
+                "namespace": "rw-flux",
+                "resourceVersion": "14604",
+                "uid": "b4420ce4-bcdf-4aef-825d-edfc700788cc"
+            },
+            "spec": {
+                "chartRef": {
+                    "kind": "OCIRepository",
+                    "name": "podinfo"
+                },
+                "interval": "10m",
+                "suspend": false
+            }
+        },
+        {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-ok\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.5.x\"}},\"interval\":\"10m\",\"suspend\":false}}\n"
+                },
+                "creationTimestamp": "2026-11-03T19:47:32Z",
+                "generation": 1,
+                "name": "podinfo-ok",
+                "namespace": "rw-flux",
+                "resourceVersion": "16107",
+                "uid": "c2c561b7-b525-4668-8533-6daa8e0ee485"
+            },
+            "spec": {
+                "chart": {
+                    "spec": {
+                        "chart": "podinfo",
+                        "sourceRef": {
+                            "kind": "HelmRepository",
+                            "name": "podinfo"
+                        },
+                        "version": "6.5.x"
+                    }
+                },
+                "interval": "10m",
+                "suspend": false
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-03T20:00:05Z",
+                        "message": "Helm upgrade succeeded for release rw-flux/podinfo-ok.v2 with chart podinfo@6.5.1",
+                        "observedGeneration": 1,
+                        "reason": "UpgradeSucceeded",
+                        "status": "True",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastTransitionTime": "2026-11-03T20:00:05Z",
+                        "message": "Helm upgrade succeeded for release rw-flux/podinfo-ok.v2 with chart podinfo@6.5.1",
+                        "observedGeneration": 1,
+                        "reason": "UpgradeSucceeded",
+                        "status": "True",
+                        "type": "Released"
+                    }
+                ],
+                "history": [
+                    {
+                        "appVersion": "6.5.1",
+                        "chartName": "podinfo",
+                        "chartVersion": "6.5.1",
+                        "lastDeployed": "2026-11-03T20:00:05Z",
+                        "name": "podinfo-ok",
+                        "namespace": "rw-flux",
+                        "status": "deployed",
+                        "version": 2
+                    },
+                    {
+                        "appVersion": "6.5.0",
+                        "chartName": "podinfo",
+                        "chartVersion": "6.5.0",
+                        "lastDeployed": "2026-11-02T20:00:05Z",
+                        "name": "podinfo-ok",
+                        "namespace": "rw-flux",
+                        "status": "superseded",
+                        "version": 1
+                    }
+                ],
+                "lastAttemptedRevision": "6.5.1",
+                "lastHandledReconcileAt": "2026-11-03T20:00:00Z",
+                "observedGeneration": 1
+            }
+        },
+        {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {
+                "annotations": {
+                    "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-suspended\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.5.x\"}},\"interval\":\"10m\",\"suspend\":true}}\n"
+                },
+                "creationTimestamp": "2026-11-03T19:47:32Z",
+                "generation": 1,
+                "name": "podinfo-suspended",
+                "namespace": "rw-flux",
+                "resourceVersion": "14610",
+                "uid": "2a062039-49ce-4ba6-9467-e2b17fb0d730"
+            },
+            "spec": {
+                "chart": {
+                    "spec": {
+                        "chart": "podinfo",
+                        "sourceRef": {
+                            "kind": "HelmRepository",
+                            "name": "podinfo"
+                        },
+                        "version": "6.5.x"
+                    }
+                },
+                "interval": "10m",
+                "suspend": true
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastTransitionTime": "2026-11-03T19:00:00Z",
+                        "message": "Helm install succeeded",
+                        "observedGeneration": 1,
+                        "reason": "InstallSucceeded",
+                        "status": "True",
+                        "type": "Ready"
+                    }
+                ],
+                "history": [
+                    {
+                        "appVersion": "6.5.1",
+                        "chartName": "podinfo",
+                        "chartVersion": "6.5.1",
+                        "lastDeployed": "2026-11-03T19:00:00Z",
+                        "name": "podinfo-suspended",
+                        "namespace": "rw-flux",
+                        "status": "deployed",
+                        "version": 1
+                    }
+                ],
+                "lastAttemptedRevision": "6.5.1",
+                "observedGeneration": 1
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

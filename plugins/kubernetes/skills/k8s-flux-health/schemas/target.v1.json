@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flux target",
+  "description": "The Flux object acted on. managedBy names the Flux Kustomization or HelmRelease that applies this object (from its kustomize.toolkit.fluxcd.io or helm.toolkit.fluxcd.io labels), or null.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "HelmRelease",
+        "Kustomization"
+      ]
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "namespace": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "managedBy": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "namespace"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "kind",
+    "name",
+    "namespace",
+    "generation",
+    "managedBy"
+  ],
+  "additionalProperties": false
+}

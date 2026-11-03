@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flux readiness state",
+  "description": "Readiness of the Flux object. ready, reconciling and stalled are the status ('True', 'False', 'Unknown') of the condition of that type, or null when the object has no such condition: null is not 'False' (a Stalled Kustomization may have no Reconciling condition, and a new object has no conditions). generationObserved is false while the controller has not yet seen the latest spec. conditions lists every condition (at most 50; conditionCount is the real number), messages cut at 1024 characters.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "HelmRelease",
+        "Kustomization"
+      ]
+    },
+    "apiVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "suspended": {
+      "type": "boolean"
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "observedGeneration": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "generationObserved": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "ready": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "readyReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "readyLastTransitionTime": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reconciling": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stalled": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stalledReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "conditions": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "observedGeneration": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lastTransitionTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "status",
+          "reason",
+          "message",
+          "truncated",
+          "observedGeneration",
+          "lastTransitionTime"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "conditionCount": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "apiVersion",
+    "suspended",
+    "generation",
+    "observedGeneration",
+    "generationObserved",
+    "ready",
+    "readyReason",
+    "readyLastTransitionTime",
+    "reconciling",
+    "stalled",
+    "stalledReason",
+    "conditions",
+    "conditionCount"
+  ],
+  "additionalProperties": false
+}

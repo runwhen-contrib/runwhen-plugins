@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconcile request",
+  "description": "applied is true when the reconcile.fluxcd.io/requestedAt annotation was written; on a dry run it is false, wouldApply is true and requestedAt is null. completed is true when the controller reported the request handled (status.lastHandledReconcileAt equals requestedAt), false when the timeout input ran out first, and null when the task did not wait (timeout 0s, dry run) or could not observe it. A request handled is not a request succeeded: read after.ready. after is the object as last read.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "wouldApply": {
+      "type": "boolean"
+    },
+    "requestedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previousRequestedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lastHandledBefore": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completionReason": {
+      "enum": [
+        "handled",
+        "timeout",
+        "not_waited",
+        "not_observed",
+        "dry_run"
+      ]
+    },
+    "waitedSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "after": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "ready": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readyReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readyMessage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "readyMessageTruncated": {
+          "type": "boolean"
+        },
+        "stalled": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastAppliedRevision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastAttemptedRevision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastHandledReconcileAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ready",
+        "readyReason",
+        "readyMessage",
+        "readyMessageTruncated",
+        "stalled",
+        "lastAppliedRevision",
+        "lastAttemptedRevision",
+        "lastHandledReconcileAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "applied",
+    "wouldApply",
+    "requestedAt",
+    "previousRequestedAt",
+    "lastHandledBefore",
+    "completed",
+    "completionReason",
+    "waitedSeconds",
+    "after"
+  ],
+  "additionalProperties": false
+}
