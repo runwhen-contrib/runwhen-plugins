@@ -1,0 +1,1139 @@
+- bundle: aws-account-cost-health
+  displayName: "AWS Account Cost Report"
+  classicResourceTypes: [aws_ec2_vpcs]
+  matchHints: "any VPC name (pattern .+, substring); qualifiers [account_id] so one SLX per account; level basic"
+  sli: false
+  sliAsserts: "n/a: generation rule lists an sli output but its template points at codebundles/cron-scheduler-sli (schedules the runbook), the bundle has no sli.robot and scores nothing"
+  egress: "cloud API: AWS Cost Explorer (ce, hard-coded us-east-1), STS, IAM"
+  tools: [aws, jq, bc, bash, GNU date]
+  inputs: [AWS_REGION, AWS_ACCOUNT_NAME, COST_ANALYSIS_LOOKBACK_DAYS, COST_INCREASE_THRESHOLD, OUTPUT_FORMAT, COST_BUDGET, COST_CONCENTRATION_THRESHOLD, TIMEOUT_SECONDS]
+  credential: "aws_credentials secret (platform aws-auth block: access key+secret, optional AWS_ROLE_ARN assume-role, IRSA, pod identity or default chain; auth.sh verifies with sts get-caller-identity)"
+  tasks:
+    - title: "Generate AWS Cost Report By Service for Account"
+      at: "runbook.robot:18"
+      asserts: "Problem if period-over-period spend rose >= COST_INCREASE_THRESHOLD %, a day in the last 7 exceeded 2x the 7-day average, total exceeded COST_BUDGET (when > 0), one service exceeds COST_CONCENTRATION_THRESHOLD % of total, or the current-period Cost Explorer query fails."
+      reads: ["aws ce get-cost-and-usage (MONTHLY by SERVICE, current and previous period)", "aws ce get-cost-and-usage (DAILY, last 7 days)", "aws ce get-cost-and-usage (MONTHLY by LINKED_ACCOUNT)", "aws sts get-caller-identity", "aws iam list-account-aliases"]
+      permissions: ["ce:GetCostAndUsage", "iam:ListAccountAliases", "sts:GetCallerIdentity", "sts:AssumeRole (only when AWS_ROLE_ARN set)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "aws_cost_report.sh:108-134 previous-period query result is tested with `if [[ $? -eq 0 ]]` AFTER `previous_total=0; previous_services='[]'` ran, so $? is always 0; a failed query leaves previous_total 0/empty -> percent_change 0 -> no trend issue. :99-104 daily query `2>/dev/null || echo '{\"ResultsByTime\":[]}'` -> 'Insufficient daily data' -> no spike issue. :140-149 same stale-$? pattern for LINKED_ACCOUNT. Only the current-period query (:56-74) is checked."
+      notes: "Runbook only tests returncode == -1 (timeout) and two auth strings in stdout; script exits 0 on a failed current query but writes a sev2 issue to aws_cost_trend_issues.json so that path is reported. Cost Explorer API requests are billed per call. Uses UnblendedCost only. Issue file read with `cat ... 2>/dev/null || echo [] `."
+    - title: "Analyze AWS Reserved Instance and Savings Plans Recommendations for Account"
+      at: "runbook.robot:77"
+      asserts: "Raises a savings-opportunity issue when Cost Explorer RI/Savings Plans purchase recommendations sum to >= MIN_SAVINGS_THRESHOLD USD/month (default 100, script env only, not wired from runbook). Cost-optimization suggestion, not a fault in the source system."
+      reads: ["aws ce get-reservation-purchase-recommendation (EC2, RDS, ElastiCache; ONE_YEAR and THREE_YEARS, NO_UPFRONT, SIXTY_DAYS)", "aws ce get-savings-plans-purchase-recommendation (COMPUTE_SP, EC2_INSTANCE_SP x terms)", "aws sts get-caller-identity", "aws iam list-account-aliases"]
+      permissions: ["ce:GetReservationPurchaseRecommendation", "ce:GetSavingsPlansPurchaseRecommendation", "iam:ListAccountAliases", "sts:GetCallerIdentity"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "aws_ri_recommendations.sh:42-48, 82-88, 121-127, 160-166 every ce call is `2>/dev/null` with `if [[ $? -eq 0 && -n ... ]]`; AccessDenied/throttle -> recommendation_count stays 0 -> 'No RI or Savings Plans recommendations found', no issue."
+      notes: "Only checked failure paths are timeout and two auth strings. Ten-ish sequential CE calls per run."
+  bundleNotes: "Two tasks, no SLI. Cost Explorer is global but always called in us-east-1 regardless of AWS_REGION. Needs Cost Explorer enabled in the account (payer or member with access)."
+
+- bundle: aws-cloudwatch-overused-ec2
+  displayName: "AWS CloudWatch Overutlized EC2 Inspection"
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules (manual SLX only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "cloud API: AWS CloudWatch"
+  tools: [aws, jq]
+  inputs: [AWS_DEFAULT_REGION, UTILIZATION_THRESHOLD]
+  credential: "aws_credentials secret (platform aws-auth block); also imports an 'aws' Service (aws-service.shared)"
+  tasks:
+    - title: "Check For Overutilized Ec2 Instances"
+      at: "runbook.robot:14"
+      asserts: "Problem (sev4) if any EC2 instance's max CPUUtilization over the last 3h exceeds UTILIZATION_THRESHOLD."
+      reads: ["aws cloudwatch get-metric-data (Metrics Insights: SELECT MAX(CPUUtilization) FROM AWS/EC2 GROUP BY InstanceId, period 60) piped to jq"]
+      permissions: ["cloudwatch:GetMetricData"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:21 `aws cloudwatch get-metric-data ... | jq ...` is bash -c without pipefail and rc is never read; any aws failure (AccessDenied, bad region, throttle) -> empty stdout -> `Should Contain stdout 'Instance'` false -> no issue."
+      notes: "UTILIZATION_THRESHOLD default 0.8 is compared with CPUUtilization which is 0-100 percent, so the default flags every instance above 0.8% (false positives). Match is the bare word 'Instance' in stdout. No --region flag; region comes from AWS_DEFAULT_REGION env. No auth.sh/assume-role helper (relies on platform env). Metrics Insights query returns at most 500 series."
+  bundleNotes: "Single task, no SLI, no discovery."
+
+- bundle: aws-eks-health
+  displayName: "AWS EKS Cluster Health"
+  classicResourceTypes: [aws_eks_clusters]
+  matchHints: "any EKS cluster name (pattern .+, substring); qualifiers [resource, region, account_id]; level basic"
+  sli: false
+  sliAsserts: "n/a: sli template points at codebundles/cron-scheduler-sli (schedules the runbook); no sli.robot, nothing is scored"
+  egress: "cloud API: AWS EKS, STS"
+  tools: [aws, jq, bc, bash]
+  inputs: [AWS_REGION, EKS_CLUSTER_NAME, AWS_ACCOUNT_NAME]
+  credential: "aws_credentials secret (platform aws-auth block; auth.sh supports keys, assume role, IRSA, pod identity, default chain)"
+  tasks:
+    - title: "Check EKS Cluster Health in Account Region"
+      at: "runbook.robot:19"
+      asserts: "Problem if cluster status != ACTIVE (sev2), cluster.health.issues non-empty (sev2), no control-plane log types enabled (sev4), any managed add-on status != ACTIVE (sev3), or the cluster cannot be described/listed (sev2)."
+      reads: ["aws eks list-clusters (only if EKS_CLUSTER_NAME unset)", "aws eks describe-cluster", "aws eks list-addons / describe-addon", "aws eks list-nodegroups / describe-nodegroup", "aws eks list-fargate-profiles / describe-fargate-profile"]
+      permissions: ["eks:ListClusters", "eks:DescribeCluster", "eks:ListAddons", "eks:DescribeAddon", "eks:ListNodegroups", "eks:DescribeNodegroup", "eks:ListFargateProfiles", "eks:DescribeFargateProfile", "sts:GetCallerIdentity"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_eks_cluster_health.sh core reads (list/describe-cluster) are rc-checked and raise issues; but add-on, node group and Fargate sub-reads only echo 'Failed to list add-ons' / 'Failed to describe' and add no issue (:188-190, :183-185), so a denied eks:ListAddons hides a non-ACTIVE add-on. Runbook checks only returncode == -1 and two auth strings."
+      notes: "Task also prints node group and Fargate summaries (duplicated by the two tasks below) but only raises issues for node group status/health there. Secrets encryption absence is info-only."
+    - title: "Check Fargate Profile Health for EKS Cluster in Account Region"
+      at: "runbook.robot:75"
+      asserts: "Problem if a Fargate profile status != ACTIVE (sev2), has no selectors (sev4), or list/describe of profiles fails (sev3)."
+      reads: ["aws eks list-clusters (if EKS_CLUSTER_NAME unset)", "aws eks list-fargate-profiles", "aws eks describe-fargate-profile"]
+      permissions: ["eks:ListClusters", "eks:ListFargateProfiles", "eks:DescribeFargateProfile"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Every aws call is rc-checked and turned into an issue. Clusters with zero profiles are reported as info (healthy)."
+    - title: "Check Kubernetes Version Support for EKS Cluster in Account Region"
+      at: "runbook.robot:131"
+      asserts: "Problem if cluster version is not in the supported list built from describe-addon-versions (sev1), is >= 3 minors behind latest (sev2, 'likely extended support'), or >= 2 minors behind (sev3); includes a hard-coded extended-support cost estimate."
+      reads: ["aws eks describe-addon-versions --addon-name vpc-cni (to infer supported versions)", "aws eks list-clusters", "aws eks describe-cluster"]
+      permissions: ["eks:DescribeAddonVersions", "eks:ListClusters", "eks:DescribeCluster"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_eks_version_support.sh:52-60 `describe-addon-versions ... 2>/dev/null` (then a second fallback also 2>/dev/null); empty result -> LATEST_VERSION empty -> :130 'Skipping support check' for every cluster, no issue."
+      notes: "Support status is inferred from the vpc-cni add-on compatibility matrix and minors-behind heuristics, not from AWS's published support calendar; pricing constants ($0.10/$0.60 per hour) hard-coded."
+    - title: "Check Node Group Health for EKS Cluster in Account Region"
+      at: "runbook.robot:187"
+      asserts: "Problem if a managed node group status != ACTIVE (sev2), has health issues (sev2), desired == max with room to scale (sev3), desired == 0 (sev3), or list/describe fails (sev3)."
+      reads: ["aws eks list-clusters (if unset)", "aws eks list-nodegroups", "aws eks describe-nodegroup"]
+      permissions: ["eks:ListClusters", "eks:ListNodegroups", "eks:DescribeNodegroup"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Does not look at Kubernetes node readiness or self-managed nodes. desired==0 is flagged even when intentional."
+  bundleNotes: "Auth failures are detected only by two stdout strings from auth.sh; all four tasks otherwise parse JSON written by the scripts. When EKS_CLUSTER_NAME is unset every cluster in the region is scanned."
+
+- bundle: aws-elasticache-redis-health
+  displayName: "AWS ElastiCache Health Check"
+  classicResourceTypes: [aws_elasticache_clusters]
+  matchHints: "any ElastiCache cluster name (pattern .+, substring; note trailing space in the rule's resource type); qualifiers [resource, account_id, region]; level basic"
+  sli: true
+  sliAsserts: "Pushes 0 if redis_status_scan.sh exits non-zero (auth failure or any serverless cache status != available) else 1. False-pass confirmed: a failed describe-serverless-caches yields empty output and exit 0 -> score 1 (redis_status_scan.sh:9,15-23); also reads `${process.rc}` rather than returncode."
+  egress: "cloud API: AWS ElastiCache, CloudWatch"
+  tools: [aws, jq, bash, "redis-cli (monitor_redis_performance.sh, not called)"]
+  inputs: [AWS_REGION, AWS_ACCOUNT_NAME]
+  credential: "aws_credentials secret (platform aws-auth block)"
+  tasks:
+    - title: "Scan AWS Elasticache Redis Status in Account Region"
+      at: "runbook.robot:19"
+      asserts: "Intended: problem if a serverless cache has SnapshotRetentionLimit 0 (sev4) or is 'not available' (sev2). In practice the issue conditions can never be true."
+      reads: ["aws cloudwatch get-metric-statistics AWS/ElastiCache CPUUtilization and CacheMisses (no dimensions, last 24h)", "aws elasticache describe-events", "aws elasticache describe-serverless-caches"]
+      permissions: ["cloudwatch:GetMetricStatistics", "elasticache:DescribeEvents", "elasticache:DescribeServerlessCaches", "sts:GetCallerIdentity"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:25 and :34 grep stdout for 'Snapshot retention limit is set to 0' and 'is not available', but analyze_aws_elasticache_redis_metrics.sh prints only 'Error: Redis events are present' and '... non-available status'; the snapshot/'is not available' strings exist only in validate_aws_elasticache_redis_config.py which no task runs. Auth failure exit 1 text also matches nothing. No returncode check."
+      notes: "Only serverless caches are listed; node-based clusters/replication groups (what the resource type aws_elasticache_clusters likely discovers) are never examined. Metric queries have no dimensions so datapoints are empty/meaningless. describe-events (default last 60 min) is printed, never asserted. monitor_redis_performance.sh (redis-cli with REDIS_PASSWORD) is unreferenced and has quoting bugs."
+  bundleNotes: "Region-wide scan regardless of which cluster the SLX was generated for. Dead issue conditions mean the runbook cannot report anything."
+
+- bundle: aws-lambda-health
+  displayName: "AWS Lambda Health Check"
+  classicResourceTypes: [aws_lambda_functions]
+  matchHints: "any Lambda function name (pattern .+, substring); qualifiers [resource]; level basic"
+  sli: true
+  sliAsserts: "Pushes 0 if analyze_lambda_invocation_errors.sh stdout contains the substring ERROR, else 1. False-pass confirmed: log-tail or list-functions failure produces no ERROR text -> 1."
+  egress: "cloud API: AWS Lambda, CloudWatch Logs, CloudWatch"
+  tools: [aws, jq, bash, GNU date]
+  inputs: [AWS_REGION, AWS_ACCOUNT_NAME]
+  credential: "aws_credentials secret (platform aws-auth block)"
+  tasks:
+    - title: "List Lambda Versions and Runtimes in Account Region"
+      at: "runbook.robot:19"
+      asserts: "Report only: lists runtime and version of every function; never raises an issue (no EOL-runtime check)."
+      reads: ["aws lambda list-functions", "aws lambda get-function (Runtime, Version) twice per function"]
+      permissions: ["lambda:ListFunctions", "lambda:GetFunction", "sts:GetCallerIdentity"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "list_lambda_runtimes.sh passes no --region (relies on AWS_REGION being honoured by the CLI). Unversioned functions print Version $LATEST. N+2 API calls."
+    - title: "Analyze AWS Lambda Invocation Errors in Account Region"
+      at: "runbook.robot:26"
+      asserts: "Problem (sev2) if the last 24h of CloudWatch log output of any function contains the substring ERROR."
+      reads: ["aws lambda list-functions (twice)", "aws logs tail /aws/lambda/<function> --since 24h per function"]
+      permissions: ["lambda:ListFunctions", "logs:FilterLogEvents (aws logs tail)", "sts:GetCallerIdentity"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_lambda_invocation_errors.sh:29 `log_messages=$(aws logs tail ...)` captures stdout only; missing log group/AccessDenied go to stderr and the loop continues; :11 list-functions failure -> zero functions. runbook.robot:32 tests only `'ERROR' in stdout`; auth failure text contains no 'ERROR'. rc never checked."
+      notes: "Log text match, not the Lambda Errors metric. Substring ERROR also matches ordinary log lines and function names that contain ERROR (stdout echoes function names). Tails up to 24h of logs for every function (large). Region-wide although the SLX is per function."
+    - title: "Monitor AWS Lambda Performance Metrics in Account Region"
+      at: "runbook.robot:42"
+      asserts: "Report only: prints Duration (avg), Errors, Throttles, Invocations (sum) for the last 60 minutes; no issue is ever raised."
+      reads: ["aws lambda list-functions", "aws cloudwatch get-metric-statistics AWS/Lambda Duration, Errors, Throttles, Invocations per function"]
+      permissions: ["lambda:ListFunctions", "cloudwatch:GetMetricStatistics"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Raw JSON dumped to the report; failures leave blank sections. `lambda_names` array is never reset."
+  bundleNotes: "Generation rule is per function but every script scans all functions in the region. No task ever checks rc or distinguishes 'no errors' from 'could not read logs'."
+
+- bundle: aws-sqs-dlq-investigation
+  displayName: "AWS SQS Dead Letter Queue Investigation"
+  classicResourceTypes: [aws_sqs_queues]
+  matchHints: "any SQS queue name (pattern .+, substring); qualifiers [region, account_id]; level basic"
+  sli: true
+  sliAsserts: "1 when sqs-redrive-and-dlq-depth.sh writes an empty issue list, else 0 (parse failure -> 0). False-pass confirmed: unreadable DLQ attributes are coerced to depth 0/age 0, so no backlog issue (sqs-redrive-and-dlq-depth.sh:139-148); 'no queues matched' and 'no redrive policy' do score 0."
+  egress: "cloud API: AWS SQS, Lambda, CloudWatch Logs, CloudWatch"
+  tools: [aws, jq, bash]
+  inputs: [AWS_REGION, AWS_ACCOUNT_NAME, SQS_QUEUE_URLS, RESOURCES, DLQ_DEPTH_THRESHOLD, CLOUDWATCH_LOG_LOOKBACK_MINUTES, EXTRA_LOG_GROUP_NAMES, MAX_DLQ_SAMPLE_MESSAGES]
+  credential: "aws_credentials secret (platform aws-auth block)"
+  tasks:
+    - title: "Check SQS Redrive Policy and DLQ Depth for Queues in Region"
+      at: "runbook.robot:19"
+      asserts: "Problem if a primary queue has no RedrivePolicy or an invalid one (sev3), DLQ URL cannot be resolved (sev3), DLQ ApproximateNumberOfMessages > DLQ_DEPTH_THRESHOLD (sev2), oldest DLQ message older than 3600s while visible > 0 (sev3), no queues matched (sev3) or queue ARN unreadable (sev4)."
+      reads: ["aws sqs list-queues (when SQS_QUEUE_URLS unset)", "aws sqs get-queue-attributes (QueueArn, then All) on primary and DLQ", "aws sqs get-queue-url"]
+      permissions: ["sqs:ListQueues", "sqs:GetQueueAttributes", "sqs:GetQueueUrl", "sts:GetCallerIdentity"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "sqs-redrive-and-dlq-depth.sh:139-148 DLQ get-queue-attributes `2>/dev/null || dlq_attrs={}` then `// \"0\"` -> depth 0, age 0 -> no backlog issue. Auth failure exits before redrive_dlq_issues.json is written; runbook.robot:38-43 TRY/EXCEPT turns the unreadable/stale file into an empty list. Opposite direction: primary attrs failure (:68-72) is reported as 'No dead-letter redrive policy'."
+      notes: "DLQ_MAX_AGE_SECONDS (default 3600) is script-level env, not a runbook input. Writes sqs_investigation_context.json that the next four tasks require (shared working dir ordering dependency). set -x traces all commands."
+    - title: "Peek Sample Messages on Dead Letter Queues in Region"
+      at: "runbook.robot:58"
+      asserts: "Problem if any DLQ returns sample messages (issue carries message id, attributes, 800-char body snippets)."
+      reads: ["aws sqs receive-message --max-number-of-messages MAX_DLQ_SAMPLE_MESSAGES --visibility-timeout 5 on each DLQ"]
+      permissions: ["sqs:ReceiveMessage"]
+      scope: account
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "sqs-peek-dlq-messages.sh:53-60 `receive-message ... 2>/dev/null) || recv={}` -> count 0 -> no issue (AccessDenied, wrong region, throttle)."
+      notes: "Tagged access:read-only but ReceiveMessage is a state change: increments ApproximateReceiveCount, hides messages for 5s, and can push messages toward a DLQ's own redrive/retention limits; nothing is deleted. Message bodies (possible PII/secrets) flow into issue details. Depends on context file from task 1."
+    - title: "Discover Lambda Consumers for SQS Queues in Region"
+      at: "runbook.robot:97"
+      asserts: "Problem if no Lambda event source mapping exists for a primary queue ARN (or the context file is missing)."
+      reads: ["aws lambda list-event-source-mappings --event-source-arn <queue arn>"]
+      permissions: ["lambda:ListEventSourceMappings"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Errors are coerced to zero mappings, i.e. reported as 'no consumers' (false positive direction). Spurious issue when the consumer is not Lambda (ECS/EC2). Writes lambda_consumers.json for task 4."
+    - title: "Fetch Recent Lambda Processor Errors from CloudWatch Logs in Region"
+      at: "runbook.robot:136"
+      asserts: "Problem if CloudWatch filter 'ERROR ?Task ?timed ?out ?Runtime' matches events in the last CLOUDWATCH_LOG_LOOKBACK_MINUTES in the consumer Lambda log groups or EXTRA_LOG_GROUP_NAMES, or if no log groups are known."
+      reads: ["aws logs filter-log-events --limit 50 per log group"]
+      permissions: ["logs:FilterLogEvents"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "sqs-fetch-lambda-error-logs.sh:67-73 `filter-log-events ... 2>/dev/null) || evts={events:[]}` -> cnt 0 -> no issue (missing log group, AccessDenied)."
+      notes: "CloudWatch filter syntax: plain term ERROR is AND-ed with the ?-prefixed OR group, so 'Task timed out' lines without the word ERROR probably do not match (unverified). Capped at 50 events per group."
+    - title: "Summarize CloudWatch Metrics for SQS Queues and DLQs in Region"
+      at: "runbook.robot:175"
+      asserts: "Report only: 15-minute sums of sent/received/deleted/delayed (and DLQ visible) messages; the script always writes an empty issue list."
+      reads: ["aws cloudwatch get-metric-statistics AWS/SQS NumberOfMessagesSent/Received/Deleted, ApproximateNumberOfMessagesDelayed/Visible"]
+      permissions: ["cloudwatch:GetMetricStatistics"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "sqs_sum_metric uses `2>/dev/null | jq 'add // 0'`, so failures print zeros in the report (misleading) but nothing asserts on them."
+  bundleNotes: "Tasks 2-5 depend on files written by task 1 in the same working dir. Task 1 and the SLI both silently treat an unreadable DLQ as empty."
+
+- bundle: curl-gmp-kong-ingress-inspection
+  displayName: "GKE Kong Ingress Host Triage"
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules (manual SLX only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "cloud API: monitoring.googleapis.com (Google Managed Prometheus query API) and gcloud auth endpoints"
+  tools: [gcloud, curl, jq, awk, bash]
+  inputs: [GCP_PROJECT_ID, HTTP_ERROR_CODES, TIME_SLICE, HTTP_ERROR_RATE_THRESHOLD, INGRESS_UPSTREAM, INGRESS_SERVICE, REQUEST_LATENCY_THRESHOLD]
+  credential: "gcp_credentials secret (service account JSON key, activated with gcloud auth activate-service-account); also imports a 'gcloud' Service"
+  tasks:
+    - title: "Check If Kong Ingress HTTP Error Rate Violates HTTP Error Threshold in GCP Project"
+      at: "runbook.robot:18"
+      asserts: "Problem (sev3) if PromQL rate(kong_http_requests_total{service=INGRESS_SERVICE, code=~HTTP_ERROR_CODES}[TIME_SLICE]) > HTTP_ERROR_RATE_THRESHOLD returns any series (stdout contains 'Route')."
+      reads: ["gcloud auth activate-service-account --key-file", "curl POST https://monitoring.googleapis.com/v1/projects/<P>/location/global/prometheus/api/v1/query with gcloud auth print-access-token (instant query, run twice: thresholded and raw)"]
+      permissions: ["monitoring.timeSeries.list via GMP Prometheus API (roles/monitoring.viewer)"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:22 one `A && response=$(curl -s ...) && jq -e '.data.result | length > 0' && jq -r ... || echo 'No HTTP Error threshold violations found'`: a failure of activate-service-account, curl (-s hides errors, no -f), an HTTP 401/403 JSON body, or jq lands in the `||` branch and prints a healthy-sounding message; issue only if stdout contains 'Route'."
+      notes: "INGRESS_SERVICE is overloaded: PromQL label value and dot-split by awk (fields 1 and 4) to derive namespace/ingress names for next steps. The metric is a per-second rate but the output label says 'HTTP Error Count'. activate-service-account writes gcloud config under the runner HOME."
+    - title: "Check If Kong Ingress HTTP Request Latency Violates Threshold in GCP Project"
+      at: "runbook.robot:53"
+      asserts: "Problem (sev3) if histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket{service}[TIME_SLICE])) by (le)) > REQUEST_LATENCY_THRESHOLD ms."
+      reads: ["gcloud auth activate-service-account", "curl POST GMP Prometheus instant query (p99 latency)"]
+      permissions: ["monitoring.timeSeries.list via GMP Prometheus API (roles/monitoring.viewer)"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:57 same `&& ... || echo 'No HTTP request latency threshold violations found'` chain; query/auth failure prints the healthy message."
+      notes: "REQUEST_LATENCY_THRESHOLD has no default (required). Result row has no route label so only the service is named."
+    - title: "Check If Kong Ingress Controller Reports Upstream Errors in GCP Project"
+      at: "runbook.robot:86"
+      asserts: "Two checks on kong_upstream_target_health{upstream=INGRESS_UPSTREAM}: state='healthchecks_off' > 0 (sev3 'healthchecks disabled') and state=~'dns_error|unhealthy' > 0 (sev3 'healthcheck errors')."
+      reads: ["gcloud auth activate-service-account", "curl POST GMP Prometheus instant query x2 (healthchecks_off; dns_error|unhealthy)"]
+      permissions: ["monitoring.timeSeries.list via GMP Prometheus API (roles/monitoring.viewer)"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:90 and :109 `... && jq -e ... && jq -r ... || echo '<upstream> has healthchecks enabled.' / 'is reported as healthy'`: any failure prints a healthy message. Additionally :90's jq program ends `\" Healthchecks Disabled!'` with an unterminated string, so jq always fails to compile and the `Should Contain Disabled` check at :97 can never match (dead check that also asserts 'healthchecks enabled')."
+      notes: "Second query keys off the word 'detected' that the jq output prepends."
+  bundleNotes: "Manual SLX (no generation rules). Every query is a curl/jq chain whose failure branch is a success-looking echo. Kong metric names (kong_http_requests_total, kong_request_latency_ms_bucket) assume the Kong Prometheus plugin is scraped by GMP."
+
+- bundle: curl-gmp-nginx-ingress-inspection
+  displayName: "GKE Nginx Ingress Host Triage"
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules (manual SLX only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "cloud API: monitoring.googleapis.com (GMP query API) plus the Kubernetes API"
+  tools: [gcloud, curl, jq, awk, kubectl-or-oc, bash]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, GCP_PROJECT_ID, INGRESS_HOST, INGRESS_SERVICE, INGRESS_OBJECT_NAME, TIME_SLICE, ERROR_CODES]
+  credential: "gcp_credentials secret (service account JSON key) and kubeconfig secret"
+  tasks:
+    - title: "Fetch Nginx HTTP Errors From GMP for Ingress"
+      at: "runbook.robot:19"
+      asserts: "Problem (sev2) if rate(nginx_ingress_controller_requests{host=INGRESS_HOST, service=INGRESS_SERVICE, status=~ERROR_CODES}[TIME_SLICE]) > 0 returns a series (stdout contains 'Host'); then looks up the ingress backend owner for next steps."
+      reads: ["gcloud auth activate-service-account", "curl POST GMP Prometheus instant query (twice)", "kubectl get ingress <name> -n <ns> -o json and jsonpath", "kubectl get service / get endpoints / get pod / get replicaset"]
+      permissions: ["monitoring.timeSeries.list via GMP Prometheus API (roles/monitoring.viewer)", {apiGroups: [networking.k8s.io], resources: [ingresses], verbs: [get]}, {apiGroups: [""], resources: [services, endpoints, pods], verbs: [get]}, {apiGroups: [apps], resources: [replicasets], verbs: [get]}]
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:24 `gcloud auth ... && curl -d ... | jq -r 'if .data.result[0] then ... else \"\" end'`: no -s/-f, no pipefail, rc ignored; an auth failure short-circuits to empty stdout, an HTTP error JSON has no .data.result[0] -> '' -> no 'Host' -> no issue."
+      notes: "Threshold hard-coded to > 0 for the whole TIME_SLICE (default 60m), so any 5xx in the hour flags. Only the first series is reported. kubectl failures only blank the owner text."
+    - title: "Find Owner and Service Health for Ingress"
+      at: "runbook.robot:74"
+      asserts: "Report only: prints backend services, endpoint pods, owners and a Healthy/Unhealthy line; never raises an issue."
+      reads: ["kubectl get ingress <name> -ojsonpath", "kubectl get service <svc>", "kubectl get endpoints <svc>", "kubectl get pod <pod>", "kubectl get replicaset <rs>"]
+      permissions: [{apiGroups: [networking.k8s.io], resources: [ingresses], verbs: [get]}, {apiGroups: [""], resources: [services, endpoints, pods], verbs: [get]}, {apiGroups: [apps], resources: [replicasets], verbs: [get]}]
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "health_status is reassigned to Healthy after a service with endpoints is processed, overwriting an earlier Unhealthy from a missing service/endpoint. A Forbidden get prints 'Service X does not exist'."
+  bundleNotes: "Task 1's HTTP-error query shares a lot with the Kong bundle. Ingress controller metric names assume ingress-nginx scraped by GMP. Auth is `gcloud auth activate-service-account`."
+
+- bundle: curl-http-ok
+  displayName: "cURL HTTP OK"
+  classicResourceTypes: [service, ingress]
+  matchHints: "three rule files: service of type LoadBalancer with azure-load-balancer-internal annotation 'false' (template http-ok-tls-aks-public-loadbalancer-ext-dns-tls, with workflow); ingress with spec/tls/hosts (http-ok-tls, with slo); ingress without spec/tls/hosts (http-ok, with slo); level basic, qualifiers [resource, namespace, cluster]"
+  sli: true
+  sliAsserts: "1 only if every URL passes: curl rc == 0, http_code != 000, code in ACCEPTABLE_RESPONSE_CODES and time_total <= TARGET_LATENCY; any curl failure/empty/unparseable output scores 0. False-pass: none."
+  egress: "public internet (or cluster-reachable network): HTTP(S) GET to each URL in URLS"
+  tools: [curl, jq, bash]
+  inputs: [URLS, TARGET_LATENCY, ACCEPTABLE_RESPONSE_CODES, OWNER_DETAILS, VERIFY_SSL]
+  credential: "none"
+  tasks:
+    - title: "Check HTTP URL Availability and Timeliness"
+      at: "runbook.robot:16"
+      asserts: "Per URL: problem (sev2) if curl exits non-zero, JSON unparseable or http_code is 000; problem (sev4) if http_code not in ACCEPTABLE_RESPONSE_CODES; problem (sev4) if time_total > TARGET_LATENCY."
+      reads: ["curl --connect-timeout 5 --max-time 15 -L -o /dev/null -w <json timing/status> <url> (--insecure when VERIFY_SSL=false)"]
+      permissions: ["network egress to the target URL"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Defaults weaken the check: VERIFY_SSL defaults to false (--insecure, so expired/untrusted certs pass) and ACCEPTABLE_RESPONSE_CODES includes 301/302/307/401/403. -L follows redirects so the final status is judged. %{exitcode} needs curl >= 7.75. OWNER_DETAILS only decorates issue text. Probes only from the runner's network location."
+  bundleNotes: "Healthy example of rc-checked handling. Resource types come from three separate generation rules; the URLS input is populated from ingress hosts by the templates."
+
+- bundle: dns-health
+  displayName: "DNS Health & Monitoring"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only)"
+  sli: true
+  sliAsserts: "Average of 4 binary scores: resolution (dig @8.8.8.8 returns an answer for every configured FQDN), latency (avg of first 3 FQDNs < 500 ms), zone health (>= 80% of DNS_ZONES return NS), resolver availability (dig google.com @each resolver). Missing config/no data scores 0, failures score 0. False-pass: none (but hard-codes 8.8.8.8 and scores 0 permanently when DNS_ZONES is empty)."
+  egress: "DNS queries (UDP/TCP 53) to the system resolver and to 8.8.8.8 / 1.1.1.1 or DNS_RESOLVERS"
+  tools: [dig, nslookup, timeout, bash]
+  inputs: [TEST_FQDNS, FORWARD_LOOKUP_ZONES, PUBLIC_DOMAINS, DNS_RESOLVERS, DNS_ZONES, FORWARD_ZONE_TEST_SUBDOMAINS]
+  credential: "none"
+  tasks:
+    - title: "Check DNS Zone Records"
+      at: "runbook.robot:23"
+      asserts: "Problem (sev2) if dig NS or dig SOA +short for a zone in DNS_ZONES is empty or exits non-zero."
+      reads: ["dig NS <zone> +short +timeout=10", "dig SOA <zone> +short +timeout=10"]
+      permissions: ["DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No-op (report line only) when DNS_ZONES is empty. Uses the system resolver, not DNS_RESOLVERS. Defaults for the zone variables are the literal string \"\" in some places."
+    - title: "Detect Broken Record Resolution"
+      at: "runbook.robot:91"
+      asserts: "Problem (sev2) if 3 repeated lookups of a TEST_FQDNS entry show 'server can't find / NXDOMAIN' or 'connection timed out / no response' in stdout."
+      reads: ["for i in 1..3: dig +nocmd +noall +answer <fqdn> @<resolver> || nslookup <fqdn> <resolver>; sleep 2"]
+      permissions: ["DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:110 `dig +noall +answer ... || nslookup ...`: dig exits 0 with an empty answer on NXDOMAIN, so the nslookup fallback (the only source of the matched 'can't find' text) never runs and the failure regexes at :121/:135 see nothing. Missing dig and nslookup also produce empty stdout."
+      notes: "Uses only the first entry of DNS_RESOLVERS (default 8.8.8.8). Timeouts are caught via the nslookup fallback ('connection timed out')."
+    - title: "Test Forward Lookup Zones"
+      at: "runbook.robot:151"
+      asserts: "Problem if nslookup of a FORWARD_LOOKUP_ZONES entry fails (sev2) or of <subdomain>.<zone> from FORWARD_ZONE_TEST_SUBDOMAINS fails (sev1)."
+      reads: ["nslookup <zone> && echo SUCCESS || echo FAILED", "nslookup <subdomain>.<zone> && echo SUCCESS || echo FAILED"]
+      permissions: ["DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "rc based (nslookup non-zero or missing -> FAILED). Uses the system resolver, not DNS_RESOLVERS, so it tests the runner's own forwarders. No-op when FORWARD_LOOKUP_ZONES empty."
+    - title: "External Resolution Validation"
+      at: "runbook.robot:221"
+      asserts: "Problem if any resolver (default, 8.8.8.8/1.1.1.1 or DNS_RESOLVERS) answers 'can't find' for a PUBLIC_DOMAINS entry (sev2); sev3 if all fail."
+      reads: ["nslookup <domain>", "nslookup <domain> <resolver> per resolver"]
+      permissions: ["DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:273 and :283 count only the text \"can't find\" (NXDOMAIN/SERVFAIL); a down/blocked resolver prints 'connection timed out; no servers could be reached' (or nothing if nslookup is absent) and rc is ignored, so no issue."
+      notes: "Whole task skipped when PUBLIC_DOMAINS is empty or the literal \"\"."
+    - title: "DNS Latency Check"
+      at: "runbook.robot:315"
+      asserts: "Problem if latency output is empty (sev1) or more than 2 of 5 nslookup samples take >= 5 s (sev2) for any zone/FQDN/forward zone."
+      reads: ["for i in 1..5: (time nslookup <domain> 2>&1) 2>&1 | grep -E 'real|user|sys'; sleep 1"]
+      permissions: ["DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "A failing or NXDOMAIN lookup still prints bash `time` lines, so only slow (>= 5 s, e.g. timeouts) responses are caught; fast failures are indistinguishable from success and nslookup rc is not read."
+      notes: "Regex real 0m5-99s only; durations >= 1 minute use a different format and are missed."
+  bundleNotes: "Tool-only bundle (no credentials). Several failure idioms rely on matching the human-readable text of nslookup/dig output, which differs by binary version. Some variable defaults are the literal two-character string \"\"."
+
+- bundle: gcloud-log-inspection
+  displayName: "GCP Gcloud Log Inspection"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "cloud API: logging.googleapis.com via gcloud"
+  tools: [gcloud]
+  inputs: [SEVERITY, ADD_FILTERS, GCP_PROJECT_ID]
+  credential: "gcp_credentials secret (service account JSON key, activated via GOOGLE_APPLICATION_CREDENTIALS); also imports a 'gcloud' Service"
+  tasks:
+    - title: "Inspect GCP Logs For Common Errors in GCP Project"
+      at: "runbook.robot:55"
+      asserts: "Problem (sev4) if `gcloud logging read 'severity>=SEVERITY[ AND ADD_FILTERS]' --freshness=120m --limit=50` returns at least one entry."
+      reads: ["gcloud auth activate-service-account --key-file", "gcloud logging read <filter> --freshness=120m --limit=50 --format=json"]
+      permissions: ["logging.logEntries.list (roles/logging.viewer)"]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "RW.CLI.Parse Cli Json Output enforces rc == 0 so a failed gcloud raises instead of passing. Bug: runbook.robot:69 and :76 call max() on a dict that is empty when there are zero entries or the entries have no resource.labels.namespace_name/cluster_name, so the healthy no-errors case (and non-GKE logs) crashes the task before the issue check. Count capped at 50 and window fixed at 120m; ADD_FILTERS is concatenated into the filter unquoted."
+  bundleNotes: "Single generic log-count task; treats any entry at or above SEVERITY as an issue."
+
+- bundle: gh-actions-artifact-analysis
+  displayName: "GitHub Actions Artifact Analysis"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only)"
+  sli: true
+  sliAsserts: "Pushes the number printed by the user ANALYSIS_COMMAND (read from report.txt) after the same download pipeline; if the pipeline fails report.txt is missing and Convert To Number raises, so no metric. False-pass: none."
+  egress: "public internet: api.github.com plus the artifact download host (GitHub redirects archive_download_url to blob storage)"
+  tools: [curl, jq, unzip, openssl, base64, bash]
+  inputs: [GITHUB_REPO, WORKFLOW_NAME, ARTIFACT_NAME, ANALYSIS_COMMAND, RESULT_FILE, PERIOD_HOURS, ISSUE_SEARCH_STRING, ISSUE_SEVERITY, ISSUE_TITLE, ISSUE_NEXT_STEPS]
+  credential: "GITHUB_TOKEN (PAT) or GitHub App (GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY [+ GITHUB_APP_INSTALLATION_ID, GITHUB_APP_CLIENT_ID]); all optional, one required"
+  tasks:
+    - title: "Analyze artifact from GitHub workflow in repository"
+      at: "runbook.robot:17"
+      asserts: "Problem (sev3) if the latest run of WORKFLOW_NAME did not conclude success or is older than PERIOD_HOURS (matched from stderr); problem (ISSUE_SEVERITY) if the user ANALYSIS_COMMAND output over the artifact's RESULT_FILE matches ISSUE_SEARCH_STRING."
+      reads: ["GET https://api.github.com/repos/<repo>/actions/runs", "GET /repos/<repo>/actions/runs/<id>/artifacts", "GET <artifact archive_download_url> (zip download)", "unzip; cat <RESULT_FILE> | eval $ANALYSIS_COMMAND > report.txt"]
+      permissions: ["PAT classic: repo (private) or public_repo; fine-grained: Actions: read + Metadata: read", "GitHub App: Actions: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:35 `grep -E '${ISSUE_SEARCH_STRING}'report.txt` has no space before report.txt, so the pattern becomes ERROR|Errorreport.txt and grep reads empty stdin: the search-string issue can never fire. :47 only greps stderr for 'did not complete successfully|run is older than'; every other error_exit (Failed to fetch workflow runs, No runs found, No artifacts found, Result file not found, auth failure) matches nothing -> no issue."
+      notes: "Runs a user-supplied command via eval (arbitrary code execution; escaped with RW.CLI.Escape Bash Command). Runs list is only the first page (30) of all workflows so a busy repo may not contain the workflow. Uses GNU date -d. Defaults for the string inputs are the literal \"''\"."
+  bundleNotes: "The only reliable signal is workflow conclusion/age through stderr text. Artifact content assertion is dead."
+
+- bundle: gh-actions-health
+  displayName: "GitHub Actions Health Monitoring"
+  classicResourceTypes: []
+  matchHints: "generation rule file is entirely commented out (template for future github_organizations / github_repository resource types); effectively manual SLX only"
+  sli: true
+  sliAsserts: "Seven sub-scores averaged: workflow success rate >= MIN_WORKFLOW_SUCCESS_RATE (0.95), org health >= 0.90, runner availability >= 0.95, security score >= 0.98 and 0 critical vulns, performance >= 0.90, API rate-limit usage <= 70%. False-pass confirmed: every task's JSON-parse EXCEPT logs 'defaulting to perfect score' (sli.robot) and the calculate_*_sli.sh scripts emit 1.0 when no runs/runners were found (e.g. calculate_workflow_sli.sh:67-68, calculate_runner_sli.sh:72-73)."
+  egress: "public internet: api.github.com"
+  tools: [curl, jq, bc, openssl, base64, bash, GNU date]
+  inputs: [GITHUB_REPOS, GITHUB_ORGS, MAX_WORKFLOW_DURATION_MINUTES, REPO_FAILURE_THRESHOLD, HIGH_RUNNER_UTILIZATION_THRESHOLD, HIGH_USAGE_THRESHOLD, RATE_LIMIT_WARNING_THRESHOLD, FAILURE_LOOKBACK_DAYS, MAX_REPOS_TO_ANALYZE, MAX_REPOS_PER_ORG]
+  credential: "GITHUB_TOKEN (PAT) or GitHub App (GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY [+ GITHUB_APP_INSTALLATION_ID]); all optional, one required; _github_auth.sh mints per-org installation tokens when no installation id is given"
+  tasks:
+    - title: "Check Recent Workflow Failures Across Specified Repositories"
+      at: "runbook.robot:19"
+      asserts: "Problem (sev3) for each workflow whose latest failed/cancelled/timed_out run falls within FAILURE_LOOKBACK_DAYS (runbook default 1), with job/step log excerpts."
+      reads: ["GET /orgs/<org>/repos (when GITHUB_REPOS=ALL)", "GET /repos/<r>/actions/runs?status=failure&created=>date&per_page=50", "GET /repos/<r>/actions/runs/<id>/jobs", "GET /repos/<r>/actions/jobs/<id>/logs"]
+      permissions: ["PAT classic: repo; fine-grained: Actions: read, Metadata: read (+ org Members/Metadata for org repo listing)", "GitHub App: Actions: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_workflow_failures.sh:242-246,282-284 perform_curl is `curl -sS` (exit 0 on HTTP 401/403/404); an error body fails `jq -e .workflow_runs` and only stderr gets 'No workflow runs found or access denied'; stdout stays `[]`. runbook.robot:43-46 TRY/EXCEPT defaults to an empty list on any unparsable stdout."
+      notes: "A failure stays reported for the whole lookback even if a later run is green. API query status=failure excludes cancelled/timed_out although the jq select includes them. Org repo list is the first 100 only (per_page=100, no pagination); orgs that error are skipped with stderr only."
+    - title: "Check Long Running Workflows Across Specified Repositories"
+      at: "runbook.robot:69"
+      asserts: "Problem (sev4) for in_progress runs older than MAX_WORKFLOW_DURATION_MINUTES (60) and for up to 3 recently completed runs per repo whose updated_at - created_at exceeds it."
+      reads: ["GET /repos/<r>/actions/runs?status=in_progress&per_page=100", "GET /repos/<r>/actions/runs?status=completed&per_page=50"]
+      permissions: ["PAT classic: repo; fine-grained: Actions: read, Metadata: read", "GitHub App: Actions: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_long_running_workflows.sh:30,60 same curl -sS pattern: HTTP error body -> stderr 'access denied' -> empty long_running; runbook.robot:95 EXCEPT defaults to empty."
+      notes: "Completed-run duration includes queue time and re-runs (updated_at - created_at)."
+    - title: "Check Repository Health Summary for Specified Repositories"
+      at: "runbook.robot:120"
+      asserts: "Problem (sev2) if total failed/cancelled/timed_out runs in the lookback across all repos exceeds REPO_FAILURE_THRESHOLD (10)."
+      reads: ["GET /repos/<r>/actions/runs?created=>date&per_page=100"]
+      permissions: ["PAT classic: repo; fine-grained: Actions: read, Metadata: read", "GitHub App: Actions: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_repo_health_summary.sh:38-52 an inaccessible repo is still counted as analysed with 0 failures (else branch is attached to the inner `if failures>0`, so access-denied prints nothing and 'No workflow runs found' prints for healthy repos); health_score 1.0. runbook.robot:144 EXCEPT then `.get('overall_health_score', 1.0)` defaults to 1.0."
+      notes: "Only the first 100 runs per repo are counted."
+    - title: "Check GitHub Actions Runner Health Across Specified Organizations"
+      at: "runbook.robot:165"
+      asserts: "Problem (sev3) per self-hosted runner with status offline; problem (sev4) if busy/total runners exceeds HIGH_RUNNER_UTILIZATION_THRESHOLD (80%)."
+      reads: ["GET /orgs/<org>/actions/runners?per_page=100"]
+      permissions: ["PAT classic: admin:org; fine-grained: Organization self-hosted runners: read", "GitHub App: organization_self_hosted_runners: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_runner_health.sh:32-89 a 403/404 body fails `jq -e .runners` and only prints 'No runners found or access denied' to stderr; org counts as analysed with 0 runners -> no offline list, utilization 0. EXCEPT at runbook.robot:188 also defaults."
+      notes: "Requires GITHUB_ORGS (error_exit otherwise -> non-JSON stdout -> silent). No pagination beyond 100 runners; ephemeral runners appear offline."
+    - title: "Check Security Workflow Status Across Specified Repositories"
+      at: "runbook.robot:225"
+      asserts: "Problem (sev1) if any repo has open critical Dependabot alerts; problem (sev3) per failed/cancelled run of a workflow whose name matches security|vuln|cve|dependabot|codeql|trivy|snyk|semgrep|bandit within the lookback."
+      reads: ["GET /repos/<r>/actions/runs?created=>date&per_page=100", "GET /repos/<r>/dependabot/alerts?state=open&per_page=100", "GET /repos/<r>/security-advisories?state=published&per_page=50"]
+      permissions: ["PAT classic: repo + security_events; fine-grained: Actions: read, Dependabot alerts: read, Repository security advisories: read, Metadata: read", "GitHub App: Actions: read, Dependabot alerts: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_security_workflows.sh `if github_curl_url <dependabot url> &>/dev/null; then` is always true because curl -sS exits 0 on 403/404; the error object is then iterated by jq (`.[] | {..}` on string values) which errors under `set -e`, so the script emits no JSON; runbook.robot:249 EXCEPT -> empty dict -> 0 critical vulns."
+      notes: "High-severity alerts are counted but never alerted. Published security advisories are not vulnerabilities and are not counted."
+    - title: "Check GitHub Actions Billing and Usage Across Specified Organizations"
+      at: "runbook.robot:284"
+      asserts: "Problem (sev4) if total_minutes_used / included_minutes exceeds HIGH_USAGE_THRESHOLD (80%) across the orgs."
+      reads: ["GET /orgs/<org>/settings/billing/actions"]
+      permissions: ["PAT classic: admin:org (org owner / billing manager)", "GitHub App: not supported for this legacy billing endpoint (verify)"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_billing_usage.sh:31 `perform_curl ... || echo {zeros}` never triggers; a 4xx body lacks .total_minutes_used so the org is recorded with usage 0 / included 0 (echo 'Failed to fetch billing data' to stderr only); runbook.robot:307 EXCEPT and :314 usage_percentage = 0 when included is 0."
+      notes: "Uses the legacy /settings/billing/actions endpoint; GitHub has been migrating billing to the enhanced billing platform, so this may return nothing for newer orgs (not verified here)."
+    - title: "Check GitHub API Rate Limits"
+      at: "runbook.robot:328"
+      asserts: "Problem (sev3) if the core API rate-limit usage of the bundle's own credential exceeds RATE_LIMIT_WARNING_THRESHOLD (70%)."
+      reads: ["GET /rate_limit"]
+      permissions: ["any valid token (the call does not count against the limit)"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_rate_limits.sh: `.rate.limit // 0`, non-numeric -> 0, so Bad credentials / error body gives limit 0 and usage_percentage 0.00; runbook.robot:350 EXCEPT defaults to 0 as well."
+      notes: "Measures the token the bundle itself uses, not org-wide Actions API consumption; also reads the legacy .rate key."
+  bundleNotes: "check_org_workflow_health.sh is not referenced by runbook or SLI and has a piped `while` that loses its counters. All access-denied paths log to stderr only; every task parses stdout JSON inside TRY/EXCEPT with an empty/perfect default. GITHUB_REPOS=ALL requires GITHUB_ORGS."
+
+- bundle: gh-repo-health
+  displayName: "GitHub Repository Health"
+  classicResourceTypes: []
+  matchHints: "placeholder generation rule (all comments) for future github_repository / github_organization resource types; effectively manual SLX only"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "public internet: api.github.com"
+  tools: [curl, jq, bc, openssl, base64, bash, GNU date]
+  inputs: [GITHUB_REPOS, GITHUB_ORGS, DORMANT_DAYS, STALE_ISSUE_DAYS, STALE_ISSUE_THRESHOLD, STALE_PR_DAYS, STALE_BRANCH_DAYS, OVERDUE_COMMIT_THRESHOLD, PULSE_DAYS, MAX_REPOS_TO_ANALYZE, MAX_REPOS_PER_ORG]
+  credential: "GITHUB_TOKEN (PAT) or GitHub App (GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY [+ GITHUB_APP_INSTALLATION_ID]); all optional, one required"
+  tasks:
+    - title: "Detect Dormant Repositories"
+      at: "runbook.robot:19"
+      asserts: "Problem (sev3, one aggregated issue) listing repos whose last push/commit is older than DORMANT_DAYS (90) or that are archived."
+      reads: ["GET /repos/<r>", "GET /repos/<r>/commits?per_page=1"]
+      permissions: ["PAT classic: repo; fine-grained: Metadata: read, Contents: read", "GitHub App: Contents: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_dormant_repos.sh:21 `perform_curl .../repos/<r> || echo {}` never falls back (curl -sS exits 0); an error body has no pushed_at, so activity_days = repo_age_days = 0 and the repo is not dormant. runbook.robot:35 EXCEPT defaults to empty."
+      notes: "Archived repos are always flagged regardless of age."
+    - title: "Detect Stale Issue Accumulation"
+      at: "runbook.robot:63"
+      asserts: "Problem (sev3) if stale issues (no update for STALE_ISSUE_DAYS=60) exceed STALE_ISSUE_THRESHOLD (20) across repos; problem (sev3) listing issues with no team response."
+      reads: ["GET /repos/<r>/issues?state=open&per_page=100&sort=created&direction=asc", "GET /repos/<r>/issues/<n>/comments?per_page=3"]
+      permissions: ["PAT classic: repo; fine-grained: Issues: read, Metadata: read", "GitHub App: Issues: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_stale_issues.sh:28 `perform_curl ... || echo []`: error object instead of array breaks the jq loop (set -e) or yields zero issues; runbook.robot:79 EXCEPT defaults to an empty dict."
+      notes: "Only the 100 oldest open items (issues endpoint also returns PRs); no pagination."
+    - title: "Detect Stale Pull Requests"
+      at: "runbook.robot:116"
+      asserts: "Problem (sev3) for PRs open > STALE_PR_DAYS (14) OR with zero reviews OR mergeable_state == dirty; separate problem (sev3) for PRs with merge conflicts."
+      reads: ["GET /repos/<r>/pulls?state=open&per_page=100&sort=created&direction=asc", "GET /repos/<r>/pulls/<n>/reviews?per_page=20"]
+      permissions: ["PAT classic: repo; fine-grained: Pull requests: read, Metadata: read", "GitHub App: Pull requests: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_stale_prs.sh:28 `|| echo []` never triggers; error body -> no iteration; runbook.robot:132 EXCEPT defaults. Separately the conflict check is dead: mergeable_state (:46,:72) is not returned by the list-pulls endpoint, so it is always 'unknown' and no PR is ever flagged as conflicting."
+      notes: "The OR condition makes every un-reviewed PR 'stale' regardless of age. First 100 PRs only."
+    - title: "Audit Branch Hygiene"
+      at: "runbook.robot:174"
+      asserts: "Problem (sev4) listing unprotected non-default branches whose last commit is older than STALE_BRANCH_DAYS (60)."
+      reads: ["GET /repos/<r>", "GET /repos/<r>/branches?per_page=100", "GET /repos/<r>/commits/<sha> per branch"]
+      permissions: ["PAT classic: repo; fine-grained: Contents: read, Metadata: read", "GitHub App: Contents: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_branch_hygiene.sh:25,28,54 `perform_curl ... || echo {...}` fallbacks never fire; error body yields no branches or a null commit date which `continue`s; runbook.robot EXCEPT defaults to empty."
+      notes: "First 100 branches per repo; one extra API call per branch (rate-limit heavy)."
+    - title: "Audit Repository Configuration Health"
+      at: "runbook.robot:214"
+      asserts: "Problem (sev4, aggregated) for repos missing README (<= 100 bytes), LICENSE, description, CONTRIBUTING.md, .github/CODEOWNERS or default-branch protection (community health score < 70 is computed but not raised)."
+      reads: ["GET /repos/<r>", "GET /repos/<r>/contents/README.md, CONTRIBUTING.md, .github/CODEOWNERS", "GET /repos/<r>/branches/<default>/protection", "GET /repos/<r>/community/profile"]
+      permissions: ["PAT classic: repo (branch protection needs admin on the repo); fine-grained: Contents: read, Administration: read, Metadata: read", "GitHub App: Contents: read, Administration: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Error direction is reversed: any 401/403/404 (including non-admin branch-protection reads) is recorded as 'missing', i.e. false positives. CONTRIBUTING only looked up at repo root; CODEOWNERS only under .github/."
+    - title: "Check Release Health and Cadence"
+      at: "runbook.robot:270"
+      asserts: "Problem (sev3) for repos with > OVERDUE_COMMIT_THRESHOLD (30) commits since the latest release and > 14 days old; problem (sev4) for repos with no GitHub releases."
+      reads: ["GET /repos/<r>/releases?per_page=10", "GET /repos/<r>", "GET /repos/<r>/compare/<last_tag>...<default_branch>"]
+      permissions: ["PAT classic: repo; fine-grained: Contents: read, Metadata: read", "GitHub App: Contents: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_release_health.sh:57 `compare ... 2>/dev/null || echo {ahead_by:0}` and :25-26 fallbacks; errors give ahead_by 0 (never overdue) or an empty release list; runbook.robot EXCEPT defaults to empty."
+      notes: "Repos that tag without GitHub Releases are reported as 'no releases'."
+    - title: "Generate Contributor Activity Pulse"
+      at: "runbook.robot:336"
+      asserts: "Problem (sev3) per open PR whose requested reviewers have neither approved nor requested changes (review bottleneck); otherwise report-only activity per contributor."
+      reads: ["GET /repos/<r>/commits?since=<PULSE_DAYS>&per_page=100", "GET /repos/<r>/pulls?state=open&per_page=100", "GET /repos/<r>/pulls/<n>/reviews?per_page=20"]
+      permissions: ["PAT classic: repo; fine-grained: Contents: read, Pull requests: read, Metadata: read", "GitHub App: Contents: read, Pull requests: read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_contributor_pulse.sh:34 and :69 contain `if echo ... | jq -e 'type == \"array\"' >/dev/null 2>>/dev/null 2>&1 ]; then1; then` (corrupted text): `]` becomes a jq file argument and `then1` is run as a command (command not found), so both the commit loop and the PR loop bodies never execute. The script always emits zero contributors/bottlenecks; runbook.robot:352 EXCEPT defaults to empty."
+      notes: "Verified by running the construct in isolation: body skipped, 'then1: command not found' on stderr. Task cannot detect anything as shipped."
+  bundleNotes: "Seven read-only GitHub checks over the first page of each API collection (no pagination). Same perform_curl idiom as gh-actions-health: HTTP errors are 200-class to bash, then swallowed by jq/TRY-EXCEPT defaults, so access problems look like clean repos. Config-health is the only task where errors become findings."
+
+- bundle: gke-cluster-health
+  displayName: "GKE Cluster Health"
+  classicResourceTypes: [gcp_container_clusters]
+  matchHints: "any GKE cluster name (pattern .+, substring); qualifiers [project] so one SLX per project, and every script lists all clusters in the project; level basic"
+  sli: false
+  sliAsserts: "n/a: sli template points at codebundles/cron-scheduler-sli (schedules the runbook); no sli.robot, nothing is scored"
+  egress: "cloud API: GCP container, compute, recommender, IAM, resourcemanager (gcloud), plus every cluster's Kubernetes API server (kubectl)"
+  tools: [gcloud, kubectl, jq, bc, python3, bash]
+  inputs: [GCP_PROJECT_ID, CRITICAL_NAMESPACES, MAX_CPU_LIMIT_OVERCOMMIT, MAX_MEM_LIMIT_OVERCOMMIT, OPERATIONS_LOOKBACK_HOURS, OPERATIONS_STUCK_HOURS, NODE_HEALTH_LOOKBACK_HOURS]
+  credential: "gcp_credentials secret (service account JSON key via GOOGLE_APPLICATION_CREDENTIALS) plus kubeconfig minted per cluster with gcloud container clusters get-credentials (KUBECONFIG env)"
+  tasks:
+    - title: "Identify GKE Service Account Issues in GCP Project"
+      at: "runbook.robot:77"
+      asserts: "Problem (sev2) if a node-pool service account lacks logging.logEntries.create, monitoring.timeSeries.create or autoscaling.sites.writeMetrics according to project-level IAM bindings."
+      reads: ["gcloud projects describe", "gcloud container clusters list / node-pools list / node-pools describe", "gcloud projects get-iam-policy --flatten bindings", "gcloud iam roles describe <role> per binding"]
+      permissions: ["resourcemanager.projects.get", "container.clusters.list", "container.nodePools.list", "container.nodePools.get", "resourcemanager.projects.getIamPolicy", "iam.roles.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "sa_check.sh:105-110 `gcloud container clusters list` has no rc check; failure -> zero service accounts discovered -> :159 'All service accounts have the required permissions' and an empty issues.json. (Opposite direction: get-iam-policy/roles describe failures make every permission 'No' and flag all accounts.)"
+      notes: "Only project-level bindings are inspected: inherited folder/org bindings, group grants and custom roles needing --project are missed (false positives). Uses --zone for regional clusters. Runbook reads `cat issues.json` with no rc check. Suite init runs gcloud auth activate-service-account with `|| true`."
+    - title: "Fetch GKE Recommendations for GCP Project"
+      at: "runbook.robot:109"
+      asserts: "Problem (severity from recommendation priority) for every active google.container.DiagnosisRecommender recommendation in each cluster location; a suggestion feed, not a fault."
+      reads: ["gcloud container clusters list --format=json", "gcloud recommender recommendations list --recommender=google.container.DiagnosisRecommender per location"]
+      permissions: ["container.clusters.list", "recommender.containerDiagnosisRecommendations.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "gcp_recommendations.sh:46 `clusters list ... || true` and :66-70 `recommendations list ... 2>/dev/null || true`: failure -> empty -> 'No recommendations found for location'. When no clusters are found the script exits 0 at :47-50 before writing recommendations_issues.json, so the runbook `cat` then fails to parse (loud error, not pass)."
+      notes: "RECOMMENDER_ID env defaults to the diagnosis recommender only."
+    - title: "Check Kubernetes Version Support for GKE Clusters in GCP Project"
+      at: "runbook.robot:141"
+      asserts: "Problem if a cluster's master minor is not in get-server-config validMasterVersions (sev1), >= 3 minors behind latest (sev2, likely extended support), >= 2 behind (sev3), or node pool minors differ; includes extended-support cost estimates."
+      reads: ["gcloud container clusters list --format=json", "gcloud container get-server-config --location <loc>"]
+      permissions: ["container.clusters.list", "container.clusters.get (get-server-config)"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_gke_version_support.sh:65 `CLUSTERS_JSON=$(gcloud ... 2>/dev/null)` under `set -euo pipefail` kills the script on failure before version_support_issues.json is written, and runbook.robot:182 reads it with `cat ... 2>/dev/null || echo '[]'` -> no issue (rc only compared to -1). :85-86 get-server-config `2>/dev/null || echo {}` -> 'Could not fetch valid versions' -> cluster skipped silently."
+      notes: "Version support is inferred from validMasterVersions and a minors-behind heuristic, not from the official support calendar; pricing constants hard-coded (0.10/0.60 USD/hr)."
+    - title: "Fetch GKE Cluster Health for GCP Project"
+      at: "runbook.robot:202"
+      asserts: "Problem if a node is not Ready (sev2), a pod is in CrashLoopBackOff (sev1 if in CRITICAL_NAMESPACES else sev4), a node pool's CPU/memory usage is high (sev by percent of affected nodes), a pool is underutilized (cost saving, both < 25%), or cluster credentials cannot be fetched (sev4)."
+      reads: ["gcloud container clusters list", "gcloud container clusters get-credentials", "kubectl get nodes", "kubectl top nodes", "kubectl get pods -A", "kubectl get nodes -o json"]
+      permissions: ["container.clusters.list", "container.clusters.getCredentials", "{apiGroups: [\"\"], resources: [nodes], verbs: [get, list]}", "{apiGroups: [metrics.k8s.io], resources: [nodes], verbs: [get, list]}", "{apiGroups: [\"\"], resources: [pods], verbs: [list]}"]
+      scope: all-namespaces
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cluster_health.sh:45 `kubectl get nodes --no-headers 2>/dev/null || true` -> 'No nodes or unable to list nodes' (log only); :115 `kubectl get pods -A --no-headers 2>/dev/null | awk '$4==\"CrashLoopBackOff\"'` -> failure = no crashloops; :75 `kubectl top nodes ... || true` skips utilization."
+      notes: "Only STATUS == CrashLoopBackOff exactly; Error/ImagePullBackOff/Pending are not reported. get-credentials failure is reported (sev4). bash -n on macOS bash 3.2 reports a syntax error at cluster_health.sh:384 (not verified on the runner's bash)."
+    - title: "Check for Quota Related GKE Autoscaling Issues in GCP Project"
+      at: "runbook.robot:236"
+      asserts: "Problem if regional CPUS / IN_USE_ADDRESSES / SSD_TOTAL_GB quota cannot cover cluster min nodes (sev2) or full scale-out (sev2), or usage is >= 80% of the limit (sev3)."
+      reads: ["gcloud container clusters list", "gcloud container node-pools list", "gcloud container clusters describe", "gcloud compute regions describe <region>"]
+      permissions: ["container.clusters.list", "container.clusters.get", "container.nodePools.list", "compute.regions.get"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "quota_check.sh:62 `clusters list || true`, :105 `regions describe ... 2>/dev/null || true` (empty region JSON -> no quota values -> no breach), :176 `node-pools list || true`, :185 `clusters describe ... || echo {}`."
+      notes: "Region derived by trimming the zone suffix from cluster location."
+    - title: "Validate GKE Node Sizes for GCP Project"
+      at: "runbook.robot:269"
+      asserts: "Problem if pod requests/limits overload a node or node pool beyond MAX_CPU_LIMIT_OVERCOMMIT (3) / MAX_MEM_LIMIT_OVERCOMMIT (2), unscheduled pods exist, or a cheaper/better machine type is recommended; also 'Sizing failed' / 'Analysis failed' issues on exceptions."
+      reads: ["gcloud container clusters list / get-credentials / describe", "kubectl get pods -A -o json", "kubectl get nodes -o json", "gcloud container node-pools list", "gcloud compute machine-types list"]
+      permissions: ["container.clusters.list", "container.clusters.get", "container.clusters.getCredentials", "container.nodePools.list", "compute.machineTypes.list", "{apiGroups: [\"\"], resources: [pods, nodes], verbs: [list]}"]
+      scope: all-namespaces
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "gke_node_size.py:53-57 and :80-84 gather_pods()/allocatable() catch CalledProcessError, print a Warning and return empty dicts, so denied kubectl produces an analysis over nothing and no issue; other exceptions become 'Sizing failed' issues."
+      notes: "Runbook runs it as a plain Run Cli (no rc check) and reads node_size_issues.json."
+    - title: "Fetch GKE Cluster Operations for GCP Project"
+      at: "runbook.robot:301"
+      asserts: "Problem if a cluster operation in OPERATIONS_LOOKBACK_HOURS (24) is RUNNING/PENDING/ERROR/FAILED/ABORTING (sev3, sev2 when RUNNING > OPERATIONS_STUCK_HOURS=2) or > 1 same-type operation is in the stuck window with one RUNNING (sev2)."
+      reads: ["gcloud container clusters list --format=json", "gcloud container operations list --location <loc> --filter targetLink:clusters/<name> AND startTime>..."]
+      permissions: ["container.clusters.list", "container.operations.list"]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cluster_operations.sh:86-90 `gcloud container operations list ... >\"$op_file\" || true` (per cluster): failure -> empty op file -> zero operations -> no issue."
+      notes: "Issues file is removed at start, so a script crash before completion makes the runbook cat/parse fail loudly rather than pass."
+    - title: "Check Node Pool Health for GCP Project"
+      at: "runbook.robot:336"
+      asserts: "Problem if a node pool is not running, exceeds/at max capacity, instance groups have no/failed instances or high failure rate, compute operations failed (quota/capacity exhaustion), node counts mismatch compute instances, K8s node events are critical, pods fail scheduling or disks fail to attach, or the cluster is not RUNNING."
+      reads: ["gcloud compute instances list", "gcloud compute instance-groups managed list / list-instances", "gcloud compute operations list --filter insertTime>-P<N>H", "gcloud container clusters list / get-credentials / describe / node-pools list", "kubectl get nodes -o json", "kubectl get events (current namespace only) -o json"]
+      permissions: ["compute.instances.list", "compute.instanceGroupManagers.list", "compute.instanceGroups.list", "compute.operations.list", "container.clusters.list", "container.clusters.get", "container.clusters.getCredentials", "container.nodePools.list", "{apiGroups: [\"\"], resources: [nodes], verbs: [list]}", "{apiGroups: [\"\"], resources: [events], verbs: [list]}"]
+      scope: cluster
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "node_pool_health.sh:99-102,106-109,113-118 `gcloud compute ... 2>/dev/null || echo '[]'`; :158-165 `kubectl get nodes/events ... 2>/dev/null || echo '{\"items\":[]}'`; :197-201 node-pools list `|| echo '[]'`; :779-787 clusters list `|| echo '[]'` exits 0 with an empty issue file."
+      notes: "`kubectl get events` has no -A, so only the kubeconfig's current namespace is read. 851-line script; fetches project-wide compute data once and filters locally."
+  bundleNotes: "Eight tasks, no SLI. Fail-open is pervasive in the shell scripts (`|| true`, `2>/dev/null || echo '[]'`). Several tasks need a Kubernetes-API path from the runner to each cluster in the project (private clusters will silently produce empty kubectl output)."
+
+- bundle: jenkins-health
+  displayName: "Jenkins Health"
+  classicResourceTypes: [ec2_instance]
+  matchHints: "AWS EC2 instance (platform aws) whose tag values contain 'jenkins-server' AND state/Name contains 'running'; qualifiers [resource]; level detailed"
+  sli: true
+  sliAsserts: "Average of 6 binary scores: failed builds <= MAX_FAILED_BUILDS, long-running builds <= MAX_LONG_RUNNING_BUILDS, failed tests <= MAX_ALLOWED_FAILED_TESTS, /api/json reachable, queued builds <= MAX_QUEUED_BUILDS, no executor label above MAX_EXECUTOR_UTILIZATION. False-pass confirmed for failed-builds and long-running scores: failed_build_logs.sh / long_running_builds.sh output that is not JSON (401 HTML page, curl failure) falls into the EXCEPT that defaults to an empty list (sli.robot:27, :48). Library-based and health scores fail closed."
+  egress: "Jenkins server at JENKINS_URL over HTTP(S) (customer network)"
+  tools: [curl, jq, column, bash, "python requests (libraries/Jenkins)"]
+  inputs: [JENKINS_URL, LONG_RUNNING_BUILD_MAX_WAIT_TIME, QUEUED_BUILD_MAX_WAIT_TIME, MAX_EXECUTOR_UTILIZATION, JENKINS_INSTANCE_NAME]
+  credential: "JENKINS_USERNAME + JENKINS_TOKEN secrets (Jenkins user API token, HTTP basic auth)"
+  tasks:
+    - title: "List Failed Build Logs in Jenkins Instance"
+      at: "runbook.robot:15"
+      asserts: "Problem (sev3) for each top-level job whose lastBuild.result == FAILURE, with console log excerpts mapped to suggestions via error_patterns.json."
+      reads: ["GET <JENKINS_URL>/api/json?depth=2", "GET <build url>logText/progressiveText?start=0 per failed job"]
+      permissions: ["Jenkins Overall/Read and Job/Read (builds and console output) for the token's user"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "failed_build_logs.sh: `curl -s` with no -f; a 401/403 HTML body is non-empty so the :14 empty-check passes, then `jq -c '.jobs[] ...'` errors inside the pipeline, the loop never runs and the script prints `[ ]`; runbook.robot:24-29 TRY/EXCEPT also turns a non-JSON error message into an empty list -> 'No failed builds found'."
+      notes: "Only lastBuild of top-level jobs (no folders/multibranch traversal); depth=2 fetch of the whole tree."
+    - title: "List Long Running Builds in Jenkins Instance"
+      at: "runbook.robot:64"
+      asserts: "Problem (sev4) for jobs whose lastBuild is still building longer than LONG_RUNNING_BUILD_MAX_WAIT_TIME."
+      reads: ["GET <JENKINS_URL>/api/json?depth=2"]
+      permissions: ["Jenkins Overall/Read and Job/Read"]
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "long_running_builds.sh pipes `curl -s` output to jq; HTML/auth-error body makes jq fail, stdout is not the expected JSON, and runbook.robot:75-80 EXCEPT defaults to an empty object -> 'No long running builds found'."
+      notes: "Threshold parser accepts minutes 0-59, hours 0-23, days only; default value is the literal string with quotes (\"10m\") which convert_to_minutes would reject if the quotes are passed through (unverified)."
+    - title: "List Recent Failed Tests in Jenkins Instance"
+      at: "runbook.robot:109"
+      asserts: "Problem (sev3) per failed test case in jobs whose lastBuild.result is UNSTABLE."
+      reads: ["GET <JENKINS_URL>/api/json?depth=2", "GET <lastBuild url>testReport/api/json per UNSTABLE job"]
+      permissions: ["Jenkins Overall/Read and Job/Read"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Library raises ConnectionError on any HTTP failure (raise_for_status), so errors fail the task loudly. Only UNSTABLE builds are inspected; FAILURE builds with test failures are not."
+    - title: "Check Jenkins Instance Health"
+      at: "runbook.robot:151"
+      asserts: "Problem (sev1) if GET /api/json does not return parseable JSON."
+      reads: ["curl -s -u user:token <JENKINS_URL>/api/json"]
+      permissions: ["Jenkins Overall/Read"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Any non-JSON response (HTML login page, timeout) is an issue. A JSON 200 from a reverse proxy would pass. TODO in source: capture more exceptions."
+    - title: "List Long Queued Builds in Jenkins Instance"
+      at: "runbook.robot:174"
+      asserts: "Problem (sev4) per queue item waiting longer than QUEUED_BUILD_MAX_WAIT_TIME."
+      reads: ["GET <JENKINS_URL>/queue/api/json", "GET queued item url for task name"]
+      permissions: ["Jenkins Overall/Read"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Library raises ConnectionError on failure; the TRY/EXCEPT in the runbook wraps only the post-processing, not the call."
+    - title: "List Executor Utilization in Jenkins Instance"
+      at: "runbook.robot:224"
+      asserts: "Problem (sev3) if busyExecutors/totalExecutors of an assignedLabels entry exceeds MAX_EXECUTOR_UTILIZATION (80%)."
+      reads: ["GET <JENKINS_URL>/api/json?depth=2 (assignedLabels)"]
+      permissions: ["Jenkins Overall/Read"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Utilization is per label (built-in, agent labels), not per node, so a node with several labels is counted several times. Library raises on HTTP failure."
+    - title: "Fetch Jenkins Instance Logs and Add to Report"
+      at: "runbook.robot:266"
+      asserts: "Report only: parses the Jenkins system log Atom feed into the report; never raises an issue."
+      reads: ["GET <JENKINS_URL>/manage/log/rss"]
+      permissions: ["permission to read /manage/log (Overall/Administer or SystemRead; unverified)"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Fails loudly (ConnectionError) if the feed is not readable."
+  bundleNotes: "Mix of two idioms: shell scripts (fail open via JSON-parse EXCEPT defaults) and the Jenkins Python library (raises on HTTP errors, fail closed). The generation rule is AWS-only (EC2 tagged jenkins-server), so Jenkins elsewhere is manual."
+
+- bundle: mailgun-sending-domain-health
+  displayName: "Mailgun Sending Domain Delivery & DNS Health"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only); domains in scope come from RESOURCES=All discovery (GET /v3/domains) or a single RESOURCES value"
+  sli: true
+  sliAsserts: "Average of 4 binary scores for ONE domain (MAILGUN_SENDING_DOMAIN): domain state active, delivery success >= MAILGUN_MIN_DELIVERY_SUCCESS_PCT, SPF includes mailgun, week volume not down >= MAILGUN_VOLUME_DROP_THRESHOLD_PCT vs 30-day average. API/parse failures score 0. False-pass partial: zero email volume scores delivery 1 and insufficient history (< 10 messages) scores volume 1 (sli-mailgun-delivery-score.sh, sli-mailgun-volume-trend-score.sh)."
+  egress: "public internet: api.mailgun.net or api.eu.mailgun.net, plus public DNS lookups from the runner"
+  tools: [curl, jq, awk, dig, python3, bash]
+  inputs: [MAILGUN_SENDING_DOMAIN, MAILGUN_API_REGION, RESOURCES, MAILGUN_STATS_WINDOW_HOURS, MAILGUN_MIN_DELIVERY_SUCCESS_PCT, MAILGUN_MAX_BOUNCE_RATE_PCT, MAILGUN_MAX_COMPLAINT_RATE_PCT, MAILGUN_VERIFY_MX, MAILGUN_VOLUME_DROP_THRESHOLD_PCT, MAILGUN_DELIVERED_SAMPLE_SIZE]
+  credential: "mailgun_api_key secret (Mailgun private API key, basic auth api:KEY)"
+  tasks:
+    - title: "Validate Mailgun Domain Scope Configuration"
+      at: "runbook.robot:19"
+      asserts: "Problem (sev4) if no sending domain resolved from RESOURCES=All discovery or the override."
+      reads: ["GET /v3/domains?limit=100 (suite-init discovery via discover-mailgun-domains.sh)"]
+      permissions: ["Mailgun API key with read access to domains"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Discovery failure or an auth error body yields an empty list, which is reported as the issue. Only the first page (100) of domains."
+    - title: "Verify Mailgun Domain Registration and State for Domains in Scope"
+      at: "runbook.robot:36"
+      asserts: "Per domain: problem (sev4) if GET /v3/domains/<d> is not HTTP 200; problem (sev3) if state != active; problem (sev3) per sending_dns_records entry with active == false."
+      reads: ["GET /v3/domains/<domain>"]
+      permissions: ["Mailgun API key with read access to the domain"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "HTTP code is checked (curl -w %{http_code}). Residual: if the script dies before writing its issue file (missing key, jq failure under set -e) the runbook cats a missing/stale file and the EXCEPT defaults to empty; the file is shared across domains in the loop so a crash can reuse the previous domain's issues."
+    - title: "Check Delivery Success Rate for Mailgun Domains in Scope"
+      at: "runbook.robot:75"
+      asserts: "Per domain: problem (sev3) if delivered/(delivered+failed) over MAILGUN_STATS_WINDOW_HOURS (24) < MAILGUN_MIN_DELIVERY_SUCCESS_PCT (95); problem (sev3) if the metrics API is not HTTP 200."
+      reads: ["POST /v1/analytics/metrics (delivered_count, failed_count, include_aggregates)"]
+      permissions: ["Mailgun API key with analytics read access"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Zero volume in the window prints 'nothing to evaluate' and raises no issue (a silent sender is not a delivery failure here). The failed bucket sums all failure types, including temporary ones."
+    - title: "Check Bounce and Complaint Rates for Mailgun Domains in Scope"
+      at: "runbook.robot:114"
+      asserts: "Per domain: problem (sev3) if bounced/accepted > MAILGUN_MAX_BOUNCE_RATE_PCT (5); problem (sev4) if complained/accepted > MAILGUN_MAX_COMPLAINT_RATE_PCT (0.1); API error (sev3)."
+      reads: ["POST /v1/analytics/metrics (accepted_outgoing_count, bounced_count, complained_count)"]
+      permissions: ["Mailgun API key with analytics read access"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Denominator forced to 1 when accepted is 0 (rates then equal raw counts)."
+    - title: "Sample Recent Delivered Messages for Mailgun Domains in Scope"
+      at: "runbook.robot:153"
+      asserts: "Report only: samples MAILGUN_DELIVERED_SAMPLE_SIZE delivered events (recipient, subject, details) from the last 7 days; never raises an issue."
+      reads: ["POST /v1/analytics/logs (events: delivered)"]
+      permissions: ["Mailgun API key with logs read access"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "An HTTP error prints 'ERROR: HTTP <code>' into the report only (exit 0). Recipient addresses and subjects (PII) land in the report."
+    - title: "Analyze 30-Day Volume Trends for Mailgun Domains in Scope"
+      at: "runbook.robot:171"
+      asserts: "Per domain: problem (sev2) for a day-over-day drop >= MAILGUN_VOLUME_DROP_THRESHOLD_PCT (80, prev day >= 10 msgs) and for current-week volume down >= threshold vs historical average; plus suppression/rate-limit findings; API error issue."
+      reads: ["POST /v1/analytics/metrics (30 days, daily resolution)"]
+      permissions: ["Mailgun API key with analytics read access"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Embedded python3 analysis; thresholds on low-volume domains are skipped."
+    - title: "Check Recent Permanent Failures in Mailgun Events for Domains in Scope"
+      at: "runbook.robot:210"
+      asserts: "Per domain: problem (sev3) if any 'failed' events exist in the last 1 day (up to 25 sampled); API error (sev3)."
+      reads: ["POST /v1/analytics/logs (events: failed, duration 1d, limit 25)"]
+      permissions: ["Mailgun API key with logs read access"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Any failed event raises an issue regardless of rate."
+    - title: "Check for Rejected Messages in Mailgun for Domains in Scope"
+      at: "runbook.robot:249"
+      asserts: "Per domain: problem (sev2) if more than 5 'rejected' events exist in the last 5 days; API error (sev3)."
+      reads: ["POST /v1/analytics/logs (events: rejected, 5 days)"]
+      permissions: ["Mailgun API key with logs read access"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Fewer than 6 rejections are printed but not raised."
+    - title: "Verify SPF Record for Mailgun Sending Domains in Scope"
+      at: "runbook.robot:288"
+      asserts: "Per domain: problem (sev3) if no v=spf1 TXT is published, or if the SPF TXT does not mention mailgun."
+      reads: ["dig +short TXT <domain>", "GET /v3/domains/<domain> (expected SPF value, best effort)"]
+      permissions: ["Mailgun API key with domain read access", "public DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "verify-mailgun-spf-dns.sh `txt=$(dig +short TXT ... | tr ...)` under `set -euo pipefail`: a failing dig (no dig binary, resolver timeout rc 9) kills the script before mailgun_spf_issues.json is rewritten; the runbook ignores rc and its EXCEPT defaults to an empty list. (An empty but successful answer is reported as 'Missing SPF'.)"
+      notes: "Substring check for 'mailgun' and v=spf1 only; does not validate includes or lookup limits."
+    - title: "Verify DKIM DNS Records for Mailgun Domains in Scope"
+      at: "runbook.robot:327"
+      asserts: "Per domain: problem if a Mailgun-published _domainkey TXT record is inactive in Mailgun or the published DNS TXT does not contain the expected value."
+      reads: ["GET /v3/domains/<domain> (sending_dns_records)", "dig +short TXT <selector>._domainkey.<domain>"]
+      permissions: ["Mailgun API key with domain read access", "public DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "verify-mailgun-dkim-dns.sh: the record loop reads `jq ... 2>/dev/null || true`, so a response without _domainkey TXT records yields zero iterations and no issue; dig failure under pipefail aborts before the issue file is written and the runbook EXCEPT defaults to empty. HTTP non-200 is reported."
+      notes: "Compares full TXT string with grep -F, sensitive to DNS provider TXT splitting."
+    - title: "Verify DMARC Policy for Mailgun Sending Domains in Scope"
+      at: "runbook.robot:366"
+      asserts: "Per domain: problem (sev2) if no TXT with v=DMARC1 exists at _dmarc.<domain>."
+      reads: ["dig +short TXT _dmarc.<domain>"]
+      permissions: ["public DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "verify-mailgun-dmarc-dns.sh: same `dig ... | tr` under `set -euo pipefail` and ignored rc; dig failure leaves no/stale issue file and the runbook EXCEPT defaults to empty."
+      notes: "Does not check policy strength (p=none passes) and looks only at the exact domain, not the organizational domain."
+    - title: "Verify MX Records for Mailgun Domains When MX Verification Is Enabled"
+      at: "runbook.robot:405"
+      asserts: "Only when MAILGUN_VERIFY_MX is true: problem if no MX is published or published MX does not mention mailgun while Mailgun lists receiving MX records."
+      reads: ["GET /v3/domains/<domain> (receiving_dns_records)", "dig +short MX <domain>"]
+      permissions: ["Mailgun API key with domain read access", "public DNS resolution from the runner"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "Default MAILGUN_VERIFY_MX=false writes an empty issue list and exits (verify-mailgun-mx-dns.sh), so by default it asserts nothing; with it enabled the dig-under-pipefail failure mode is the same as SPF/DMARC."
+      notes: "Task is a no-op in default configuration."
+  bundleNotes: "HTTP checks use curl -w %{http_code} with explicit non-200 handling (good). Weak spots are the dig-based DNS tasks (script crash -> missing/stale file -> EXCEPT empty list) and temp files under /tmp/mg_*.json shared across domains. Issue files in cwd are reused across the per-domain loop. No generation rules."
+
+- bundle: openrouter-spend-health
+  displayName: "OpenRouter Spend Health and Forecasting"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only)"
+  sli: true
+  sliAsserts: "Average of 6 binary scores: API reachable (balance script reports no 'Cannot Reach'/'Invalid' issue), key limit_remaining >= OPENROUTER_MIN_BALANCE_USD, credits available, budget adherence (usage_monthly <= OPENROUTER_BUDGET_USD, or 1 when budget 0), no anomalies, no model concentration. False-pass confirmed for Budget Adherence: `curl -s .../key | jq '.data.usage_monthly // .data.usage // \"0\"'` (sli.robot:150) turns any API failure into usage 0 <= budget -> 1; also scores 1 whenever OPENROUTER_BUDGET_USD is 0 (the default). Balance sufficiency fails closed."
+  egress: "public internet: openrouter.ai/api/v1"
+  tools: [curl, jq, bc, bash]
+  inputs: [OPENROUTER_API_KEY_LABEL, OPENROUTER_LOOKBACK_DAYS, OPENROUTER_BUDGET_USD, OPENROUTER_MIN_BALANCE_USD, OPENROUTER_SPEND_CONCENTRATION_THRESHOLD, OPENROUTER_BALANCE_ALERT_WINDOW_DAYS, OPENROUTER_ANOMALY_STDDEV_THRESHOLD]
+  credential: "OPENROUTER_API_KEY secret (Bearer token; a management key is required for /activity, /keys, /credits, /workspaces)"
+  tasks:
+    - title: "Check OpenRouter Account Balance for Account"
+      at: "runbook.robot:19"
+      asserts: "Problem if /key is unreachable or the key is invalid/expired, remaining balance (limit_remaining, or credits for management keys) < OPENROUTER_MIN_BALANCE_USD (10) or not reported, disabled child keys exist, keys have no spend limit, or no workspaces found."
+      reads: ["GET /api/v1/key", "GET /api/v1/workspaces", "GET /api/v1/keys?include_disabled=true", "GET /api/v1/credits"]
+      permissions: ["OpenRouter API key (management key for workspaces/keys/credits)"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "HTTP status checked on every call (curl -w http_code) and failures become issues. An inference-only key cannot see account credits and gets 'Remaining Credits Not Reported'."
+    - title: "Review OpenRouter Spend History for Account"
+      at: "runbook.robot:55"
+      asserts: "Problem if /activity needs a management key (403), cannot be fetched, returns no rows over the lookback (sev2), or has missing days."
+      reads: ["GET /api/v1/activity?date=<D> for each day in OPENROUTER_LOOKBACK_DAYS (capped to 30)"]
+      permissions: ["OpenRouter management API key"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "One HTTP call per day (up to 30)."
+    - title: "Analyze OpenRouter Spend by Model for Account"
+      at: "runbook.robot:91"
+      asserts: "Problem if a single model's share of spend exceeds OPENROUTER_SPEND_CONCENTRATION_THRESHOLD (50%), or /activity cannot be fetched."
+      reads: ["GET /api/v1/activity?date=<D> per day"]
+      permissions: ["OpenRouter management API key"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Zero activity rows exit with an empty issue list (no signal, no issue)."
+    - title: "Check OpenRouter Budget Status for Account"
+      at: "runbook.robot:127"
+      asserts: "Problem if cumulative key usage exceeds OPENROUTER_BUDGET_USD or the budget is at depletion risk; skipped entirely when the budget is 0 (default)."
+      reads: ["GET /api/v1/key", "GET /api/v1/workspaces and /api/v1/keys (management keys)"]
+      permissions: ["OpenRouter API key (management key for aggregation)"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Asserts nothing in the default configuration (budget disabled). API errors are raised as 'Cannot Reach' / 'Key Invalid' issues."
+    - title: "Forecast OpenRouter Spend Trend for Account"
+      at: "runbook.robot:163"
+      asserts: "Problem if projected spend from the average daily burn would exceed the budget, or if the key limit will be depleted within OPENROUTER_BALANCE_ALERT_WINDOW_DAYS (7)."
+      reads: ["GET /api/v1/activity?date=<D> per day", "GET /api/v1/key"]
+      permissions: ["OpenRouter management API key"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Budget projection only fires when a budget is configured."
+    - title: "Detect OpenRouter Spend Anomalies for Account"
+      at: "runbook.robot:199"
+      asserts: "Problem if a day's spend is a z-score outlier above OPENROUTER_ANOMALY_STDDEV_THRESHOLD (2) or spend is accelerating; activity fetch errors raise issues."
+      reads: ["GET /api/v1/activity?date=<D> per day"]
+      permissions: ["OpenRouter management API key"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Needs several days of data for a baseline."
+  bundleNotes: "Good pattern: every API call captures the HTTP status and failure branches write issues. All tasks and the SLI re-run the same scripts; SLI Balance/Budget sub-scores bypass the scripts with an inline curl|jq."
+
+- bundle: terraform-cloud-workspace-lock-check
+  displayName: "Terraform Cloud Workspace Lock Check"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only)"
+  sli: false
+  sliAsserts: "n/a (no sli.robot)"
+  egress: "public internet: app.terraform.io (or TERRAFORM_API_URL) API v2"
+  tools: [curl, bash]
+  inputs: [TERRAFORM_API_URL, TERRAFORM_ORGANIZATION_NAME, TERRAFORM_WORKSPACE_NAME]
+  credential: "TERRAFORM_API_TOKEN secret (Terraform Cloud/Enterprise API token, written to a secret file and sent as Bearer)"
+  tasks:
+    - title: "Checking whether the Terraform Cloud Workspace is in a locked state"
+      at: "runbook.robot:17"
+      asserts: "Problem (sev4) if data.attributes.locked of the workspace is not false."
+      reads: ["GET <TERRAFORM_API_URL>/organizations/<org>/workspaces/<workspace>"]
+      permissions: ["Terraform Cloud token with read access to the workspace (team/user token with workspace Read)"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "RW.CLI.Parse Cli Json Output enforces rc == 0, and runbook.robot:31 indexes ['data']['attributes']['locked'] so a 401/404 error body raises KeyError (loud failure, not a pass). A workspace is also locked during every active run, so 'locked' is not necessarily a fault."
+  bundleNotes: "Single GET, fails loudly on API errors."
+
+- bundle: vercel-project-health
+  displayName: "Vercel Project Health"
+  classicResourceTypes: []
+  matchHints: "no .runwhen directory (manual SLX only); one or many projects via VERCEL_PROJECT_ID / VERCEL_PROJECT_IDS"
+  sli: true
+  sliAsserts: "Average of 8 sub-scores: API reachable, latest production deployment READY, recent failed deployments <= SLI_MAX_RECENT_FAILED_DEPLOYMENTS, production branch matches EXPECTED_PRODUCTION_BRANCH, production deployment fresh (<168h), alias current, all production domains verified, runtime error sample <= SLI_MAX_ERROR_EVENTS. False-pass confirmed: Score Vercel Runtime Error Sample (sli.robot:227-270) leaves count 0 -> score 1 on api-error, missing-owner-id or missing token (reason only logged); Domain Verification defaults to 1 when the token is empty (sli.robot:195-196)."
+  egress: "public internet: api.vercel.com REST, vercel.com/api/logs/request-logs (dashboard endpoint), and HTTP GET probes to the project's production URL"
+  tools: [bash, curl, jq, python3 (libraries/Vercel)]
+  inputs: [VERCEL_TEAM_ID, VERCEL_PROJECT_ID, VERCEL_PROJECT_IDS, VERCEL_ARTIFACT_ROOT, TIME_WINDOW_HOURS, DEPLOYMENT_ENVIRONMENT, UNHEALTHY_HTTP_CODES, MIN_REQUEST_COUNT_THRESHOLD, VERCEL_REQUEST_LOGS_ENV, VERCEL_REQUEST_LOGS_MAX_ROWS, VERCEL_REQUEST_LOGS_MAX_PAGES, VERCEL_PROBE_PATHS, VERCEL_PROBE_BASE_URL, VERCEL_PROBE_TIMEOUT_SECONDS, VERCEL_PROBE_SLOW_MS, DEPLOYMENT_SNAPSHOT_LIMIT, MAX_FAILED_DEPLOYMENTS_TO_DIAGNOSE, MAX_DEPLOYMENTS_TO_SCAN]
+  credential: "vercel_token secret (Vercel API token with read access to the team/project; import is optional and a missing token raises 'Vercel token missing' issues)"
+  tasks:
+    - title: "Fetch Vercel Project Configuration for Configured Project(s)"
+      at: "runbook.robot:20"
+      asserts: "Report only (sanitized project metadata); problem (sev4) if the token is missing/invalid (invalidToken) or the project cannot be fetched."
+      reads: ["GET /v9/projects/{id}"]
+      permissions: ["Vercel token with read access to the project (team scope via teamId)"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Writes vercel_project_raw.json and vercel_project_config.json to the artifact dir; those files are used by later tasks (probe base URL)."
+    - title: "Report Vercel Deployment Branches and Status for Configured Project(s)"
+      at: "runbook.robot:28"
+      asserts: "Problem (sev3) if the deployments list is empty or the newest production deployment readyState != READY; API failure raises sev4."
+      reads: ["GET /v6/deployments?projectId=<id>&target=..."]
+      permissions: ["Vercel token with read access to deployments"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Snapshot written to the artifact dir for the diagnose task."
+    - title: "Diagnose Recent Failed Vercel Deployments for Configured Project(s)"
+      at: "runbook.robot:36"
+      asserts: "One problem (sev3) per ERROR/CANCELED/FAILED deployment in the snapshot (capped by MAX_FAILED_DEPLOYMENTS_TO_DIAGNOSE) that carries an errorCode/errorMessage."
+      reads: ["GET /v13/deployments/{id} per failed deployment (from the snapshot written by the previous task)"]
+      permissions: ["Vercel token with read access to deployments"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "runbook.robot:446-448 and diagnose-recent-failed-deployments.sh:37-47 treat a missing snapshot (task 2 not run or failed) as api_status=missing-snapshot -> prints 'Run the deployment-branches task first' and exits 0 with no issue."
+      notes: "Hidden dependency on vercel_deployments_snapshot.json from the branches task in the same working dir."
+    - title: "Verify Vercel Project Production Domains for Configured Project(s)"
+      at: "runbook.robot:44"
+      asserts: "One problem (sev3) per production-bound domain with verified == false; API failure raises sev3."
+      reads: ["GET /v9/projects/{id}/domains"]
+      permissions: ["Vercel token with read access to project domains"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Preview/custom-environment aliases are excluded."
+    - title: "Resolve Vercel Deployments in Time Window for Configured Project(s)"
+      at: "runbook.robot:52"
+      asserts: "Problem if no READY deployment of DEPLOYMENT_ENVIRONMENT overlaps the TIME_WINDOW_HOURS (24) lookback."
+      reads: ["GET /v6/deployments?projectId=<id>"]
+      permissions: ["Vercel token with read access to deployments"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "API failure raises sev4. A selection exception creates an empty id list and only logs a WARN, then the shell script reports no coverage."
+    - title: "Collect Vercel Request Logs for Configured Project(s)"
+      at: "runbook.robot:60"
+      asserts: "Collection only: writes request-log rows for the window; problem (sev3) if the project has no accountId/ownerId or the request-logs query fails."
+      reads: ["GET /v9/projects/{id}", "GET https://vercel.com/api/logs/request-logs?projectId=..&ownerId=.. (paginated)"]
+      permissions: ["Vercel token with read access to the project and its logs"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Uses the undocumented dashboard request-logs endpoint (not the public REST API); may change without notice. Rows file is pre-created as [] so downstream tasks read it even when this task failed."
+    - title: "Aggregate 4xx Paths from Vercel Request Logs for Configured Project(s)"
+      at: "runbook.robot:68"
+      asserts: "Report only: groups 4xx responses by code/path/method; the issues file is always []."
+      reads: ["local vercel_request_log_rows.json from the collect task"]
+      permissions: ["none (local files)"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "aggregate-vercel-4xx-paths.sh: a missing or empty rows file prints 'No request-log rows file found. Run the collector task first.' and exits 0; jq failures `|| echo 0`. Never produces an issue anyway."
+      notes: "Never raises issues; 4xx are only surfaced via the summary task for 401/403."
+    - title: "Aggregate 5xx Paths from Vercel Request Logs for Configured Project(s)"
+      at: "runbook.robot:76"
+      asserts: "Problem (sev2) if any 5xx response appears in the collected rows for the window."
+      reads: ["local vercel_request_log_rows.json from the collect task"]
+      permissions: ["none (local files)"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "aggregate-vercel-5xx-paths.sh:31-38 missing/empty rows file (`[[ ! -s ]]` -> exit 0) or `jq length ... || echo 0` exits 0 with no issue; a failed collector (which raised its own issue in the previous task) is invisible to this task in isolation."
+      notes: "Ignores MIN_REQUEST_COUNT_THRESHOLD (one 5xx is enough)."
+    - title: "Aggregate Other Unhealthy HTTP Codes from Vercel Request Logs for Configured Project(s)"
+      at: "runbook.robot:84"
+      asserts: "Report only: groups UNHEALTHY_HTTP_CODES (default 408,429) by code/path/method; the issues file is always []."
+      reads: ["local vercel_request_log_rows.json from the collect task"]
+      permissions: ["none (local files)"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "Same missing-rows/`|| echo 0` handling as the 4xx/5xx scripts, and it never emits an issue."
+      notes: "Never raises issues."
+    - title: "Build Consolidated Vercel HTTP Error Summary for Configured Project(s)"
+      at: "runbook.robot:92"
+      asserts: "Problem (sev2) if 5xx hits were seen; problem (sev3) if 401/403 hits reach MIN_REQUEST_COUNT_THRESHOLD (5)."
+      reads: ["local aggregate files (vercel_aggregate_4xx/5xx/other.json)"]
+      permissions: ["none (local files)"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "report-vercel-http-error-summary.sh:41-43 `[[ -s file ]] && cat file || echo '[]'` for each input: absent aggregates (collector or an earlier task skipped) read as empty -> no issue."
+      notes: "Depends on three prior tasks' artifacts."
+    - title: "Probe Production URL Paths for Configured Project(s)"
+      at: "runbook.robot:100"
+      asserts: "Problem (sev4/3/2) if a synthetic GET against VERCEL_PROBE_PATHS on the production URL returns 5xx, no response (DNS/TLS/connect failure), 4xx, or is slower than VERCEL_PROBE_SLOW_MS (2000)."
+      reads: ["curl -sS -L GET <base>/<path> for each probe path (base from VERCEL_PROBE_BASE_URL, custom production alias or latest production deployment URL)"]
+      permissions: ["network egress to the production site"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "curl failure is classified as a total failure issue. Cannot determine base URL raises a sev4 issue. Uses vercel_project_config.json from task 1 unless VERCEL_PROBE_BASE_URL is set."
+  bundleNotes: "Eleven tasks share state through files in the artifact dir (tasks must run in order in one working dir). Committed in the repo: vercel_*.json artifacts from a real project (including account id and env metadata) sit next to the scripts and should not be there. The Vercel-API tasks are properly error-checked; the aggregation/summary tasks and the SLI runtime-error sub-score fail open."

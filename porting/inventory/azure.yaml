@@ -1,0 +1,1604 @@
+- bundle: azure-acr-health
+  displayName: Azure ACR Health Check
+  classicResourceTypes: [azure_containerregistry_registries]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, subscription_id"
+  sli: true
+  sliAsserts: "6 sub-scores (reachability, sku_usage, pull_push_ratio, storage, network, security) each 0/1 (security = 100 minus penalty per issue) averaged; scripts emit issue JSON so a failed az call becomes an issue -> score 0, and JSON parse failure -> 0. False-pass: likely - pull/push sub-score inherits the Log Analytics swallow, and the security sub-score only deducts 5-10 points for a sev-3/4 'az call failed' issue (sli.robot:135-150), so a fully failed security script still scores ~0.9-0.95."
+  egress: "cloud API (ARM, Azure Monitor, Log Analytics) + <registry>.azurecr.io (nslookup/curl/openssl) + customer webhook serviceUri (curl)"
+  tools: [az, jq, bash, nslookup, curl, openssl, bc, python3]
+  inputs: [AZ_RESOURCE_GROUP, ACR_NAME, AZURE_SUBSCRIPTION_ID, AZURE_SUBSCRIPTION_NAME, USAGE_THRESHOLD, azure_credentials]
+  tasks:
+    - title: Check Network Configuration for ACR
+      at: runbook.robot:21
+      asserts: "ACR public network access, IP/VNet rules, private endpoint state, replication and webhook status, DNS resolution and HTTPS reachability look safe/healthy"
+      reads: ["az acr show", "az network private-endpoint list", "az acr network-rule list", "az acr replication list", "az acr webhook list", "nslookup <loginServer>", "curl -sI https://<loginServer>/v2/", "curl -sI <webhook serviceUri>"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "Microsoft.Network/privateEndpoints/read", "Microsoft.ContainerRegistry/registries/replications/read", "Microsoft.ContainerRegistry/registries/webhooks/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "acr_network_config.sh:109,150,299,328 private-endpoint/network-rule/replication/webhook list use 2>/dev/null and the check block is skipped when output is empty, so a forbidden/failed call raises no issue (only az acr show at :73 is rc-checked)"
+      notes: "Robot also runs a second az acr show just to build a portal URL (rc ignored, cosmetic). Private endpoint query filters by privateLinkServiceId across the whole subscription (no -g)."
+    - title: Check DNS & TLS Reachability for Registry
+      at: runbook.robot:55
+      asserts: "ACR login server resolves in DNS, answers HTTPS, presents a non-expiring TLS cert and returns a /v2/ API response"
+      reads: ["nslookup <name>.azurecr.io", "curl -I https://<name>.azurecr.io", "openssl s_client -connect <name>.azurecr.io:443 | openssl x509 -dates", "curl https://<name>.azurecr.io/v2/"]
+      permissions: ["none (network reachability from the runner to <name>.azurecr.io:443)"]
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No az calls. Exit codes of nslookup/curl are checked and each failure becomes an issue. Cert expiry uses `date -d` (GNU) with `|| echo 0` fallback at acr_reachability.sh:141, which would yield a bogus expiry on non-GNU date (false positive, not false pass). Depends on network path from runner (private endpoint / firewall), so a result is relative to the runner, not to clients."
+    - title: Check ACR Login & Authentication for Registry
+      at: runbook.robot:80
+      asserts: "The workload identity can read the registry, read admin credentials and obtain an access token via az acr login --expose-token"
+      reads: ["az account show", "az acr show", "az acr credential show", "az acr login --expose-token"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "Microsoft.ContainerRegistry/registries/listCredentials/action", "Microsoft.ContainerRegistry/registries/generateCredentials/action (az acr login --expose-token uses AAD token exchange; no ARM action beyond AcrPull/AcrPush on data plane)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Each az call has stderr captured to a log and rc checked; failures become issues (permission vs generic split by stderr text). `az acr credential show` returns admin secrets into script memory (not printed)."
+    - title: Check ACR SKU and Usage Metrics for Registry
+      at: runbook.robot:114
+      asserts: "Storage and webhook usage are under USAGE_THRESHOLD percent of the SKU quota; SKU is not Basic/under-provisioned; admin user is disabled"
+      reads: ["az acr show", "az acr show-usage"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "Microsoft.ContainerRegistry/registries/listUsages/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Percentages computed with `bc ... || echo 0` (acr_usage_sku.sh:158,181); if bc is missing the percentage is 0 and no threshold issue fires (edge, not the main path). Quota key read as .limitValue in this script but .limit in acr_storage_utilization.sh:147 - one of the two is wrong."
+    - title: Check ACR Storage Utilization for Registry
+      at: runbook.robot:148
+      asserts: "Registry storage used is under USAGE_THRESHOLD/CRITICAL percent of quota; repositories have tags/retention that bound growth"
+      reads: ["az acr show", "az acr show-usage", "az acr login", "az acr repository list", "az acr repository show-tags", "az acr config retention show", "ARM GET registries/<name> via curl + bearer token"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "Microsoft.ContainerRegistry/registries/listUsages/read", "Microsoft.ContainerRegistry/registries/pull/read (data plane: AcrPull for repository list/show-tags)", "Microsoft.ContainerRegistry/registries/config/read (retention)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Core usage check is rc-checked. Per-repo tag counts use `2>/dev/null | jq length || echo 0` (acr_storage_utilization.sh:314,323) and retention show uses 2>/dev/null (:402) - only affect advisory recommendations. Also runs `az acr login` (needs docker or token flow) as a side effect."
+    - title: Analyze ACR Pull/Push Success Ratio for Registry
+      at: runbook.robot:184
+      asserts: "Pull and push success rates over TIME_PERIOD_HOURS are above PULL/PUSH_SUCCESS_THRESHOLD, and failed pulls are not coming from IPs outside the network allowlist"
+      reads: ["az monitor metrics list PullCount/PushCount", "az monitor diagnostic-settings list", "az monitor log-analytics workspace list", "az monitor log-analytics query (ContainerRegistryRepositoryEvents)", "az acr network-rule list"]
+      permissions: ["Microsoft.Insights/metrics/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read", "Microsoft.ContainerRegistry/registries/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "acr_pull_push_ratio.sh:200-207 metrics list 2>/dev/null, :350,:363 `|| echo \"[]\"`, :394-398 log-analytics query `2>/dev/null || echo \"[]\"` then :425-445 'No detailed Log Analytics data available' is stderr-only text, no issue -> failed/forbidden query == no failures reported"
+      notes: "If no Log Analytics workspace is found it raises a sev-4 'workspace not found' issue (so unconfigured diagnostics is visible). Workspace discovery also falls back to ANY workspace in the resource group/subscription (:33,:70), which may not hold this ACR's logs."
+    - title: Check ACR Repository Event Failures for Registry
+      at: runbook.robot:221
+      asserts: "ContainerRegistryRepositoryEvents in Log Analytics contains no failed (ResultType != 0) push/pull/repo events"
+      reads: ["az acr show --query id", "az monitor diagnostic-settings list", "az monitor log-analytics workspace list", "az monitor log-analytics query (table check, then failure summary)"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Table-check and query rc are checked (acr_events.sh:56,83) and failures are sev-4 issues; missing workspace is a sev-4 issue. Discovery calls at :26-39 are 2>/dev/null but lead to the 'no workspace' issue rather than silence. Tagged data:logs-regexp."
+    - title: Check ACR Security Configuration and RBAC for Registry
+      at: runbook.robot:246
+      asserts: "Admin user disabled, public network access restricted, no overbroad Owner/Contributor/user role assignments, private endpoint present, webhooks use https/auth"
+      reads: ["az acr show", "az role assignment list --scope <acr id>", "az network private-endpoint list -g", "az acr repository list", "az acr config content-trust show", "az acr webhook list"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "Microsoft.Authorization/roleAssignments/read", "Microsoft.Network/privateEndpoints/read", "Microsoft.ContainerRegistry/registries/webhooks/read", "AcrPull (data plane repository list)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "acr_rbac_security.sh:243 private-endpoint list 2>/dev/null and :298 webhook list 2>/dev/null: failure leaves empty result; webhook checks skipped silently. RBAC list failure is flagged (:235)"
+      notes: "Missing access:read-only tag but is read-only. Mislabelled check: 'anonymous pull' is read from `az acr config content-trust show` (:277), which is content trust, not anonymous pull."
+  bundleNotes: "Scripts emit a JSON array of issues on stdout (`add_issue` appending to a temp file) and human text on stderr; Robot json.loads()es stdout so an empty stdout would crash the task rather than pass. Pattern is mostly 'az call fails -> sev-4 issue', which is good, with the Log Analytics path as the main hole. acr_storage_usage.sh is not called by runbook or sli (dead). Runbook has no per-task SLX-level inputs beyond ACR_NAME/AZ_RESOURCE_GROUP/subscription. Generation rule qualifiers lack resource_group although the runbook requires AZ_RESOURCE_GROUP."
+- bundle: azure-acr-image-sync
+  displayName: Azure ACR Image Sync
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules directory; bundle is not auto-discovered, deployed by hand"
+  sli: true
+  sliAsserts: "counts configured images whose upstream copy is newer than the newest matching ACR tag (or missing in ACR) and pushes the raw count as the metric (not 0-1); false-pass confirmed: a skopeo/az failure yields empty SOURCE_CREATED and the image is counted as up to date"
+  egress: "public internet: source registries in IMAGE_MAPPINGS (docker.io etc., via az acr import server-side and skopeo inspect from the runner) + cloud API (ACR)"
+  tools: [az, jq, skopeo, bash]
+  inputs: [ACR_REGISTRY, IMAGE_MAPPINGS, USE_DATE_TAG_PATTERN, TAG_CONFLICT_HANDLING, USE_DOCKER_AUTH, AZURE_RESOURCE_SUBSCRIPTION_ID, azure_credentials, DOCKER_USERNAME, DOCKER_TOKEN]
+  tasks:
+    - title: Sync Container Images into Azure Container Registry
+      at: runbook.robot:18
+      asserts: "none - an action, not a check: imports each IMAGE_MAPPINGS source image into the ACR (az acr import), deleting an existing tag first when TAG_CONFLICT_HANDLING=overwrite"
+      reads: ["az acr repository show-tags", "az acr repository delete --yes (overwrite mode)", "az acr import --name <acr> --source <src> --image <dest>"]
+      permissions: ["Microsoft.ContainerRegistry/registries/importImage/action", "Microsoft.ContainerRegistry/registries/read", "AcrDelete / Microsoft.ContainerRegistry/registries/artifacts/delete (overwrite mode)", "AcrPull (show-tags)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "acr_sync_images.sh:115-121 `eval \"$cmd\"` failure only echoes 'Failed to import <src>'; script ends 'All images processed.' exit 0 and the Robot task adds no issue"
+      notes: "Mutating (import, and delete tag in overwrite mode). `eval` of a string built from IMAGE_MAPPINGS plus Docker password on the command line (visible in process list). Script default TAG_CONFLICT_HANDLING is overwrite, runbook default is rename. `rename` mode always appends -<TAG_PATTERN>, so TAG_PATTERN is empty if USE_DATE_TAG_PATTERN=false and handling=overwrite. ACR_REGISTRY is passed to --name as 'myacr.azurecr.io' form (az accepts it)."
+    - title: Count Outdated Images in Azure Container Registry
+      at: sli.robot:75
+      asserts: "number of configured images where the upstream image creation date is later than the newest ACR tag matching the base tag, or no matching ACR tag exists"
+      reads: ["az acr repository show-tags", "az acr manifest list-metadata", "skopeo inspect docker://<source>"]
+      permissions: ["Microsoft.ContainerRegistry/registries/read", "AcrPull (repository show-tags, manifest list-metadata)", "public pull access to source registries"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_for_image_updates.sh:118-129 skopeo/jq failure leaves SOURCE_CREATED empty, `[[ \"\" > \"$ACR_CREATED\" ]]` is false -> 'is up to date'; az show-tags failure (:74) makes LATEST_ACR_TAG empty so image is counted outdated instead. Also UPDATE_COUNT is never initialised in the visible lines and sli.robot:85-88 greps stdout, so a crashed script pushes an empty metric"
+      notes: "This is the SLI (sli.robot), included as a task because the bundle has no runbook check. Pushes the count twice (sub_name=outdated_images and unnamed). String comparison of timestamps in different formats (skopeo RFC3339 vs az createdTime) is unreliable."
+  bundleNotes: "Only bundle in the set with a mutating runbook task and no generation rules. Both scripts lack set -e/pipefail and have no error handling."
+- bundle: azure-adf-health
+  displayName: Azure Data factories Health
+  classicResourceTypes: [azure_datafactory_factories]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource_group, subscription_id"
+  sli: true
+  sliAsserts: "average of 5 sub-scores: resource health (fraction Available), pipeline errors / failed pipelines / large data ops / long running (each 1 if count==0 else 0); false-pass confirmed: JSON load failure defaults to empty -> score 1 for the last four, and scripts write an empty result file on az failure"
+  egress: "cloud API (ARM, Resource Health, Log Analytics)"
+  tools: [az, jq, column, bash]
+  inputs: [AZURE_RESOURCE_GROUP, AZURE_RESOURCE_SUBSCRIPTION_ID, LOOKBACK_PERIOD, THRESHOLD_MB, FAILURE_THRESHOLD, RUN_TIME_THRESHOLD, azure_credentials]
+  tasks:
+    - title: Check for Resource Health Issues Affecting Data Factories
+      at: runbook.robot:19
+      asserts: "Azure Resource Health availabilityStatus for each Data Factory in the resource group is 'Available'; also raises sev-4 if no health records could be obtained"
+      reads: ["az provider show --namespace Microsoft.ResourceHealth (and az provider register if not registered)", "az datafactory list -g", "az rest GET .../providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.DataFactory/factories/read", "Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/read", "Microsoft.Resources/subscriptions/providers/register/action (when provider unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "resource_health.sh:137-150 per-factory az rest failure only prints WARNING and the factory is simply absent from datafactory_health.json; with partial failure the remaining Available factories look healthy. Total failure yields '[]' which is reported (sev 4 unavailable)"
+      notes: "Side effect: `az provider register` if Microsoft.ResourceHealth is unregistered (a write to the subscription) - so readOnly false despite the access:read-only tag. Reads results via `cat datafactory_health.json`, a shared filename in the working dir (stale-file risk)."
+    - title: List Frequent Pipeline Errors in Data Factories
+      at: runbook.robot:69
+      asserts: "A pipeline has more than FAILURE_THRESHOLD failures in LOOKBACK_PERIOD according to Log Analytics AzureDiagnostics (PipelineRuns); script/infra errors surface as sev-4 issues"
+      reads: ["az datafactory list", "az monitor diagnostic-settings list --resource <factory id>", "az monitor log-analytics workspace show --ids", "az monitor log-analytics query (KQL on ADFPipelineRun/AzureDiagnostics)"]
+      permissions: ["Microsoft.DataFactory/factories/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "error_trend.sh:118-127 az datafactory list failure writes the empty template '{\"error_trends\":[],\"script_errors\":[]}' to error_trends.json then exit 1; runbook never reads rc, so 'No Frequent Pipeline Errors' is reported (runbook.robot:68-120)"
+      notes: "Per-factory diagnostic-setting and query failures are recorded as script_errors (sev 4 issues) so those paths are visible. A factory with no diagnostic settings is a script_error, not silent."
+    - title: List Failed Pipelines in Data Factories
+      at: runbook.robot:147
+      asserts: "Failed pipeline runs in LOOKBACK_PERIOD found via Log Analytics, each enriched with linked services; script errors reported as sev 4"
+      reads: ["az datafactory list", "az datafactory linked-service list", "az monitor diagnostic-settings list", "az monitor log-analytics workspace show", "az monitor log-analytics query"]
+      permissions: ["Microsoft.DataFactory/factories/read", "Microsoft.DataFactory/factories/linkedservices/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "failed_pipeline.sh:83 `az datafactory list ... || true` then invalid JSON becomes a script_error (visible), but :121 linked-service list `|| linked_servi...` falls back silently and the runbook's JSON-parse EXCEPT (runbook.robot:138) sets {} -> 'No failed pipelines' if the output file is missing"
+      notes: "Also installs the log-analytics az extension at runtime (`az extension add`, needs internet to pypi/GitHub)."
+    - title: Find Large Data Operations in Data Factories
+      at: runbook.robot:224
+      asserts: "The latest succeeded ActivityRun per factory read or wrote more than THRESHOLD_MB bytes according to Log Analytics"
+      reads: ["az datafactory list", "az monitor diagnostic-settings list", "az monitor log-analytics workspace show", "az monitor log-analytics query (top 1 ActivityRuns Succeeded)"]
+      permissions: ["Microsoft.DataFactory/factories/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "data_volume_audit.sh:97-101 az datafactory list failure writes '{\"data_volume_alerts\":[]}' and exit 1; runbook ignores rc -> 'No heavy data operations detected'"
+      notes: "KQL is `top 1 by TimeGenerated desc` over succeeded ActivityRuns, i.e. only the single most recent activity per factory, not all operations in the window. Files-in-cwd handoff (data_volume_audit.json)."
+    - title: Fetch Azure Data Factory Details
+      at: runbook.robot:268
+      asserts: "none - informational report of factory location, diagnostic settings, pipelines, triggers, linked services, datasets"
+      reads: ["az datafactory list", "az monitor diagnostic-settings list", "az datafactory pipeline list", "az datafactory trigger list", "az datafactory linked-service list", "az datafactory dataset list"]
+      permissions: ["Microsoft.DataFactory/factories/read", "Microsoft.DataFactory/factories/pipelines/read", "Microsoft.DataFactory/factories/triggers/read", "Microsoft.DataFactory/factories/linkedservices/read", "Microsoft.DataFactory/factories/datasets/read", "Microsoft.Insights/diagnosticSettings/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Never raises an issue; on failure prints 'unable to retrieve data'. Per-resource list calls are 2>/dev/null (adf_details.sh:162-189)."
+    - title: List Long Running Pipeline Runs in Data Factories
+      at: runbook.robot:299
+      asserts: "A pipeline run exceeded RUN_TIME_THRESHOLD seconds according to Log Analytics"
+      reads: ["az datafactory list", "az monitor diagnostic-settings list", "az monitor log-analytics workspace show", "az monitor log-analytics query"]
+      permissions: ["Microsoft.DataFactory/factories/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "long_pipeline_runs.sh:97-101 az datafactory list failure writes empty template and exit 1; runbook.robot:290-330 ignores rc and prints 'No long running pipelines found'"
+      notes: ""
+  bundleNotes: "Hand-off is via fixed-name JSON files in cwd read with `cat`, and scripts use set -euo pipefail so the first az failure exits 1 after writing an empty-result file - the runbook ignores the exit code, so the whole bundle's 'no problem' output equals 'could not look'. Only error_trend.sh and failed_pipeline.sh surface script_errors. runbook imports `Library Jenkins` (unused). Everything depends on diagnostic settings sending logs to Log Analytics; absence is a sev-4 script error, not a pass."
+- bundle: azure-aks-cost-optimization
+  displayName: Azure AKS Cost Optimization
+  classicResourceTypes: [azure_containerservice_managed_clusters]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers subscription_id, resource_group"
+  sli: false
+  sliAsserts: "no sli.robot (generation rule lists an sli outputItem but bundle has none)"
+  egress: "cloud API (ARM, Azure Monitor, Resource Graph)"
+  tools: [az, jq, bc, awk, bash]
+  inputs: [AZURE_SUBSCRIPTION_IDS, AZURE_RESOURCE_GROUPS, AZURE_SUBSCRIPTION_NAME, COST_ANALYSIS_LOOKBACK_DAYS, LOW_COST_THRESHOLD, MEDIUM_COST_THRESHOLD, HIGH_COST_THRESHOLD, AZURE_DISCOUNT_PERCENTAGE, TIMEOUT_SECONDS, azure_credentials]
+  tasks:
+    - title: Analyze AKS Node Pool Resizing Opportunities Based on Utilization Metrics
+      at: runbook.robot:18
+      asserts: "An AKS node pool's min/max node count or VM size is larger than 30-day avg/peak CPU and memory utilization (plus safety margin) requires; issue title carries the estimated monthly saving"
+      reads: ["az aks list (or Resource Graph az graph query)", "az aks nodepool list", "az vmss list -g <node RG>", "az monitor metrics list (CPU, memory per VMSS / cluster node metrics)", "az aks show --query nodeResourceGroup"]
+      permissions: ["Microsoft.ContainerService/managedClusters/read", "Microsoft.ContainerService/managedClusters/agentPools/read", "Microsoft.Compute/virtualMachineScaleSets/read", "Microsoft.Insights/metrics/read", "Microsoft.ResourceGraph/resources/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_aks_node_pool_optimization.sh:347-349 `az aks list ... 2>/dev/null || echo '[]'` and :359 nodepool list `|| echo '[]'`, plus libraries/Azure/azure_performance_utils.sh:88 `az graph query ... || echo '{\"data\":[]}'` -> runbook.robot:64-66 prints 'No AKS node pool optimization opportunities found'"
+      notes: "Inverse hazard too: metrics failures fall back to `echo '{\"value\":[]}'` (:397,:407,:483,:494) and jq `// 0`, so a pool whose metrics could not be read is treated as 0% utilization and can be recommended for downsizing. No metrics-missing guard found by grep. Cost figures come from built-in price tables, not the Retail Prices API. If the script dies before the final `mv` (set -eo pipefail), `cat aks_node_pool_optimization_issues.json` reads a stale or missing file (json.loads on empty crashes the task)."
+  bundleNotes: "Single-task cost analyzer, one 69KB script. Shares libraries/Azure/azure_performance_utils.sh (Resource Graph, `|| echo` swallow) with vm, appservice, databricks cost bundles. Generation rule matches every AKS cluster but the script analyses whole subscriptions/resource groups from AZURE_SUBSCRIPTION_IDS/AZURE_RESOURCE_GROUPS, not the matched cluster, so (inferred, not verified in the platform) each matched cluster would yield a duplicate subscription-wide SLX. No RW.CLI-level rc check anywhere in the Robot file."
+- bundle: azure-aks-triage
+  displayName: Azure AKS Triage
+  classicResourceTypes: [azure_containerservice_managed_clusters]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, resource_group, subscription_id"
+  sli: false
+  sliAsserts: "no sli.robot (generation rule lists an sli outputItem but the bundle has none)"
+  egress: "cloud API (ARM, Resource Health, Azure Monitor)"
+  tools: [az, jq, bc, awk, bash]
+  inputs: [AZ_RESOURCE_GROUP, AKS_CLUSTER, RW_LOOKBACK_WINDOW, TIMEOUT_SECONDS, AZURE_RESOURCE_SUBSCRIPTION_ID, azure_credentials]
+  tasks:
+    - title: Check for Resource Health Issues Affecting AKS Cluster
+      at: runbook.robot:17
+      asserts: "Azure Resource Health availabilityStatus for the cluster is not 'Available'; sev-4 if no health record is returned"
+      reads: ["az provider show/register --namespace Microsoft.ResourceHealth", "az rest GET .../managedClusters/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/read", "Microsoft.Resources/subscriptions/providers/register/action (only when provider unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Registers the Microsoft.ResourceHealth provider if missing (write). aks_resource_health.sh:51 redirects `az rest` stdout to the json file with no rc check; a failed call leaves an empty file so json.loads crashes the task (loud, not a pass). Auth/timeout detection is substring matching on stdout ('Authentication failed', 'client secret keys') and returncode == -1 (runbook.robot:24-52): any other az failure is not classified."
+    - title: Check Configuration Health of AKS Cluster
+      at: runbook.robot:90
+      asserts: "Cluster provisioningState is Succeeded, no agent pool is Failed/Canceled, diagnostic settings exist, node pools have autoscaling"
+      reads: ["az aks show", "az monitor diagnostic-settings list --resource <cluster id>"]
+      permissions: ["Microsoft.ContainerService/managedClusters/read", "Microsoft.Insights/diagnosticSettings/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Opposite problem: no set -e; if `az aks show` fails (aks_cluster_health.sh:20) PROVISIONING_STATE is empty so it reports a sev-1 'Provisioning Failure' (wrong diagnosis; permission or missing-cluster errors look like a failed cluster). Autoscaling check tests `.enableAutoScaling == null` - clusters with explicit false are missed."
+    - title: Check Network Configuration of AKS Cluster
+      at: runbook.robot:151
+      asserts: "none - report only: network profile, subnet, NSG rules, route table, firewall presence, portal links; never raises an issue"
+      reads: ["az aks show --query networkProfile / vnetSubnetId", "az network vnet subnet show --ids", "az network nsg rule list", "az network route-table route list", "az network firewall list"]
+      permissions: ["Microsoft.ContainerService/managedClusters/read", "Microsoft.Network/virtualNetworks/subnets/read", "Microsoft.Network/networkSecurityGroups/securityRules/read", "Microsoft.Network/routeTables/routes/read", "Microsoft.Network/azureFirewalls/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "aks_network.sh has no set -e and no rc handling: any failed az call just prints an empty/'Recommendation:' line and the Robot task only handles timeout/auth strings (runbook.robot:158-190) so it always 'passes'; but it asserts nothing so there is nothing to false-pass"
+      notes: "NSG and route-table lookups use $AZ_RESOURCE_GROUP (the cluster RG) rather than the NSG's own resource group (aks_network.sh:54,57,80); wrong when networking lives in another RG. `az config set extension.use_dynamic_install=yes_without_prompt` triggers runtime extension install."
+    - title: Fetch Activities for AKS Cluster
+      at: runbook.robot:192
+      asserts: "Activity log entries at level Critical/Error/Warning exist for the cluster in the lookback window"
+      reads: ["az aks show --query id", "az monitor activity-log list --resource-id <id> (full, then per level Critical/Error/Warning)"]
+      permissions: ["Microsoft.ContainerService/managedClusters/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "aks_activities.sh:44-50 `az aks show` failure leaves resource_id empty -> writes '{\"issues\": []}' and exit 0; :71 `az monitor activity-log list ... | jq` has no pipefail, a failed list becomes an empty array; :114-115 invalid JSON also replaced by '{\"issues\": []}'"
+      notes: "Warning events are reported at severity 4, Critical 1, Error 2. data:logs-bulk."
+    - title: Check Kubernetes Version Support for AKS Cluster
+      at: runbook.robot:252
+      asserts: "Cluster Kubernetes version is within the AKS supported minor versions for its region and is not near end of support"
+      reads: ["az aks show", "az aks get-versions --location <region>"]
+      permissions: ["Microsoft.ContainerService/managedClusters/read", "Microsoft.ContainerService/locations/kubernetesVersions/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "aks_version_support.sh:82-89 `az aks get-versions` failure prints 'Proceeding with version display only', writes empty issues and exit 0; also :104-110 no latest_version -> empty issues, exit 0; runbook.robot:277 `cat aks_version_support.json 2>/dev/null || echo '{\"issues\": []}'`"
+      notes: "`az aks show` failure at :52-62 does raise an issue. Judgement is a function of the live az get-versions list, not a pinned EOL table."
+    - title: Analyze AKS Cluster Cost Optimization Opportunities
+      at: runbook.robot:312
+      asserts: "Node pool VMSS has low 30-day average/peak CPU and memory (with savings estimate from built-in VM price table), or unattached disks in the node resource group"
+      reads: ["az aks show", "az disk list -g <nodeResourceGroup>", "az vmss list -g <nodeResourceGroup>", "az monitor metrics list (VMSS CPU/memory)"]
+      permissions: ["Microsoft.ContainerService/managedClusters/read", "Microsoft.Compute/disks/read", "Microsoft.Compute/virtualMachineScaleSets/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "aks_cost_optimization.sh:41-44 EXIT trap writes '[]' to the issues file whenever the script dies; :168-174 `az aks show` failure -> 'exit 0 with empty results'; :263 `az disk list ... 2>/dev/null || echo '[]'`; :435-452 metrics `|| echo '{\"value\":[]}'`"
+      notes: "Failed metrics read as 0% utilization (see :455-456 `|| echo \"\"`), a downsizing false positive. Overlaps azure-aks-cost-optimization (same idea, subscription-wide)."
+  bundleNotes: "Same Robot template for every task: timeout -> sev-2 issue (returncode == -1), stdout substring 'Authentication failed' / 'client secret keys' / 'Azure login failed' -> sev-2 auth issue, else read a json file via `cat`. Non-timeout non-auth failures are never classified, and exit codes other than -1 are ignored. Suite Initialization raises sev-1 'Service Principal Credentials Expired' for ANY secret import failure (runbook.robot:~395-410) and still continues. Scripts mix set -euo pipefail (cost) and no flags at all (health, network, activities)."
+- bundle: azure-apim-health
+  displayName: Azure APIM Health
+  classicResourceTypes: [azure_apimanagement_service]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, resource_group, subscription_id; baseName is az-appgw-health (copy-paste from appgateway bundle)"
+  sli: true
+  sliAsserts: "mean of 6 binary scores (resource health Available, metrics issues==0, diagnostic-log issues==0, policy issues==0, SSL issues==0, dependency issues==0). False-pass: likely - policy score reads an issues file produced by a script whose api/product list calls are `|| echo \"{}\"`; conversely an APIM using only the default hostname gets a sev-4 'No Custom Hostname Configurations' issue and scores 0"
+  egress: "cloud API (ARM, Log Analytics, App Insights, Key Vault) + public internet to APIM custom hostnames (curl --insecure) and to backend URLs found in APIM config (nslookup, curl)"
+  tools: [az, jq, curl, nslookup, xmllint, bash]
+  inputs: [AZ_RESOURCE_GROUP, APIM_NAME, RW_LOOKBACK_WINDOW, AZURE_RESOURCE_SUBSCRIPTION_ID, azure_credentials]
+  tasks:
+    - title: Gather APIM Resource Information
+      at: runbook.robot:16
+      asserts: "none - informational config dump (SKU, location, VNet type, hostnames, URLs); emits recommendation-style issues if the script writes any"
+      reads: ["az group show", "az apim show"]
+      permissions: ["Microsoft.Resources/subscriptions/resourceGroups/read", "Microsoft.ApiManagement/service/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Script has set -euo pipefail so a failure aborts and stdout shows partial output; the result file apim_config_issues.json is written only at the very end (gather_apim_resource_information.sh:173), so an aborted run leaves no file and the Robot `cat` / json.loads errors out (a task error, not a pass)."
+    - title: Check for Resource Health Issues Affecting APIM
+      at: runbook.robot:46
+      asserts: "Resource Health availabilityStatus is not 'Available' (category 'Not Applicable' suppressed); sev-4 if no status returned; any stderr output from the script raises sev-3"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az rest GET .../Microsoft.ApiManagement/service/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Registers the Microsoft.ResourceHealth provider if missing (write). stderr != '' => sev-3 issue, so az warnings (e.g. deprecation notices) create noise."
+    - title: Fetch Key Metrics for APIM
+      at: runbook.robot:111
+      asserts: "APIM Azure Monitor metrics (failed/unauthorized requests, latency, capacity, gateway CPU/memory) breach the script's built-in thresholds; failed metric fetch is a sev-4 issue"
+      reads: ["az apim show --query id", "az monitor metrics list --metric TotalRequests/FailedRequests/SuccessfulRequests/UnauthorizedRequests/OtherRequests/Requests/Duration/BackendDuration/Capacity/CpuPercent_Gateway/MemoryPercent_Gateway"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "apim_metrics.sh:128-135 parse_metric_value returns 0 for invalid or empty metric payloads, so a metric with no datapoints (e.g. tier lacks the metric, no traffic) is scored 0 and cannot breach a threshold; hard fetch failures are recorded as sev-4 (:195-215)"
+      notes: "Uses eval of an az command string. Capacity/CPU metrics are only valid for some SKUs."
+    - title: Check Logs for Errors with APIM
+      at: runbook.robot:165
+      asserts: "Log Analytics AzureDiagnostics (GatewayLogs and others) contains known error types more than the warning threshold in the lookback window; missing diagnostic settings/workspace is sev-4; query failure is sev-1"
+      reads: ["az apim show", "az monitor diagnostic-settings list", "az monitor log-analytics workspace show", "az monitor log-analytics query (category discovery, then KQL)"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Category discovery query is 2>/dev/null (apim_diagnostic_logs.sh:186-189) which only narrows the category list. A diag-settings list failure (`|| true` at :107) is reported as 'No Diagnostic Settings Configured' (wrong diagnosis, not a pass). Script exits 1 after writing the issue file; Robot ignores rc but reads the file."
+    - title: Check Activity Logs for APIM Management Operations
+      at: runbook.robot:221
+      asserts: "Activity log shows failed/errored management operations on the APIM resource in the lookback window"
+      reads: ["az apim show", "az monitor activity-log list --resource-id"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "rc of az apim show and activity-log list are both checked (apim_activity_logs.sh:31,89) with exit 1 + stderr; Robot raises sev-3 on any stderr. data:logs-bulk."
+    - title: Check Application Insights Integration for APIM
+      at: runbook.robot:277
+      asserts: "APIM has an Application Insights logger and App Insights shows frequent exceptions, failed requests or slow performance over thresholds"
+      reads: ["az apim show", "az monitor app-insights component show", "az monitor app-insights query (exceptions, requests success==false, performance)"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.Insights/components/read", "Microsoft.Insights/components/api/read (query)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_apim_appinsights.sh:157-165 (and :205,:255 equivalents) on `az monitor app-insights query` failure only `echo \"[WARN] Could not query Application Insights ...\"` to stdout; no issue, stderr stays empty so runbook.robot:289 stderr check does not fire"
+      notes: "Requires the az application-insights extension (dynamic install)."
+    - title: Check Key Vault Dependencies for APIM
+      at: runbook.robot:326
+      asserts: "Key Vaults referenced by APIM named values/certificates are accessible, referenced secrets exist and are readable, and Key Vault audit logs show no access failures above 5"
+      reads: ["az apim show", "az keyvault show", "az monitor diagnostic-settings list (KV)", "az monitor log-analytics query (AzureDiagnostics AuditEvent not Success)", "az keyvault secret show --query attributes"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.KeyVault/vaults/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/query/read", "Key Vault data-plane: secrets/get (access policy or RBAC Key Vault Secrets User)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_apim_keyvault.sh:169-170 diag-settings list `2>/dev/null || echo \"[]\"` and :180-198 workspace show/query `2>/dev/null` inside `if` -> audit-failure check silently skipped when the query errors"
+      notes: "Secret existence/permission checks (:247) are rc-checked and classified by stderr text (SecretNotFound / Forbidden). Reads secret attributes only, not values."
+    - title: Verify APIM Policy Configurations
+      at: runbook.robot:375
+      asserts: "Service/API/product/operation policy XML is well-formed (xmllint), has auth/rate-limit/etc. expectations, and backend URLs in set-backend-service resolve"
+      reads: ["az apim show", "az rest GET <apim>/policies/policy, /apis, /products, /apis/<id>/operations (+ their policies)", "xmllint", "nslookup/curl on extracted backend URLs"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.ApiManagement/service/policies/read", "Microsoft.ApiManagement/service/apis/read", "Microsoft.ApiManagement/service/apis/policies/read", "Microsoft.ApiManagement/service/apis/operations/policies/read", "Microsoft.ApiManagement/service/products/read", "Microsoft.ApiManagement/service/products/policies/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "verify_apim_policies.sh:190-191 `az rest .../apis ... 2>/dev/null || echo \"{}\"` -> api_count 0 and the API loop never runs; :203,:246,:298 per-API/operation/product policy fetch `2>/dev/null || echo \"\"` is treated as 'no policy'; :286-287 same for products"
+      notes: "Service-level policy fetch (:139) is rc/stderr-checked. apim_policies.sh (234 lines, near-duplicate) is unused by the runbook. SLI uses the same script."
+    - title: Check APIM SSL Certificates
+      at: runbook.robot:432
+      asserts: "Custom-domain certificates are not expired and have more than DAYS_THRESHOLD days left; cert subject roughly matches the hostname"
+      reads: ["az apim show (hostnameConfigurations)", "curl --insecure -v https://<hostname> (live expiry)"]
+      permissions: ["Microsoft.ApiManagement/service/read", "network reachability to the APIM custom hostnames on 443 from the runner"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "If expiry cannot be determined it raises sev-4 'Cannot Determine Certificate Expiry' (check_apim_ssl_certs.sh) rather than passing. `curl --insecure` means chain trust is not verified (only expiry is read). `date -d` is GNU-only with `|| echo 0` fallback leading to the sev-4 path. Service with only the default hostname raises sev-4 'No Custom Hostname Configurations' (a non-problem). Hostname-vs-subject test is a substring grep (no SAN parsing)."
+    - title: Inspect Dependencies and Related Resources for APIM
+      at: runbook.robot:480
+      asserts: "Backends, Key Vaults and other dependencies discovered from APIM APIs are resolvable/reachable (nslookup + 5s curl) and Key Vaults show"
+      reads: ["az apim show", "az apim api list", "az keyvault show --ids", "nslookup <backend host>", "curl -s --max-time 5 <backend url>"]
+      permissions: ["Microsoft.ApiManagement/service/read", "Microsoft.ApiManagement/service/apis/read", "Microsoft.KeyVault/vaults/read", "network reachability from the runner to backend URLs"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "inspect_apim_dependencies.sh:198-203 backend curl has no -f, so any HTTP response (401/500) counts as reachable; only connect/timeout failures are flagged"
+      notes: "Egress to arbitrary customer backend URLs (SSRF-ish surface: URLs come from APIM config). SKIP_CONNECTIVITY_CHECK env disables the curl step. In SLI, the stderr issue is raised but does not affect the score."
+  bundleNotes: "Scripts all follow set -euo pipefail with `exit 1` after writing an issue JSON; Robot treats any stderr as a sev-3 'Errors running ...' issue, which is a decent catch-all but noisy and does not cover failures where the script prints to stdout (appinsights). Scripts exchange results via fixed-name JSON files in cwd. Generation rule baseName az-appgw-health collides with the Application Gateway bundle's baseName."
+- bundle: azure-appgateway-health
+  displayName: Azure Application Gateway Health
+  classicResourceTypes: [azure_network_application_gateways]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, resource_group, subscription_id; baseName az-appgw-health"
+  sli: true
+  sliAsserts: "mean of 6 binary scores (resource health Available, config issues==0, backend pool issues==0, metrics issues==0, SSL issues==0, error-log issues==0); scripts write error issues on az failure so most failures score 0; false-pass: likely only through metrics (empty data parses to 0) and SSL paths"
+  egress: "cloud API (ARM, Log Analytics, Monitor) + public internet to listener hostnames/IPs (curl --insecure for live cert expiry)"
+  tools: [az, jq, curl, openssl, base64, bc, bash]
+  inputs: [AZ_RESOURCE_GROUP, APP_GATEWAY_NAME, AZURE_RESOURCE_SUBSCRIPTION_ID, AZURE_SUBSCRIPTION_NAME, azure_credentials]
+  tasks:
+    - title: Check for Resource Health Issues Affecting Application Gateway
+      at: runbook.robot:16
+      asserts: "Resource Health availabilityStatus for the gateway is not 'Available'; sev-4 if no record returned; sev-3 on any stderr"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az rest GET .../Microsoft.Network/applicationGateways/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Registers Microsoft.ResourceHealth if missing (write). Robot bug: stderr issue uses `${resource_health.stderrt}` (typo, runbook.robot:30) so a script that writes stderr makes the task error out instead of reporting. app_gateway_resource_health.sh:58-60 az rest failure exits 1 (stderr)."
+    - title: Check Configuration Health of Application Gateway
+      at: runbook.robot:68
+      asserts: "Gateway has subnet, public IP, operationalState Running, HTTP/2, listeners, rules, SKU/WAF recommendations; findings returned as issues"
+      reads: ["az network application-gateway show", "az network vnet subnet show --ids", "az network public-ip show --ids"]
+      permissions: ["Microsoft.Network/applicationGateways/read", "Microsoft.Network/virtualNetworks/subnets/read", "Microsoft.Network/publicIPAddresses/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "app_gateway_config_health.sh has no set -e and no rc check on `az network application-gateway show` (:31), so a failed call produces empty fields; az stderr is then non-empty and Robot's stderr branch hits the `stderrt` typo (runbook.robot:88) and errors rather than passing. Expected text says 'has configuration recommendations' - many findings are advisory."
+    - title: Check Backend Pool Health for Application Gateway
+      at: runbook.robot:109
+      asserts: "Every backend pool member reports Healthy in `az network application-gateway show-backend-health`; no backend pools / pools without HTTP settings are sev-1; identifies the backing Azure resource of unhealthy members"
+      reads: ["az network application-gateway show-backend-health", "az webapp list / az container list / az aks list / az storage account list / az apim list / az cdn profile list / az sql server list / az postgres|mysql flexible-server list / az vm list-ip-addresses (resolve backend address to resource)"]
+      permissions: ["Microsoft.Network/applicationGateways/backendhealth/action", "Microsoft.Web/sites/read", "Microsoft.ContainerInstance/containerGroups/read", "Microsoft.ContainerService/managedClusters/read", "Microsoft.Storage/storageAccounts/read", "Microsoft.ApiManagement/service/read", "Microsoft.Cdn/profiles/read", "Microsoft.Sql/servers/read", "Microsoft.DBforPostgreSQL/flexibleServers/read", "Microsoft.DBforMySQL/flexibleServers/read", "Microsoft.Compute/virtualMachines/read", "Microsoft.Network/networkInterfaces/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "show-backend-health rc and JSON validity are checked and become sev-3/sev-1 issues (app_gateway_backend_health.sh:35-72). The reverse resource lookups are all `2>/dev/null` (:143-255) but only enrich the report. Lookups are subscription-wide lists (no -g), so they need broad read."
+    - title: Fetch Log Analytics for Application Gateway
+      at: runbook.robot:150
+      asserts: "none - report only: errors by user agent / URI from Log Analytics; never adds an issue other than the stderr one"
+      reads: ["az network application-gateway show --query id", "az monitor diagnostic-settings list", "az monitor log-analytics workspace show", "az monitor log-analytics query (several KQL)"]
+      permissions: ["Microsoft.Network/applicationGateways/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Asserts nothing, so nothing to false-pass; failures are only visible as stderr. app_gateway_comprehensive_log_check.sh is unused by the runbook (dead)."
+    - title: Fetch Metrics for Application Gateway
+      at: runbook.robot:178
+      asserts: "Azure Monitor metrics for the gateway (failed requests, unhealthy hosts, latency, capacity units etc.) breach the script's thresholds"
+      reads: ["az network application-gateway show --query id", "az monitor metrics list --metric <several>"]
+      permissions: ["Microsoft.Network/applicationGateways/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "app_gateway_metrics.sh:89-120 parse helper returns 0 for invalid/empty payloads and `jq ... || echo \"0\"` -> a metric with no datapoints reads as 0 and cannot breach; hard fetch failure is only an issue if the script's error branch fires (not fully traced)"
+      notes: "Same structure as apim_metrics.sh; `cat app_gateway_metrics.json | jq '.issues'` where the pipeline rc is jq's."
+    - title: Check SSL Certificate Health for Application Gateway
+      at: runbook.robot:225
+      asserts: "Listener certificates (and key-vault certs) are not expired / near expiry; expiry from config, from ssl-cert publicCertData, or a live curl --insecure TLS probe"
+      reads: ["az network application-gateway show", "az network application-gateway ssl-cert show", "az network public-ip show --ids", "curl --insecure -v https://<listener host or IP>", "openssl x509 / pkcs12 on publicCertData"]
+      permissions: ["Microsoft.Network/applicationGateways/read", "Microsoft.Network/applicationGateways/sslCertificates/read (az ssl-cert show)", "Microsoft.Network/publicIPAddresses/read", "network reachability to listener hosts on 443"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "app_gateway_ssl_certs.sh:2 `# set -euo pipefail` is commented out; :386-407 ssl-cert show failure only echoes to stdout and the script falls back to a live probe; whether the final 'cannot determine expiry' case raises an issue was not traced"
+      notes: "date -d (GNU) with `|| echo 0` fallbacks (:76,95,110,152,375). Live probe uses --insecure, so expiry is read from whatever the listener serves (could be a different cert than configured). 669-line script, largest in the bundle."
+    - title: Check Logs for Errors with Application Gateway
+      at: runbook.robot:266
+      asserts: "Log Analytics AzureDiagnostics has more than WARNINGS_THRESHOLD HTTP 4xx/5xx errors for the gateway in the lookback window; missing diag settings/workspace flagged"
+      reads: ["az network application-gateway show --query id", "az monitor diagnostic-settings list", "az monitor log-analytics workspace show", "az monitor log-analytics query"]
+      permissions: ["Microsoft.Network/applicationGateways/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Query failure is a sev-1 issue (app_gateway_log_errors.sh:181-200); diag-settings list `|| true` (:89) turns a failure into 'no diagnostic settings' (wrong diagnosis, not a pass). Documentation says 'IP mismatches or subnet issues' but the query counts generic HTTP errors."
+    - title: List Related Azure Resources for Application Gateway
+      at: runbook.robot:308
+      asserts: "none - discovery report mapping backend pool addresses to Azure resources (VM, App Service, container group, AKS, private endpoint, NICs)"
+      reads: ["az network application-gateway show", "az network vnet subnet show --ids", "az vm list-ip-addresses", "az webapp list", "az container list", "az aks list", "az vm show / az network nic show / az webapp show --ids", "az network private-endpoint list"]
+      permissions: ["Microsoft.Network/applicationGateways/read", "Microsoft.Network/virtualNetworks/subnets/read", "Microsoft.Compute/virtualMachines/read", "Microsoft.Network/networkInterfaces/read", "Microsoft.Web/sites/read", "Microsoft.ContainerInstance/containerGroups/read", "Microsoft.ContainerService/managedClusters/read", "Microsoft.Network/privateEndpoints/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational; lookups are `2>/dev/null || true` so unresolved backends are just omitted."
+  bundleNotes: "Same family as azure-apim-health and azure-aks-triage: scripts write fixed-name JSON files and Robot treats stderr != '' as a sev-3 issue. Two tasks have a `stderrt` typo that turns the stderr branch into a Robot error. The log-based tasks (error logs) correctly turn query failures into issues. Generation rule baseName az-appgw-health is shared with azure-apim-health."
+- bundle: azure-appservice-cost-optimization
+  displayName: Azure App Service Cost Optimization
+  classicResourceTypes: [azure_appservice_plans]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers subscription_id, resource_group"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (ARM, Azure Monitor, Resource Graph)"
+  tools: [az, jq, bc, awk, bash]
+  inputs: [AZURE_SUBSCRIPTION_IDS, AZURE_RESOURCE_GROUPS, AZURE_SUBSCRIPTION_NAME, LOW_COST_THRESHOLD, MEDIUM_COST_THRESHOLD, HIGH_COST_THRESHOLD, OPTIMIZATION_STRATEGY, TIMEOUT_SECONDS, azure_credentials]
+  tasks:
+    - title: Analyze App Service Plan Cost Optimization
+      at: runbook.robot:18
+      asserts: "An App Service Plan has no apps (empty), or its CPU/memory utilization is low enough that fewer instances or a smaller SKU would do, per OPTIMIZATION_STRATEGY (aggressive/balanced/conservative); issue carries estimated saving"
+      reads: ["az group list", "az appservice plan list -g", "az webapp list --query [?appServicePlanId==...]", "az functionapp list", "az monitor metrics list (plan CPUPercentage/MemoryPercentage)", "Resource Graph via azure_performance_utils.sh"]
+      permissions: ["Microsoft.Web/serverfarms/read", "Microsoft.Web/sites/read", "Microsoft.Resources/subscriptions/resourceGroups/read", "Microsoft.Insights/metrics/read", "Microsoft.ResourceGraph/resources/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "azure_appservice_cost_optimization.sh:76-83 and :92-93 `az webapp list`/`az functionapp list` ... `2>/dev/null || echo '[]'` / `|| echo \"0\"`; :922 `az group list ... 2>/dev/null`; plan-list failure at :999-1004 is only counted in failed_rgs and logged (:1073), never an issue -> 'All App Service Plans appear to be efficiently utilized'"
+      notes: "Wrong-direction hazard: a failed or forbidden `az webapp list` returns [] so the plan looks EMPTY and is reported (with an `az appservice plan delete` next step) as a deletable plan. Same stale-file/`cat` behaviour as other cost bundles. Suggested remediation commands in issue text include delete/update (not executed)."
+  bundleNotes: "Single task. Same generation-rule mismatch as AKS cost: per-plan SLX but the script scans whole subscription/RGs from env. Overlaps conceptually with azure-appservice-plan-health (asp_cost_optimization.sh)."
+- bundle: azure-appservice-functionapp-health
+  displayName: Azure Function App Health
+  classicResourceTypes: [azure_appservice_web_apps]
+  matchHints: "pattern .+ on name AND pattern ^functionapp(?:,.*)?$ on kind (substring); level of detail detailed; qualifiers resource, resource_group, subscription_id"
+  sli: true
+  sliAsserts: "mean of 5 binary scores (resource health Available; health-check metric issues; config issues; activities issues; deployment issues); but each issue-file score is 0 only when an issue has severity 1 or 2 (sli.robot Evaluate loops), and tool-failure issues in these scripts are mostly sev 3-4; false-pass: likely"
+  egress: "cloud API (ARM, Azure Monitor, Log Analytics, Advisor); az webapp log download pulls app logs (SCM/Kudu endpoint of the app)"
+  tools: [az, jq, bc, unzip, timeout, bash]
+  inputs: [AZ_RESOURCE_GROUP, FUNCTION_APP_NAME, AZURE_RESOURCE_SUBSCRIPTION_ID, RW_LOOKBACK_WINDOW, azure_credentials]
+  tasks:
+    - title: Check for Resource Health Issues Affecting Function App
+      at: runbook.robot:17
+      asserts: "Resource Health availabilityStatus of the Function App is not 'Available'; sev-4 if no record returned"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az rest GET .../Microsoft.Web/sites/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current", "az functionapp show --query id (portal link)"]
+      permissions: ["Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Web/sites/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Registers Microsoft.ResourceHealth if missing. appservice_resource_health.sh:56-63 redirects az rest to the file and exits 1 on failure; Robot then reads a missing/empty file (json.loads error or sev-4 'unavailable')."
+    - title: Log Every Function Invocation Result
+      at: runbook.robot:68
+      asserts: "Per-function executions/errors/duration/memory over the lookback window show elevated error rate or poor health score (issue file invocation_log.json)"
+      reads: ["az functionapp function list", "az monitor metrics list FunctionExecutionCount / FunctionExecutionUnits / errors / duration / memory (per function dimension)"]
+      permissions: ["Microsoft.Web/sites/functions/read", "Microsoft.Insights/metrics/read", "Microsoft.Web/sites/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "function_invocation_logger.sh:55-70 `az functionapp function list ... 2>/dev/null` empty -> treated as no functions, exit 0; :90-120 metrics `2>/dev/null || echo \"[]\"`; runbook.robot:89 `if [ -f invocation_log.json ]; else echo '{\"issues\": []}'`"
+      notes: "Name says 'Log Every Invocation' but it aggregates metrics (no per-invocation log). Overlaps 'Check Individual Function Invocations Health'."
+    - title: Analyze Function Failure Patterns
+      at: runbook.robot:119
+      asserts: "none - Robot only prints a summary of failure_analysis.json (title/severity of the first issue); it never calls Add Issue"
+      reads: ["az functionapp function list", "az monitor metrics list (executions, errors, duration per function)"]
+      permissions: ["Microsoft.Web/sites/functions/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Task cannot fail; findings in failure_analysis.json are dropped. A V13 port should decide whether this is a typed output or dead weight."
+    - title: Check Function App Health in Resource Group
+      at: runbook.robot:139
+      asserts: "Function App state is Running and Azure Monitor health-check / HTTP metrics (5xx, response time, etc.) are within script thresholds"
+      reads: ["az functionapp show", "az monitor metrics list (per metric in FUNCTION_METRICS, PT1M, plus baseline)"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_health_metric.sh:76-82 metric list `2>/dev/null` with no rc check (no set -e), empty metric_json is then fed to jq --argjson (:89-92); baseline fetch `|| echo '{\"value\":[]}'` (:213-219): missing data is not an issue"
+      notes: "Same script powers the SLI health-check sub-score (counted only for sev 1/2 issues)."
+    - title: Fetch Function App Plan Utilization Metrics
+      at: runbook.robot:193
+      asserts: "CPU/memory metrics of the hosting plan exceed utilization thresholds"
+      reads: ["az functionapp show", "az monitor metrics list CpuTime/MemoryWorkingSet (or plan CPU/memory)"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "appservice_plan_utilization_health.sh:113-125 metric list `2>/dev/null`; empty or zero-length result -> 'No data found for metric' and `continue` (no issue)"
+      notes: ""
+    - title: Check Individual Function Invocations Health
+      at: runbook.robot:246
+      asserts: "Functions in the app have errors, throttles or abnormal duration/memory in the lookback window"
+      reads: ["az functionapp function list", "az monitor metrics list FunctionExecutionCount/Errors/Throttles/Duration/Memory with --filter FunctionName"]
+      permissions: ["Microsoft.Web/sites/functions/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "function_invocation_health.sh:60-71 function list `2>/dev/null` empty -> writes '{\"issues\":[],...}' exit 0; :127-172 every metric `2>/dev/null || echo \"0\"` then 'Function App level metrics retrieved' (also flagged in prior audit)"
+      notes: "timeout_seconds=60 in the runbook for a 697-line script that makes many metric calls; a timeout returns rc -1 which the Robot ignores."
+    - title: Get Function App Logs and Analyze Errors
+      at: runbook.robot:293
+      asserts: "Downloaded app log files contain ERROR/Exception/Failed lines or critical entries above thresholds"
+      reads: ["az functionapp show --query state", "az webapp log download", "az webapp log tail --provider docker", "unzip + grep on the log archive"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Web/sites/config/list/action (publishing credentials needed by log download)", "Microsoft.Web/sites/publish/action"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:305 `if [ -f function_app_log_issues_report.json ]; then cat ...; else echo '{\"issues\": []}'; fi`; appservice_logs.sh:85-139 `az webapp log download ... 2>/dev/null` failure falls through to other branches with all errors silenced"
+      notes: "Uses `az webapp log download` against a function app. `timeout` wrappers return non-zero but are swallowed."
+    - title: Check Configuration Health of Function App
+      at: runbook.robot:334
+      asserts: "Function App configuration (state, HTTPS only, runtime, diagnostic settings count, plan SKU) has no misconfiguration findings"
+      reads: ["az functionapp show", "az monitor diagnostic-settings list", "az appservice plan show --ids"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "appservice_config_health.sh:50-71 exits 1 when functionapp show fails, so Robot reads a missing file (loud). Plan/diag lookups are 2>/dev/null and only add advisory findings."
+    - title: Check Deployment Health of Function App
+      at: runbook.robot:374
+      asserts: "Production slot and deployment slots exist and are in a Running/healthy state; deployment config fetch failure is sev 2"
+      reads: ["az functionapp deployment slot list", "az functionapp show", "az functionapp deployment slot show"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Web/sites/slots/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Slot-list failure (`2>/dev/null`, appservice_deployment_health.sh:68) is treated as 'no slots' and falls to the production check whose failure is a sev-2 issue (:83-96), so not silent."
+    - title: Fetch Function App Activities
+      at: runbook.robot:415
+      asserts: "Activity log (or Log Analytics) shows failed/critical operations on the Function App, excluding noisy publish-xml operations"
+      reads: ["az functionapp show", "az monitor diagnostic-settings list", "az monitor log-analytics query", "az monitor activity-log list"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/query/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "functionapp_activities.sh:106,129-134 diag-settings and activity-log list `2>/dev/null`; empty -> no activities; rc not checked"
+      notes: "Task at runbook.robot:493 runs the same script and reads the same JSON file - exact duplicate."
+    - title: Fetch Azure Recommendations and Notifications for Function App
+      at: runbook.robot:454
+      asserts: "Azure Advisor recommendations, service health events or security assessments exist for the Function App; plus HTTPS-only/managed identity/App Insights/plan SKU checks"
+      reads: ["az advisor recommendation list", "az rest (serviceHealth/events, security assessments)", "az functionapp show / identity show", "az appservice plan show"]
+      permissions: ["Microsoft.Advisor/recommendations/read", "Microsoft.ResourceHealth/events/read", "Microsoft.Security/assessments/read", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_recommendations.sh:131-133,194-198,231-235 advisor/service-health/security calls end `2>/dev/null | jq -c '.'`; empty = no recommendations (no pipefail)"
+      notes: "Advisory content; absence is normal. Companion appservice_recommendations_enhanced.sh and appservice_activities_enhanced.sh are not referenced by the runbook or SLI (dead code)."
+    - title: Check Recent Activities for Function App
+      at: runbook.robot:493
+      asserts: "Same as 'Fetch Function App Activities' (identical script and result file)"
+      reads: ["same as runbook.robot:415"]
+      permissions: ["same as runbook.robot:415"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "same as runbook.robot:415 (functionapp_activities.sh)"
+      notes: "Duplicate of the task at line 415."
+    - title: Check Diagnostic Logs for Function App
+      at: runbook.robot:522
+      asserts: "Function App diagnostic settings route logs somewhere and logs/Application Insights contain errors above thresholds"
+      reads: ["az functionapp show (tags hidden-link app-insights id)", "az monitor diagnostic-settings list", "az monitor app-insights query / az monitor log-analytics query"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.Insights/components/api/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "functionapp_diagnostic_logs.sh:64 and :138 `timeout 30 az ... 2>/dev/null` with set -e only; timeouts/failures leave empty variables handled as 'not configured'; not traced to the final issue"
+      notes: "Not fully traced; classification is from the idiom, not a verified path."
+  bundleNotes: "Largest bundle by script count (15). Two script families coexist: appservice_*.sh (used by SLI and several tasks) and function_*.sh/functionapp_*.sh (function-specific, set -e, metrics with `|| echo 0`). Several scripts are near-copies of the webapp-health ones with az webapp -> az functionapp swapped. SLI has a commented-out log-analysis task and references appservice_log_analysis.sh which does not exist here. function_invocation_health.sh (known from the earlier audit): errors go to 2>/dev/null yielding issues:[] and exit 0; metrics fall back to `|| echo \"0\"` yet print 'metrics retrieved'."
+- bundle: azure-appservice-plan-health
+  displayName: Azure App Service Plan Health
+  classicResourceTypes: [azure_appservice_plans]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource_group, subscription_id"
+  sli: true
+  sliAsserts: "mean of 2 binary scores: availability (1 if at least ONE plan in the RG is Available) and capacity (1 if count of high-usage plans <= MAX_HIGH_USAGE_APP_SERVICE_PLAN); false-pass: confirmed - availability >= 1 passes even when most plans are unhealthy, and an empty/failed health list is unguarded (json.loads error) while capacity script exit 0 'No plans found' scores 1"
+  egress: "cloud API (ARM, Resource Health, Azure Monitor)"
+  tools: [az, jq, bc, bash]
+  inputs: [AZURE_RESOURCE_GROUP, AZURE_SUBSCRIPTION_ID, AZURE_SUBSCRIPTION_NAME, azure_credentials, "(plus capacity thresholds / MAX_HIGH_USAGE_APP_SERVICE_PLAN, CPU/memory thresholds, METRICS_OFFSET/INTERVAL)"]
+  tasks:
+    - title: Check Azure App Service Plan Resource Health
+      at: runbook.robot:19
+      asserts: "Resource Health availabilityState of every App Service Plan in the resource group is 'Available'; sev-4 if no health records could be collected"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az group show", "az appservice plan list -g", "az rest GET .../Microsoft.Web/serverfarms/<plan>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.Web/serverfarms/read", "Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "asp-health-check.sh:85-87 per-plan `az rest ... 2>/dev/null` failure drops that plan from asp_health.json; remaining Available plans mask it; runbook.robot:27-32 JSON load failure also defaults to an empty list (but empty list raises the sev-4 'unavailable' issue)"
+      notes: "Registers Microsoft.ResourceHealth if missing. No set -e in the script."
+    - title: Check App Service Plan Capacity and Recommendations
+      at: runbook.robot:68
+      asserts: "A plan's CPU, memory or disk-queue exceed capacity thresholds (high usage) and the script's scale-up/scale-down recommendations"
+      reads: ["az appservice plan list (whole subscription, no -g)", "az monitor metrics list CpuPercentage MemoryPercentage DiskQueueLength"]
+      permissions: ["Microsoft.Web/serverfarms/read", "Microsoft.Insights/metrics/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_appservice_plan_capacity.sh:232-250 metrics `2>/dev/null || echo \"\"` twice then empty cpu/mem is simply not evaluated (no issue); :44-49 empty plan list -> 'No App Service Plans found', exit 0"
+      notes: "Lists plans for the ENTIRE subscription although the SLX is per resource group (AZURE_RESOURCE_GROUP not applied at :44), so thresholds and results span other RGs. Plan list failure has no rc check (:44)."
+    - title: Analyze App Service Plan Cost Optimization Opportunities
+      at: runbook.robot:145
+      asserts: "A plan is empty or underutilized (low CPU/memory/requests) so it could be removed or downsized, with estimated saving"
+      reads: ["az appservice plan list -g", "az monitor metrics list CpuPercentage / MemoryPercentage / Requests"]
+      permissions: ["Microsoft.Web/serverfarms/read", "Microsoft.Web/sites/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "asp_cost_optimization.sh:193-220 each metric `2>/dev/null || echo '{\"value\":[]}'`; plan list at :155 is not swallowed (set -euo pipefail aborts, EXIT trap writes '[]' similar to other cost bundles)"
+      notes: "Failed metrics read as zero utilization -> downsizing/removal false positive. Overlaps azure-appservice-cost-optimization."
+    - title: Analyze App Service Plan Weekly Utilization Trends
+      at: runbook.robot:175
+      asserts: "CPU/memory utilization (and app HTTP 4xx/5xx/response time) trended over the past weeks shows a sustained rise or anomaly"
+      reads: ["az appservice plan list -g", "az monitor metrics list (CPU/memory per week window)", "az webapp list", "az monitor metrics list (Requests, Http4xx, Http5xx, AverageResponseTime)"]
+      permissions: ["Microsoft.Web/serverfarms/read", "Microsoft.Web/sites/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "asp_weekly_trend_analysis.sh:56-66 plan list `2>/dev/null || echo '[]'` then exit 0 with no issue; :108-128 metrics `2>/dev/null || echo '{}'`; :39 az account set `|| true`"
+      notes: "`az webapp list` covers web apps only (function apps are separate). Uses GNU `date -d` with BSD fallback."
+    - title: Check App Service Plan Changes
+      at: runbook.robot:206
+      asserts: "Activity log shows write/delete/scale/update operations on the plans in the lookback window, classified High/Medium by operation (failed operations reported as issues)"
+      reads: ["az appservice plan list -g --query id", "az monitor activity-log list --resource-id <plan> --offset 24h"]
+      permissions: ["Microsoft.Web/serverfarms/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "asp-audit.sh set -euo pipefail aborts on a failed activity-log list (:42), leaving no result files; runbook.robot:216-230 TRY/EXCEPT then defaults both files to an empty dict, i.e. 'no changes'"
+      notes: "A listing failure shows only on stderr, which the Robot does not inspect."
+  bundleNotes: "SLI and runbook share asp-health-check.sh and check_appservice_plan_capacity.sh. SLI availability sub-score (>=1 Available plan) is much weaker than the runbook (any non-Available plan is an issue). The cost and trend tasks duplicate analysis in azure-appservice-cost-optimization."
+- bundle: azure-appservice-webapp-health
+  displayName: Azure App Service Health
+  classicResourceTypes: [azure_appservice_web_apps]
+  matchHints: "pattern .+ on name AND pattern ^app(?:,.*)?$ on kind (substring); level of detail detailed; qualifiers resource, resource_group, subscription_id"
+  sli: true
+  sliAsserts: "mean of 5 binary scores (resource health Available; health-check metric issues; config issues; deployment issues; activities issues); issue-file scores are 0 only if an issue has severity 1 or 2 (sli.robot:61,90,119,146), so sev-3/4 tool-failure issues leave the score at 1; false-pass: likely"
+  egress: "cloud API (ARM, Azure Monitor, Log Analytics, App Insights, Advisor); az webapp log download pulls logs from the app's Kudu/SCM endpoint"
+  tools: [az, jq, bc, unzip, timeout, bash]
+  inputs: [AZ_RESOURCE_GROUP, APP_SERVICE_NAME, AZURE_RESOURCE_SUBSCRIPTION_ID, RW_LOOKBACK_WINDOW, azure_credentials]
+  tasks:
+    - title: Check for Resource Health Issues Affecting App Service
+      at: runbook.robot:17
+      asserts: "Resource Health availabilityStatus of the web app is not 'Available'; sev-4 if no record"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az rest GET .../Microsoft.Web/sites/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Registers Microsoft.ResourceHealth if missing (write)."
+    - title: Check App Service Health
+      at: runbook.robot:69
+      asserts: "App Service exists and is Running; HealthCheckStatus metric is below threshold or missing (sev 3 'No Health Check Data'); health-check path configured"
+      reads: ["az webapp show (id, state, siteConfig.healthCheckPath)", "az monitor metrics list --metrics HealthCheckStatus"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Good pattern: not-found (sev 1) and no-data (sev 3) are issues (appservice_health_metric.sh:23-46,127-135); app not found exits 0 but writes the issue. State and healthCheckPath lookups (:74,:99) have no rc check."
+    - title: Fetch App Service Utilization Metrics
+      at: runbook.robot:123
+      asserts: "Web app metrics (CPU time, memory, HTTP 5xx, response time, requests etc.) breach thresholds over the lookback window"
+      reads: ["az webapp show", "az monitor metrics list (per metric)"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_metric_health.sh:202-216 per-metric `az monitor metrics list ... 2>/dev/null` inside `if`, empty/zero-length value -> 'No data found for metric' and `continue` with no issue"
+      notes: "App-not-found is a sev-1 issue (:85-109)."
+    - title: Get App Service Logs
+      at: runbook.robot:169
+      asserts: "none - displays the last lines of downloaded log files; Robot adds no issue"
+      reads: ["az account set", "az webapp log download", "unzip + tail of log files"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Web/sites/config/list/action (publishing credentials for log download)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Pure report. Download and unzip failures exit 1 (appservice_logs.sh:43-77) but the Robot ignores rc."
+    - title: Check Configuration Health of App Service
+      at: runbook.robot:188
+      asserts: "Web app configuration (HTTPS only, always-on, runtime, diagnostic settings, plan tier) has findings"
+      reads: ["az webapp show", "az monitor diagnostic-settings list", "az appservice plan show --ids"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_config_health.sh has no set -e and no rc checks (:13,:50,:79); failed `az webapp show` yields empty APP_SERVICE_DETAILS and jq on empty input emits nothing, so checks do not fire; az error text on stderr is not inspected by the Robot"
+      notes: ""
+    - title: Check Deployment Health of App Service
+      at: runbook.robot:228
+      asserts: "Deployment slots / production app state and last deployment log show failures"
+      reads: ["az webapp deployment slot list", "az webapp show", "az webapp deployment slot show", "az webapp log deployment show"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Web/sites/slots/read", "Microsoft.Web/sites/config/list/action (deployment logs)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_deployment_health.sh:18,57,80 no rc checks and no stderr redirect handling; slot list failure leaves DEPLOYMENTS empty and the script falls to the production-config branch; log deployment show failure yields no deployment findings"
+      notes: ""
+    - title: Fetch App Service Activities
+      at: runbook.robot:268
+      asserts: "Activity log shows failed/critical operations on the web app in the lookback window"
+      reads: ["az webapp show", "az monitor activity-log list (per level)"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_activities.sh (shared pattern with function app copy): `az monitor activity-log list ... 2>/dev/null` stop-search queries; empty -> no activities"
+      notes: "Same data as the next task; the 'enhanced' variant reads a different file."
+    - title: Check Recent Activities for App Service
+      at: runbook.robot:304
+      asserts: "Critical/Error/Warning administrative activities on the web app, with tenant/subscription-aware filtering"
+      reads: ["az webapp show", "az monitor activity-log list"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_activities_enhanced.sh: activity-log calls guarded by `if x=$(az ...)` with exit 0 on missing resource; list failure treated as no activities (not traced end to end)"
+      notes: "Duplicate intent of runbook.robot:268."
+    - title: Check Recommendations and Notifications for App Service
+      at: runbook.robot:333
+      asserts: "Azure Advisor recommendations, service health events and security assessments apply to the web app, plus HTTPS-only / managed identity / App Insights / plan checks"
+      reads: ["az advisor recommendation list", "az rest serviceHealth and security assessments", "az webapp show / identity show", "az appservice plan show"]
+      permissions: ["Microsoft.Advisor/recommendations/read", "Microsoft.ResourceHealth/events/read", "Microsoft.Security/assessments/read", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_recommendations.sh advisor/service-health/security calls end `2>/dev/null | jq -c '.'` (same pattern as function app copy); empty = no recommendations"
+      notes: "Advisory content; absence is normal."
+    - title: Check Diagnostic Logs for App Service
+      at: runbook.robot:379
+      asserts: "Log Analytics / Application Insights for the web app contain errors, failed requests or slow requests above thresholds; missing diagnostic settings reported"
+      reads: ["az webapp show", "az monitor diagnostic-settings list", "az monitor log-analytics query", "az resource list/show (App Insights component)", "az monitor app-insights query"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/query/read", "Microsoft.Insights/components/read", "Microsoft.Insights/components/api/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_diagnostic_logs.sh:34-44 exits 0 when `az webapp show` fails (writes an issue), but :83,:137,:179 query calls are `if x=$(timeout 15s az ... 2>/dev/null)` and a failed/timed-out query falls through with no issue"
+      notes: "Short hard-coded `timeout` values (3-15s) make timeouts plausible; a timed-out query is silent."
+    - title: Check Logs for Errors in App Service
+      at: runbook.robot:433
+      asserts: "App Insights exceptions and Log Analytics error rows exist for the app in the recent window; script stderr raises sev 3"
+      reads: ["az webapp show", "az webapp config appsettings list", "az monitor app-insights query", "az monitor diagnostic-settings list", "az monitor log-analytics query"]
+      permissions: ["Microsoft.Web/sites/read", "Microsoft.Web/sites/config/list/action (appsettings)", "Microsoft.Insights/components/api/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "appservice_log_analysis.sh:49,61,104,116 each az call is `timeout 3s|5s ... 2>/dev/null` in an `if`; a failure or timeout just skips that source (the 3s webapp-show timeout writes a sev-3 issue)"
+      notes: "`az webapp config appsettings list` returns app setting VALUES including secrets into script memory (only APPINSIGHTS key is selected via --query)."
+  bundleNotes: "Same script family as azure-appservice-functionapp-health, but the web-app copies are better written for the not-found / no-data cases (explicit issues, exit 0). SLI sub-scores ignore sev-3/4 so degraded-but-not-failed states still score 1. Checked-in JSON files (app_service_log_issues_report.json, app_service_recommendations.json) in the bundle dir are stale artifacts."
+- bundle: azure-appservice-webapp-ops
+  displayName: Azure App Service Operations
+  classicResourceTypes: []
+  matchHints: "generation rule file exists but is entirely commented out (would match azure_appservice_web_apps with kind ^app, basic, qualifiers resource, resource_group); not auto-generated"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (ARM)"
+  tools: [az, jq, unzip, timeout, bash]
+  inputs: [AZ_RESOURCE_GROUP, APP_SERVICE_NAME, AZURE_RESOURCE_SUBSCRIPTION_ID, RW_LOOKBACK_WINDOW, SCALE_OUT_FACTOR, SCALE_IN_FACTOR, SOURCE_SLOT, TARGET_SLOT, azure_credentials]
+  tasks:
+    - title: Restart App Service
+      at: runbook.robot:17
+      asserts: "none - action, not a check: restarts the web app; downloads pre/post-restart logs; raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az webapp restart (after downloading/tailing logs and checking the activity log)"]
+      permissions: ["Microsoft.Web/sites/restart/action", "Microsoft.Web/sites/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "The restart rc is checked (appservice_restart.sh:162-164 echoes ERROR to stdout and exits 1, matching runbook.robot check). No set -e: the activity-log verification (:107) and pre/post log fetches are best-effort, so the restart is confirmed by report text only. Tags use access:read-write."
+    - title: Swap Deployment Slots
+      at: runbook.robot:45
+      asserts: "none - action, not a check: swaps source and target slots (auto-picks the single non-production slot); raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az webapp deployment slot swap"]
+      permissions: ["Microsoft.Web/sites/slots/slotsswap/action", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read", "Microsoft.Web/sites/slots/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Failures echo 'ERROR' to stdout (slot_swap.sh:46-213) matching the Robot check. Refuses when plan SKU does not support slots or multiple non-prod slots exist. No timeout/history flags set on Run Bash File."
+    - title: Scale Up App Service
+      at: runbook.robot:75
+      asserts: "none - action, not a check: changes the App Service Plan SKU to the next tier (costs money, affects every app on the plan); raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az appservice plan update --sku <next SKU from SKU_MAP_JSON>"]
+      permissions: ["Microsoft.Web/serverfarms/write", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "'ERROR' printed to stdout on failure (scaleup.sh:60-124). Mutates the shared plan, not just this app. include_in_history=true (unlike other tasks)."
+    - title: Scale Down App Service
+      at: runbook.robot:104
+      asserts: "none - action, not a check: changes the App Service Plan SKU to the previous tier; raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az appservice plan update --sku <previous SKU>"]
+      permissions: ["Microsoft.Web/serverfarms/write", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same pattern as scale up; verified by a re-read of the plan."
+    - title: Scale Out Instances for App Service
+      at: runbook.robot:130
+      asserts: "none - action, not a check: multiplies the plan instance count by SCALE_OUT_FACTOR; raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az appservice plan update --number-of-workers (or az webapp scale for Arc)"]
+      permissions: ["Microsoft.Web/serverfarms/write", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Arc-enabled branch uses az webapp scale --instance-count."
+    - title: Scale In Instances for App Service
+      at: runbook.robot:159
+      asserts: "none - action, not a check: divides the plan instance count by SCALE_IN_FACTOR (floor 1); raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az appservice plan update --number-of-workers (or az webapp scale for Arc)"]
+      permissions: ["Microsoft.Web/serverfarms/write", "Microsoft.Web/sites/read", "Microsoft.Web/serverfarms/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same pattern as scale out."
+    - title: Redeploy App Service from Latest Source
+      at: runbook.robot:184
+      asserts: "none - action, not a check: redeploys the app from its configured container image or a zip package; raises a sev-3 issue if the script stdout contains 'ERROR'"
+      reads: ["az webapp restart (container) or az webapp deployment source config-zip (code, needs ZIP_PACKAGE_PATH)"]
+      permissions: ["Microsoft.Web/sites/restart/action", "Microsoft.Web/sites/extensions/write (zip deploy)", "Microsoft.Web/sites/config/list/action", "Microsoft.Web/sites/read"]
+      scope: resource-group
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "appservice_redeploy.sh:51,103,114,128 write 'ERROR: ...' with `1>&2` (stderr) and exit 1, but runbook.robot:~205 checks `'ERROR' in $redeploy.stdout` only, so a failed redeploy raises no issue"
+      notes: "ZIP_PACKAGE_PATH is referenced by the script but not imported in the runbook. Only the stdout check is used, unlike the other ops tasks."
+  bundleNotes: "Only mutating runbook in the group besides acr-image-sync. Success/failure of every task is decided by the substring 'ERROR' in script stdout; any failure path that writes to stderr or only exits non-zero without printing ERROR to stdout is a false pass (redeploy). Scale tasks modify the shared App Service Plan, so they affect every app on it. appservice_logs.sh is present but unused by the runbook."
+- bundle: azure-databricks-cost-optimization
+  displayName: Azure Databricks Cost Optimization
+  classicResourceTypes: [azure_subscription_subscriptions]
+  matchHints: "pattern .+ on name (substring) against subscription; level of detail basic; qualifiers subscription_id, resource_group"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (ARM, Resource Graph) + Databricks workspace REST API https://<workspace>.azuredatabricks.net/api/2.0/clusters/*"
+  tools: [az, jq, curl, bc, bash]
+  inputs: [AZURE_SUBSCRIPTION_IDS, AZURE_RESOURCE_GROUPS, AZURE_SUBSCRIPTION_NAME, COST_ANALYSIS_LOOKBACK_DAYS, LOW_COST_THRESHOLD, MEDIUM_COST_THRESHOLD, HIGH_COST_THRESHOLD, AZURE_DISCOUNT_PERCENTAGE, TIMEOUT_SECONDS, azure_credentials]
+  tasks:
+    - title: Analyze Databricks Cluster Auto-Termination and Over-Provisioning Opportunities
+      at: runbook.robot:18
+      asserts: "A Databricks cluster has no auto-termination, has been running idle, or is over-provisioned relative to utilization; issue carries estimated saving"
+      reads: ["az graph query / az databricks workspace list", "az databricks workspace show --query workspaceUrl", "az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d", "GET /api/2.0/clusters/list", "POST /api/2.0/clusters/events", "GET /api/2.0/clusters/get", "GET /api/2.0/clusters/spark-ui"]
+      permissions: ["Microsoft.Databricks/workspaces/read", "Microsoft.ResourceGraph/resources/read", "Databricks workspace-level access for the service principal (workspace user/CAN_ATTACH_TO on clusters); script note says Contributor on the workspace"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_databricks_cluster_optimization.sh:226-255 list_clusters: curl ... 2>/dev/null, invalid JSON or Databricks error_code both `echo '{\"clusters\":[]}'`; token failure (:842-848) and `az account set ... || continue` (:894) just skip the workspace; az databricks workspace show 2>/dev/null (:212) -> all end in 'No clusters found / All clusters have proper auto-termination'"
+      notes: "Requires the az databricks extension for `az databricks workspace show`. Databricks API calls use `-s` with no -f and no rc check. Generation rule resourceType is the subscription, not a Databricks workspace; the SLX fires for every subscription whether or not it has Databricks."
+  bundleNotes: "Single task, 49KB script. Uses shared Resource Graph helper with `|| echo '{\"data\":[]}'`."
+- bundle: azure-devops-organization-health
+  displayName: Azure DevOps Organization Health
+  classicResourceTypes: [organization]
+  matchHints: "platform azure_devops; pattern .+ on name (substring); level of detail basic; qualifiers resource"
+  sli: true
+  sliAsserts: "mean of 3 availability sub-scores (platform_incident_ok from the ADO status API, pool_capacity_ok = no self-hosted pool with a job queued longer than QUEUE_AGING_THRESHOLD_MIN, org_policy_ok = at least one Administrator security group exists); license_headroom_ok is reported but excluded. False-pass: confirmed by design - 'unmeasurable => 1' (sli-org-health-score.sh:92-97 pool list failure leaves pool_aging=0; :175 admin_groups unreadable (-1) => 1; platform probe defaults to ${ADO_PLATFORM_INCIDENT_OK:-1})"
+  egress: "Azure DevOps REST (dev.azure.com, vssps/vsaex hosts) + public internet: Azure DevOps status API / status page; az devops extension may be installed from public internet"
+  tools: [az (azure-devops extension), jq, curl, bash]
+  inputs: [AZURE_DEVOPS_ORG, AGENT_UTILIZATION_THRESHOLD, LICENSE_UTILIZATION_THRESHOLD, RW_LOOKBACK_WINDOW, MAX_PROJECTS, AGENT_FETCH_PARALLELISM, "azure_credentials (service principal) OR azure_devops_pat"]
+  tasks:
+    - title: Validate Azure DevOps Access for Organization
+      at: runbook.robot:19
+      asserts: "The configured identity (PAT or service principal) holds the PAT scopes / roles the org-health checks need; a capability matrix from the suite-setup preflight says which are DENIED or ERROR"
+      reads: ["preflight-check.sh (run in Suite Initialization): az devops project list, az pipelines pool list, az devops user list, az devops security group list --scope organization, az devops service-endpoint list"]
+      permissions: ["PAT scopes: vso.project (Project and Team: Read), vso.agentpools (Agent Pools: Read), vso.memberentitlementmanagement (Member Entitlement Management: Read), vso.graph (Graph: Read), vso.serviceendpoint (Service Connections: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Real preflight: missing/invalid results file is treated as access_ok=false (runbook.robot:~420-428). Good model for a V13 capability probe. preflight-check.sh uses set -uo pipefail (no -e) and records each probe's rc into the matrix."
+    - title: Check Service Health Status for Azure DevOps Organization
+      at: runbook.robot:38
+      asserts: "Core ADO APIs answer for the organization: project list, agent pool list, service endpoints for the first project, security group list; separates connectivity failures from permission denials"
+      reads: ["az devops configure --defaults", "az devops project list", "az pipelines pool list", "az devops service-endpoint list --project <first>", "az devops security group list --scope organization"]
+      permissions: ["PAT scopes: vso.project, vso.agentpools, vso.serviceendpoint, vso.graph (all Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Each call is `if ! x=$(az ... 2>err.log)` and becomes an issue; runbook TRY/EXCEPT defaults to an empty list only if the JSON file is missing (organization-service-health.sh exits 1 before writing in some paths: :46,:52,:73), which would read as no issues."
+    - title: Check Agent Pool Capacity and Utilization
+      at: runbook.robot:76
+      asserts: "Self-hosted agent pools have offline agents, high utilization (> AGENT_UTILIZATION_THRESHOLD) or queued job requests aging past the threshold; elastic/VMSS pools judged by online capacity, not offline count"
+      reads: ["az pipelines pool list", "GET _apis/distributedtask/pools/<id>/agents and /jobrequests (REST via az devops invoke or curl with PAT/SP bearer)", "Distributed Task elasticpools API"]
+      permissions: ["PAT scope vso.agentpools (Agent Pools: Read); elastic pools API needs the same scope"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "agent-pool-capacity.sh: pool list failure is an issue + exit 1 (:71-88), and a missing JSON file raises sev-3 'collection failed' (runbook.robot:94-104); but the per-pool agent fetch is best-effort with 'fetch_err' notes (:187) and elastic pool detection is explicitly 'degrade gracefully' (_az_helpers.sh:166-169,241), so unreadable pools/agents are not failed"
+      notes: "Zero pools raises a sev-3 'No Agent Pools Found' issue (:96-99). timeout 600s. Highest-quality script in the group (documents the VMSS 'offline agent' trap)."
+    - title: Validate Organization Policies and Security Settings
+      at: runbook.robot:122
+      asserts: "Organization has security groups / admin groups, projects have enabled branch policies on their first repository, service connections exist; flags projects without policies"
+      reads: ["az devops project list", "az repos list --project", "az repos policy list --repository-id <first repo>", "az devops service-endpoint list --project", "az devops security group list --scope organization", "az devops configure --list"]
+      permissions: ["PAT scopes: vso.project, vso.code (Code: Read), vso.serviceendpoint, vso.graph (all Read)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "organization-policies.sh:163,170,197 `if repos=$(az repos list ... 2>/dev/null); then` and policies/service-conns likewise: a failed or forbidden call is skipped, and a project is added to projects_without_policies only when the policy list succeeded and had zero enabled policies, so unreadable == no finding"
+      notes: "Samples only the FIRST repository of each project (:166-170), so 'project has policies' is a one-repo claim. Project-list failure is an issue (:133)."
+    - title: Check License Utilization and Capacity
+      at: runbook.robot:160
+      asserts: "License assignments exceed LICENSE_UTILIZATION_THRESHOLD or include inactive users (cost optimization)"
+      reads: ["az devops user list (Member Entitlement Management), page size USER_PAGE_SIZE"]
+      permissions: ["PAT scope vso.memberentitlementmanagement (Member Entitlement Management: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Failure is a sev issue with the exact missing scope named (license-utilization.sh:50-58). If the API refuses to return all users the total is unmeasurable (SLI treats that as 1)."
+    - title: Investigate Platform-wide Service Incidents
+      at: runbook.robot:198
+      asserts: "Azure DevOps service status (official status API) reports an incident, or core endpoints respond slowly / non-2xx"
+      reads: ["curl https://dev.azure.com/<org> and core API endpoints (http code + time)", "Azure DevOps status API / portal"]
+      permissions: ["none (public status page) + PAT/SP read for API probes"]
+      scope: n/a
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "service-incident-check.sh:58,176,231 curl probes are `curl -s ... 2>/dev/null` inside `if`; the else branches record connectivity problems, but the status-API probe default is 'ADO_PLATFORM_INCIDENT_OK:-1' (healthy) when the status service is unreachable"
+      notes: "Egress to the public ADO status service. Parsing was previously wrong (numeric health code 4=healthy) per _az_helpers.sh:82-87."
+    - title: Analyze Cross-Project Dependencies
+      at: runbook.robot:236
+      asserts: "Agent pools / service connections shared across projects, naming conflicts between projects"
+      reads: ["az devops project list", "az pipelines list --project", "GET _apis/distributedtask/queues (curl with auth header)", "az devops service-endpoint list --project"]
+      permissions: ["PAT scopes: vso.project, vso.build (Build: Read), vso.agentpools, vso.serviceendpoint (all Read)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "cross-project-dependencies.sh:130,141,157 per-project `az pipelines list ... 2>/dev/null`, curl `2>/dev/null`, service-endpoint list `2>/dev/null` inside `if`: failure -> project contributes nothing -> no dependency findings"
+      notes: "Informational analysis (sharing is not itself a fault). Capped by MAX_PROJECTS."
+    - title: Investigate Platform Issues
+      at: runbook.robot:274
+      asserts: "Agent pool problems plus recent failed pipeline runs across projects point to a platform (not project) problem"
+      reads: ["az pipelines pool list", "az devops project list", "az pipelines list --project", "az pipelines runs list --pipeline-id --query result=='failed'", "az devops service-endpoint list --project"]
+      permissions: ["PAT scopes: vso.project, vso.build, vso.agentpools, vso.serviceendpoint (all Read)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "platform-issue-investigation.sh:62,263,277,285,356,362 every az call is `if x=$(az ... 2>/dev/null); then`; failed pool/project/pipeline/run lookups silently contribute zero failures; only :395 (project list for the final check) turns failure into an issue"
+      notes: "Overlaps the pool-capacity and service-health tasks."
+  bundleNotes: "Newer-style bundle: shared _az_helpers.sh (identical copy exists in azure-devops-project-health), meta.yaml, a real preflight capability matrix, and explicit 'unmeasurable' handling. The helper file states its REST helpers 'never abort the calling script' by design - good for resilience, but it is precisely why per-project/per-pool failures vanish. Auth: azure_credentials (SP) preferred, else azure_devops_pat; PAT scopes are the effective permission model, not Azure RBAC. Cached config dir under CODEBUNDLE_TEMP_DIR/.azure-devops."
+- bundle: azure-devops-project-health
+  displayName: Azure DevOps Project Health
+  classicResourceTypes: [project]
+  matchHints: "platform azure_devops; pattern .+ on name (substring); level of detail basic; qualifiers organization, resource"
+  sli: true
+  sliAsserts: "mean of 5 binary sub-scores per project set: data_collection_ok (access preflight and build query succeeded), pipeline_failure_ratio_ok, protected_branch_failures_ok, queue_aging_ok, long_running_ok; defaults to min() across projects. Explicit data_collection_ok means a failed build query scores 0 (build_query_ok default 0), and the SLI Fails the run if no projects are found (sli.robot:191). False-pass: none"
+  egress: "Azure DevOps REST (dev.azure.com) via az devops / curl; az devops extension may be installed from public internet"
+  tools: [az (azure-devops extension), jq, curl, bash]
+  inputs: [AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECTS, DURATION_THRESHOLD, QUEUE_THRESHOLD, RW_LOOKBACK_WINDOW, AGENT_FETCH_PARALLELISM, "azure_credentials (service principal) OR azure_devops_pat"]
+  tasks:
+    - title: Validate Azure DevOps Access
+      at: runbook.robot:19
+      asserts: "The identity holds the PAT scopes / roles the project-health checks need, per a suite-setup preflight capability matrix"
+      reads: ["preflight-check.sh: az devops project list, az pipelines pool list, az pipelines list, az repos list, az devops service-endpoint list"]
+      permissions: ["PAT scopes: vso.project, vso.build (Build: Read), vso.code (Code: Read), vso.agentpools, vso.serviceendpoint (all Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same preflight design as the organization bundle."
+    - title: Check Agent Pool Availability Across Projects
+      at: runbook.robot:38
+      asserts: "Agent pools used by the projects have offline agents, no online capacity, or queued jobs aging beyond threshold (elastic/VMSS pools judged by online capacity)"
+      reads: ["az pipelines pool list", "GET _apis/distributedtask/pools/<id>/agents and /jobrequests", "elastic pools API"]
+      permissions: ["PAT scope vso.agentpools (Agent Pools: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "agents-pool fetch is best-effort with a 'Fetch error' note (agent-pools.sh:~156) and elastic-pool detection degrades gracefully (_az_helpers.sh); pool list failure is rc-checked (:62-76)"
+      notes: "Org-level resource examined from a project SLX; every project SLX repeats the same org-wide pool scan (MAX_POOLS 500)."
+    - title: Check for Failed Pipelines Across Projects
+      at: runbook.robot:87
+      asserts: "Failed builds in the lookback window exist; for each, the log with the most lines is fetched and analysed for errors"
+      reads: ["az devops invoke --area build --resource builds (project dataset)", "az devops invoke --area build --resource logs (list, then content)"]
+      permissions: ["PAT scope vso.build (Build: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Loops AZURE_DEVOPS_PROJECTS in Robot. Per-log failures are issues (pipeline-logs.sh:95-110) but log-content fetch failure is skipped (:132-135) after the failed build itself has been reported."
+    - title: Check for Long-Running Pipelines Across Projects
+      at: runbook.robot:150
+      asserts: "In-flight builds (sev 3) or completed builds (sev 2) whose duration exceeds DURATION_THRESHOLD minutes"
+      reads: ["fetch_project_builds (az devops invoke builds)"]
+      permissions: ["PAT scope vso.build (Build: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Build fetch failure is a sev-3 'Failed to Fetch Builds' issue + exit 1 (long-running-pipelines.sh:70-84)."
+    - title: Check for Queued Pipelines Across Projects
+      at: runbook.robot:202
+      asserts: "Builds in notStarted state have waited longer than QUEUE_THRESHOLD minutes"
+      reads: ["fetch_project_builds (az devops invoke builds)"]
+      permissions: ["PAT scope vso.build (Build: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same single-pass dataset and failure handling as long-running."
+    - title: Check Repository Branch Policies Across Projects
+      at: runbook.robot:254
+      asserts: "Repositories (or default branches) lack enabled branch policies such as required reviewers or build validation; projects that deny repo access are reported as access-denied"
+      reads: ["az devops project list", "az repos list --project", "az repos policy list --project"]
+      permissions: ["PAT scope vso.code (Code: Read), vso.project (Project and Team: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "repo-policies.sh:121-124 a failed `az repos list` goes to access_denied_repos (reported) instead of being skipped. Uses az_with_retry."
+    - title: Check Service Connection Health Across Projects
+      at: runbook.robot:303
+      asserts: "Service connections (service endpoints) are ready / not failing; endpoint list failure is an issue"
+      reads: ["az devops service-endpoint list"]
+      permissions: ["PAT scope vso.serviceendpoint (Service Connections: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "service-connections.sh:35-49 rc-checked. Reads connection metadata only; does not verify the credential behind a connection actually works."
+    - title: Investigate Pipeline Performance Issues Across Projects
+      at: runbook.robot:352
+      asserts: "Per-definition average duration regressions or high variance from the recent build dataset; 'No Pipeline Activity Found' is itself a sev-2 finding"
+      reads: ["fetch_project_builds (az devops invoke builds)"]
+      permissions: ["PAT scope vso.build (Build: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Zero builds is reported (sev 2) rather than treated as healthy (pipeline-performance-analysis.sh:63-67)."
+    - title: Investigate Failed Pipeline Runs with Commit Correlation Across Projects
+      at: runbook.robot:406
+      asserts: "Failed builds in the window correlated to the source commit and the last 5 commits on the branch to show what changed"
+      reads: ["failed_builds from fetch_project_builds", "az repos commit show --commit-id", "az repos commit list --branch --top 5"]
+      permissions: ["PAT scopes: vso.build, vso.code (Code: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "pipeline-failure-investigation.sh:63-85 build fetch failure exits 1 (issue), but 'No Recent Failures' is emitted as a sev-1 finding and commit lookups (:111,:136) failing just drop the correlation"
+      notes: "Emits a sev-1 'No Recent Failures' informational entry when there are none - a pass encoded as an issue."
+    - title: Analyze Recent Repository Activity Across Projects
+      at: runbook.robot:460
+      asserts: "Recent commits, active PRs and branch policy state per repository; surfaces stale or risky repos"
+      reads: ["az repos list", "az repos pr list --status active", "az repos policy list", "az repos commit list --repository --query date >= from_date"]
+      permissions: ["PAT scope vso.code (Code: Read), vso.project"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "repository-health-analysis.sh:79-88 `if az_with_retry az repos pr list ...; then` and per-repo commit list errors are skipped (stderr logged to commits_err.log); repo list failure is an issue (:49-61)"
+      notes: "Informational digest."
+  bundleNotes: "Newer-style bundle (preflight, single-pass build dataset shared across tasks, explicit 'No data' findings, SLI data_collection_ok). Same _az_helpers.sh as the organization bundle (identical or near-identical copy). Fan-out over AZURE_DEVOPS_PROJECTS (comma list, 'All' or empty -> auto-discover via discover-projects.sh; if that script's JSON is missing the Robot falls back to parsing its stdout lines as project names, which can inject junk names - runbook.robot:~690-705). Generation rule is per project but the inputs allow many projects per SLX."
+- bundle: azure-devops-repository-health
+  displayName: Azure DevOps Repository Health
+  classicResourceTypes: [repository]
+  matchHints: "platform azure_devops; pattern .+ on name (substring); level of detail basic; qualifiers organization, project, resource"
+  sli: false
+  sliAsserts: "no sli.robot (generation rule lists an sli outputItem but the bundle has none)"
+  egress: "Azure DevOps REST (dev.azure.com) via az devops/repos/pipelines; az devops extension may be installed from public internet"
+  tools: [az (azure-devops extension), jq, bash]
+  inputs: [AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECT, AZURE_DEVOPS_REPOS, REPO_SIZE_THRESHOLD_MB, "(other analysis thresholds and lookback)", "azure_credentials (service principal) OR azure_devops_pat"]
+  tasks:
+    - title: Investigate Recent Code Changes for Repositories
+      at: runbook.robot:18
+      asserts: "Recent commits, tags/releases and completed PRs in the lookback window that could explain a failure (large or risky changes, frequent force pushes); repo not found is an issue"
+      reads: ["az repos show", "az repos commit list --query author.date >= from", "az repos ref list --filter tags/", "az repos pr list --status completed"]
+      permissions: ["PAT scope vso.code (Code: Read), vso.project"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "recent-changes-analysis.sh:241,270 tags and PR lookups are `if x=$(az ... 2>/dev/null); then` with no else; commits list stderr goes to a log (:88) - failure means no change findings"
+      notes: "Loops AZURE_DEVOPS_REPOS (or auto-discovered list) in Robot. `az repos show` failure is an issue (:59-76)."
+    - title: Analyze Pipeline Failures for Repositories
+      at: runbook.robot:60
+      asserts: "Pipelines tied to the repository show failed runs or low success rate in the lookback window; failure details per run"
+      reads: ["az pipelines list --repository", "az pipelines runs list --pipeline-id --query finishTime >= from", "az pipelines runs show --id", "az pipelines runs list --result succeeded --top 1"]
+      permissions: ["PAT scope vso.build (Build: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "pipeline-failure-analysis.sh:115,149,287 per-pipeline `if recent_runs=$(az pipelines runs list ... 2>/dev/null); then` has no else: a failed or forbidden runs query adds zero runs/failures; :96 zero pipelines is 'no pipelines' exit 0"
+      notes: "The pipelines list itself (:59-76) is rc-checked."
+    - title: Check Repository Security Configuration
+      at: runbook.robot:102
+      asserts: "Repository lacks enabled branch policies (required reviewers, build validation), permissions look overbroad, or sensitive files appear in the repo"
+      reads: ["az repos show", "az repos policy list --repository-id", "az devops security permission list --id", "az repos list (for file checks)"]
+      permissions: ["PAT scopes: vso.code (Code: Read), vso.security_manage (Security: Manage - needed for `az devops security permission list`)", "vso.project"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "repository-security-analysis.sh:94 `if branch_policies=$(az repos policy list ... 2>/dev/null); then` and :162 permissions list, :187 file list: no else branch for failure, so a denied policy read yields no 'missing branch policy' finding"
+      notes: "Permission analysis is a stub ('simplified check', :165). `az repos list` used as 'files' check does not inspect files."
+    - title: Analyze Code Quality for Repositories
+      at: runbook.robot:144
+      asserts: "Heuristic code-quality signals from build pass/fail history and ref activity (technical debt, maintainability)"
+      reads: ["az repos show", "az repos list", "az repos ref list", "az pipelines list --repository", "az pipelines runs list --pipeline-id --top 10"]
+      permissions: ["PAT scopes: vso.code, vso.build (Read)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "code-quality-analysis.sh:81,85,108,134,184 every data read is `if x=$(az ... 2>/dev/null); then` with no else"
+      notes: "Does not read source code or run linters; 'quality' is inferred from pipeline results and ref lists. Weak assertion; candidate to drop in V13."
+    - title: Check Branch Management for Repositories
+      at: runbook.robot:186
+      asserts: "Stale branches, excessive branch count, and unprotected default branches"
+      reads: ["az repos show", "az repos ref list --filter heads/", "az repos policy list --repository-id"]
+      permissions: ["PAT scope vso.code (Code: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "branch-management-analysis.sh:84-101 branch list is rc-checked (issue), but :286 policy list `2>/dev/null` inside `if` skips the protection check on failure"
+      notes: ""
+    - title: Analyze Pull Request and Collaboration Patterns for Repositories
+      at: runbook.robot:228
+      asserts: "PR review patterns: long-open PRs, PRs merged without reviewers, contributor concentration (bus factor)"
+      reads: ["az repos show", "az repos pr list --status all", "az repos pr show --id"]
+      permissions: ["PAT scope vso.code (Code: Read)"]
+      scope: account
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "collaboration-analysis.sh:79-96 PR list is rc-checked, but :185 per-PR detail `2>/dev/null` inside `if` is silently skipped"
+      notes: "Process/engineering-health analysis rather than runtime health."
+    - title: Investigate Critical Repository Issues
+      at: runbook.robot:270
+      asserts: "Combined critical findings: missing branch protection, risky permissions, stale activity, failing pipelines"
+      reads: ["az repos show", "az repos policy list", "az devops security permission list", "az repos ref list", "az repos pr list --top 10", "az pipelines list --repository"]
+      permissions: ["PAT scopes: vso.code, vso.build, vso.security_manage (Read)"]
+      scope: account
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "critical-repository-investigation.sh:54,74,110,131,142,168 every az call is `if x=$(az ... 2>/dev/null); then`; repo-not-found only exits 1 at :66 after the repo lookup itself failed"
+      notes: "Overlaps security, branch and pipeline tasks. Unused scripts in the dir: repository-performance-analysis.sh, security-incident-check.sh."
+  bundleNotes: "Oldest-style Azure DevOps bundle: no preflight capability matrix, no data_collection score, and no SLI. Almost every sub-check is `if x=$(az ... 2>/dev/null); then ... fi` with no else, so permission gaps (very common with PATs) produce clean results. Contrast with azure-devops-organization-health / project-health, which added preflight and explicit unmeasurable handling."
+- bundle: azure-kv-health
+  displayName: Azure Key Vault Health
+  classicResourceTypes: [azure_keyvault_keyvault]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource_group, subscription_id"
+  sli: true
+  sliAsserts: "mean of 6 binary scores (resource health, availability, configuration, expiring items, log issues, performance), each 1 when the issue count is 0; false-pass: confirmed - JSON load failure defaults to an empty list (score 1) in every sub-task (sli.robot:~30-33, 57, 84, 117, 141, 164) so a failed az call scores healthy"
+  egress: "cloud API (ARM, Azure Monitor, Log Analytics) + Key Vault data plane (<vault>.vault.azure.net) for expiry listing"
+  tools: [az, jq, bash]
+  inputs: [AZURE_RESOURCE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, THRESHOLD_DAYS, "REQUEST_* performance thresholds/intervals", azure_credentials]
+  tasks:
+    - title: Check Key Vault Resource Health
+      at: runbook.robot:19
+      asserts: "Resource Health availabilityState of each Key Vault in the resource group is not degraded/unavailable"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az keyvault list -g", "az rest GET .../Microsoft.KeyVault/vaults/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.KeyVault/vaults/read", "Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "kv_resource_health.sh:63 per-vault `az rest` failure drops that vault from keyvault_health.json (no rc handling); the Robot's JSON-load EXCEPT defaults to an empty list (not traced whether an empty list raises a 'health unavailable' issue as in sibling bundles)"
+      notes: "Registers Microsoft.ResourceHealth if missing (write)."
+    - title: Check Key Vault Availability
+      at: runbook.robot:61
+      asserts: "Azure Monitor 'Availability' metric (last hourly datapoint over 24h) is 100% for each Key Vault; below 100 raises sev 3"
+      reads: ["az keyvault list -g", "az monitor metrics list --metric Availability --aggregation average --interval PT1H"]
+      permissions: ["Microsoft.KeyVault/vaults/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "availability.sh:9 `for kv in $(az keyvault list ...)` - a failed list gives an empty loop and `{\"metrics\":[]}`; :11-19 metric failure leaves `availability` empty so `${availability:-\"N/A\"}`; runbook.robot:~84 skips 'N/A' and prints 'No Key Vault availability data found' (no issue). No set -e, no rc, stderr not captured"
+      notes: "Only the LAST hourly point is evaluated, so a dip earlier in the 24h window is missed. `date -u -d` is GNU-only."
+    - title: Check Key Vault Configuration
+      at: runbook.robot:101
+      asserts: "Each Key Vault has soft delete and purge protection enabled"
+      reads: ["az keyvault list -g", "az keyvault show --name"]
+      permissions: ["Microsoft.KeyVault/vaults/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "kv_config.sh:9,12 no rc checks; empty vault list -> `{\"keyVaults\":[]}`; failed `az keyvault show` -> jq yields empty then `${soft_delete:-\"null\"}` strings 'null' that the Robot may treat as unknown; JSON-load EXCEPT defaults to an empty dict"
+      notes: "Soft delete is now always on for new vaults (enableSoftDelete may be null on newer API versions, which can read as misconfigured)."
+    - title: Check Expiring Key Vault Items
+      at: runbook.robot:155
+      asserts: "Secrets, certificates and keys with an expiry within THRESHOLD_DAYS (or already expired)"
+      reads: ["az keyvault list -g", "az keyvault secret list / show --query attributes.expires", "az keyvault certificate list / show", "az keyvault key list / show"]
+      permissions: ["Microsoft.KeyVault/vaults/read", "Key Vault data plane: secrets/list, certificates/list, keys/list (access policy or RBAC 'Key Vault Reader' does NOT include data-plane list; needs e.g. Key Vault Secrets/Certificates/Crypto User or list permissions)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Good pattern: list and per-item show failures become issues (sev 4) with the exact error (expiry-checks.sh:24,53,78,150,175,249). Reads metadata only, not secret values (--query attributes.expires). Vaults behind firewall/private link fail from the runner and are reported."
+    - title: Check Key Vault Logs for Issues
+      at: runbook.robot:200
+      asserts: "Key Vault diagnostic logs in Log Analytics (AuditEvent failures) show errors above thresholds; no diagnostic settings is flagged"
+      reads: ["az extension add log-analytics", "az keyvault list -g", "az monitor diagnostic-settings list --resource", "az monitor log-analytics workspace show", "az monitor log-analytics query"]
+      permissions: ["Microsoft.KeyVault/vaults/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "kv list and workspace/query failures are issues (log.sh:36-55,120,146). Diagnostic-settings list uses `|| true` (:68) but an empty result is reported as not configured."
+    - title: Check Key Vault Performance Metrics
+      at: runbook.robot:241
+      asserts: "ServiceApiHit request count and ServiceApiLatency exceed REQUEST_* thresholds"
+      reads: ["az keyvault list -g (with properties)", "az monitor metrics list --metric ServiceApiHit / ServiceApiLatency"]
+      permissions: ["Microsoft.KeyVault/vaults/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "performance_metrics.sh:135-160 metric calls have no rc check or stderr capture and no set -e; an empty value is echoed ('Request count for X: ') and compared as empty/zero (vault list itself is rc-checked at :61-84)"
+      notes: "Only the last datapoint is used."
+  bundleNotes: "Mixed quality: expiry-checks.sh and log.sh are rc-checked with explicit issues; availability.sh, kv_config.sh, performance_metrics.sh are bare loops with no error handling. The SLI re-runs the same scripts and treats parse failure as healthy. Key Vault data-plane permissions (list secrets/keys/certs) are separate from ARM Reader and are the usual cause of expiry-check issues."
+- bundle: azure-loadbalancer-triage
+  displayName: Azure Internal LoadBalancer Triage
+  classicResourceTypes: [azure_network_load_balancers]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, resource_group, subscription_id; no sli outputItem"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (Azure Monitor activity log)"
+  tools: [az, jq, bash]
+  inputs: [AZ_HISTORY_RANGE, AZ_LB_NAME, AZ_LB_ID, AZURE_RESOURCE_SUBSCRIPTION_ID, azure_credentials]
+  tasks:
+    - title: Check Activity Logs for Azure Load Balancer
+      at: runbook.robot:17
+      asserts: "The load balancer's activity log in the last AZ_HISTORY_RANGE hours contains the substring 'Critical' in any printed column (timestamp, status, substatus, details)"
+      reads: ["az monitor activity-log list --resource-id <AZ_LB_ID> --start-time --end-time | jq | while read"]
+      permissions: ["Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:21 single-line pipeline `az monitor activity-log list ... | jq ... | while read` with no pipefail and rc ignored; empty stdout (including auth/permission failure) only produces the report text 'No activity log events could be pulled' (runbook.robot:23-25) and no issue"
+      notes: "Documentation says it queries a health probe but it only reads the activity log. The `level` field is not among the printed columns, so 'Critical' only matches if it appears in properties.details; most critical events are missed. Uses GNU `date -d`. Requires AZ_LB_ID (full resource ID) as an input in addition to the name. Metadata says Supports Kubernetes/AKS (internal LB for a Service), but nothing is Kubernetes-specific."
+  bundleNotes: "Smallest bundle in the group, a single inline command with no script file, and the weakest assertion. No health probe, backend pool or metrics checks despite the name."
+- bundle: azure-servicebus-health
+  displayName: Azure Service Bus Health
+  classicResourceTypes: [azure_servicebus_namespaces]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, resource_group, subscription_id; baseName az-servicebus-health"
+  sli: true
+  sliAsserts: "mean of 3 sub-scores: resource health (1 if Available else 0; empty record -> 0), connectivity (1 minus 0.5 per failed AMQP-5671 / HTTPS-443 TCP probe, minus 0.5 for DNS failure, probes run from the runner), critical metrics (1 minus 0.5 per sev-1 and 0.25 per sev-2 issue; sev 3-4 ignored). False-pass: likely - sev-3/4 findings and the abort-on-error path do not lower the score"
+  egress: "cloud API (ARM, Azure Monitor, Log Analytics, Resource Health) + direct network probes to <namespace>.servicebus.windows.net (TCP 5671/443, nslookup, ping, curl) from the runner"
+  tools: [az (servicebus extension commands), jq, nslookup, ping, curl, bash, timeout]
+  inputs: [AZ_RESOURCE_GROUP, SB_NAMESPACE_NAME, AZURE_RESOURCE_SUBSCRIPTION_ID, "ACTIVE_M... (message/size threshold vars)", azure_credentials]
+  tasks:
+    - title: Check for Resource Health Issues Service Bus
+      at: runbook.robot:16
+      asserts: "Resource Health availabilityStatus of the namespace is not 'Available'; sev-4 if no record"
+      reads: ["az provider show/register Microsoft.ResourceHealth", "az rest GET .../Microsoft.ServiceBus/namespaces/<name>/providers/Microsoft.ResourceHealth/availabilityStatuses/current"]
+      permissions: ["Microsoft.ResourceHealth/availabilityStatuses/read", "Microsoft.Resources/subscriptions/providers/register/action (when unregistered)"]
+      scope: resource-group
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Registers Microsoft.ResourceHealth if missing (write). set -euo pipefail: failures abort and write stderr, which the Robot turns into a sev-3 'Warnings/Errors running task.' issue."
+    - title: Check Configuration Health for Service Bus
+      at: runbook.robot:77
+      asserts: "Namespace minimum TLS version is 1.2, a managed identity is assigned, zone redundancy is enabled (Premium), plus other recommendations"
+      reads: ["az servicebus namespace show"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Failure aborts via set -e; stderr raises the generic sev-3 issue. Findings are advisory configuration hygiene, not outage signals."
+    - title: Check Metrics for Service Bus
+      at: runbook.robot:131
+      asserts: "Azure Monitor metrics for the namespace (server errors, throttled requests, active/dead-letter messages, size, CPU/memory for Premium) cross script thresholds"
+      reads: ["az servicebus namespace show --query id", "az monitor metrics list --metric <list> --aggregation Total Average Maximum"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "service_bus_metrics.sh:70-76 metrics list has no guard but set -e aborts; however empty/no-datapoint metrics (null totals) analyse as 0 so they cannot breach; a metric unsupported on a SKU is treated the same"
+      notes: "SLI runs the same script and only counts sev 1/2."
+    - title: Check Queue Health for Service Bus
+      at: runbook.robot:190
+      asserts: "Queues have status other than Active, large active or dead-letter message counts, near max size, or oldest message age issues"
+      reads: ["az servicebus queue list", "az servicebus queue show (per queue)"]
+      permissions: ["Microsoft.ServiceBus/namespaces/queues/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Unguarded `$(az servicebus queue list ...)` under set -euo pipefail: failure aborts with stderr -> generic sev-3 issue. Dead-letter counts come from the queue's countDetails (point-in-time)."
+    - title: Check Topic Health for Service Bus
+      at: runbook.robot:240
+      asserts: "Topics and their subscriptions are Active, with bounded active/dead-letter message counts"
+      reads: ["az servicebus topic list", "az servicebus topic show", "az servicebus topic subscription list / show"]
+      permissions: ["Microsoft.ServiceBus/namespaces/topics/read", "Microsoft.ServiceBus/namespaces/topics/subscriptions/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same abort-on-error pattern as queues."
+    - title: Check Log Analytics for Service Bus
+      at: runbook.robot:290
+      asserts: "Log Analytics (OperationalLogs, RuntimeAuditLogs, errors) for the namespace contain errors or failed operations in the lookback window"
+      reads: ["az servicebus namespace show --query id", "az monitor diagnostic-settings / log-analytics workspace show|list", "az monitor log-analytics query x3 (operations, requests, errors)"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read", "Microsoft.OperationalInsights/workspaces/read", "Microsoft.OperationalInsights/workspaces/query/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "service_bus_log_analytics.sh:119-138 each of three queries is `timeout 30 az monitor log-analytics query ... 2>/dev/null || echo \"[]\"`; a failed, forbidden or timed-out query yields an empty log set and no error finding"
+      notes: "No workspace found exits 0 at :85 (reported as a finding or not not verified). Workspace discovery may fall back to any workspace in the subscription (:67-73)."
+    - title: Check Capacity and Quota Headroom for Service Bus
+      at: runbook.robot:340
+      asserts: "Namespace throughput, entity size and connection counts are close to SKU quotas (queue/topic counts, size, messaging units)"
+      reads: ["az servicebus namespace show", "az servicebus queue list", "az servicebus topic list", "az servicebus topic subscription list", "az monitor metrics list (throughput, size, connections)"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read", "Microsoft.ServiceBus/namespaces/queues/read", "Microsoft.ServiceBus/namespaces/topics/read", "Microsoft.ServiceBus/namespaces/topics/subscriptions/read", "Microsoft.Insights/metrics/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "service_bus_capacity.sh metrics reads (:103,:166,:179) feed utilization percentages; a missing metric is 0 percent (not traced beyond idiom); entity list failures abort with stderr"
+      notes: "Quota limits are hard-coded in the script rather than read from Azure."
+    - title: Check Geo-Disaster Recovery for Service Bus
+      at: runbook.robot:390
+      asserts: "Premium namespaces have a geo-recovery alias configured and healthy (sync state); Basic/Standard namespaces cannot (skipped)"
+      reads: ["az servicebus namespace show", "az servicebus georecovery-alias list"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read", "Microsoft.ServiceBus/namespaces/disasterRecoveryConfigs/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "service_bus_disaster_recovery.sh:61-64 `az servicebus georecovery-alias list ... 2>/dev/null || echo \"[]\"` - a failed call reads as 'no DR configured' (likely a false positive 'no DR' finding rather than a pass)"
+      notes: "Failure direction is false-positive for 'DR missing', but the health of an existing alias is unobservable on failure."
+    - title: Check Security Configuration for Service Bus
+      at: runbook.robot:440
+      asserts: "SAS authorization rules (namespace, queue, topic) with Manage/Send+Listen rights on RootManageSharedAccessKey, excessive RBAC assignments, no managed identity"
+      reads: ["az servicebus namespace authorization-rule list", "az servicebus queue|topic authorization-rule list", "az role assignment list --scope <namespace>", "az servicebus namespace show --query identity.type"]
+      permissions: ["Microsoft.ServiceBus/namespaces/authorizationRules/read", "Microsoft.ServiceBus/namespaces/queues/authorizationRules/read", "Microsoft.ServiceBus/namespaces/topics/authorizationRules/read", "Microsoft.Authorization/roleAssignments/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Lists rule definitions, not keys (does not call listKeys). set -e aborts on failure."
+    - title: Discover Related Resources for Service Bus
+      at: runbook.robot:490
+      asserts: "none - discovery of Event Grid subscriptions, private endpoints, Logic Apps, Web/Function apps, diagnostic settings and action groups related to the namespace"
+      reads: ["az eventgrid event-subscription list", "az network private-endpoint list", "az logic workflow list", "az webapp list", "az functionapp list", "az monitor diagnostic-settings list", "az monitor action-group list"]
+      permissions: ["Microsoft.EventGrid/eventSubscriptions/read", "Microsoft.Network/privateEndpoints/read", "Microsoft.Logic/workflows/read", "Microsoft.Web/sites/read", "Microsoft.Insights/diagnosticSettings/read", "Microsoft.Insights/actionGroups/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Informational. Heuristic matching by name/id; subscription-wide lists."
+    - title: Test Connectivity to Service Bus
+      at: runbook.robot:540
+      asserts: "From the runner: TCP 5671 (AMQP) and 443 reach the namespace host, DNS resolves, HTTP endpoint responds; plus network rules and private endpoints listed"
+      reads: ["az servicebus namespace show", "az servicebus namespace network-rule list", "az network private-endpoint list", "bash /dev/tcp probes to :5671 and :443", "nslookup", "ping -c 3", "curl"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read", "Microsoft.ServiceBus/namespaces/networkRuleSets/read", "Microsoft.Network/privateEndpoints/read", "network reachability from the runner"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Result is relative to the runner's network path, not to the application clients. Network-rule and private-endpoint lookups use `2>/dev/null || echo` (service_bus_connectivity_test.sh:61-70) but only add context. ping ICMP is blocked on Service Bus so that probe is uninformative."
+    - title: Check Azure Monitor Alerts for Service Bus
+      at: runbook.robot:590
+      asserts: "Recommended metric alert rules (e.g. dead-letter, server errors, throttling, size) and action groups exist for the namespace"
+      reads: ["az servicebus namespace show --query id", "az monitor metrics alert list -g", "az monitor action-group list"]
+      permissions: ["Microsoft.ServiceBus/namespaces/read", "Microsoft.Insights/metricAlerts/read", "Microsoft.Insights/actionGroups/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "A failed alert list aborts (set -e) with stderr, not a 'no alerts' finding. Only metric alerts are checked (not activity-log or log-query alerts)."
+  bundleNotes: "All scripts use set -euo pipefail with unguarded az calls; Robot's generic `stderr != ''` -> sev-3 'Warnings/Errors running task' catches aborts, so most failures surface (noisily). Exceptions are the `2>/dev/null || echo` fallbacks in log analytics, DR and connectivity. Many tasks are hygiene/recommendation checks (TLS, managed identity, alerts, DR) rather than health signals. generation-rules baseName is az-servicebus-health. Results are exchanged through fixed-name JSON files in cwd."
+- bundle: azure-storage-cost-optimization
+  displayName: Azure Storage Cost Optimization
+  classicResourceTypes: [azure_compute_disks, azure_storage_accounts, azure_compute_snapshots]
+  matchHints: "pattern .+ on name (substring); three resource types; level of detail basic; qualifiers subscription_id, resource_group"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (ARM, Azure Monitor, Resource Graph); may install az resource-graph extension at runtime (public internet)"
+  tools: [az, jq, bc, awk, bash]
+  inputs: [AZURE_SUBSCRIPTION_IDS, AZURE_RESOURCE_GROUPS, AZURE_SUBSCRIPTION_NAME, COST_ANALYSIS_LOOKBACK_DAYS, LOW_COST_THRESHOLD, MEDIUM_COST_THRESHOLD, HIGH_COST_THRESHOLD, AZURE_DISCOUNT_PERCENTAGE, SNAPSHOT_AGE_THRESHOLD_DAYS, SCAN_MODE, MAX_PARALLEL_JOBS, TIMEOUT_SECONDS, azure_credentials]
+  tasks:
+    - title: Analyze Azure Storage Cost Optimization Opportunities
+      at: runbook.robot:18
+      asserts: "Unattached managed disks, snapshots older than SNAPSHOT_AGE_THRESHOLD_DAYS, storage accounts without lifecycle management policy, GRS/RAGRS accounts that could be cheaper redundancy, and Premium disks with low IOPS utilization (each with estimated saving)"
+      reads: ["az graph query (disks, snapshots, storage accounts)", "az disk list --query diskState=='Unattached'", "az snapshot list", "az storage account list", "az storage account management-policy show", "az storage account show", "az monitor metrics list (UsedCapacity, disk IOPS)", "az extension add resource-graph"]
+      permissions: ["Microsoft.Compute/disks/read", "Microsoft.Compute/snapshots/read", "Microsoft.Storage/storageAccounts/read", "Microsoft.Storage/storageAccounts/managementPolicies/read", "Microsoft.Insights/metrics/read", "Microsoft.ResourceGraph/resources/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_storage_optimization.sh:592-593 `az disk list ... 2>/dev/null || echo '[]'` then :600 'No unattached disks found'; same pattern for storage account list (:1126-1129), snapshots, premium disks (:1443); library azure_performance_utils.sh:88 Resource Graph `|| echo '{\"data\":[]}'`"
+      notes: "Inverse hazard: `az storage account management-policy show ... 2>/dev/null || echo '{\"policy\":null}'` (:934-938) means a failed/forbidden call reports 'no lifecycle policy' (false positive). Five independent analyses folded into one Robot task; in the V13 rewrite they are natural separate tasks. Metrics failures zero-fill."
+  bundleNotes: "Single task, 77KB script (largest in group). Generation rule matches three resource types so one SLX per disk, per storage account, per snapshot though the script is subscription-wide."
+- bundle: azure-subscription-cost-report
+  displayName: Azure Subscription Cost Report
+  classicResourceTypes: [azure_subscription_subscriptions]
+  matchHints: "pattern .+ on name (substring) against subscription; level of detail basic; qualifiers subscription_id"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (Cost Management query, Advisor, Consumption reservationRecommendations)"
+  tools: [az, jq, bc, bash]
+  inputs: [AZURE_SUBSCRIPTION_IDS, AZURE_SUBSCRIPTION_NAME, COST_ANALYSIS_LOOKBACK_DAYS, COST_INCREASE_THRESHOLD, COST_BUDGET, COST_CONCENTRATION_THRESHOLD, TIMEOUT_SECONDS, azure_credentials]
+  tasks:
+    - title: Generate Azure Cost Report By Service and Resource Group
+      at: runbook.robot:18
+      asserts: "Spend over the lookback window versus the previous equal period rose by more than COST_INCREASE_THRESHOLD percent (also budget/concentration checks inside the script); otherwise just a cost report"
+      reads: ["az rest POST https://management.azure.com/subscriptions/<id>/providers/Microsoft.CostManagement/query (current, previous, daily)", "az account show"]
+      permissions: ["Microsoft.CostManagement/query/action", "Microsoft.Resources/subscriptions/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "azure_cost_historical_report.sh:78-84 az rest captured with `2>&1`, error text only logged (:150-157); :542-566 row_count 0 -> 'No cost data returned' and `return 1`; script ends `echo '[]' > $ISSUES_FILE; exit 0` (:860) -> runbook.robot:27-39 sees [] = no cost increase"
+      notes: "A 403/429 from Cost Management (common: 429 throttling) is indistinguishable from 'no spend'. Date math uses GNU `date -d` with a BSD fallback. Reads `cat azure_cost_trend_issues.json` with no existence guard."
+    - title: Analyze Azure Advisor Reserved Instance Recommendations
+      at: runbook.robot:51
+      asserts: "Azure Advisor or the Consumption reservationRecommendations API proposes Reserved Instance purchases with total monthly savings above a minimum threshold"
+      reads: ["az advisor recommendation list --category Cost", "az rest GET .../providers/Microsoft.Consumption/reservationRecommendations"]
+      permissions: ["Microsoft.Advisor/recommendations/read", "Microsoft.Consumption/reservationRecommendations/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "azure_advisor_reservation_recommendations.sh:59-72,95-98 az advisor/az rest `2>/dev/null` with empty output -> 'No Advisor cost recommendations found' and `continue`; runbook.robot:61 `cat azure_advisor_ri_issues.json 2>/dev/null || echo \"[]\"`"
+      notes: "Output is an opportunity (savings), not a fault; absence of recommendations is normal, so a failed call is indistinguishable from 'nothing to buy'. bc `|| echo 0` fallbacks at :217-221."
+  bundleNotes: "Two tasks. Subscription-scope; if AZURE_SUBSCRIPTION_IDS is unset the script exits 1 before writing the issues file."
+- bundle: azure-vm-cost-optimization
+  displayName: Azure VM Cost Optimization
+  classicResourceTypes: [azure_compute_virtual_machines]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers subscription_id, resource_group"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (ARM, Azure Monitor, Resource Graph)"
+  tools: [az, jq, bc, awk, bash]
+  inputs: [AZURE_SUBSCRIPTION_IDS, AZURE_RESOURCE_GROUPS, AZURE_SUBSCRIPTION_NAME, COST_ANALYSIS_LOOKBACK_DAYS, LOW_COST_THRESHOLD, MEDIUM_COST_THRESHOLD, HIGH_COST_THRESHOLD, AZURE_DISCOUNT_PERCENTAGE, TIMEOUT_SECONDS, azure_credentials]
+  tasks:
+    - title: Analyze Virtual Machine Rightsizing and Deallocation Opportunities
+      at: runbook.robot:18
+      asserts: "A VM is stopped but not deallocated (still billed), or is oversized (low avg/max CPU and memory over the lookback window) and could move to a smaller or B-series size; issue carries monthly saving"
+      reads: ["az graph query (VMs) or az vm list -d", "az vm get-instance-view", "az monitor metrics list 'Percentage CPU' 'Available Memory Bytes'"]
+      permissions: ["Microsoft.Compute/virtualMachines/read", "Microsoft.Compute/virtualMachines/instanceView/read", "Microsoft.Insights/metrics/read", "Microsoft.ResourceGraph/resources/read"]
+      scope: subscription
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "analyze_vm_optimization.sh:383,388 `az vm list -d ... 2>/dev/null || echo '[]'`; runbook.robot:48 `cat issues.json ... else echo \"[]\"` and :102-103 'All VMs appear to be properly deallocated and sized'; library azure_performance_utils.sh:88 Resource Graph `|| echo '{\"data\":[]}'`"
+      notes: "Power state falls back to `|| echo \"Unknown\"` (:500-502) which then matches neither the stopped nor sized branches. Metrics call `|| echo '{\"value\":[]}'` (:228-235) with awk default 0 -> failed metrics look like 0% CPU, i.e. oversize false positive; memory metric needs AMA/VM Insights (silently absent otherwise). Prices come from a built-in table (get_azure_vm_cost)."
+  bundleNotes: "Single task, 46KB script. Runbook is the only cost bundle that guards a missing issues file with `echo \"[]\"`, turning a crashed script into a clean pass."
+- bundle: azure-vm-os-health
+  displayName: Azure VM OS Health
+  classicResourceTypes: [azure_compute_virtual_machines]
+  matchHints: "pattern .+ on name (substring); level of detail detailed; qualifiers subscription_id, resource_group"
+  sli: true
+  sliAsserts: "mean of 4 binary scores (disk, memory, uptime, patch), each 1 only if no VM reported errors/connection failures/threshold issues; 0 on complete Azure auth failure. False-pass: confirmed - when `az vm list` fails or returns no VMs the scripts print `{}` and exit 0, giving issue_count 0 -> score 1"
+  egress: "cloud API (ARM Compute; run-command executes inside the guest) - in-guest apt-get update / yum check-update use the VM's own internet"
+  tools: [az, jq, timeout, bash, python3 (Robot-side Create File)]
+  inputs: [AZ_RESOURCE_GROUP, AZURE_RESOURCE_SUBSCRIPTION_ID, AZURE_SUBSCRIPTION_NAME, DISK_THRESHOLD, UPTIME_THRESHOLD, MEMORY_THRESHOLD, MAX_PARALLEL_JOBS, TIMEOUT_SECONDS, VM_INCLUDE_LIST, VM_OMIT_LIST, azure_credentials]
+  tasks:
+    - title: Check Disk Utilization for VMs
+      at: runbook.robot:21
+      asserts: "A running Linux VM has a filesystem above DISK_THRESHOLD percent used (from `df -h` run inside the guest); non-running VMs, connection failures and timeouts are sev 3-4; any stderr from the guest command is sev 1"
+      reads: ["az vm list -g", "az vm get-instance-view (power state)", "az vm run-command invoke --command-id RunShellScript --scripts 'df -h'"]
+      permissions: ["Microsoft.Compute/virtualMachines/read", "Microsoft.Compute/virtualMachines/instanceView/read", "Microsoft.Compute/virtualMachines/runCommand/action (executes a shell script as root inside each VM)"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vm_disk_utilization.sh:24-30 `vms=$(az vm list ... 2>/dev/null)`; on failure or zero VMs it prints `{}` and exit 0, so the Robot loops over zero VMs and raises nothing (runbook.robot ~line 36 empty dict)"
+      notes: "run-command is remote code execution on the guest even though the commands are read-only; it needs the VM agent, serialises per VM (slow) and can be blocked by policy. Windows VMs are skipped with a sev-4 issue each (an issue for something expected). Per-VM failures (VMNotRunning sev 3, ConnectionError/CommandTimeout/InvalidResponse sev 4) are surfaced, so the hole is the listing step. A VM stopped by design raises an issue."
+    - title: Check Memory Utilization for VMs
+      at: runbook.robot:212
+      asserts: "A running Linux VM's memory used percentage from `free -m` exceeds MEMORY_THRESHOLD"
+      reads: ["az vm list -g", "az vm get-instance-view", "az vm run-command invoke --scripts 'free -m'"]
+      permissions: ["Microsoft.Compute/virtualMachines/read", "Microsoft.Compute/virtualMachines/instanceView/read", "Microsoft.Compute/virtualMachines/runCommand/action"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vm_memory_check.sh:23-29 same `az vm list ... 2>/dev/null` -> `{}` exit 0 pattern"
+      notes: "Same structure and caveats as disk. Computes percent from `free -m` 'used' which includes cache on some distros."
+    - title: Check Uptime for VMs
+      at: runbook.robot:329
+      asserts: "A running Linux VM's uptime exceeds UPTIME_THRESHOLD days (kernel patching/reboot hygiene)"
+      reads: ["az vm list -g", "az vm get-instance-view", "az vm run-command invoke --scripts '<uptime script>'"]
+      permissions: ["Microsoft.Compute/virtualMachines/read", "Microsoft.Compute/virtualMachines/instanceView/read", "Microsoft.Compute/virtualMachines/runCommand/action"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vm_uptime_check.sh:23-29 same `az vm list ... 2>/dev/null` -> `{}` exit 0 pattern; :116 the in-guest script ends `2>/dev/null`"
+      notes: "Not a fault signal on its own; long uptime is a hygiene finding."
+    - title: Check Last Patch Status for VMs
+      at: runbook.robot:446
+      asserts: "A running Linux VM has pending package updates (apt/yum/dnf) above the patch threshold or has not been patched recently"
+      reads: ["az vm list -g", "az vm get-instance-view", "az vm run-command invoke --scripts 'apt-get update; apt list --upgradable | yum check-update | dnf check-update'"]
+      permissions: ["Microsoft.Compute/virtualMachines/read", "Microsoft.Compute/virtualMachines/instanceView/read", "Microsoft.Compute/virtualMachines/runCommand/action"]
+      scope: resource-group
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "vm_last_patch_check.sh:23-28 az vm list swallow (as above); in-guest :105 `apt-get update -qq 2>/dev/null` failing (no egress) leaves a stale index so :106 reports 'System is up to date'; :120 `yum check-update -q 2>/dev/null | wc -l` a failure counts 0 -> 'up to date'"
+      notes: "readOnly false because `apt-get update` refreshes the package index on the VM (a write inside the guest, root). Requires VM outbound access to package mirrors."
+  bundleNotes: "Pattern: one subscription-level az login check (rc-checked), then a bounded-parallel per-VM `az vm run-command invoke`. Per-VM failures are classified into codes (VMNotRunning, ConnectionError, CommandTimeout, InvalidResponse, WindowsVM, NotIncluded, Omitted) and surfaced; the listing step and the in-guest `2>/dev/null` are the holes. Generation rule is detailed, qualifiers subscription_id+resource_group (so one SLX per resource group per matching VM resource; inputs are RG-wide, not per VM). The Robot also shells out to next_steps_*.sh with temp files per VM. A V13 skill must declare run-command as an execute-in-guest capability."
+- bundle: azure-vmss-triage
+  displayName: Azure VM Scale Set Triage
+  classicResourceTypes: [azure_compute_virtual_machine_scale_sets]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers resource, resource_group"
+  sli: true
+  sliAsserts: "single binary score from vmss_metrics.sh exit code (0 = pass, 1 = a sample over the CPU limit 80% or under the memory floor); false-pass: confirmed - missing data or a failed `az monitor metrics list` prints 'No maximum field...' and still exits 0, scoring 1"
+  egress: "cloud API (ARM, Azure Monitor)"
+  tools: [az, jq, bc, bash]
+  inputs: [AZ_RESOURCE_GROUP, VMSCALESET, RW_LOOKBACK_WINDOW, AZURE_RESOURCE_SUBSCRIPTION_ID, azure_credentials]
+  tasks:
+    - title: Check Scale Set Key Metrics
+      at: runbook.robot:18
+      asserts: "Any 5-minute max 'Percentage CPU' sample (top METRIC_TOP) is above ALLOWED_CPU=80, or any min available-memory sample is below the ALLOWED_MEM floor"
+      reads: ["az monitor metrics list --resource <vmss> --resource-type Microsoft.Compute/virtualMachineScaleSets --metric 'Percentage CPU' --aggregation maximum", "az monitor metrics list --metric <memory metric> --aggregation minimum"]
+      permissions: ["Microsoft.Insights/metrics/read", "Microsoft.Compute/virtualMachineScaleSets/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vmss_metrics.sh:34-35 metrics list has no rc check; :38 `echo \"$cpu_data\" | jq -e '...maximum'` on empty/error output fails -> :53 prints \"No 'maximum' field available\" and ok stays 0 -> exit 0 (:74); runbook.robot:28 only raises an issue when returncode > 0"
+      notes: "Thresholds ALLOWED_CPU=80 and METRIC_TOP are hard-coded in the script (not inputs). Only samples !=null and !=0.0 are considered, so an all-zero (idle or broken) series passes. `--top` limits dimension values, not time. Memory metric needs VMSS guest metrics/agent."
+    - title: Fetch VM Scale Set Config
+      at: runbook.robot:40
+      asserts: "none - report only: dumps `az vmss show` output"
+      reads: ["az vmss show --name --resource-group"]
+      permissions: ["Microsoft.Compute/virtualMachineScaleSets/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Asserts nothing; failure is not detected by the Robot. vmss_config.sh has unquoted variables and no error handling."
+    - title: Fetch Activities for VM Scale Set
+      at: runbook.robot:50
+      asserts: "Activity log entries at level Critical/Error/Warning exist for the scale set in the lookback window"
+      reads: ["az vmss show --query id", "az monitor activity-log list --resource-id (table, then per level as JSON piped to jq)"]
+      permissions: ["Microsoft.Compute/virtualMachineScaleSets/read", "Microsoft.Insights/eventtypes/management/values/read"]
+      scope: resource-group
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vmss_activities.sh:45 `az vmss show` has no rc check; :64 `az monitor activity-log list ... | jq -c` has no pipefail, so a failed list becomes an empty array; runbook.robot:61-64 reads ${OUTPUT DIR}/issues.json and raises only for issues in it"
+      notes: "Same template as azure-aks-triage aks_activities.sh. Reads `${OUTPUT DIR}/issues.json` (with a space in the variable name) while the script removes/writes `issues.json` in cwd."
+  bundleNotes: "Oldest-style bundle, authored for the early template: no set -e, unquoted shell variables, one rc-based SLI. The runbook never classifies auth or permission failures."
