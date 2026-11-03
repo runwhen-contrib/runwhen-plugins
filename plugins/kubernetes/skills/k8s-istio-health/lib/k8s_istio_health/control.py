@@ -116,21 +116,11 @@ def sort_pods(views):
     return sorted(views, key=lambda p: (-p["restartCount"], p["ready"], p["name"]))
 
 
-def versions(dep, pods):
-    """The Istio version(s) from image tags. From the running pods when they are known
-    (gateways use the placeholder image `auto` in the Deployment; the injected pod has the
-    real one); else from the Deployment's template."""
-    if pods is not None:
-        pairs = [
-            (c["image"], c["name"]) for p in pods for c, _i, _s in _containers(p) if c.get("image")
-        ]
-        source = "pods"
-    else:
-        template = ((dep.get("spec") or {}).get("template") or {}).get("spec") or {}
-        pairs = [
-            (c["image"], c["name"]) for c in template.get("containers") or [] if c.get("image")
-        ]
-        source = "template"
+def _image_pairs(containers):
+    return [(c["image"], c["name"]) for c in containers if c.get("image")]
+
+
+def _tags(pairs):
     for name in VERSION_CONTAINERS:
         counts = {}
         for image, cname in pairs:
@@ -139,12 +129,21 @@ def versions(dep, pods):
                 counts[tag] = counts.get(tag, 0) + 1
         if counts:
             ordered = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))
-            return {
-                "container": name,
-                "source": source,
-                "tags": [{"tag": t, "count": n} for t, n in ordered[:MAX_NESTED]],
-            }
-    return {"container": None, "source": source, "tags": []}
+            return name, [{"tag": t, "count": n} for t, n in ordered[:MAX_NESTED]]
+    return None, []
+
+
+def versions(dep, pods):
+    """The Istio version(s) from image tags. From the running pods when there are any (gateways
+    use the placeholder image `auto` in the Deployment; the injected pod has the real one);
+    else, with no pods or none that carries the container, from the Deployment's template."""
+    if pods:
+        name, tags = _tags(_image_pairs(c for p in pods for c, _i, _s in _containers(p)))
+        if tags:
+            return {"container": name, "source": "pods", "tags": tags}
+    template = ((dep.get("spec") or {}).get("template") or {}).get("spec") or {}
+    name, tags = _tags(_image_pairs(template.get("containers") or []))
+    return {"container": name, "source": "template", "tags": tags}
 
 
 def matching_configurations(items, prefixes):
@@ -174,7 +173,8 @@ def ready_endpoints(slices):
     ready = not_ready = 0
     for s in slices:
         for ep in s.get("endpoints") or []:
-            if (ep.get("conditions") or {}).get("ready") is True:
+            # a nil ready condition is to be read as ready (EndpointSlice API)
+            if (ep.get("conditions") or {}).get("ready") is not False:
                 ready += 1
             else:
                 not_ready += 1

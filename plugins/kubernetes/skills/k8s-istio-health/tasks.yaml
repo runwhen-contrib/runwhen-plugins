@@ -22,6 +22,12 @@ settings:
     min: 1
     max: 100000
     description: Most lines per pod proxy-errors reads from within since (the newest); a pod that reaches it is marked truncated
+  scanBudgetSeconds:
+    type: integer
+    default: 90
+    min: 1
+    max: 600
+    description: Wall-clock seconds proxy-errors spends reading logs (below the task timeout); when it runs out the pods not yet read are counted in inspected.podsNotRead, the result carries a timeout error with scope scan, and the rows read so far are kept
 tasks:
   - name: injection-status
     title: Sidecar injection status

@@ -16,14 +16,31 @@ KINDS = (
 )
 
 
-def namespace_injection(ns):
+# Namespaces Istio's injector never touches.
+NEVER_INJECTED = ("kube-system", "kube-public", "kube-node-lease", "local-path-storage")
+DATAPLANE = "istio.io/dataplane-mode"
+REVISION = "istio.io/rev"
+
+
+def namespace_injection(ns, name=None):
     """What the namespace's labels say. `mode` is label (istio-injection=enabled), revision
     (istio.io/rev with no istio-injection label), disabled (istio-injection set to anything
-    else) or unlabelled; enabled/mode are None when the Namespace could not be read."""
+    else) or unlabelled; enabled/mode are None when the Namespace could not be read.
+    `dataplaneMode` is the istio.io/dataplane-mode label (ambient), `excluded` is true for
+    namespaces Istio never injects (kube-system and the like, by name)."""
+    name = name or ((ns or {}).get("metadata") or {}).get("name")
+    excluded = name in NEVER_INJECTED
     if ns is None:
-        return {"label": None, "revision": None, "enabled": None, "mode": None}
+        return {
+            "label": None,
+            "revision": None,
+            "dataplaneMode": None,
+            "excluded": excluded,
+            "enabled": None,
+            "mode": None,
+        }
     labels = (ns.get("metadata") or {}).get("labels") or {}
-    label, rev = labels.get("istio-injection"), labels.get("istio.io/rev")
+    label, rev = labels.get("istio-injection"), labels.get(REVISION)
     # istio-injection takes precedence over istio.io/rev: the revisioned webhooks require
     # that the istio-injection label does not exist.
     if label == "enabled":
@@ -37,9 +54,15 @@ def namespace_injection(ns):
     return {
         "label": label,
         "revision": rev,
+        "dataplaneMode": labels.get(DATAPLANE),
+        "excluded": excluded,
         "enabled": mode in ("label", "revision"),
         "mode": mode,
     }
+
+
+def template_label(template, key):
+    return (((template or {}).get("metadata") or {}).get("labels") or {}).get(key)
 
 
 def inject_override(template):
@@ -53,17 +76,24 @@ def inject_override(template):
     return None, None
 
 
-def injection_expected(injection, override, source, host_network):
+def injection_expected(injection, override, source, host_network, revision=None, dataplane=None):
     """Would Istio's webhook inject this workload's pods? True/False, or None when the
-    namespace could not be read and the template does not decide. The pod-level label
-    `sidecar.istio.io/inject=true` works in an unlabelled namespace; the annotation form
-    does not; host-network pods are never injected."""
-    if host_network or override == "false":
+    namespace could not be read and the template does not decide.
+
+    Never in an excluded namespace, with `inject: "false"` or on the host network. An ambient
+    pod (dataplane `ambient`) gets no sidecar unless it asks with `inject: "true"`. The
+    namespace labels (istio-injection=enabled or istio.io/rev) enable it; in an unlabelled
+    namespace a pod-level opt-in does: the label `sidecar.istio.io/inject=true` or an
+    `istio.io/rev` label on the pod template (the annotation form of inject does not)."""
+    if host_network or override == "false" or injection["excluded"]:
+        return False
+    if dataplane == "ambient" and override != "true":
         return False
     mode = injection["mode"]
     if mode in ("label", "revision"):
         return True
-    if override == "true" and source == "label" and mode in (None, "unlabelled"):
+    opt_in = (override == "true" and source == "label") or bool(revision)
+    if opt_in and mode in (None, "unlabelled"):
         return True
     return None if mode is None else False
 
@@ -103,7 +133,12 @@ def workload_view(kind, workload, owned_pods, injection):
     pod_spec = template.get("spec") or {}
     override, source = inject_override(template)
     host_network = bool(pod_spec.get("hostNetwork"))
-    expected = injection_expected(injection, override, source, host_network)
+    revision = template_label(template, REVISION)
+    # a pod label of dataplane-mode (ambient, or none to opt out) wins over the namespace's
+    dataplane = template_label(template, DATAPLANE) or injection["dataplaneMode"]
+    expected = injection_expected(
+        injection, override, source, host_network, revision=revision, dataplane=dataplane
+    )
     in_template = any(
         c.get("name") == SIDECAR
         for c in (pod_spec.get("containers") or []) + (pod_spec.get("initContainers") or [])
@@ -118,6 +153,8 @@ def workload_view(kind, workload, owned_pods, injection):
         ),
         "injectOverride": override,
         "injectOverrideSource": source,
+        "templateRevision": revision,
+        "dataplaneMode": dataplane,
         "hostNetwork": host_network,
         "injectionExpected": expected,
         "sidecarInTemplate": in_template,

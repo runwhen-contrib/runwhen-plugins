@@ -1,4 +1,4 @@
-from k8s_istio_health.common import bound, check_int_setting, since_seconds
+from k8s_istio_health.common import Budget, bound, check_int_setting, since_seconds
 from k8s_istio_health.fetch import load_deployment, owned_pods
 from k8s_istio_health.k8s import kubectl_text
 from k8s_istio_health.errors import RwError
@@ -20,6 +20,9 @@ def main(ctx, since="1h"):
     max_items = check_int_setting("maxItems", ctx.settings.max_items, 1, 10000)
     max_pods = check_int_setting("maxPods", ctx.settings.max_pods, 1, 500)
     scan_lines = check_int_setting("maxScanLines", ctx.settings.max_scan_lines, 1, 100000)
+    budget = Budget(
+        check_int_setting("scanBudgetSeconds", ctx.settings.scan_budget_seconds, 1, 600)
+    )
     dep = load_deployment(ctx)
     pods = owned_pods(ctx, dep)
 
@@ -32,7 +35,13 @@ def main(ctx, since="1h"):
                 {"pod": name, "container": SIDECAR, "reason": "pod has no istio-proxy container"}
             )
             continue
-        waiting = waiting_reason(sidecar_status(pod, native))
+        status = sidecar_status(pod, native)
+        if status is None:  # the kubelet has reported nothing for it yet: no log to ask for
+            unavailable.append(
+                {"pod": name, "container": SIDECAR, "reason": "container has not started"}
+            )
+            continue
+        waiting = waiting_reason(status)
         if waiting:
             unavailable.append(
                 {"pod": name, "container": SIDECAR, "reason": f"container is waiting: {waiting}"}
@@ -41,8 +50,11 @@ def main(ctx, since="1h"):
         readable.append((name, native))
     attempted = readable[:max_pods]
 
-    rows, failures = [], []
-    for name, native in attempted:
+    rows, failures, out_of_time = [], [], 0
+    for index, (name, native) in enumerate(attempted):
+        if budget.expired():
+            out_of_time = len(attempted) - index
+            break
         try:
             text = kubectl_text(
                 ctx,
@@ -71,13 +83,19 @@ def main(ctx, since="1h"):
             continue
         size = len(text.encode("utf-8", "replace"))
         rows.append(scan_pod(name, SIDECAR, native, split_lines(text), size, scan_lines))
-    if failures and not rows and len(failures) == len(attempted):
+    if failures and not rows and not out_of_time and len(failures) == len(attempted):
         raise failures[0][1]  # nothing could be read: fail with the cause, never an empty list
     for name, exc in failures:
         ctx.error(
             exc.code, f"kubectl logs failed for {name}/{SIDECAR}: {exc.message}"[:1024], scope=name
         )
 
+    if out_of_time:
+        ctx.error(
+            "timeout",
+            f"scan budget exhausted: {out_of_time} pod(s) not read; counts are partial",
+            scope="scan",
+        )
     proxies, n_proxies, o_proxies = bound(sort_results(rows), max_items)
     unavailable, n_unavailable, o_unavailable = bound(unavailable, max_items)
     return {
@@ -86,7 +104,7 @@ def main(ctx, since="1h"):
         "inspected": {
             "pods": len(pods),
             "podsRead": len(rows),
-            "podsNotRead": len(readable) - len(attempted),
+            "podsNotRead": len(readable) - len(attempted) + out_of_time,
             "sinceSeconds": seconds,
             "total": {"proxies": n_proxies, "unavailable": n_unavailable},
             "omitted": {"proxies": o_proxies, "unavailable": o_unavailable},

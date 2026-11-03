@@ -2,6 +2,7 @@
 
 import math
 import re
+import time
 from datetime import timedelta
 
 from k8s_istio_health.errors import RwError
@@ -120,14 +121,36 @@ def deployment_pods(deployment, replicasets, pods):
     return [p for p in chosen if controller_uids(p) & owners]
 
 
+_VALUE = r"[^\s\"',;}&]+"
 _REDACT = [
+    # Authorization header or JSON field, with or without a scheme: the value is dropped.
     (
-        re.compile(r"(?i)(authorization\s*[:=]\s*(?:bearer|basic|token)\s+)[^\s\"',;]+"),
+        re.compile(
+            r"(?i)(authorization\"?\s*[:=]\s*\"?)(?:(?:bearer|basic|token|digest|negotiate)\s+)?"
+            + _VALUE
+        ),
+        r"\1[REDACTED]",
+    ),
+    (re.compile(r"(?i)\b(bearer)\s+" + _VALUE), r"\1 [REDACTED]"),
+    # Cookie and Set-Cookie: a header runs to the end of the line, a JSON field to its closing quote.
+    (re.compile(r"(?i)\b((?:set-)?cookie\"?\s*[:=]\s*\")[^\"]*"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)\b((?:set-)?cookie\s*:\s*)[^\r\n\"]+"), r"\1[REDACTED]"),
+    # JSON Web Tokens (the signature may be empty).
+    (re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*"), "[REDACTED]"),
+    # user:password@ in a URL or scheme-less //authority.
+    (re.compile(r"//[^/\s:@\"']+:[^/\s@\"']+@"), "//[REDACTED]@"),
+    # Secrets carried in a query string.
+    (
+        re.compile(
+            r"(?i)([?&;](?:code|state|sig|signature|x-amz-signature|x-amz-credential|"
+            r"x-amz-security-token|access_token|id_token|refresh_token|client_secret|api[_-]?key|"
+            r"token|key)=)[^&\s\"']+"
+        ),
         r"\1[REDACTED]",
     ),
     (
         re.compile(
-            r"(?i)(?<![a-z])(password|passwd|secret|token|api[_-]?key)(\"?\s*[:=]\s*\"?)[^\s\"',;&]+"
+            r"(?i)(?<![a-z])(password|passwd|secret|token|api[_-]?key|signature)(\"?\s*[:=]\s*\"?)[^\s\"',;&]+"
         ),
         r"\1\2[REDACTED]",
     ),
@@ -135,19 +158,46 @@ _REDACT = [
     (re.compile(r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----"), "[REDACTED]"),
 ]
 
+# The request path of an access-log line loses its query string: `"GET /x?y=1 HTTP/1.1"` and
+# JSON `"path":"/x?y=1"`.
+_QUERY = [
+    re.compile(r'("[A-Z]+ [^"?\s]*)\?[^"\s]*'),
+    re.compile(
+        r'("(?:path|url|request_path|x_envoy_original_path|original_path)"\s*:\s*"[^"?]*)\?[^"]*'
+    ),
+]
+
+
+def strip_query(line):
+    for rx in _QUERY:
+        line = rx.sub(r"\1", line)
+    return line
+
 
 def redact(line):
-    """A cheap scrub of credentials that logs commonly contain: bearer tokens,
+    """A cheap scrub of credentials that logs commonly contain: Authorization values, bare
+    bearer tokens, cookies, JWTs, user:password@ in URLs, secret query parameters,
     password/secret/token/api-key values, AWS access key ids, PEM private key headers."""
     for rx, repl in _REDACT:
         line = rx.sub(repl, line)
     return line
 
 
+class Budget:
+    """A wall-clock allowance (seconds) for reading logs; `expired()` once it is used up."""
+
+    def __init__(self, seconds):
+        self.seconds = seconds
+        self.start = time.monotonic()
+
+    def expired(self):
+        return time.monotonic() - self.start >= self.seconds
+
+
 def clip(line):
     """(line redacted and cut to MESSAGE_LIMIT, whether it was cut). Every sample text gets this."""
     cut = len(line) > MESSAGE_LIMIT
-    line = redact(line[:MATCH_CHARS])
+    line = redact(strip_query(line[:MATCH_CHARS]))
     if len(line) > MESSAGE_LIMIT:
         return line[: MESSAGE_LIMIT - 3] + "...", True
     return line, cut

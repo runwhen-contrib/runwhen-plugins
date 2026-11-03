@@ -81,7 +81,13 @@ class FakeCtx:
     ):
         self.resource = SimpleNamespace(namespace=ns, name=name, type=rtype)
         self.settings = SimpleNamespace(
-            **{"max_items": 200, "max_pods": 20, "max_scan_lines": 5000, **(settings or {})}
+            **{
+                "max_items": 200,
+                "max_pods": 20,
+                "max_scan_lines": 5000,
+                "scan_budget_seconds": 90,
+                **(settings or {}),
+            }
         )
         self.fail = fail or {}
         self.overrides = overrides or {}
@@ -144,6 +150,8 @@ class FakeCtx:
         _get, noun, *rest = words
         if noun in self.fail:
             return self._done(argv, 1, "", self.fail[noun], check)
+        if noun == "namespaces" and "namespace" in self.overrides:
+            return self._done(argv, 0, json.dumps(self.overrides["namespace"]), "", check)
         if noun == "namespaces":
             doc = load(f"{rest[0]}_namespace") if rest[0] in ("rw-istio", "rw-healthy") else None
             if doc is None:
@@ -242,6 +250,8 @@ def test_namespace_injection_modes():
     assert ni(ns({"istio.io/rev": "1-20"})) == {
         "label": None,
         "revision": "1-20",
+        "dataplaneMode": None,
+        "excluded": False,
         "enabled": True,
         "mode": "revision",
     }
@@ -249,7 +259,14 @@ def test_namespace_injection_modes():
     assert ni(ns({"istio-injection": "disabled", "istio.io/rev": "1-20"}))["enabled"] is False
     assert ni(ns({"istio-injection": "true"}))["mode"] == "disabled"
     assert ni(ns({}))["mode"] == "unlabelled" and ni(ns({}))["enabled"] is False
-    assert ni(None) == {"label": None, "revision": None, "enabled": None, "mode": None}
+    assert ni(None) == {
+        "label": None,
+        "revision": None,
+        "dataplaneMode": None,
+        "excluded": False,
+        "enabled": None,
+        "mode": None,
+    }
 
 
 def test_injection_expected_follows_namespace_mode_template_override_and_host_network():
@@ -299,6 +316,8 @@ def test_mesh_namespace_reports_labels_and_who_has_the_sidecar():
     assert out["injection"] == {
         "label": "enabled",
         "revision": None,
+        "dataplaneMode": None,
+        "excluded": False,
         "enabled": True,
         "mode": "label",
     }
@@ -743,7 +762,7 @@ def test_two_versions_during_a_rollout_are_both_listed():
     }
     assert control_lib.versions({"spec": {}}, []) == {
         "container": None,
-        "source": "pods",
+        "source": "template",
         "tags": [],
     }
 
@@ -1252,3 +1271,276 @@ def test_durations_accept_unit_combinations_and_reject_the_rest():
         with pytest.raises(RwError) as exc:
             common.since_seconds(bad)
         assert exc.value.code == "invalid_input"
+
+
+# ------------------------------------------------------------ review fixes ----
+
+import pytest as _pytest  # noqa: E402
+
+PROBES = {
+    "json authorization": ('{"authorization":"Bearer sekret1","a":1}', "sekret1"),
+    "json authorization no scheme": ('{"authorization": "sekret1b"}', "sekret1b"),
+    "bare bearer": ("calling upstream with Bearer sekret2 failed", "sekret2"),
+    "bearer one char": ("Bearer x", "Bearer x"),
+    "cookie header": ("Cookie: sid=sekret3; other=1", "sekret3"),
+    "set-cookie header": ("Set-Cookie: sid=sekret3b; Path=/; HttpOnly", "sekret3b"),
+    "json cookie": ('{"cookie":"sid=sekret3c; a=b","x":1}', "sekret3c"),
+    "query code": ("GET /cb?code=sekret4&state=ok done", "sekret4"),
+    "amz signature": ("PUT /b?X-Amz-Signature=sekret5&X-Amz-Date=1 x", "sekret5"),
+    "jwt": ("token is eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig-nature_x here", "eyJhbGci"),
+    "jwt empty signature": ("jwt eyJhbGciOiJub25lIn0.eyJzdWIiOiIxIn0. end", "eyJhbGci"),
+    "url userinfo": ("dial postgres://dbuser:sekret6@db.rw:5432/x failed", "sekret6"),
+    "url userinfo no scheme": ("proxy //dbuser:sekret6b@host:80 refused", "sekret6b"),
+    "token pair (existing)": ("failed token=sekret7 retry", "sekret7"),
+}
+
+
+@_pytest.mark.parametrize("name", sorted(PROBES))
+def test_redaction_probe(name):
+    line, secret = PROBES[name]
+    out = common.redact(line)
+    assert secret not in out, out
+    clipped, _ = common.clip(line)
+    assert secret not in clipped
+
+
+def test_redaction_keeps_the_rest_of_the_line_readable():
+    out = common.redact('{"authorization":"Bearer sekret1","status":503}')
+    assert '"status":503' in out and "[REDACTED]" in out
+    assert common.redact("plain basic auth discussion") == "plain basic auth discussion"
+
+
+def test_access_log_samples_drop_the_query_string_of_the_request_path():
+    text = (
+        '[2026-11-03T20:00:04Z] "GET /order?id=17&x=1 HTTP/1.1" 503 UF - - "-" 0 0 1 - "-" "c" "r" "h" "-" - - - - -\n'
+        '{"response_code":503,"response_flags":"UF","path":"/pay?session=abc&z=1","method":"GET"}\n'
+    )
+    row = proxy_errors(dep_ctx("meshed", logs={"meshed": text}))["proxies"][0]
+    joined = json.dumps(row["samples"])
+    assert "/order" in joined and "/pay" in joined
+    assert (
+        "id=17" not in joined
+        and "session=abc" not in joined
+        and "?" not in joined.replace('"?', "")
+    )
+
+
+# ---- scan budget
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 0.0
+
+    def monotonic(self):
+        return self.t
+
+
+def test_scan_budget_stops_reading_counts_the_rest_and_keeps_partial_rows(monkeypatch):
+    pods, rs = many_pods(5)
+    clock = FakeClock()
+    monkeypatch.setattr(common, "time", clock)
+
+    class Ctx(FakeCtx):
+        def _logs(self, argv, args, check):
+            clock.t += 6  # each log read takes 6 seconds
+            return super()._logs(argv, args, check)
+
+    ctx = Ctx(
+        "rw-istio",
+        "meshed",
+        DEP,
+        overrides={"pods": pods, "replicasets.apps": rs},
+        settings={"scan_budget_seconds": 10},
+    )
+    out = proxy_errors(ctx)
+    check_outputs("proxy-errors", out)
+    assert len(out["proxies"]) == 2 and out["inspected"]["podsRead"] == 2
+    assert out["inspected"]["podsNotRead"] == 3
+    assert ("timeout", "scan") in [(e["code"], e["scope"]) for e in ctx.errors]
+
+
+def test_scan_budget_not_exhausted_is_silent(monkeypatch):
+    clock = FakeClock()
+    monkeypatch.setattr(common, "time", clock)
+    ctx = dep_ctx("meshed")
+    out = proxy_errors(ctx)
+    assert ctx.errors == [] and out["inspected"]["podsNotRead"] == 0
+
+
+def test_scan_budget_setting_is_declared_and_bounded():
+    s = yaml.safe_load((SKILL / "tasks.yaml").read_text())["settings"]["scanBudgetSeconds"]
+    assert s["default"] == 90 and s["min"] == 1
+    assert s["default"] < 120  # the task timeout
+    with _pytest.raises(RwError) as exc:
+        proxy_errors(dep_ctx("meshed", settings={"scan_budget_seconds": 0}))
+    assert exc.value.code == "invalid_input"
+
+
+# ---- ambient, revision labels, never-inject namespaces
+
+
+def ns_doc(name, labels):
+    return {"metadata": {"name": name, "labels": labels}}
+
+
+def test_namespace_reports_dataplane_mode_and_exclusion():
+    ni = injection.namespace_injection
+    assert (
+        ni(ns_doc("a", {"istio.io/dataplane-mode": "ambient"}), "a")["dataplaneMode"] == "ambient"
+    )
+    for name in ("kube-system", "kube-public", "kube-node-lease", "local-path-storage"):
+        assert ni(ns_doc(name, {"istio-injection": "enabled"}), name)["excluded"] is True
+    assert ni(None, "kube-system")["excluded"] is True
+    assert ni(ns_doc("a", {}), "a")["excluded"] is False
+
+
+def test_ambient_namespace_does_not_expect_a_sidecar_unless_the_pod_asks():
+    inj = injection.namespace_injection(ns_doc("a", {"istio.io/dataplane-mode": "ambient"}), "a")
+    e = injection.injection_expected
+    assert e(inj, None, None, False, dataplane="ambient") is False
+    assert e(inj, "true", "label", False, dataplane="ambient") is True
+    assert (
+        e(inj, "true", "annotation", False, dataplane="ambient") is False
+    )  # annotation: no webhook match
+    both = injection.namespace_injection(
+        ns_doc("a", {"istio.io/dataplane-mode": "ambient", "istio-injection": "enabled"}), "a"
+    )
+    assert e(both, None, None, False, dataplane="ambient") is False
+    assert e(both, None, None, False, dataplane="none") is True  # the pod opted out of ambient
+
+
+def test_ambient_in_the_script_reports_dataplane_mode_per_workload():
+    ns = ns_doc("rw-istio", {"istio.io/dataplane-mode": "ambient"})
+    deployments = copy.deepcopy(load("rw-istio_deployments")["items"])
+    named({"items": deployments}, "bare")["spec"]["template"]["metadata"]["labels"][
+        "istio.io/dataplane-mode"
+    ] = "none"
+    named({"items": deployments}, "bare-optout")["spec"]["template"]["metadata"]["labels"][
+        "sidecar.istio.io/inject"
+    ] = "true"
+    out = injection_status(
+        ns_ctx("rw-istio", overrides={"namespace": ns, "deployments.apps": deployments})
+    )
+    check_outputs("injection-status", out)
+    assert out["injection"]["dataplaneMode"] == "ambient" and out["injection"]["enabled"] is False
+    meshed = workload(out, "meshed")
+    assert meshed["dataplaneMode"] == "ambient" and meshed["injectionExpected"] is False
+    assert meshed["missingWhileExpected"] is False
+    bare = workload(out, "bare")
+    assert bare["dataplaneMode"] == "none"
+    assert workload(out, "bare-optout")["injectionExpected"] is True
+
+
+def test_template_revision_label_in_an_unlabelled_namespace_expects_injection():
+    inj = injection.namespace_injection(ns_doc("a", {}), "a")
+    e = injection.injection_expected
+    assert e(inj, None, None, False, revision="1-20") is True
+    off = injection.namespace_injection(ns_doc("a", {"istio-injection": "disabled"}), "a")
+    assert e(off, None, None, False, revision="1-20") is False
+    assert e(inj, "false", "label", False, revision="1-20") is False
+    assert e(injection.namespace_injection(None, "a"), None, None, False, revision="1-20") is True
+
+
+def test_template_revision_is_reported_and_drives_missing_while_expected():
+    deployments = copy.deepcopy(load("rw-istio_deployments")["items"])
+    named({"items": deployments}, "bare")["spec"]["template"]["metadata"]["labels"][
+        "istio.io/rev"
+    ] = "1-20"
+    ns = ns_doc("rw-istio", {})
+    out = injection_status(
+        ns_ctx("rw-istio", overrides={"namespace": ns, "deployments.apps": deployments})
+    )
+    bare = workload(out, "bare")
+    assert bare["templateRevision"] == "1-20" and bare["injectionExpected"] is True
+    assert bare["missingWhileExpected"] is True
+    assert workload(out, "istiod")["templateRevision"] is None
+    assert workload(out, "istiod")["injectionExpected"] is False
+
+
+def test_never_inject_namespace_expects_nothing_even_when_labelled():
+    ns = ns_doc("kube-system", {"istio-injection": "enabled"})
+    ctx = FakeCtx(None, "kube-system", NS, input_ns="rw-istio", overrides={"namespace": ns})
+    out = injection_status(ctx)
+    check_outputs("injection-status", out)
+    assert out["injection"]["excluded"] is True
+    assert all(
+        w["injectionExpected"] is False and w["missingWhileExpected"] is False
+        for w in out["workloads"]
+    )
+
+
+def test_never_inject_namespace_by_name_when_the_namespace_is_forbidden():
+    ctx = FakeCtx(
+        None,
+        "kube-system",
+        NS,
+        input_ns="rw-istio",
+        fail={"namespaces": FORBIDDEN % "namespaces"},
+    )
+    out = injection_status(ctx)
+    assert out["injection"]["excluded"] is True and out["injection"]["enabled"] is None
+    assert workload(out, "bare")["injectionExpected"] is False
+
+
+# ---- a proxy that has not started, version and endpoint fallbacks
+
+
+def test_pod_without_container_statuses_is_unavailable_and_no_log_is_requested():
+    pods = copy.deepcopy(load("rw-istio_pods")["items"])
+    meshed = next(p for p in pods if p["metadata"]["labels"]["app"] == "meshed")
+    del meshed["status"]["containerStatuses"]
+    ctx = dep_ctx("meshed", overrides={"pods": pods})
+    out = proxy_errors(ctx)
+    assert out["proxies"] == []
+    assert [u["reason"] for u in out["unavailable"]] == ["container has not started"]
+    assert not any("logs" in a for a in ctx.calls)
+
+
+def test_native_sidecar_without_a_status_is_not_started_either():
+    p = pod("g-1", containers=("app",), init=("istio-proxy",))
+    p["status"] = {"containerStatuses": [{"name": "app", "ready": True, "restartCount": 0}]}
+    from k8s_istio_health.sidecar import sidecar_status
+
+    assert sidecar_status(p, True) is None
+
+
+def test_version_falls_back_to_the_template_when_there_are_no_pods():
+    out = control(dep_ctx("istiod", overrides={"pods": []}))
+    check_outputs("control-plane-status", out)
+    assert out["pods"] == []
+    assert out["version"] == {
+        "container": "discovery",
+        "source": "template",
+        "tags": [{"tag": "1.36", "count": 1}],
+    }
+
+
+def test_endpoint_with_no_ready_condition_counts_as_ready():
+    slices = copy.deepcopy(load("rw-istio_endpointslices_istiod")["items"])
+    ep = slices[0]["endpoints"][0]
+    ep["conditions"] = {}
+    slices[0]["endpoints"].append({"addresses": ["10.0.0.9"], "conditions": {"ready": None}})
+    slices[0]["endpoints"].append({"addresses": ["10.0.0.8"], "conditions": {"ready": False}})
+    out = control(dep_ctx("istiod", overrides={"endpointslices.discovery.k8s.io": slices}))
+    assert all(w["endpoints"] == {"ready": 2, "notReady": 1} for w in out["webhooks"])
+
+
+# ---- SKILL.md content
+
+
+def test_skill_md_covers_the_review_points():
+    text = (SKILL / "SKILL.md").read_text()
+    for needle in (
+        "ambient",
+        "istio.io/dataplane-mode",
+        "istio-revision-tag-",
+        "policy: disabled",
+        "bytesCut",
+        "kubectl top",
+        "kubernetes:k8s-istio-health/proxy-errors",
+        "excludeContainers",
+        "Permissions per task",
+    ):
+        assert needle in text, needle
+    assert len(text.splitlines()) < 150

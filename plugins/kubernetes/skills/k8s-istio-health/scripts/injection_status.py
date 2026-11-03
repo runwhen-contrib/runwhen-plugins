@@ -14,7 +14,7 @@ from k8s_istio_health.injection import (
 def main(ctx):
     max_items = check_int_setting("maxItems", ctx.settings.max_items, 1, 10000)
     ns = load_namespace(ctx)  # not found raises; forbidden -> injection.enabled None
-    injection = namespace_injection(ns)
+    injection = namespace_injection(ns, ctx.resource.name)
 
     # One list per workload kind. A kind that is forbidden is an error on the result and the
     # others are still reported; when none can be listed there is nothing to report.
