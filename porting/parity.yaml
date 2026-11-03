@@ -79,7 +79,16 @@ kubernetes:
     note: "classic created a pod, printed its token and curled the API root, and passed when the pod could not start; re-derived as LocalSubjectAccessReviews (read-only, nothing created or run in the cluster)"
     tasks:
       "Test Service Account Access to Kubernetes API Server": k8s-namespace-resources/serviceaccount-permissions
-  - { bundle: k8s-job-namespace-health,    skills: [k8s-namespace-health, k8s-cronjob-health], status: partial, ported: [k8s-namespace-health] }
+  - bundle: k8s-job-namespace-health
+    skills: [k8s-namespace-health, k8s-cronjob-health]
+    status: ported
+    ported: [k8s-namespace-health, k8s-cronjob-health]
+    note: "classic cronjob task re-derived: the schedule is evaluated (cron parsed, time zone and startingDeadlineSeconds honoured) instead of trusting a lastScheduleTime freshness filter that dropped CronJobs that stopped long ago; k8s-cronjob-health/recent-runs is new (classic looked only at the latest child Job)"
+    tasks:
+      "Summarize Job Status in Namespace": k8s-namespace-health/failed-jobs
+      "Identify Failed Jobs and Backoff in Namespace": k8s-namespace-health/failed-jobs
+      "Correlate Job Failures with Recent Events in Namespace": k8s-namespace-health/warning-events
+      "Check CronJob Schedule Health in Namespace": k8s-cronjob-health/schedule-health
   - { bundle: k8s-chaos-namespace,         skills: [k8s-chaos], status: planned }
   - { bundle: k8s-chaos-workload,          skills: [k8s-chaos], status: planned }
 
