@@ -1,0 +1,99 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-quota
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-quota
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-quota\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T18:46:05Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-quota"
+            },
+            "name": "rw-quota",
+            "resourceVersion": "8260",
+            "uid": "3ecf9190-4404-4a5f-9a45-e31b76801c9e"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-quota
+  - get
+  - resourcequotas
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "ResourceQuota",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"ResourceQuota\",\"metadata\":{\"annotations\":{},\"name\":\"pods-two\",\"namespace\":\"rw-quota\"},\"spec\":{\"hard\":{\"pods\":\"2\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T18:46:05Z",
+                    "name": "pods-two",
+                    "namespace": "rw-quota",
+                    "resourceVersion": "8273",
+                    "uid": "8a1f9e88-c76a-4d80-b360-a4f23c51d24c"
+                },
+                "spec": {
+                    "hard": {
+                        "pods": "2"
+                    }
+                },
+                "status": {
+                    "hard": {
+                        "pods": "2"
+                    },
+                    "used": {
+                        "pods": "2"
+                    }
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    quotas:
+    - quota: pods-two
+      resource: pods
+      used: '2'
+      hard: '2'
+      ratio: 1.0
+      atOrAbove: true
+      scopes: []
+      scopeSelector: null
