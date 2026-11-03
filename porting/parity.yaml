@@ -89,8 +89,29 @@ kubernetes:
       "Identify Failed Jobs and Backoff in Namespace": k8s-namespace-health/failed-jobs
       "Correlate Job Failures with Recent Events in Namespace": k8s-namespace-health/warning-events
       "Check CronJob Schedule Health in Namespace": k8s-cronjob-health/schedule-health
-  - { bundle: k8s-chaos-namespace,         skills: [k8s-chaos], status: planned }
-  - { bundle: k8s-chaos-workload,          skills: [k8s-chaos], status: planned }
+  - bundle: k8s-chaos-namespace
+    skills: [k8s-chaos]
+    status: ported
+    ported: [k8s-chaos]
+    note: "classic ignored every exec/delete/patch exit code (the script ended in a kubectl get, so rc was always 0) and never restored a mangled Service; re-derived with typed errors, observed results and a verified restore. The 50% coin flip per pod and 3s pauses are replaced by a seeded pick of count pods"
+    tasks:
+      "Kill Random Pods In Namespace": k8s-chaos/delete-pods
+      "OOMKill Pods In Namespace": k8s-chaos/oomkill-pod
+      "Mangle Service Selector In Namespace": k8s-chaos/mangle-service
+      "Mangle Service Port In Namespace": "k8s-chaos/mangle-service (mode: port)"
+      "Fill Random Pod Tmp Directory In Namespace": k8s-chaos/fill-tmp
+      "Test Node Drain": "dropped: commented out in the classic runbook (never ran) and cluster-scoped: it drains a node, outside the namespace/workload targets of this skill"
+  - bundle: k8s-chaos-workload
+    skills: [k8s-chaos]
+    status: ported
+    ported: [k8s-chaos]
+    note: "classic fell through to every pod of the namespace when the workload lookup failed (empty selector), tagged the selector mangle access:read-only, and passed `kubectl describe <bare name>`; re-derived: an empty selector refuses, the workload's pods are confirmed through ownerReferences, Services are matched by subset of the pod template labels (not a substring) and restored"
+    tasks:
+      "Test Workload High Availability": "k8s-chaos/delete-pods (workload target: reports whether and how fast ready replicas return)"
+      "OOMKill Workload Pod": k8s-chaos/oomkill-pod
+      "Mangle Service Selector For Workload": k8s-chaos/mangle-service
+      "Mangle Service Port For Workload": "k8s-chaos/mangle-service (mode: port)"
+      "Fill Tmp Directory Of Pod From Workload": k8s-chaos/fill-tmp
 
   # --- networking ----------------------------------------------------------------------------------------------
   - { bundle: k8s-ingress-gce-healthcheck, skills: [k8s-ingress-health], status: ported, ported: [k8s-ingress-health],

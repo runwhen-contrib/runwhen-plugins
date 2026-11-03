@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The target a chaos task acted on",
+  "description": "scope is 'namespace' (pods anywhere in the namespace) or 'workload' (that workload's pods only). desiredReplicas, readyReplicas and gitopsTool are null for a namespace target; gitopsTool is 'flux' or 'argocd' when the workload carries their labels or annotations (the controller may heal the damage).",
+  "type": "object",
+  "properties": {
+    "scope": {
+      "enum": [
+        "namespace",
+        "workload"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "Namespace",
+        "Deployment",
+        "StatefulSet"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "namespace": {
+      "type": "string"
+    },
+    "desiredReplicas": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "readyReplicas": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "gitopsTool": {
+      "enum": [
+        "flux",
+        "argocd",
+        null
+      ]
+    }
+  },
+  "required": [
+    "scope",
+    "kind",
+    "name",
+    "namespace",
+    "desiredReplicas",
+    "readyReplicas",
+    "gitopsTool"
+  ],
+  "additionalProperties": false
+}

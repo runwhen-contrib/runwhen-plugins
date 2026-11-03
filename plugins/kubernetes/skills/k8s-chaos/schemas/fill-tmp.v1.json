@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Chaos /tmp fill",
+  "description": "One file of bytesRequested was written with dd to path in the picked container's /tmp, held for the observe time, then removed. bytesWritten is the size of the file after dd (wc -c), null when it could not be read; writeExitCode the exit code of dd; writeError dd's stderr (at most 1024 characters). evicted is true when the pod ended up Failed/Evicted, restarted when the container's restartCount rose. cleanup.succeeded is true only when rm ran and the file was confirmed gone; reason says why it was not attempted or failed (pod_evicted, pod_gone, still_present, or an error code). All observed fields are null and cleanup.attempted false on a dry run (applied false).",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "seed": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "input",
+            "now"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "candidateCount": {
+      "type": "integer"
+    },
+    "pod": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "node": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "phase",
+        "ready",
+        "node"
+      ],
+      "additionalProperties": false
+    },
+    "container": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "bytesRequested": {
+      "type": "integer"
+    },
+    "bytesWritten": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "writeExitCode": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "writeError": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "writeErrorTruncated": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "binary": {
+          "type": "string"
+        },
+        "argCount": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "binary",
+        "argCount"
+      ],
+      "additionalProperties": false
+    },
+    "restartCountBefore": {
+      "type": "integer"
+    },
+    "restartCountAfter": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "restarted": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "evicted": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "podPresent": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "podPhase": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cleanup": {
+      "type": "object",
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attempted",
+        "succeeded",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "applied",
+    "seed",
+    "candidateCount",
+    "pod",
+    "container",
+    "path",
+    "bytesRequested",
+    "bytesWritten",
+    "writeExitCode",
+    "writeError",
+    "writeErrorTruncated",
+    "command",
+    "restartCountBefore",
+    "restartCountAfter",
+    "restarted",
+    "evicted",
+    "podPresent",
+    "podPhase",
+    "cleanup"
+  ],
+  "additionalProperties": false
+}

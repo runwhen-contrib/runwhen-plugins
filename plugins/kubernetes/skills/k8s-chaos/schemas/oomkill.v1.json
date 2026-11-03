@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Chaos OOM kill",
+  "description": "The pod and container picked and what was done to it: one dd process allocated allocateBytes (the memory limit plus a quarter, at least 64Mi) in one buffer. exitCode is the exit code of that process (137 when it was killed), null when not run. restartDelta is the change in the container's restartCount after the run, lastState its lastState.terminated afterwards, oomKilled true only when the restart count rose and lastState.reason is OOMKilled from a termination newer than any before the run. All observed fields are null on a dry run (applied false, nothing was run); observedMs is how long the task watched the pod. podPresent false means the pod was gone when looked at again.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "seed": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "input",
+            "now"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "candidateCount": {
+      "type": "integer"
+    },
+    "pod": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "node": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "phase",
+        "ready",
+        "node"
+      ],
+      "additionalProperties": false
+    },
+    "container": {
+      "type": "string"
+    },
+    "memoryLimitBytes": {
+      "type": "integer"
+    },
+    "allocateBytes": {
+      "type": "integer"
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "binary": {
+          "type": "string"
+        },
+        "argCount": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "binary",
+        "argCount"
+      ],
+      "additionalProperties": false
+    },
+    "exitCode": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "restartCountBefore": {
+      "type": "integer"
+    },
+    "restartCountAfter": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "restartDelta": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "lastState": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exitCode": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "finishedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "reason",
+        "exitCode",
+        "finishedAt"
+      ],
+      "additionalProperties": false
+    },
+    "oomKilled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "observedMs": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "podPresent": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "applied",
+    "seed",
+    "candidateCount",
+    "pod",
+    "container",
+    "memoryLimitBytes",
+    "allocateBytes",
+    "command",
+    "exitCode",
+    "restartCountBefore",
+    "restartCountAfter",
+    "restartDelta",
+    "lastState",
+    "oomKilled",
+    "observedMs",
+    "podPresent"
+  ],
+  "additionalProperties": false
+}

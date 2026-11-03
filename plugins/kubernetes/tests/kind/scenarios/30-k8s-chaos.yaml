@@ -1,0 +1,144 @@
+# k8s-chaos scenarios, applied by up.sh. Everything lives in rw-chaos: the tasks are
+# destructive and real runs only ever target this namespace.
+#   web      Deployment, 3 replicas, busybox httpd, memory limit 64Mi, Service web
+#   db       StatefulSet, 2 replicas, memory limit 64Mi and ephemeral-storage limit 50Mi, headless Service db
+#   nolimit  Deployment, 1 replica, no resource limits (oomkill-pod must refuse), Service nolimit
+#   nosh     Deployment, 1 replica of the pause image (no shell, no dd) with a memory limit, Service nosh
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-chaos
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: rw-chaos
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: web}
+  template:
+    metadata:
+      labels: {app: web}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: httpd
+          image: busybox:1.36
+          command: [sh, -c, "mkdir -p /www && echo ok > /www/index.html && exec httpd -f -p 8080 -h /www"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /, port: 8080}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: rw-chaos
+spec:
+  selector: {app: web}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: rw-chaos
+spec:
+  replicas: 2
+  serviceName: db
+  selector:
+    matchLabels: {app: db}
+  template:
+    metadata:
+      labels: {app: db}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+          readinessProbe:
+            exec: {command: ["true"]}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 5m, memory: 8Mi, ephemeral-storage: 10Mi}
+            limits: {memory: 64Mi, ephemeral-storage: 50Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: rw-chaos
+spec:
+  clusterIP: None
+  selector: {app: db}
+  ports:
+    - {name: tcp, port: 5432}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nolimit
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: nolimit}
+  template:
+    metadata:
+      labels: {app: nolimit}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nolimit
+  namespace: rw-chaos
+spec:
+  selector: {app: nolimit}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nosh
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: nosh}
+  template:
+    metadata:
+      labels: {app: nosh}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
+            limits: {memory: 32Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nosh
+  namespace: rw-chaos
+spec:
+  selector: {app: nosh}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}

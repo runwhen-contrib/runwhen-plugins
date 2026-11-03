@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Chaos pod deletion",
+  "description": "The pods picked (by a hash of seed and pod name, so the same seed and candidates pick the same pods), the pods deleted, and for a workload target whether its ready replicas returned to the desired count. On a dry run applied is false, deleted is empty and wouldDelete lists the pods the server confirmed it would delete. recovery is null for a namespace target, a dry run or waitForRecovery false; recovered is null when the workload could not be read while waiting (an error on the result says why); recoveryMs is milliseconds from the delete until the desired ready replicas (none of them a deleted pod) were seen, null when not recovered within the timeout. Lists stop at maxItems; counts are not capped.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "seed": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "input",
+            "now"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "requestedCount": {
+      "type": "integer"
+    },
+    "candidateCount": {
+      "type": "integer"
+    },
+    "selectedCount": {
+      "type": "integer"
+    },
+    "deletedCount": {
+      "type": "integer"
+    },
+    "wouldDeleteCount": {
+      "type": "integer"
+    },
+    "alreadyGoneCount": {
+      "type": "integer"
+    },
+    "deletesAllReady": {
+      "type": "boolean"
+    },
+    "deleted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "wouldDelete": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "alreadyGone": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pods": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "node": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "ready",
+          "node"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "recovery": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "waited": {
+          "type": "boolean"
+        },
+        "recovered": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "recoveryMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "waitedMs": {
+          "type": "integer"
+        },
+        "desiredReplicas": {
+          "type": "integer"
+        },
+        "readyReplicasBefore": {
+          "type": "integer"
+        },
+        "readyReplicasAfter": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "waited",
+        "recovered",
+        "recoveryMs",
+        "waitedMs",
+        "desiredReplicas",
+        "readyReplicasBefore",
+        "readyReplicasAfter"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "applied",
+    "seed",
+    "requestedCount",
+    "candidateCount",
+    "selectedCount",
+    "deletedCount",
+    "wouldDeleteCount",
+    "alreadyGoneCount",
+    "deletesAllReady",
+    "deleted",
+    "wouldDelete",
+    "alreadyGone",
+    "pods",
+    "recovery"
+  ],
+  "additionalProperties": false
+}
