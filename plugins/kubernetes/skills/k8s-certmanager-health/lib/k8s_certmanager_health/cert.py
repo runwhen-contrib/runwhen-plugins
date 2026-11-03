@@ -106,6 +106,9 @@ def certificate_view(cert, now, warning_days):
     renewal = parse_time(status.get("renewalTime"))
     left = (not_after - now).total_seconds() if not_after else None
     dns = list(spec.get("dnsNames") or [])
+    sans = sum(
+        len(spec.get(k) or []) for k in ("dnsNames", "ipAddresses", "uris", "emailAddresses")
+    )
     conditions = [condition_view(c) for c in status.get("conditions") or []]
     return {
         "name": meta["name"],
@@ -126,6 +129,7 @@ def certificate_view(cert, now, warning_days):
         "expiryWarningDays": float(warning_days),
         "commonName": spec.get("commonName"),
         "dnsNameCount": len(dns),
+        "sanCount": sans,
         "dnsNames": nested(dns),
         "secretName": spec.get("secretName"),
         "duration": spec.get("duration"),
@@ -222,8 +226,8 @@ def request_view(req):
 def certificate_requests(items, cert, max_items):
     """The CertificateRequests the Certificate owns, newest revision first, cut to max_items.
 
-    Returns (rows, uid_by_name): uid_by_name maps every returned request's name to its uid
-    (for matching Orders).
+    Returns (rows, owners): owners maps every returned request's name to its uid, revision and
+    creationTimestamp (for matching and ordering its Orders).
     """
     uid, name = cert["metadata"].get("uid"), cert["metadata"]["name"]
     mine = [r for r in items if owned_by(r, "Certificate", uid, name)]
@@ -237,7 +241,14 @@ def certificate_requests(items, cert, max_items):
     kept = cap(mine, max_items)
     return (
         [request_view(r) for r in kept],
-        {r["metadata"]["name"]: r["metadata"].get("uid") for r in kept},
+        {
+            r["metadata"]["name"]: {
+                "uid": r["metadata"].get("uid"),
+                "revision": revision_of(r),
+                "creationTimestamp": r["metadata"].get("creationTimestamp"),
+            }
+            for r in kept
+        },
     )
 
 
@@ -259,14 +270,58 @@ def order_view(order, request_name):
     }
 
 
-def orders_for(items, request_uids, max_items):
-    """Orders owned by the given requests ({request name: uid}), newest request first, cut to max_items."""
-    by_uid = {uid: name for name, uid in request_uids.items() if uid}
-    rows = []
+def orders_for(items, owners, max_items):
+    """Orders owned by the returned requests, newest request first, cut to max_items.
+
+    `owners` is certificate_requests()'s second result. Orders are ordered by their request's
+    (revision, creationTimestamp), the way the requests are, never by name. Returns
+    (rows, uid_by_order_name); the uids are for matching Challenges.
+    """
+    by_uid = {o["uid"]: (name, o) for name, o in owners.items() if o.get("uid")}
+    found = []
     for o in items:
         for ref in (o.get("metadata") or {}).get("ownerReferences") or []:
             if ref.get("kind") == "CertificateRequest" and ref.get("uid") in by_uid:
-                rows.append(order_view(o, by_uid[ref["uid"]]))
+                req_name, req = by_uid[ref["uid"]]
+                rev = req["revision"] if req["revision"] is not None else -1
+                key = (rev, req["creationTimestamp"] or "", o["metadata"]["name"])
+                found.append((key, order_view(o, req_name), o["metadata"].get("uid")))
                 break
-    rows.sort(key=lambda r: (r["request"], r["name"]), reverse=True)
+    found.sort(key=lambda t: t[0], reverse=True)
+    kept = found[: int(max_items)]
+    return [row for _k, row, _u in kept], {row["name"]: uid for _k, row, uid in kept}
+
+
+# ---------------------------------------------------------- challenges ----
+
+
+def challenge_view(ch, order_name):
+    """An ACME Challenge: its type, domain and state; the reason is where a failed validation says why."""
+    spec = ch.get("spec") or {}
+    status = ch.get("status") or {}
+    reason, cut = trunc(status.get("reason"))
+    return {
+        "name": ch["metadata"]["name"],
+        "order": order_name,
+        "type": spec.get("type"),
+        "dnsName": spec.get("dnsName"),
+        "wildcard": spec.get("wildcard"),
+        "state": status.get("state"),
+        "presented": status.get("presented"),
+        "processing": status.get("processing"),
+        "reason": reason,
+        "truncated": cut,
+    }
+
+
+def challenges_for(items, order_uids, max_items):
+    """Challenges owned by the returned Orders ({order name: uid}), cut to max_items."""
+    by_uid = {uid: name for name, uid in order_uids.items() if uid}
+    rows = []
+    for ch in items:
+        for ref in (ch.get("metadata") or {}).get("ownerReferences") or []:
+            if ref.get("kind") == "Order" and ref.get("uid") in by_uid:
+                rows.append(challenge_view(ch, by_uid[ref["uid"]]))
+                break
+    rows.sort(key=lambda r: (r["order"], r["name"]), reverse=True)
     return cap(rows, max_items)

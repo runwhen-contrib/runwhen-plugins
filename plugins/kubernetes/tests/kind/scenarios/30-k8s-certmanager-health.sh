@@ -59,6 +59,10 @@ if ! has_status certificates.cert-manager.io orphan-cert; then
   patch_status certificates.cert-manager.io orphan-cert "{\"status\":{
     \"conditions\":[$(cond Ready False Pending 'Referenced Issuer not found' "$NOW")]}}"
 fi
+if ! has_status certificates.cert-manager.io external-cert; then
+  patch_status certificates.cert-manager.io external-cert "{\"status\":{
+    \"conditions\":[$(cond Ready False Pending 'Waiting for CertificateRequest to complete' "$NOW")]}}"
+fi
 # new-cert keeps no status at all: a Certificate the controller has not looked at yet.
 
 # certificate requests: owned by their Certificate, so the uid is read at run time

@@ -25,6 +25,7 @@ from runwhen_capability.rwerrors import RwCommandError, classify_command_error
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-certmanager-health"
 DATA = Path(__file__).parent / "data" / "k8s_certmanager_health"
 NOW = datetime(2026, 11, 3, 19, 50, tzinfo=timezone.utc)
+SCRIPT_OF = {"certificate-status": "certificate_status", "requests": "certificate_requests"}
 TASKS = {t["name"]: t for t in yaml.safe_load((SKILL / "tasks.yaml").read_text())["tasks"]}
 TYPE = "kubernetes/certificate"
 
@@ -193,20 +194,20 @@ def test_an_issuer_with_no_ready_condition_yet_is_unknown():
 
 
 def test_requests_are_owned_by_uid_and_listed_newest_revision_first():
-    rows, uids = c.certificate_requests(
+    rows, owners = c.certificate_requests(
         load("certificaterequests")["items"], cert("failed-cert"), 200
     )
     assert [r["name"] for r in rows] == ["failed-cert-2", "failed-cert-1"]
-    assert set(uids) == {"failed-cert-1", "failed-cert-2"}
+    assert set(owners) == {"failed-cert-1", "failed-cert-2"}
+    assert owners["failed-cert-2"]["revision"] == 2 and owners["failed-cert-2"]["uid"]
     one = rows[1]
     assert one["revision"] == 1 and one["failureTime"]
     assert one["approved"]["status"] == "True"
     assert (one["ready"]["status"], one["ready"]["reason"]) == ("False", "Failed")
     assert one["denied"] is None and one["invalidRequest"] is None
     two = rows[0]
-    assert (
-        two["denied"]["status"] == "True" and two["approved"] is None
-    )  # waiting-for-approval shape
+    # a denied request never got an Approved condition (an undecided one has none either)
+    assert two["denied"]["status"] == "True" and two["approved"] is None
     assert two["invalidRequest"]["reason"] == "RequestInvalid"
     assert two["issuerRef"] == {
         "name": "broken-issuer",
@@ -248,8 +249,8 @@ def test_requests_are_capped_and_sorted_without_a_revision_last():
     nameless["metadata"]["name"] = "no-revision"
     del nameless["metadata"]["annotations"]
     items.append(nameless)
-    rows, uids = c.certificate_requests(items, cert("failed-cert"), 3)
-    assert [r["name"] for r in rows] == ["r4", "r3", "r2"] and len(uids) == 3
+    rows, owners = c.certificate_requests(items, cert("failed-cert"), 3)
+    assert [r["name"] for r in rows] == ["r4", "r3", "r2"] and len(owners) == 3
     rows, _ = c.certificate_requests(items, cert("failed-cert"), 200)
     assert rows[-1]["name"] == "no-revision" and rows[-1]["revision"] is None
 
@@ -262,6 +263,13 @@ def test_request_messages_are_bounded():
     assert view["approved"]["truncated"] is False
 
 
+def owners_of(*names):
+    _rows, owners = c.certificate_requests(
+        load("certificaterequests")["items"], cert("failed-cert"), 200
+    )
+    return {n: owners[n] for n in names}
+
+
 def test_orders_are_matched_to_the_returned_requests():
     r1, r2 = request("failed-cert-1"), request("failed-cert-2")
     other = order("elsewhere", request("ready-cert-1"), "valid")
@@ -270,14 +278,81 @@ def test_orders_are_matched_to_the_returned_requests():
         order("failed-cert-2-1", r2, "pending", authorizations=2),
         other,
     ]
-    uids = {"failed-cert-1": r1["metadata"]["uid"], "failed-cert-2": r2["metadata"]["uid"]}
-    rows = c.orders_for(orders, uids, 200)
+    owners = owners_of("failed-cert-1", "failed-cert-2")
+    rows, uids = c.orders_for(orders, owners, 200)
     assert [(o["name"], o["request"], o["state"]) for o in rows] == [
         ("failed-cert-2-1", "failed-cert-2", "pending"),
         ("failed-cert-1-1", "failed-cert-1", "errored"),
     ]
     assert rows[1]["reason"].endswith("rateLimited") and rows[0]["authorizationCount"] == 2
-    assert len(c.orders_for(orders, uids, 1)) == 1
+    assert set(uids) == {"failed-cert-2-1", "failed-cert-1-1"}
+    assert len(c.orders_for(orders, owners, 1)[0]) == 1
+
+
+def test_orders_sort_by_request_revision_not_by_name():
+    # As strings c-10 < c-2; the newest request (revision 11) must still come first.
+    owners, orders = {}, []
+    for rev in (2, 9, 10, 11):
+        r = copy.deepcopy(request("failed-cert-1"))
+        r["metadata"]["name"] = f"c-{rev}"
+        r["metadata"]["uid"] = f"uid-{rev}"
+        owners[r["metadata"]["name"]] = {
+            "uid": r["metadata"]["uid"],
+            "revision": rev,
+            "creationTimestamp": r["metadata"]["creationTimestamp"],
+        }
+        orders.append(order(f"o-{rev}", r, "errored"))
+    rows, _ = c.orders_for(orders, owners, 200)
+    assert [o["request"] for o in rows] == ["c-11", "c-10", "c-9", "c-2"]
+
+
+def challenge(name, order_obj, state, reason=None, ctype="http-01", dns="x.example"):
+    ref = {
+        "kind": "Order",
+        "name": order_obj["metadata"]["name"],
+        "uid": order_obj["metadata"]["uid"],
+    }
+    return {
+        "metadata": {"name": name, "ownerReferences": [ref]},
+        "spec": {"type": ctype, "dnsName": dns, "wildcard": False},
+        "status": {
+            "state": state,
+            "presented": False,
+            "processing": True,
+            **({"reason": reason} if reason else {}),
+        },
+    }
+
+
+def test_challenges_are_matched_to_the_returned_orders_and_report_their_reason():
+    r1 = request("failed-cert-1")
+    o1 = order("o-1", r1, "pending")
+    o1["metadata"]["uid"] = "order-uid-1"
+    _rows, uids = c.orders_for([o1], owners_of("failed-cert-1"), 200)
+    assert uids == {"o-1": "order-uid-1"}
+    other = order("o-2", r1, "pending")
+    other["metadata"]["uid"] = "order-uid-2"
+    reason = "Waiting for HTTP-01 challenge propagation: wrong status code '404'"
+    items = [challenge("ch-a", o1, "pending", reason), challenge("ch-b", other, "valid")]
+    rows = c.challenges_for(items, uids, 200)
+    assert [(x["name"], x["order"], x["state"], x["type"], x["dnsName"]) for x in rows] == [
+        ("ch-a", "o-1", "pending", "http-01", "x.example")
+    ]
+    assert rows[0]["reason"].startswith("Waiting for HTTP-01") and rows[0]["processing"] is True
+    assert rows[0]["presented"] is False and rows[0]["truncated"] is False
+    items[0]["status"]["reason"] = "r" * 3000
+    cut = c.challenges_for(items, uids, 200)[0]
+    assert len(cut["reason"]) == 1024 and cut["truncated"] is True
+
+
+def test_san_count_adds_every_subject_alternative_name_kind():
+    obj = copy.deepcopy(cert("ready-cert"))
+    obj["spec"].update(
+        ipAddresses=["10.0.0.1"], uris=["spiffe://a", "spiffe://b"], emailAddresses=["a@b.c"]
+    )
+    v = c.certificate_view(obj, NOW, 14)
+    assert v["dnsNameCount"] == 2 and v["sanCount"] == 6
+    assert c.certificate_view(cert("new-cert"), NOW, 14)["sanCount"] == 1
 
 
 # --------------------------------------------------------------- scripts ----
@@ -286,17 +361,29 @@ def test_orders_are_matched_to_the_returned_requests():
 class FakeCtx:
     """Replays captured JSON for kubectl calls, raising like the SDK's ctx.run on a non-zero exit.
 
-    `fail` maps a kubectl noun to the stderr kubectl would print. `orders` is the Order list
-    (None: the acme.cert-manager.io types are not installed).
+    `fail` maps a kubectl noun to the stderr kubectl would print. `orders` / `challenges` are the
+    Order / Challenge lists (None: the acme.cert-manager.io types are not installed; challenges
+    defaults to an empty list whenever orders is a list).
     """
 
     def __init__(
-        self, ns, name, fail=None, orders=None, max_items=200, warning_days=14, rtype=TYPE
+        self,
+        ns,
+        name,
+        fail=None,
+        orders=None,
+        challenges=None,
+        max_items=200,
+        warning_days=14,
+        rtype=TYPE,
     ):
         self.resource = SimpleNamespace(namespace=ns, name=name, type=rtype)
         self.settings = SimpleNamespace(max_items=max_items, expiry_warning_days=warning_days)
         self.fail = fail or {}
         self.orders = orders
+        self.challenges = (
+            challenges if challenges is not None else ([] if orders is not None else None)
+        )
         self.errors = []
         self.messages = []
         self.calls = []
@@ -332,6 +419,16 @@ class FakeCtx:
                     argv, 1, "", 'error: the server doesn\'t have a resource type "orders"', check
                 )
             doc = {"items": self.orders}
+        elif noun == "challenges.acme.cert-manager.io":
+            if self.challenges is None:
+                return self._done(
+                    argv,
+                    1,
+                    "",
+                    'error: the server doesn\'t have a resource type "challenges"',
+                    check,
+                )
+            doc = {"items": self.challenges}
         else:
             raise AssertionError(argv)
         if missing is not None:
@@ -402,6 +499,17 @@ def test_status_script_reads_a_cluster_issuer_without_a_namespace_scope_problem(
     assert any("clusterissuers.cert-manager.io" in call for call in ctx.calls)
 
 
+def test_external_issuer_is_reported_as_not_looked_up():
+    ctx = FakeCtx("rw-certs", "external-cert")
+    out = script("certificate_status")(ctx)
+    check_outputs("certificate-status", out)
+    issuer = out["issuer"]
+    assert (issuer["kind"], issuer["group"]) == ("AWSPCAIssuer", "awspca.cert-manager.aws.com")
+    assert issuer["lookedUp"] is False and issuer["exists"] is None and issuer["ready"] is None
+    assert ctx.errors == [] and len(ctx.calls) == 1  # only the Certificate was read
+    assert out["certificate"]["sanCount"] == 2
+
+
 def test_status_script_honours_the_warning_setting():
     out = script("certificate_status")(FakeCtx("rw-certs", "expiring-cert", warning_days=1))
     assert out["certificate"]["expiringSoon"] is False
@@ -457,7 +565,7 @@ def test_missing_certificate_is_not_found():
         script("certificate_status")(FakeCtx("rw-certs", "nope"))
     assert exc.value.code == "not_found"
     with pytest.raises(RwError) as exc:
-        script("requests")(FakeCtx("rw-certs", "nope"))
+        script("certificate_requests")(FakeCtx("rw-certs", "nope"))
     assert exc.value.code == "not_found"
 
 
@@ -466,8 +574,9 @@ def test_unreachable_api_server_raises_and_is_not_swallowed_by_the_scoped_reads(
     for name, fail in (
         ("certificate_status", {"certificates.cert-manager.io": err}),
         ("certificate_status", {"issuers.cert-manager.io": err}),
-        ("requests", {"certificaterequests.cert-manager.io": err}),
-        ("requests", {"orders.acme.cert-manager.io": err}),
+        ("certificate_requests", {"certificaterequests.cert-manager.io": err}),
+        ("certificate_requests", {"orders.acme.cert-manager.io": err}),
+        ("certificate_requests", {"challenges.acme.cert-manager.io": err}),
     ):
         with pytest.raises(RwError) as exc:
             script(name)(FakeCtx("rw-certs", "ready-cert", fail=fail, orders=[]))
@@ -484,12 +593,12 @@ def test_a_ctx_run_that_returns_nonzero_is_checked_too():
     with pytest.raises(RwError) as exc:
         script("certificate_status")(LegacyCtx("rw-certs", "nope"))
     assert exc.value.code == "not_found"
-    out = script("requests")(LegacyCtx("rw-certs", "failed-cert"))
+    out = script("certificate_requests")(LegacyCtx("rw-certs", "failed-cert"))
     assert out["orders"]["applicable"] is False
 
 
 def test_other_resource_types_are_refused_before_any_kubectl_call():
-    for name in ("certificate_status", "requests"):
+    for name in ("certificate_status", "certificate_requests"):
         ctx = FakeCtx("rw-certs", "x", rtype="kubernetes/deployment")
         with pytest.raises(RwError) as exc:
             script(name)(ctx)
@@ -504,34 +613,107 @@ def test_type_falls_back_to_the_path_plural():
 
 def test_requests_script_on_the_failed_certificate():
     ctx = FakeCtx("rw-certs", "failed-cert")
-    out = script("requests")(ctx)
+    out = script("certificate_requests")(ctx)
     check_outputs("requests", out)
     assert [r["name"] for r in out["requests"]] == ["failed-cert-2", "failed-cert-1"]
     assert out["requests"][1]["ready"]["status"] == "False"
     assert out["orders"]["applicable"] is False and out["orders"]["items"] == []
+    assert out["challenges"]["applicable"] is False and out["challenges"]["items"] == []
     assert ctx.errors == []  # the absent ACME types are not an error
 
 
 def test_requests_script_on_the_ready_certificate_and_one_with_no_requests():
-    out = script("requests")(FakeCtx("rw-certs", "ready-cert"))
+    out = script("certificate_requests")(FakeCtx("rw-certs", "ready-cert"))
     assert [r["name"] for r in out["requests"]] == ["ready-cert-1"]
     assert out["requests"][0]["ready"]["status"] == "True"
-    empty = script("requests")(FakeCtx("rw-certs", "new-cert"))
+    empty = script("certificate_requests")(FakeCtx("rw-certs", "new-cert"))
     assert empty["requests"] == []
 
 
 def test_requests_script_reports_orders_where_the_acme_types_exist():
     r1 = request("failed-cert-1")
     orders = [order("failed-cert-1-9", r1, "errored", "challenge failed")]
-    out = script("requests")(FakeCtx("rw-certs", "failed-cert", orders=orders))
+    out = script("certificate_requests")(FakeCtx("rw-certs", "failed-cert", orders=orders))
     check_outputs("requests", out)
     assert out["orders"]["applicable"] is True
     assert [(o["request"], o["state"]) for o in out["orders"]["items"]] == [
         ("failed-cert-1", "errored")
     ]
     # an installed ACME CRD with no Orders is an empty list, not "not applicable"
-    none = script("requests")(FakeCtx("rw-certs", "failed-cert", orders=[]))
+    none = script("certificate_requests")(FakeCtx("rw-certs", "failed-cert", orders=[]))
     assert none["orders"] == {"applicable": True, "reason": None, "items": []}
+
+
+def test_requests_script_reports_the_challenges_of_the_orders():
+    r1 = request("failed-cert-1")
+    o1 = order("failed-cert-1-9", r1, "pending")
+    o1["metadata"]["uid"] = "order-uid-9"
+    stranger = order("stranger-1", r1, "pending")
+    stranger["metadata"]["uid"] = "order-uid-other"
+    reason = "Waiting for HTTP-01 challenge propagation: wrong status code '404'"
+    chs = [challenge("ch-1", o1, "pending", reason), challenge("ch-x", stranger, "valid")]
+    ctx = FakeCtx("rw-certs", "failed-cert", orders=[o1], challenges=chs)
+    out = script("certificate_requests")(ctx)
+    check_outputs("requests", out)
+    assert out["challenges"]["applicable"] is True
+    assert [(x["name"], x["order"], x["state"]) for x in out["challenges"]["items"]] == [
+        ("ch-1", "failed-cert-1-9", "pending")
+    ]
+    assert out["challenges"]["items"][0]["reason"] == reason
+    assert ctx.errors == []
+    # installed ACME types with nothing pending: applicable, empty
+    none = script("certificate_requests")(FakeCtx("rw-certs", "failed-cert", orders=[]))
+    assert none["challenges"] == {"applicable": True, "reason": None, "items": []}
+
+
+def test_forbidden_challenges_list_is_null_with_an_error_and_keeps_orders():
+    ctx = FakeCtx(
+        "rw-certs",
+        "failed-cert",
+        orders=[],
+        fail={"challenges.acme.cert-manager.io": FORBIDDEN % "challenges"},
+    )
+    out = script("certificate_requests")(ctx)
+    check_outputs("requests", out)
+    assert out["challenges"] is None and out["orders"]["applicable"] is True
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "challenges")]
+
+
+def test_challenges_cannot_be_matched_when_orders_are_unreadable():
+    ctx = FakeCtx(
+        "rw-certs",
+        "failed-cert",
+        orders=[],
+        fail={"orders.acme.cert-manager.io": FORBIDDEN % "orders"},
+    )
+    out = script("certificate_requests")(ctx)
+    check_outputs("requests", out)
+    assert out["orders"] is None and out["challenges"] is None
+    assert [e["scope"] for e in ctx.errors] == ["orders"]
+    assert not any("challenges.acme.cert-manager.io" in call for call in ctx.calls)
+
+
+def test_permission_hints_name_the_verb_each_scope_needs():
+    hints = []
+    ctx = FakeCtx(
+        "rw-certs",
+        "expiring-cert",
+        orders=[],
+        fail={
+            "clusterissuers.cert-manager.io": FORBIDDEN % "clusterissuers",
+            "orders.acme.cert-manager.io": FORBIDDEN % "orders",
+        },
+    )
+    ctx.error = lambda code, message, scope=None, hint=None, details=None: hints.append(
+        (scope, hint)
+    )
+    script("certificate_status")(ctx)
+    ctx.resource.name = "failed-cert"
+    script("certificate_requests")(ctx)
+    assert hints == [
+        ("clusterissuers", "grant get on clusterissuers through a ClusterRole"),
+        ("orders", "grant list on orders through a Role in the certificate's namespace"),
+    ]
 
 
 def test_forbidden_orders_list_is_null_with_an_error_and_keeps_the_requests():
@@ -541,7 +723,7 @@ def test_forbidden_orders_list_is_null_with_an_error_and_keeps_the_requests():
         orders=[],
         fail={"orders.acme.cert-manager.io": FORBIDDEN % "orders"},
     )
-    out = script("requests")(ctx)
+    out = script("certificate_requests")(ctx)
     check_outputs("requests", out)
     assert out["orders"] is None and len(out["requests"]) == 2
     assert [(e["code"], e["scope"]) for e in ctx.errors] == [("permission_denied", "orders")]
@@ -554,19 +736,19 @@ def test_forbidden_request_list_fails_the_task_instead_of_returning_empty():
         fail={"certificaterequests.cert-manager.io": FORBIDDEN % "certificaterequests"},
     )
     with pytest.raises(RwError) as exc:
-        script("requests")(ctx)
+        script("certificate_requests")(ctx)
     assert exc.value.code == "permission_denied"
 
 
 def test_requests_list_is_capped_by_the_setting():
-    out = script("requests")(FakeCtx("rw-certs", "failed-cert", max_items=1))
+    out = script("certificate_requests")(FakeCtx("rw-certs", "failed-cert", max_items=1))
     assert [r["name"] for r in out["requests"]] == ["failed-cert-2"]
 
 
 def test_no_task_reads_a_secret_or_anything_but_cert_manager_objects():
     for name, targets in (
         ("certificate_status", ("ready-cert", "expiring-cert", "failed-cert")),
-        ("requests", ("failed-cert", "ready-cert")),
+        ("certificate_requests", ("failed-cert", "ready-cert")),
     ):
         for target in targets:
             ctx = FakeCtx("rw-certs", target, orders=[])
@@ -585,6 +767,7 @@ RESOURCES = {
     "issuers.cert-manager.io": ("cert-manager.io", "issuers"),
     "clusterissuers.cert-manager.io": ("cert-manager.io", "clusterissuers"),
     "orders.acme.cert-manager.io": ("acme.cert-manager.io", "orders"),
+    "challenges.acme.cert-manager.io": ("acme.cert-manager.io", "challenges"),
 }
 VALUE_FLAGS = {
     "-n",
@@ -645,9 +828,9 @@ def declared(task):
 def test_declared_permissions_cover_every_kubectl_call_the_script_makes(task, targets):
     needed = set()
     for target in targets:
-        for orders in (None, []):
+        for orders in (None, []):  # without and with the ACME types
             ctx = FakeCtx("rw-certs", target, orders=orders)
-            script(task.replace("-", "_"))(ctx)
+            script(SCRIPT_OF[task])(ctx)
             for argv in ctx.calls:
                 needed |= rbac_needs(argv)
     missing = needed - declared(TASKS[task])
@@ -658,7 +841,7 @@ def test_each_task_declares_only_what_it_calls():
     # certificate-status never lists requests; requests never reads issuers
     status = declared(TASKS["certificate-status"])
     requests = declared(TASKS["requests"])
-    assert not {r for _g, r, _v in status} & {"certificaterequests", "orders"}
+    assert not {r for _g, r, _v in status} & {"certificaterequests", "orders", "challenges"}
     assert not {r for _g, r, _v in requests} & {"issuers", "clusterissuers"}
 
 

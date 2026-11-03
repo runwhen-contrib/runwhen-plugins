@@ -5,6 +5,8 @@ import json
 from k8s_certmanager_health.errors import RwError
 
 CLUSTER_SCOPED = ("clusterissuers",)
+# Scopes read with a list; every other scope is read with a get of one named object.
+LISTED = ("orders", "challenges", "certificaterequests")
 MESSAGE_LIMIT = 1024
 
 # (code, substrings of lower-cased stderr); first match wins.
@@ -97,11 +99,12 @@ def kubectl_json_scoped(ctx, scope, *args, missing_ok=False, absent_ok=False):
                 if scope in CLUSTER_SCOPED
                 else "a Role in the certificate's namespace"
             )
+            verb = "list" if scope in LISTED else "get"
             ctx.error(
                 "permission_denied",
                 f"not allowed to read {scope}: {exc.message}"[:MESSAGE_LIMIT],
                 scope=scope,
-                hint=f"grant get/list on {scope} through {where}",
+                hint=f"grant {verb} on {scope} through {where}",
             )
             return None, "denied"
         raise

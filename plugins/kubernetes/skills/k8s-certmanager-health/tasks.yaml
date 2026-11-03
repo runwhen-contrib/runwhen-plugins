@@ -23,7 +23,9 @@ tasks:
       whether the Issuer or ClusterIssuer it refers to exists and is Ready. A
       ClusterIssuer is cluster-scoped: when reading it is forbidden the
       Certificate facts are still returned, issuer.ready is null and a
-      permission_denied error says why.
+      permission_denied error says why. An issuer of another group or kind (an
+      external issuer such as AWS PCA) is not looked up: issuer.lookedUp is
+      false with no error, and that issuer's own controller has to be checked.
     script: scripts/certificate_status.py
     tags: [certificate, expiry, issuer, conditions]
     readOnly: true
@@ -41,16 +43,20 @@ tasks:
       The CertificateRequests owned by the Certificate (matched by
       ownerReferences), newest revision first: their Ready, Approved, Denied and
       InvalidRequest conditions with reasons, revision and failure time; and the
-      state of the ACME Orders those requests created. Orders are reported as not
-      applicable (applicable false) when the cluster does not have the ACME types,
-      and as null with a permission_denied error when listing them is forbidden.
-    script: scripts/requests.py
+      state of the ACME Orders those requests created and of the Challenges of
+      those Orders (an ACME failure is explained in a Challenge's status.reason).
+      Orders and Challenges are reported as not applicable (applicable false) when
+      the cluster does not have the ACME types, and as null with a
+      permission_denied error when listing them is forbidden (without the Orders
+      the Challenges cannot be matched, so they are null too).
+    script: scripts/certificate_requests.py
     tags: [certificaterequest, acme, orders, issuance]
     readOnly: true
     permissions:
       - { apiGroups: [cert-manager.io], resources: [certificates], verbs: [get] }
       - { apiGroups: [cert-manager.io], resources: [certificaterequests], verbs: [list] }
-      - { apiGroups: [acme.cert-manager.io], resources: [orders], verbs: [list] }
+      - { apiGroups: [acme.cert-manager.io], resources: [orders, challenges], verbs: [list] }
     outputs:
       requests: { schema: ./schemas/requests.v1.json, description: "Requests owned by the Certificate with their conditions and failure time" }
       orders: { schema: ./schemas/orders.v1.json, description: "ACME Orders of those requests; applicable false when the ACME types are absent, null when unreadable" }
+      challenges: { schema: ./schemas/challenges.v1.json, description: "ACME Challenges of those Orders with their state and reason; applicable false when the ACME types are absent, null when unreadable" }

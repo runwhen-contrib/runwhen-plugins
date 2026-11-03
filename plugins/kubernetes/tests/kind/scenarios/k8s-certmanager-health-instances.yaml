@@ -2,7 +2,7 @@
 # issuers: ca-ready (made Ready), broken-issuer (made not Ready); rw-cluster-issuer is cluster-scoped.
 # certificates: ready-cert (valid), expiring-cert (expires within days, renewal overdue),
 # failed-cert (issuer not Ready, two failed requests), orphan-cert (issuer does not exist),
-# new-cert (no status yet).
+# external-cert (issuerRef of another group: an external issuer cert-manager.io cannot look up), new-cert (no status yet).
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata: {name: ca-ready, namespace: rw-certs}
@@ -59,3 +59,12 @@ spec:
   secretName: new-cert-tls
   dnsNames: [new.rw.example]
   issuerRef: {name: ca-ready, kind: Issuer}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: external-cert, namespace: rw-certs}
+spec:
+  secretName: external-cert-tls
+  dnsNames: [external.rw.example]
+  ipAddresses: [10.1.2.3]
+  issuerRef: {name: pca, kind: AWSPCAIssuer, group: awspca.cert-manager.aws.com}

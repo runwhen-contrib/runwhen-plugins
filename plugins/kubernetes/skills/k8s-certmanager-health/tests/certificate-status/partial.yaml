@@ -1,0 +1,82 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/expiring-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - expiring-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"expiring-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"expiring.rw.example\"],\"duration\":\"2160h\",\"issuerRef\":{\"group\":\"cert-manager.io\",\"kind\":\"ClusterIssuer\",\"name\":\"rw-cluster-issuer\"},\"renewBefore\":\"360h\",\"secretName\":\"expiring-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:56:13Z",
+            "generation": 1,
+            "name": "expiring-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "16041",
+            "uid": "38e7e89e-1f27-4fca-8389-23f36706f237"
+        },
+        "spec": {
+            "dnsNames": [
+                "expiring.rw.example"
+            ],
+            "duration": "2160h",
+            "issuerRef": {
+                "group": "cert-manager.io",
+                "kind": "ClusterIssuer",
+                "name": "rw-cluster-issuer"
+            },
+            "renewBefore": "360h",
+            "secretName": "expiring-cert-tls"
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:56:13Z",
+                    "message": "Certificate is up to date and has not expired",
+                    "observedGeneration": 1,
+                    "reason": "Ready",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ],
+            "notAfter": "2026-11-08T19:56:14Z",
+            "notBefore": "2026-08-10T19:56:14Z",
+            "renewalTime": "2026-10-24T19:56:14Z",
+            "revision": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - clusterissuers.cert-manager.io
+  - rw-cluster-issuer
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): clusterissuers.cert-manager.io "rw-cluster-issuer" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "clusterissuers" in API group "cert-manager.io" at the cluster scope
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    certificate:
+      ready: {type: Ready, status: 'True', reason: Ready}
+      expiringSoon: true
+      renewalTimePassed: true
+    issuer: {name: rw-cluster-issuer, kind: ClusterIssuer, scope: cluster, lookedUp: false, exists: null, ready: null, readyCondition: null}
