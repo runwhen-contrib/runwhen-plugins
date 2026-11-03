@@ -585,7 +585,8 @@ def test_binding_status_script_on_the_pending_claim():
     ctx.fail = {
         "storageclass": 'Error from server (NotFound): storageclass.storage.k8s.io "does-not-exist" not found'
     }
-    out = script("binding_status")(ctx, since="2h")
+    # Captured events are fixed in time: a wide look-back keeps this independent of the clock.
+    out = script("binding_status")(ctx, since="3650d")
     assert out["claim"]["phase"] == "Pending"
     assert out["storageClass"]["exists"] is False
     assert out["volume"] is None
@@ -609,7 +610,9 @@ def test_namespace_scoped_identity_still_gets_the_claim_and_events():
             "persistentvolume": FORBIDDEN % "persistentvolumes",
         },
     )
-    out = script("binding_status")(ctx, since="2h")
+    # Captured events are fixed in time; a look-back far wider than their age keeps the test
+    # independent of the wall clock.
+    out = script("binding_status")(ctx, since="3650d")
     assert out["claim"]["phase"] == "Bound"
     assert out["events"]
     assert out["storageClass"]["exists"] is None and out["volume"]["exists"] is None
