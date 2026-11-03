@@ -1,0 +1,111 @@
+# Namespace-level conditions for the k8s-namespace-health skill. Applied by up.sh
+# (it applies every scenarios/30-*.yaml; manual extras go in a matching
+# 30-<skill>.sh) on top of 10-healthy.yaml and 20-broken.yaml (rw-broken already
+# has a failed Job `fails` and failing pods).
+
+# rw-healthy: a PDB that allows one disruption for the 2-replica `web`, and a
+# quota far above current usage.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: rw-healthy
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: web}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: roomy
+  namespace: rw-healthy
+spec:
+  hard:
+    pods: "50"
+---
+# rw-broken: two replicas and no PodDisruptionBudget.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: no-pdb
+  namespace: rw-broken
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: no-pdb}
+  template:
+    metadata:
+      labels: {app: no-pdb}
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
+---
+# rw-broken: a Job that is still active (the skill flags it once it has been
+# running longer than the jobActiveMaxMinutes setting).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: still-running
+  namespace: rw-broken
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: job
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 1000000"]
+          resources:
+            requests: {cpu: 1m, memory: 2Mi}
+---
+# rw-broken: zero disruptions allowed. `crashloop` never becomes Ready, so
+# minAvailable 1 cannot be met (currentHealthy 0, desiredHealthy 1).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crashloop
+  namespace: rw-broken
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: crashloop}
+---
+# rw-quota: a quota that admits two pods while the Deployment asks for three, so
+# usage reads 2/2 and the ReplicaSet records a real FailedCreate "exceeded quota"
+# Warning. A separate namespace keeps the quota from blocking other scenarios.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-quota
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: pods-two
+  namespace: rw-quota
+spec:
+  hard:
+    pods: "2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: over-quota
+  namespace: rw-quota
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: over-quota}
+  template:
+    metadata:
+      labels: {app: over-quota}
+    spec:
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
