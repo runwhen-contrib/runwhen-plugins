@@ -1,0 +1,452 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-vault/statefulsets/vault
+inputs:
+  scheme: https
+now: '2026-11-03T22:44:46.640Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - statefulsets.apps
+  - vault
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/instance\":\"vault\",\"app.kubernetes.io/name\":\"vault\"},\"name\":\"vault\",\"namespace\":\"rw-vault\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/instance\":\"vault\",\"app.kubernetes.io/name\":\"vault\",\"component\":\"server\"}},\"serviceName\":\"vault-internal\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/instance\":\"vault\",\"app.kubernetes.io/name\":\"vault\",\"component\":\"server\"}},\"spec\":{\"containers\":[{\"args\":[\"server\",\"-dev\",\"-dev-listen-address=0.0.0.0:8200\"],\"env\":[{\"name\":\"SKIP_SETCAP\",\"value\":\"true\"}],\"image\":\"hashicorp/vault:1.18.5\",\"name\":\"vault\",\"ports\":[{\"containerPort\":8200,\"name\":\"http\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/v1/sys/health\",\"port\":8200},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"48Mi\"}}}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T22:37:34Z",
+            "generation": 1,
+            "labels": {
+                "app.kubernetes.io/instance": "vault",
+                "app.kubernetes.io/name": "vault"
+            },
+            "name": "vault",
+            "namespace": "rw-vault",
+            "resourceVersion": "42938",
+            "uid": "3a890e99-8473-4680-9455-c73369486964"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/instance": "vault",
+                    "app.kubernetes.io/name": "vault",
+                    "component": "server"
+                }
+            },
+            "serviceName": "vault-internal",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/instance": "vault",
+                        "app.kubernetes.io/name": "vault",
+                        "component": "server"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dev",
+                                "-dev-listen-address=0.0.0.0:8200"
+                            ],
+                            "env": [
+                                {
+                                    "name": "SKIP_SETCAP",
+                                    "value": "true"
+                                }
+                            ],
+                            "image": "hashicorp/vault:1.18.5",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "vault",
+                            "ports": [
+                                {
+                                    "containerPort": 8200,
+                                    "name": "http",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/v1/sys/health",
+                                    "port": 8200,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "vault-74db74dc6d",
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "vault-74db74dc6d",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=vault,app.kubernetes.io/name=vault,component=server
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T22:37:34Z",
+                    "generateName": "vault-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/instance": "vault",
+                        "app.kubernetes.io/name": "vault",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "component": "server",
+                        "controller-revision-hash": "vault-74db74dc6d",
+                        "statefulset.kubernetes.io/pod-name": "vault-0"
+                    },
+                    "name": "vault-0",
+                    "namespace": "rw-vault",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "vault",
+                            "uid": "3a890e99-8473-4680-9455-c73369486964"
+                        }
+                    ],
+                    "resourceVersion": "42940",
+                    "uid": "866d0450-0ad2-4287-a256-714a8fc59f82"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dev",
+                                "-dev-listen-address=0.0.0.0:8200"
+                            ],
+                            "env": [
+                                {
+                                    "name": "SKIP_SETCAP",
+                                    "value": "true"
+                                }
+                            ],
+                            "image": "hashicorp/vault:1.18.5",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "vault",
+                            "ports": [
+                                {
+                                    "containerPort": 8200,
+                                    "name": "http",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/v1/sys/health",
+                                    "port": 8200,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-nk49f",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "vault-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "vault-internal",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-nk49f",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "10m",
+                        "memory": "48Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:37:34Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:37:34Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:37:53Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:37:53Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:37:34Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "10m",
+                                "memory": "48Mi"
+                            },
+                            "containerID": "containerd://1498702ae57a18f8f7d3458b4d09880329ddb4fc90b001aee27a3def8e64ab98",
+                            "image": "docker.io/hashicorp/vault:1.18.5",
+                            "imageID": "docker.io/hashicorp/vault@sha256:750bb37c1638fa194ab37053a81618c61bb0491ddec6fccac87c07a8e6cd8166",
+                            "lastState": {},
+                            "name": "vault",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T22:37:53Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-nk49f",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.250",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.250"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "128Mi"
+                        },
+                        "requests": {
+                            "memory": "48Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T22:37:34Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-vault/pods/https:vault-0:8200/proxy/v1/sys/health?activecode=200&standbycode=200&performancestandbycode=200&drsecondarycode=200&sealedcode=200&uninitcode=200
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (ServiceUnavailable): error trying to reach service: tls: first record does not look like a TLS handshake
+expect:
+  status: failed
+  errorCodes:
+  - invalid_input
