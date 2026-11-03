@@ -37,11 +37,11 @@ def classify_error(stderr, returncode=1):
     return "internal"
 
 
-def run_kubectl(ctx, *args):
+def run_kubectl(ctx, *args, timeout=None):
     """Run `kubectl <args>`; return stdout. A non-zero exit or a timeout raises
     RwError with the D64 code (the SDK's ctx.run returns the failed process)."""
     try:
-        result = ctx.run(["kubectl", *args])
+        result = ctx.run(["kubectl", *args], **({"timeout": timeout} if timeout else {}))
     except subprocess.TimeoutExpired:
         raise RwError("timeout", f"kubectl {args[0] if args else ''} timed out") from None
     if result.returncode != 0:
@@ -58,6 +58,6 @@ def kubectl_json(ctx, *args):
     return json.loads(run_kubectl(ctx, *args, "-o", "json"))
 
 
-def kubectl_text(ctx, *args):
+def kubectl_text(ctx, *args, timeout=None):
     """Run `kubectl <args>` and return stdout as text."""
-    return run_kubectl(ctx, *args)
+    return run_kubectl(ctx, *args, timeout=timeout)

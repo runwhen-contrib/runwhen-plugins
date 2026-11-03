@@ -1,28 +1,53 @@
-from k8s_workload_logs.fetch import fetch_streams, load_owned_pods
+from k8s_workload_logs.fetch import StreamReader, load_owned_pods
 from k8s_workload_logs.logs import (
+    Budget,
+    bound,
     inspected,
     plan_streams,
-    scanned_index,
+    scanned_entry,
     split_lines,
-    stacktraces,
-    unavailable_with_gone,
 )
-from k8s_workload_logs.workload import cap, since_seconds
+from k8s_workload_logs.settings import read_settings
+from k8s_workload_logs.traces import TraceCollector
+from k8s_workload_logs.workload import since_seconds
 
 
 def main(ctx, since="1h"):
     seconds = since_seconds(since)  # bad input fails before any kubectl call
+    st = read_settings(ctx.settings)
     pods = load_owned_pods(ctx)
-    plan = plan_streams(
-        pods, exclude=ctx.settings.exclude_containers, max_pods=ctx.settings.max_pods
+    plan = plan_streams(pods, exclude=st.exclude_containers, max_pods=st.max_pods)
+    budget = Budget(st.scan_budget_seconds)
+    reader = StreamReader(
+        ctx,
+        plan["streams"],
+        tail=st.max_scan_lines,
+        since=seconds,
+        budget=budget,
+        max_bytes=st.max_bytes_total,
     )
-    scan = ctx.settings.max_scan_lines
-    fetched, gone = fetch_streams(ctx, plan["streams"], tail=scan, since=seconds)
+    collector, scanned = TraceCollector(), []
+    for stream, text, size in reader:  # one raw text at a time
+        lines = split_lines(text)
+        scanned.append(scanned_entry(stream, lines, size, st.max_scan_lines))
+        if not collector.add(stream, lines, budget):
+            reader.stop_early()
+            break
+    reader.finish()
+    traces, n_traces, o_traces = bound(collector.result(), st.max_items)
+    scanned, n_scanned, o_scanned = bound(scanned, st.max_items)
+    unavailable, n_unavailable, o_unavailable = bound(
+        plan["unavailable"] + reader.unavailable(), st.max_items
+    )
     return {
-        "traces": cap(
-            stacktraces([(s, split_lines(t)) for s, t in fetched]), ctx.settings.max_items
+        "traces": traces,
+        "scanned": scanned,
+        "unavailable": unavailable,
+        "inspected": inspected(
+            plan,
+            bytesRead=reader.bytes_read,
+            tracesUngrouped=collector.ungrouped,
+            total={"traces": n_traces, "scanned": n_scanned, "unavailable": n_unavailable},
+            omitted={"traces": o_traces, "scanned": o_scanned, "unavailable": o_unavailable},
         ),
-        "scanned": cap(scanned_index(fetched, scan), ctx.settings.max_items),
-        "unavailable": cap(unavailable_with_gone(plan, gone), ctx.settings.max_items),
-        "inspected": inspected(plan),
     }
