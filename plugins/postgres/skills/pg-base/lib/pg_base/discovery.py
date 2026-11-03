@@ -130,6 +130,25 @@ def database_listing(databases, limit):
     return {"items": items, "total": total, "omitted": omitted}
 
 
+def database_partitions(path, count):
+    """The one partition a full sync of an instance sweeps: its databases."""
+    return [{"type": "database", "parentPath": path, "status": "complete", "count": count}]
+
+
+def summarize(counts, partitions, errors, duration_ms, system_identifier=None):
+    """The rw.discovery.summary.v1 value, also the commit's `summary`. The script builds it a
+    second time after the push, with the push's errors and the partitions the platform accepted."""
+    totals = {"complete": 0, "failed": 0, "forbidden": 0, "excluded": 0}
+    for p in partitions:
+        totals[p["status"]] += 1
+    summary = {"counts": dict(counts), "partitions": totals, "durationMs": duration_ms}
+    if errors:
+        summary["errors"] = list(errors)
+    if system_identifier:
+        summary["root"] = {"canonicalKey": {"name": CANONICAL_KEY, "value": system_identifier}}
+    return summary
+
+
 def build_sync(path, name, instance, databases, summary):
     """The rw.discovery.v1 document for one full sync of the instance at `path`."""
     root = {"type": "instance", "name": name}
@@ -177,14 +196,7 @@ def build_sync(path, name, instance, databases, summary):
         "open": {"source": SOURCE, "scopePath": path, "mode": "full"},
         "batches": batches,
         "commit": {
-            "partitions": [
-                {
-                    "type": "database",
-                    "parentPath": path,
-                    "status": "complete",
-                    "count": len(databases),
-                }
-            ],
+            "partitions": database_partitions(path, len(databases)),
             "summary": summary,
         },
     }
@@ -205,17 +217,13 @@ def discover(ctx, max_items):
     for error in errors:
         ctx.error(error["code"], error["message"], scope=error["scope"])
 
-    summary = {
-        "counts": {"instance": 1, "database": len(databases)},
-        "partitions": {"complete": 1, "failed": 0, "forbidden": 0, "excluded": 0},
-        "durationMs": int((time.monotonic() - started) * 1000),
-    }
-    if errors:
-        summary["errors"] = errors
-    if instance["systemIdentifier"]:
-        summary["root"] = {
-            "canonicalKey": {"name": CANONICAL_KEY, "value": instance["systemIdentifier"]}
-        }
+    summary = summarize(
+        {"instance": 1, "database": len(databases)},
+        database_partitions(path, len(databases)),
+        errors,
+        int((time.monotonic() - started) * 1000),
+        instance["systemIdentifier"],
+    )
     sync = build_sync(path, name, instance, databases, summary)
     outputs = {
         "summary": summary,

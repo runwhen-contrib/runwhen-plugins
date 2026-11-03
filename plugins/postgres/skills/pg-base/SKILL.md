@@ -39,7 +39,11 @@ the server accepts (at least 1 ms, at most 2147483647 ms). `discover` has a 180s
   `summary.root.canonicalKey` is the instance's system identifier. `databases` is
   `{items, total, omitted}`: `total` is every database found, `items` the first `maxItems`
   (default 200) of them and `omitted` how many were cut. Only that list is cut: the `sync`
-  artifact always holds every database.
+  artifact always holds every database. When the run has the per-run `runwhen/sync`
+  credential (`RW_SYNC_CREDENTIAL`) `discover` also pushes the sync to the platform: open,
+  batches, commit. A push that fails fails the task; a commit the platform holds, or items it
+  rejects, make the run `partial` with an `internal` error scoped `sync`. Without the
+  credential (a local `rwtask run`) the artifact is all it produces.
 - `check-permissions` takes `rules`, each one of `{role}`, `{database, privilege}` (a name
   or `"*"` for every database that accepts connections) or `{function, privilege: EXECUTE}`
   (`schema.name`, all overloads), and returns `access`: one entry per rule, in input order,

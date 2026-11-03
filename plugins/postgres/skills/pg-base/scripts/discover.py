@@ -1,9 +1,11 @@
 import json
 import os
 
+from pg_base import discovery as dc
 from pg_base.discovery import discover
 from pg_base.errors import RwError
 from pg_base.settings import read_settings
+from pg_base.sync import SyncClient, load_credential
 
 
 def main(ctx):
@@ -16,4 +18,32 @@ def main(ctx):
     with open(os.path.join(out_dir, "sync.json"), "w", encoding="utf-8") as out:
         json.dump(sync, out, indent=2, sort_keys=True)
         out.write("\n")
+
+    # runwhen/sync is minted per run by the lease: a file path or inline JSON. Without it
+    # (rwtask run, tests) the sync is only written to the artifact.
+    credential = os.environ.get("RW_SYNC_CREDENTIAL")
+    if credential:
+        client = SyncClient(load_credential(credential))
+        commit, rejected = client.push(sync)
+        if rejected:
+            ctx.error(
+                "internal",
+                f"the platform rejected {len(rejected)} items: {sorted({r.get('code') for r in rejected})}",
+                scope="sync",
+            )
+        if commit.get("status") == "held":
+            ctx.error(
+                "internal",
+                f"the platform held the commit: {commit.get('heldReason') or 'no reason given'}",
+                scope="sync",
+            )
+        before = outputs["summary"]
+        # after the push, so what it reported is part of the summary (the commit was already sent)
+        outputs["summary"] = dc.summarize(
+            before["counts"],
+            client.sent_partitions or sync["commit"]["partitions"],
+            ctx.errors,
+            before["durationMs"],
+            outputs["instance"]["systemIdentifier"],
+        )
     return outputs
