@@ -17,7 +17,7 @@ non-root `runwhen` user (uid 1000; the runner runs it as uid 65532 with a read-o
 `/work` writable). The Dockerfile adds `git` and `tzdata` (CronJob `spec.timeZone` is resolved
 with `zoneinfo`). `oc`, `helm`, `flux` and `argocd` are left out on purpose.
 
-`FROM` is pinned by the base's multi-arch index digest (`v13-plugins-7b2a37a`). To move the base,
+`FROM` is pinned by the base's multi-arch index digest (`v13-plugins-d1c7d04`). To move the base,
 re-resolve it:
 
 ```

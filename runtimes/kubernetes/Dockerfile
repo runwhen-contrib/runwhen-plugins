@@ -6,10 +6,11 @@
 # the kubernetes plugin needs on top of that: git (to read GitOps sources) and tzdata (CronJob
 # spec.timeZone is resolved with zoneinfo). oc, helm, flux and argocd are deliberately absent.
 #
-# FROM is pinned by the multi-arch INDEX digest of tag v13-plugins-7b2a37a, resolved with
-#   docker buildx imagetools inspect ghcr.io/runwhen-contrib/rw-tasks-codecollection:v13-plugins-7b2a37a
-# on 2026-11-04. Re-resolve and bump it (and runtime.yaml's version) when the SDK pin moves.
-ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:0178e6914a637dbbc720efa7e9b09d00ea02b84e24dd3987b4a4a2a4a799e233
+# FROM is pinned by the multi-arch INDEX digest of tag v13-plugins-d1c7d04, resolved with
+#   docker buildx imagetools inspect ghcr.io/runwhen-contrib/rw-tasks-codecollection:v13-plugins-d1c7d04
+# on 2026-11-04 (runwhen-capability 6f6031d: contracts-v3). Re-resolve and bump it (and
+# runtime.yaml's version) when the SDK pin moves.
+ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:f578706cb6f8d38d2776223618713c1f379c6c92a985ae2d7d2d6ca8122906af
 FROM ${BASE_IMAGE}
 
 # The base is Debian (trixie) with apt, so git and tzdata come from the distribution. They are
