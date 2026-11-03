@@ -69,14 +69,15 @@ def classify_error(stderr, returncode=1):
     return "internal"
 
 
-def run_kubectl(ctx, argv):
+def run_kubectl(ctx, argv, cwd=None, timeout=RUN_TIMEOUT):
     """Run `kubectl <argv>` (already validated) and return (stdout, stderr). A non-zero exit
     raises RwError with the D64 code. The real runner raises RwCommandError itself unless
     check=False; this asks for the process back so one classifier serves both."""
     try:
-        result = ctx.run(["kubectl", *argv], timeout=RUN_TIMEOUT, check=False)
+        extra = {} if cwd is None else {"cwd": cwd}
+        result = ctx.run(["kubectl", *argv], timeout=timeout, check=False, **extra)
     except subprocess.TimeoutExpired:
-        raise RwError("timeout", f"kubectl {argv[0]} timed out after {RUN_TIMEOUT}s") from None
+        raise RwError("timeout", f"kubectl {argv[0]} timed out after {timeout:.0f}s") from None
     except OutputTooLargeError:
         raise RwError(
             "invalid_input",

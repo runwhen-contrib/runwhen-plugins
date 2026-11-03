@@ -21,3 +21,34 @@ tasks:
     outputs:
       output: { schema: ./schemas/output.v1.json, description: "kubectl's standard output, cut to maxOutputLines lines" }
       run: { schema: ./schemas/run.v1.json, description: "The normalised command that ran, how many lines it printed, whether output was cut, and its stderr" }
+  - name: check-permissions
+    title: Check permissions
+    description: Tests each RBAC rule against this connection's kubeconfig and reports granted, partial (with the namespaces), denied or unverified per rule. Creates access reviews only; nothing persists.
+    script: scripts/check_permissions.py
+    tags: [permission-check, rbac]
+    readOnly: true
+    timeout: 300s
+    permissions:
+      - { apiGroups: [authorization.k8s.io], resources: [selfsubjectaccessreviews, selfsubjectrulesreviews], verbs: [create] }
+      - { apiGroups: [""], resources: [namespaces], verbs: [list] }                                # the namespaces to probe when none are given
+      - { apiGroups: [""], resources: [namespaces], resourceNames: [kube-system], verbs: [get] }   # its uid, the cluster's canonical key
+    settings:
+      maxReviews: { type: integer, default: 3000, description: "Access and rules reviews one run may create; a rule that does not fit is unverified, never dropped" }
+      maxNamespaces: { type: integer, default: 500, description: "Namespaces probed one by one for the rules not granted cluster-wide; beyond this the rest are not probed and the run is partial" }
+    inputs:
+      rules:
+        type: object[]
+        schema:   # integration/schemas/rbac-rule.json: one RBAC PolicyRule
+          type: object
+          properties:
+            apiGroups: { type: array, items: { type: string }, minItems: 1 }
+            resources: { type: array, items: { type: string, minLength: 1 }, minItems: 1 }
+            resourceNames: { type: array, items: { type: string, minLength: 1 }, minItems: 1 }
+            verbs: { type: array, items: { type: string, minLength: 1 }, minItems: 1 }
+            nonResourceURLs: { type: array, items: { type: string, minLength: 1 }, minItems: 1 }
+          required: [verbs]
+          additionalProperties: false
+        description: "RBAC rules to test, in the integration's permission shape; at most 500. The report has one entry per rule, in this order"
+      namespaces: { type: "string[]", default: [], description: "Namespaces to probe for rules not granted cluster-wide. Empty: every namespace this identity can list; if it cannot list them only cluster-wide verdicts are possible" }
+    outputs:
+      access: { kind: rw.access.v1, description: "One entry per rule, in input order: hash, the rule, granted | partial (with scope: the namespaces) | denied | unverified, and evidence. root.canonicalKey kubeSystemUid when kube-system is readable" }

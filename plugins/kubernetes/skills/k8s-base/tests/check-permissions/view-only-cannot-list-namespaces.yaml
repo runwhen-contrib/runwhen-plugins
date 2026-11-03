@@ -1,0 +1,286 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+inputs:
+  rules:
+  - apiGroups:
+    - ''
+    resources:
+    - pods
+    verbs:
+    - get
+    - list
+  - apiGroups:
+    - ''
+    resources:
+    - secrets
+    verbs:
+    - get
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - create
+  - nonResourceURLs:
+    - /version
+    verbs:
+    - get
+  - apiGroups:
+    - ''
+    resources:
+    - pods
+    resourceNames:
+    - web-0
+    verbs:
+    - get
+  - apiGroups:
+    - ''
+    resources:
+    - pods/log
+    verbs:
+    - get
+  - apiGroups:
+    - '*'
+    resources:
+    - '*'
+    verbs:
+    - '*'
+calls:
+- argv:
+  - kubectl
+  - create
+  - --validate=false
+  - -f
+  - review-0.json
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "pods",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "pods",
+                "verb": "list"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "secrets",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "group": "apps",
+                "resource": "deployments",
+                "verb": "create"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "nonResourceAttributes": {
+                "path": "/version",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"system:discovery\" of ClusterRole \"system:discovery\" to Group \"system:authenticated\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "name": "web-0",
+                "resource": "pods",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "pods",
+                "subresource": "log",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "group": "*",
+                "resource": "*",
+                "verb": "*"
+            }
+        },
+        "status": {
+            "allowed": false
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - -o
+  - name
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "namespaces" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - kube-system
+  - -o
+  - jsonpath={.metadata.uid}
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces "kube-system" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "namespaces" in API group "" in the namespace "kube-system"
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    access:
+      rules:
+      - hash: sha256:9855a3faee8a03a704b8051268a0aec2c0cc72a5753b3a1207af6979a668f0c3
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+        verdict: unverified
+        evidence: not allowed cluster-wide (get pods); namespaces cannot be listed, so per-namespace grants
+          are unknown
+      - hash: sha256:df34c2745dfe818bdb21e5b9a5eb9d8f31839b3963ebe76ec738448865f7b9d6
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - secrets
+          verbs:
+          - get
+        verdict: unverified
+        evidence: not allowed cluster-wide (get secrets); namespaces cannot be listed, so per-namespace
+          grants are unknown
+      - hash: sha256:7b9d3fb9179f3dde2e02174cd27240b710d20a65f2c89cd34e53c5238027731f
+        rule:
+          apiGroups:
+          - apps
+          resources:
+          - deployments
+          verbs:
+          - create
+        verdict: unverified
+        evidence: not allowed cluster-wide (create deployments.apps); namespaces cannot be listed, so per-namespace
+          grants are unknown
+      - hash: sha256:138b07172decda6011599b21a17bc0b7e302c95082b7598427c83964b492987c
+        rule:
+          nonResourceURLs:
+          - /version
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "system:discovery" of ClusterRole
+          "system:discovery" to Group "system:authenticated"'
+      - hash: sha256:a5a4929c662d39b62a767447303e2b66fe5cbe21fe3fa75b8b2ff8b8c5c3ab46
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - pods
+          resourceNames:
+          - web-0
+          verbs:
+          - get
+        verdict: unverified
+        evidence: not allowed cluster-wide (get pods web-0); namespaces cannot be listed, so per-namespace
+          grants are unknown
+      - hash: sha256:d9caefbced6735e3277b2d95b47ac7c4f891eec644d14299929a725947a17682
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - pods/log
+          verbs:
+          - get
+        verdict: unverified
+        evidence: not allowed cluster-wide (get pods/log); namespaces cannot be listed, so per-namespace
+          grants are unknown
+      - hash: sha256:0ec70b3d4fb4e7fc506e61f43d8fe6a8bf3f0a1be9fa784a5ce1477f8440eb7d
+        rule:
+          apiGroups:
+          - '*'
+          resources:
+          - '*'
+          verbs:
+          - '*'
+        verdict: unverified
+        evidence: not allowed cluster-wide (* *.*); namespaces cannot be listed, so per-namespace grants
+          are unknown
