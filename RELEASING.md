@@ -38,5 +38,6 @@ A tag whose plugin directory is missing, or whose version differs from
 `plugin.yaml`, fails the workflow before anything is published.
 
 Until `vars.SDK_REF` is set on the repo (to `contracts-v1` once lane A tags it,
-`v13/plugins` before that), the validate, test and compile steps are skipped
-and the release has no archive.
+`v13/plugins` before that), the validate, test, compile and release steps are
+skipped: a tag only runs the tag/version check. No release is ever published
+without its compiled archive.
