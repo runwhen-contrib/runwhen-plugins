@@ -1,0 +1,58 @@
+name: release
+
+on:
+  push:
+    tags: ['*/v*']
+
+permissions:
+  contents: write
+
+env:
+  # Unset until the runwhen-capability SDK (rwtask) is tagged: validate, test
+  # and compile are skipped, so the release carries no archive.
+  SDK_REF: ${{ vars.SDK_REF }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check tag against plugin.yaml
+        id: tag
+        run: |
+          set -euo pipefail
+          pip install pyyaml
+          plugin="$(python ci/release_check.py "${TAG}")"
+          echo "plugin=${plugin}" >> "$GITHUB_OUTPUT"
+      - name: Install rwtask
+        if: env.SDK_REF != ''
+        run: pip install "runwhen-capability @ git+https://github.com/runwhen-contrib/runwhen-capability@${SDK_REF}"
+      - name: Validate
+        if: env.SDK_REF != ''
+        run: rwtask validate "plugins/${{ steps.tag.outputs.plugin }}"
+      - name: Test (replay recorded fixtures)
+        if: env.SDK_REF != ''
+        run: rwtask test "plugins/${{ steps.tag.outputs.plugin }}"
+      - name: Compile
+        if: env.SDK_REF != ''
+        run: rwtask compile "plugins/${{ steps.tag.outputs.plugin }}" -o dist/
+      - name: Create release
+        # A release without the compiled archive is useless to the plugin registry.
+        if: env.SDK_REF != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(--title "${TAG}" --generate-notes --verify-tag)
+          if [[ "${TAG}" == *-rc.* ]]; then args+=(--prerelease); fi
+          if [[ -d dist ]]; then
+            gh release create "${TAG}" "${args[@]}" dist/*
+          else
+            echo "::error::rwtask compile produced no dist/ archive" >&2
+            exit 1
+          fi

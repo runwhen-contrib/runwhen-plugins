@@ -1,0 +1,68 @@
+name: plugins
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # contracts-v1 once lane A tags it, v13/plugins until then. Unset until the
+  # runwhen-capability SDK (rwtask) exists: validate/test steps are skipped.
+  SDK_REF: ${{ vars.SDK_REF }}
+
+jobs:
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      plugins: ${{ steps.select.outputs.plugins }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: select
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          plugins="$(python3 ci/changed_plugins.py | jq -R . | jq -sc .)"
+          echo "plugins=${plugins}" >> "$GITHUB_OUTPUT"
+          echo "changed plugins: ${plugins}"
+
+  plugin:
+    needs: changed
+    if: needs.changed.outputs.plugins != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJSON(needs.changed.outputs.plugins) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install rwtask
+        if: env.SDK_REF != ''
+        run: pip install "runwhen-capability @ git+https://github.com/runwhen-contrib/runwhen-capability@${SDK_REF}"
+      - name: Validate
+        if: env.SDK_REF != ''
+        run: rwtask validate "plugins/${{ matrix.plugin }}"
+      - name: Test (replay recorded fixtures)
+        if: env.SDK_REF != ''
+        run: rwtask test "plugins/${{ matrix.plugin }}"
+      - name: SDK not pinned
+        if: env.SDK_REF == ''
+        run: echo "::notice::vars.SDK_REF is unset; skipping rwtask validate/test for ${{ matrix.plugin }}"
+
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml
+      - run: python -m pytest ci/tests -q
