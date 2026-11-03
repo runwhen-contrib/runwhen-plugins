@@ -10,6 +10,7 @@ jq --version
 curl --version | head -n 1
 git --version
 python3 --version
+psql --version
 
 # CronJob spec.timeZone is resolved with zoneinfo. The system files prove the apt tzdata install:
 # the PyPI tzdata package in the venv would let the zoneinfo call below pass without it.
