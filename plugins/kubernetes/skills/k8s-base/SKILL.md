@@ -119,11 +119,23 @@ call it yourself; call it to answer "can this connection do X, and where?".
   namespace for the rest, falling back to access reviews when the server says its answer is
   incomplete) and creates nothing that persists. `*` in a rule is asked literally, so `["*"]`
   is granted only by a rule that itself says `*`. A rule is granted only if every expansion is.
+- Cluster-scoped resources (`nodes`, `namespaces`, `persistentvolumes`, `storageclasses`, CRDs
+  that are cluster-scoped, ...) are `granted` or `denied` only, never `partial`: a namespaced
+  RoleBinding cannot grant them, although the API server answers yes when asked inside a
+  namespace. Which kinds are cluster-scoped comes from `kubectl api-resources` (once per run, only
+  when something was refused), backed by a static table; a subresource follows its base. If neither
+  knows a kind, a would-be `partial` is `unverified` (error scope `discovery`). The one exception
+  is `get namespaces` with `resourceNames` inside the namespaces probed: a namespace is its own
+  scope. Cluster-scoped rules are decided without listing namespaces.
 - `partial` with an error `permission_denied` scoped `namespaces`: the identity cannot list
-  namespaces, so every rule that is not granted cluster-wide is `unverified`, not `denied`. Pass
-  `namespaces` to name the ones to probe. More namespaces than `maxNamespaces` (500) probes the
-  first ones and says so. `maxReviews` (3000) bounds the API calls; rules past it are
-  `unverified`.
-- Limits: a cluster-scoped resource (`nodes`) is only meaningful cluster-wide, but a namespaced
-  grant of it is not told apart; rules whose cross product of groups and resources names pairs
-  that do not exist (`apps` + `pods`) are `denied`: write one rule per group.
+  namespaces, so every namespaced rule that is not granted cluster-wide is `unverified`, not
+  `denied`. Pass `namespaces` to name the ones to probe. More namespaces than `maxNamespaces`
+  (500) probes the first ones and says so. `maxReviews` (3000) bounds the API calls. A review the
+  server could not evaluate (`evaluationError`), a failed batch, or one cut by `maxReviews` or the
+  time budget leaves its rules `unverified` with a scoped error; the other rules are unaffected.
+  A `scope` lists at most 500 namespaces; the evidence says when it was cut.
+- A rule that is not a valid RBAC rule gets its own `unverified` entry with the reason; the run
+  goes on.
+- Multi-group rules are a cross product: `apiGroups: ["", apps]` with `resources: [pods,
+  deployments]` also asks for `apps/pods`, which does not exist, so the rule is `denied`. Write
+  one group per rule.

@@ -14,6 +14,33 @@ EVIDENCE_LIMIT = 400
 _NAMESPACE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 
 RESOURCE, NONRESOURCE = "r", "n"
+MAX_SCOPE = 500  # namespaces one `scope` lists; the evidence says when it was cut
+CLUSTER, NAMESPACED = "cluster", "namespaced"
+
+# Cluster-scoped kinds as (group, resource), used with (and when) `kubectl api-resources` cannot say.
+STATIC_CLUSTER_SCOPED = frozenset(
+    {
+        ("", "namespaces"),
+        ("", "nodes"),
+        ("", "persistentvolumes"),
+        ("", "componentstatuses"),
+        ("storage.k8s.io", "storageclasses"),
+        ("storage.k8s.io", "csidrivers"),
+        ("storage.k8s.io", "csinodes"),
+        ("storage.k8s.io", "volumeattachments"),
+        ("rbac.authorization.k8s.io", "clusterroles"),
+        ("rbac.authorization.k8s.io", "clusterrolebindings"),
+        ("apiextensions.k8s.io", "customresourcedefinitions"),
+        ("apiregistration.k8s.io", "apiservices"),
+        ("scheduling.k8s.io", "priorityclasses"),
+        ("networking.k8s.io", "ingressclasses"),
+        ("node.k8s.io", "runtimeclasses"),
+        ("certificates.k8s.io", "certificatesigningrequests"),
+        ("admissionregistration.k8s.io", "validatingwebhookconfigurations"),
+        ("admissionregistration.k8s.io", "mutatingwebhookconfigurations"),
+        ("metrics.k8s.io", "nodes"),
+    }
+)
 
 
 def plain(value):
@@ -153,45 +180,111 @@ def _trim(text, limit=EVIDENCE_LIMIT):
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-def verdict_for(checks, cluster, per_namespace, namespaces, complete, why_incomplete=""):
+def parse_cluster_scoped(text):
+    """{(group, resource)} from `kubectl api-resources --namespaced=false -o name`."""
+    found = set()
+    for line in text.split():
+        resource, _, group = line.partition(".")
+        found.add((group, resource))
+    return found
+
+
+def scope_of(check, discovered):
+    """CLUSTER, NAMESPACED or None (unknown) for a resource check, by its group and base
+    resource (a subresource inherits). `discovered` is the cluster-scoped set from api-resources,
+    or None when that call failed; the static table backs it up. A `*` group or resource spans
+    both and is asked as namespaced."""
+    group, base = check[1], check[2]
+    if "*" in (group, base):
+        return NAMESPACED
+    if (group, base) in STATIC_CLUSTER_SCOPED or (discovered and (group, base) in discovered):
+        return CLUSTER
+    return None if discovered is None else NAMESPACED
+
+
+def is_named_namespace_get(check):
+    """`get namespaces <name>`: a namespace is its own scope, so a grant inside it counts."""
+    if check[0] != RESOURCE:
+        return False
+    _, group, resource, sub, verb, name = check
+    return (group, resource, sub, verb) == ("", "namespaces", "", "get") and bool(name)
+
+
+def verdict_for(
+    checks, cluster, per_namespace, namespaces, complete, why_incomplete="", scopes=None
+):
     """(verdict, scope, evidence) for a rule from its expansions.
 
-    cluster: {check: (allowed, reason)} for every check. per_namespace: {ns: {check: True|
-    False|None}} (None: could not be told). namespaces: the namespaces to look in. complete:
-    whether every namespace in scope was probed; a rule not granted anywhere is `denied` only
-    then, else `unverified`."""
-    if all(cluster[c][0] for c in checks):
+    cluster: {check: (allowed, text)} for every check; allowed is True, False or None (the
+    review failed or the server could not evaluate it: never read as a refusal). per_namespace:
+    {ns: {check: True|False|None}}. namespaces: the namespaces to look in. complete: whether every
+    one was probed; a rule not granted anywhere is `denied` only then, else `unverified`.
+    scopes: {check: CLUSTER | NAMESPACED | None}; a cluster-scoped expansion refused cluster-wide
+    makes the rule denied (no namespace can grant it), an unknown one cannot be `partial`."""
+    scopes = scopes or {}
+    if all(cluster[c][0] is True for c in checks):
         return "granted", None, _trim(f"allowed cluster-wide: {cluster[checks[0]][1]}")
-    refused = next(c for c in checks if not cluster[c][0])
+    refused = [c for c in checks if cluster[c][0] is not True]
+    first = refused[0]
     if checks[0][0] == NONRESOURCE:
-        return "denied", None, _trim(f"not allowed: {describe(refused)} ({cluster[refused][1]})")
+        if cluster[first][0] is None:
+            return "unverified", None, _trim(f"could not be checked: {cluster[first][1]}")
+        return "denied", None, _trim(f"not allowed: {describe(first)} ({cluster[first][1]})")
+    at_cluster = [c for c in refused if scopes.get(c, NAMESPACED) == CLUSTER]
+    for c in at_cluster:
+        if cluster[c][0] is False:
+            return (
+                "denied",
+                None,
+                _trim(f"{describe(c)} is cluster-scoped and not allowed cluster-wide"),
+            )
+    unasked = next((c for c in refused if cluster[c][0] is None), None)
+    if unasked:  # a review that was not answered is never read as a refusal, nor as a partial
+        return (
+            "unverified",
+            None,
+            _trim(f"could not be checked: {describe(unasked)} ({cluster[unasked][1]})"),
+        )
+    unknown_scope = [c for c in refused if scopes.get(c, NAMESPACED) is None]
     scope, unknown = [], False
     for ns in namespaces:
         got = per_namespace.get(ns)
         if got is None:
             unknown = True
             continue
-        states = [cluster[c][0] or got.get(c) for c in checks]
+        states = [True if cluster[c][0] is True else got.get(c) for c in checks]
         if all(s is True for s in states):
             scope.append(ns)
         elif any(s is None for s in states) and not any(s is False for s in states):
             unknown = True
+    if scope and unknown_scope:
+        return (
+            "unverified",
+            None,
+            _trim(
+                f"allowed in {len(scope)} namespaces, but whether {describe(unknown_scope[0])} "
+                "is cluster-scoped could not be told (api-resources failed)"
+            ),
+        )
     if scope:
         evidence = (
             f"allowed in {len(scope)} of {len(namespaces)} namespaces, not cluster-wide "
-            f"({describe(refused)} is refused cluster-wide)"
+            f"({describe(first)} is refused cluster-wide)"
         )
         if unknown or not complete:
             evidence += "; some namespaces could not be checked, so scope may be incomplete"
+        if len(scope) > MAX_SCOPE:
+            evidence += f"; scope cut to the first {MAX_SCOPE} of {len(scope)}"
+            scope = scope[:MAX_SCOPE]
         return "partial", scope, _trim(evidence)
     if unknown or not complete:
         return (
             "unverified",
             None,
             _trim(
-                f"not allowed cluster-wide ({describe(refused)}); "
-                + (why_incomplete or "some namespaces could not be checked"),
+                f"not allowed cluster-wide ({describe(first)}); "
+                + (why_incomplete or "some namespaces could not be checked")
             ),
         )
     where = f"in any of {len(namespaces)} namespaces" if namespaces else "(no namespace asked)"
-    return "denied", None, _trim(f"not allowed cluster-wide or {where}: {describe(refused)}")
+    return "denied", None, _trim(f"not allowed cluster-wide or {where}: {describe(first)}")

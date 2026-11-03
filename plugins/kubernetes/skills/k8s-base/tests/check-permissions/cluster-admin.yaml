@@ -44,11 +44,32 @@ inputs:
     verbs:
     - get
   - apiGroups:
+    - ''
+    resources:
+    - nodes
+    verbs:
+    - list
+  - apiGroups:
+    - ''
+    resources:
+    - namespaces
+    verbs:
+    - list
+  - apiGroups:
+    - ''
+    resources:
+    - namespaces
+    resourceNames:
+    - rw-healthy
+    verbs:
+    - get
+  - apiGroups:
     - '*'
     resources:
     - '*'
     verbs:
     - '*'
+now: '2026-11-03T20:47:14.459Z'
 calls:
 - argv:
   - kubectl
@@ -174,6 +195,52 @@ calls:
         "metadata": {},
         "spec": {
             "resourceAttributes": {
+                "resource": "nodes",
+                "verb": "list"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "resource": "namespaces",
+                "verb": "list"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
+                "name": "rw-healthy",
+                "resource": "namespaces",
+                "verb": "get"
+            }
+        },
+        "status": {
+            "allowed": true,
+            "reason": "RBAC: allowed by ClusterRoleBinding \"kubeadm:cluster-admins\" of ClusterRole \"cluster-admin\" to Group \"kubeadm:cluster-admins\""
+        }
+    }
+    {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "metadata": {},
+        "spec": {
+            "resourceAttributes": {
                 "group": "*",
                 "resource": "*",
                 "verb": "*"
@@ -242,8 +309,8 @@ expect:
           verbs:
           - get
         verdict: granted
-        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
-          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of ClusterRole
+          "cluster-admin" to Group "kubeadm:cluster-admins"'
       - hash: sha256:a5a4929c662d39b62a767447303e2b66fe5cbe21fe3fa75b8b2ff8b8c5c3ab46
         rule:
           apiGroups:
@@ -263,6 +330,41 @@ expect:
           - ''
           resources:
           - pods/log
+          verbs:
+          - get
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:102643a9f634fa23b9076f170222bebb4c817225ec9186c593a0570694960dd2
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - nodes
+          verbs:
+          - list
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:dbdfb3c770b48ebe9a130fe906d45a8938b9500e01cbf1825a10e80849e27721
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - namespaces
+          verbs:
+          - list
+        verdict: granted
+        evidence: 'allowed cluster-wide: RBAC: allowed by ClusterRoleBinding "kubeadm:cluster-admins" of
+          ClusterRole "cluster-admin" to Group "kubeadm:cluster-admins"'
+      - hash: sha256:1d5d324f26761941f42a1e016ed7a2a8287252d36dc7cc8868bd06f74b36da7b
+        rule:
+          apiGroups:
+          - ''
+          resources:
+          - namespaces
+          resourceNames:
+          - rw-healthy
           verbs:
           - get
         verdict: granted

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -297,6 +298,15 @@ class Cluster:
         create_error=None,
         nonresource=("/version",),
         create_error_for=None,
+        cluster_scoped=(
+            "nodes",
+            "namespaces",
+            "persistentvolumes",
+            "storageclasses.storage.k8s.io",
+        ),
+        api_error=None,
+        eval_errors=(),
+        rules_eval_errors=(),
     ):
         self.grants = list(grants)
         self.namespaces = list(namespaces)
@@ -305,6 +315,10 @@ class Cluster:
         self.incomplete = set(incomplete)
         self.create_error = create_error
         self.create_error_for = create_error_for
+        self.cluster_scoped = list(cluster_scoped)
+        self.api_error = api_error
+        self.eval_errors = set(eval_errors)  # resources whose access review has evaluationError
+        self.rules_eval_errors = set(rules_eval_errors)  # namespaces whose rules review has it
         self.nonresource = set(nonresource)
         self.calls = []  # (argv, [item kinds])
         self.reviews = []
@@ -343,6 +357,7 @@ class Cluster:
                     ],
                     "nonResourceRules": [],
                     "incomplete": ns in self.incomplete,
+                    **({"evaluationError": "webhook down"} if ns in self.rules_eval_errors else {}),
                 },
             }
         spec = item["spec"]
@@ -359,6 +374,8 @@ class Cluster:
             return {**item, "status": {"allowed": ok, "reason": "RBAC: x" if ok else ""}}
         attrs = spec["resourceAttributes"]
         ok = self.can(attrs.get("namespace"), attrs)
+        if attrs["resource"] in self.eval_errors and not ok:
+            return {**item, "status": {"allowed": False, "evaluationError": "webhook down"}}
         return {**item, "status": {"allowed": ok, "reason": "RBAC: allowed" if ok else ""}}
 
     # --- ctx
@@ -384,6 +401,13 @@ class Cluster:
                     1,
                     'Error from server (Forbidden): namespaces is forbidden: User "x" cannot list resource "namespaces"',
                 )
+        elif argv[:2] == ["kubectl", "api-resources"]:
+            assert argv[2:] == ["--namespaced=false", "-o", "name"]
+            self.calls.append((argv, []))
+            if self.api_error:
+                rc, err = 1, self.api_error
+            else:
+                out = "".join(f"{n}\n" for n in self.cluster_scoped)
         elif argv[:4] == ["kubectl", "get", "namespaces", "kube-system"]:
             self.calls.append((argv, []))
             if self.read_uid:
@@ -411,6 +435,9 @@ class FakeCtx:
 
     def run(self, argv, **kw):
         return self.cluster.run(argv, **kw)
+
+    def now(self):
+        return datetime(2026, 11, 4, 9, 0, 0, tzinfo=UTC)
 
     def error(self, code, message, scope=None, **kw):
         self.errors.append({"code": code, "scope": scope, "message": message})
@@ -594,12 +621,12 @@ def test_review_budget_leaves_later_rules_unverified_never_dropped():
     ]
     cluster = Cluster(CLUSTER_ADMIN)
     ctx, access = run(cluster, rules, max_reviews=2)
-    # the 2-check rule does not fit after the first; the 1-check rule after it still does
-    assert verdicts(access) == ["granted", "unverified", "granted"]
-    assert access["rules"][0]["verdict"] == "granted"
-    assert access["rules"][1]["verdict"] == "unverified"
+    # reviews are spent in order: pods get and services get; the rest are not made
+    assert verdicts(access) == ["granted", "unverified", "unverified"]
+    assert len(access["rules"]) == 3
     assert "maxReviews" in access["rules"][1]["evidence"]
     assert [k for b in cluster.create_calls() for k in b] == ["SelfSubjectAccessReview"] * 2
+    assert [e["code"] for e in ctx.errors] == ["invalid_input"]
 
 
 def test_unreadable_kube_system_leaves_root_out_and_is_not_an_error():
@@ -623,11 +650,12 @@ def test_kube_system_read_that_fails_otherwise_propagates():
     assert exc.value.code == "unreachable"
 
 
-def test_refused_review_creation_fails_the_task_instead_of_guessing():
+def test_refused_review_creation_leaves_every_rule_unverified_and_reports_it():
     err = 'Error from server (Forbidden): selfsubjectaccessreviews.authorization.k8s.io is forbidden: User "x" cannot create resource "selfsubjectaccessreviews"'
-    with pytest.raises(RwError) as exc:
-        run(Cluster([], create_error=err), RULES)
-    assert exc.value.code == "permission_denied"
+    ctx, access = run(Cluster([], create_error=err), RULES)
+    assert verdicts(access) == ["unverified"] * len(RULES)
+    assert [(e["code"], e["scope"]) for e in ctx.errors][0] == ("permission_denied", "reviews")
+    assert validate("rw.access.v1", access) == []
 
 
 def test_failed_rules_review_is_reported_and_leaves_the_rule_unverified():
@@ -748,6 +776,8 @@ def needs(argv, items):
     """The RBAC rules a kubectl argv needs (the helper the other skills' tests use)."""
     if argv[1] == "create":
         return {("authorization.k8s.io", f"{k.lower()}s", "create") for k in items}
+    if argv[1] == "api-resources":
+        return {("nonResource", "/api", "get"), ("nonResource", "/apis", "get")}
     if argv[1:3] == ["get", "namespaces"]:
         return {("", "namespaces", "get" if len(argv) > 4 and argv[3] == "kube-system" else "list")}
     raise AssertionError(argv)
@@ -762,8 +792,13 @@ def test_declared_permissions_cover_every_call_the_task_makes():
     declared = {
         (g, r, v)
         for rule in task()["permissions"]
-        for g in rule["apiGroups"]
-        for r in rule["resources"]
+        for g in rule.get("apiGroups", [])
+        for r in rule.get("resources", [])
+        for v in rule["verbs"]
+    } | {
+        ("nonResource", url, v)
+        for rule in task()["permissions"]
+        for url in rule.get("nonResourceURLs", [])
         for v in rule["verbs"]
     }
     assert needed == declared  # nothing declared that is not used either
@@ -779,6 +814,248 @@ def test_declared_permissions_validate_against_the_rbac_rule_schema():
     validator = Draft202012Validator(schema)
     for rule in task()["permissions"]:
         assert list(validator.iter_errors(rule)) == []
-    # the rules input documents the same shape
+
+
+def test_the_rules_input_schema_is_permissive_so_a_bad_rule_reaches_the_script():
     item_schema = task()["inputs"]["rules"]["schema"]
-    assert item_schema["properties"].keys() == schema["properties"].keys()
+    assert item_schema == {"type": "object", "minProperties": 1}
+
+
+# ------------------------------------------- review fixes: cluster-scoped, errors ----
+
+VIEW_A = [
+    ("a", res("", "pods", ["get", "list"])),
+    ("a", res("", "namespaces", ["list"])),  # a RoleBinding; the API server answers yes in "a"
+    ("a", res("", "nodes", ["get", "list"])),
+]
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        res("", "namespaces", ["list"]),
+        res("", "nodes", ["get", "list"]),
+        res("", "nodes/proxy", ["get"]),  # a subresource inherits its base's scope
+        res("storage.k8s.io", "storageclasses", ["get"]),
+    ],
+)
+def test_cluster_scoped_resource_is_never_partial_from_a_namespaced_grant(rule):
+    cluster = Cluster(VIEW_A + [("a", res("storage.k8s.io", "storageclasses", ["get"]))])
+    cluster.grants.append(("a", res("", "nodes/proxy", ["get"])))
+    ctx, access = run(cluster, [rule], ["a"])
+    assert access["rules"][0]["verdict"] == "denied"
+    assert "scope" not in access["rules"][0]
+    assert ctx.errors == []
+    # nothing is probed per namespace and the namespaces are not even listed
+    assert [k for b in cluster.create_calls() for k in b] == ["SelfSubjectAccessReview"] * len(
+        ax.expand_rule(rule)[0]
+    )
+
+
+def test_cluster_scoped_rules_are_decided_even_when_namespaces_cannot_be_listed():
+    cluster = Cluster(
+        [(None, res("", "nodes", ["get"]))], list_namespaces=False
+    )  # granted cluster-wide
+    ctx, access = run(
+        cluster,
+        [res("", "nodes", ["get"]), res("", "nodes", ["list"]), res("", "namespaces", ["list"])],
+    )
+    assert verdicts(access) == ["granted", "denied", "denied"]
+    assert ctx.errors == []  # nothing needed the namespace list
+    assert not any(argv[1:4] == ["get", "namespaces", "-o"] for argv, _ in cluster.calls)
+
+
+def test_a_cluster_scoped_refusal_denies_a_mixed_rule_without_probing():
+    rule = {"apiGroups": [""], "resources": ["pods", "nodes"], "verbs": ["list"]}
+    cluster = Cluster([("a", res("", "pods", ["list"])), ("a", res("", "nodes", ["list"]))])
+    ctx, access = run(cluster, [rule], ["a"])
+    assert access["rules"][0]["verdict"] == "denied"
+    assert "nodes" in access["rules"][0]["evidence"]
+    assert [k for b in cluster.create_calls() for k in b] == ["SelfSubjectAccessReview"] * 2
+
+
+def test_namespaced_kinds_still_get_partial():
+    cluster = Cluster([("a", res("", "pods", ["list"]))])
+    _, access = run(cluster, [res("", "pods", ["list"])], ["a"])
+    assert (access["rules"][0]["verdict"], access["rules"][0]["scope"]) == ("partial", ["a"])
+
+
+def test_discovery_decides_kinds_the_static_table_does_not_know():
+    crd = res("cert-manager.io", "clusterissuers", ["get"])
+    grants = [("a", crd)]
+    ok = Cluster(grants, cluster_scoped=["clusterissuers.cert-manager.io"])
+    assert run(ok, [crd], ["a"])[1]["rules"][0]["verdict"] == "denied"
+    namespaced = Cluster(grants, cluster_scoped=["nodes"])
+    assert run(namespaced, [crd], ["a"])[1]["rules"][0]["verdict"] == "partial"
+    assert any(argv[1] == "api-resources" for argv, _ in ok.calls)
+
+
+def test_api_resources_is_asked_once_and_only_when_something_is_refused():
+    cluster = Cluster(CLUSTER_ADMIN)
+    run(cluster, RULES)
+    assert not any(argv[1] == "api-resources" for argv, _ in cluster.calls)
+    cluster = Cluster([])
+    run(cluster, [res("", "pods", ["get"]), res("", "nodes", ["get"])], ["a"])
+    assert [argv[1] for argv, _ in cluster.calls].count("api-resources") == 1
+
+
+def test_unknown_scope_never_becomes_partial_and_the_failure_is_reported():
+    widget = res("x.io", "widgets", ["get"])
+    cluster = Cluster([("a", widget)], api_error="Error from server (Timeout): request timed out")
+    ctx, access = run(cluster, [widget], ["a"])
+    assert access["rules"][0]["verdict"] == "unverified"
+    assert "cluster-scoped" in access["rules"][0]["evidence"]
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("timeout", "discovery")]
+    # a kind nobody can see in either source, allowed nowhere, is simply denied
+    _, access = run(Cluster([], api_error="Error from server (Timeout): x"), [widget], ["a"])
+    assert access["rules"][0]["verdict"] == "denied"
+
+
+def test_static_table_answers_when_api_resources_fails_and_no_error_is_needed():
+    cluster = Cluster(
+        [("a", res("", "nodes", ["get"]))], api_error="Error from server (Timeout): x"
+    )
+    ctx, access = run(cluster, [res("", "nodes", ["get"])], ["a"])
+    assert access["rules"][0]["verdict"] == "denied"
+    assert ctx.errors == []
+
+
+def test_get_of_a_named_namespace_inside_the_probed_namespaces_keeps_the_namespaced_path():
+    rule = res("", "namespaces", ["get"], ["a"])
+    cluster = Cluster([("a", rule)])
+    _, access = run(cluster, [rule], ["a", "b"])
+    assert (access["rules"][0]["verdict"], access["rules"][0]["scope"]) == ("partial", ["a"])
+    # the name must be one of the probed namespaces, else it is cluster-scoped and denied
+    _, access = run(Cluster([("a", rule)]), [rule], ["b"])
+    assert access["rules"][0]["verdict"] == "denied"
+    # list, or an unnamed get, is never helped by the exception
+    other = res("", "namespaces", ["list"])
+    assert run(Cluster([("a", other)]), [other], ["a"])[1]["rules"][0]["verdict"] == "denied"
+
+
+def test_named_namespace_get_lists_namespaces_when_none_are_given():
+    rule = res("", "namespaces", ["get"], ["kube-system"])
+    cluster = Cluster([("kube-system", rule)], namespaces=["a", "kube-system"])
+    _, access = run(cluster, [rule])
+    assert (access["rules"][0]["verdict"], access["rules"][0]["scope"]) == (
+        "partial",
+        ["kube-system"],
+    )
+
+
+def test_access_review_evaluation_error_is_unverified_not_denied():
+    cluster = Cluster([], eval_errors=["pods"])
+    _, access = run(cluster, [res("", "pods", ["get"]), res("", "secrets", ["get"])], ["a"])
+    assert access["rules"][0]["verdict"] == "unverified"
+    assert "evaluate" in access["rules"][0]["evidence"]
+    assert access["rules"][1]["verdict"] == "denied"
+
+
+def test_evaluation_error_on_a_cluster_scoped_check_and_on_a_non_resource_url():
+    cluster = Cluster([], eval_errors=["nodes"])
+    _, access = run(cluster, [res("", "nodes", ["get"])], ["a"])
+    assert access["rules"][0]["verdict"] == "unverified"
+
+    class NonResource(Cluster):
+        def answer(self, item):
+            doc = super().answer(item)
+            if "nonResourceAttributes" in item["spec"]:
+                doc["status"] = {"allowed": False, "evaluationError": "webhook down"}
+            return doc
+
+    _, access = run(
+        NonResource([], nonresource=()), [{"nonResourceURLs": ["/x"], "verbs": ["get"]}]
+    )
+    assert access["rules"][0]["verdict"] == "unverified"
+
+
+def test_an_allowed_review_stands_even_with_an_evaluation_error():
+    assert perms._answer({"allowed": True, "evaluationError": "x", "reason": "r"}, "") == (
+        True,
+        "r",
+    )
+    assert perms._answer({"allowed": False, "evaluationError": "x"}, "")[0] is None
+    assert perms._answer({"allowed": False}, "")[0] is False
+    assert perms._answer(None, "budget") == (None, "budget")
+
+
+def test_rules_review_evaluation_error_is_treated_like_incomplete():
+    class Empty(Cluster):
+        def answer(self, item):
+            doc = super().answer(item)
+            if item["kind"] == "SelfSubjectRulesReview":
+                doc["status"]["resourceRules"] = []
+            return doc
+
+    cluster = Empty([("a", res("", "pods", ["get"]))], rules_eval_errors=["a"])
+    _, access = run(cluster, [res("", "pods", ["get"])], ["a"])
+    assert (access["rules"][0]["verdict"], access["rules"][0]["scope"]) == ("partial", ["a"])
+    assert cluster.create_calls()[-1] == ["SelfSubjectAccessReview"]  # the gap, asked directly
+
+
+def test_schema_invalid_rules_are_unverified_entries_not_a_failed_run():
+    bad = [
+        {"apiGroups": "", "resources": ["pods"], "verbs": ["get"]},
+        {"verbs": ["get"], "unknownField": 1},
+        {"apiGroups": [""], "resources": ["pods"], "verbs": [{"a": 1}]},
+        {"apiGroups": [""], "resources": ["pods"], "verbs": []},
+    ]
+    rules = [bad[0], res("", "pods", ["get"]), *bad[1:]]
+    _, access = run(Cluster(CLUSTER_ADMIN), rules)
+    assert verdicts(access) == ["unverified", "granted", "unverified", "unverified", "unverified"]
+    assert [r["rule"] for r in access["rules"]] == rules
+    assert validate("rw.access.v1", access) == []
+
+
+def test_non_objects_and_empty_objects_cannot_be_echoed_and_are_invalid_input():
+    for rules in (["pods"], [{}], [None]):
+        with pytest.raises(RwError) as exc:
+            run(Cluster(CLUSTER_ADMIN), rules)
+        assert exc.value.code == "invalid_input"
+
+
+def test_one_failed_review_batch_leaves_only_its_rules_unverified():
+    class FirstBatchFails(Cluster):
+        def run(self, argv, cwd=None, **kw):
+            if argv[:2] == ["kubectl", "create"] and argv[4] == "review-0.json":
+                self.calls.append((argv, ["failed"]))
+                return subprocess.CompletedProcess(
+                    argv, 1, "", "Error from server (Timeout): request timed out"
+                )
+            return super().run(argv, cwd=cwd, **kw)
+
+    # 150 distinct checks: the first 100 land in the failing batch
+    rules = [res("", f"kind{i}", ["get"]) for i in range(150)]
+    ctx, access = run(FirstBatchFails(CLUSTER_ADMIN), rules)
+    got = verdicts(access)
+    assert got[:100] == ["unverified"] * 100
+    assert got[100:] == ["granted"] * 50
+    assert "failed" in access["rules"][0]["evidence"]
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("timeout", "reviews")]
+
+
+def test_reviewer_stops_starting_reviews_after_its_deadline_and_the_run_fits_240s():
+    ticks = iter([0, 0, 500, 500, 500])
+    ctx = FakeCtx(Cluster(CLUSTER_ADMIN))
+    items = [ax.review_item(check(resource=f"r{i}")) for i in range(150)]
+    reviewer = perms.Reviewer(ctx, ".", 3000, deadline=100, clock=lambda: next(ticks))
+    # (the second batch starts after the deadline)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as scratch:
+        reviewer.scratch = scratch
+        answers = reviewer.ask(items, "reviews")
+    assert [s is None for s, _ in answers] == [False] * 100 + [True] * 50
+    assert [e["code"] for e in ctx.errors] == ["timeout"]
+    assert perms.REVIEW_DEADLINE + 3 * perms.SIDE_TIMEOUT <= 240
+
+
+def test_scope_is_capped_at_500_namespaces_and_says_so():
+    names = [f"n{i:03d}" for i in range(600)]
+    cluster = Cluster([(n, res("", "pods", ["get"])) for n in names], namespaces=names)
+    _, access = run(cluster, [res("", "pods", ["get"])], max_namespaces=1000)
+    entry = access["rules"][0]
+    assert len(entry["scope"]) == ax.MAX_SCOPE
+    assert entry["scope"] == names[: ax.MAX_SCOPE]
+    assert "first 500 of 600" in entry["evidence"]
+    assert validate("rw.access.v1", access) == []
