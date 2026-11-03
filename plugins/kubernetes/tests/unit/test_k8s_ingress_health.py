@@ -536,6 +536,10 @@ class FakeCtx:
         self.errors = []
         self.calls = []
 
+    def now(self):
+        """The run's reference time: NOW, so the fixed event times are inside the window."""
+        return NOW
+
     def error(self, code, message, scope=None, hint=None, details=None):
         self.errors.append({"code": code, "scope": scope, "message": message})
 
@@ -596,22 +600,12 @@ class FakeCtx:
         return SimpleNamespace(returncode=0, stdout=json.dumps(doc), stderr="")
 
 
-class FrozenDatetime(datetime):
-    """The clock the scripts see: NOW, so the fixed event times are inside the window."""
-
-    @classmethod
-    def now(cls, tz=None):
-        return NOW
-
-
 def script(name):
     spec = importlib.util.spec_from_file_location(
         f"ingress_{name}", SKILL / "scripts" / f"{name}.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if hasattr(module, "datetime"):
-        module.datetime = FrozenDatetime
     return module.main
 
 

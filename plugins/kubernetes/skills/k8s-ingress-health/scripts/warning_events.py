@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-
+from k8s_ingress_health.clock import reference_time
 from k8s_ingress_health.fetch import fetch_services, load_ingress
 from k8s_ingress_health.ingress import (
     MAX_SERVICES,
@@ -28,7 +27,7 @@ def main(ctx, since="1h"):
     events = kubectl_json(
         ctx, "-n", ctx.resource.namespace, "get", "events", "--field-selector", "type=Warning"
     )
-    now = datetime.now(timezone.utc)
+    now = reference_time(ctx)
     return {
         "events": warning_events(events["items"], subjects, since, now, ctx.settings.max_items),
         "inspected": {

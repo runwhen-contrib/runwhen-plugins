@@ -25,3 +25,4 @@ checklist below is the review bar for every ported skill. See
 - Python scripts stay thin: fetch with `ctx.run`, compute in `lib/`, return outputs.
 - `lib/` holds one package named after the skill in snake_case (`lib/k8s_workload_health/`), imported as `from k8s_workload_health.<module> import ...`. `lib/` is appended to `sys.path` after site-packages, so bare module names (`k8s`, `workload`) could be shadowed by an installed package.
 - Logic in `lib/` is pure (parsed JSON in, outputs out) and unit-tested in `plugins/<plugin>/tests/unit/` against JSON captured from the kind scenarios (`managedFields` stripped). `tests/` at the plugin root is excluded from the archive.
+- Use `ctx.now()` for the current time (one instant fixed for the run, so a recorded scenario replays), and `time.monotonic()` for durations and deadlines; never read the wall clock (`datetime.now()`, `time.time()`) in a script or `lib/`. Pass the time into `lib/` functions as a parameter.

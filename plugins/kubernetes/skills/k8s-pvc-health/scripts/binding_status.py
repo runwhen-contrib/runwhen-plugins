@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-
+from k8s_pvc_health.clock import reference_time
 from k8s_pvc_health.fetch import load_claim
 from k8s_pvc_health.k8s import kubectl_json_scoped
 from k8s_pvc_health.pvc import (
@@ -41,7 +40,7 @@ def main(ctx, since="1h"):
         f"involvedObject.kind=PersistentVolumeClaim,involvedObject.name={ctx.resource.name},"
         f"involvedObject.uid={claim['metadata']['uid']}",
     )
-    now = datetime.now(timezone.utc)
+    now = reference_time(ctx)
     return {
         "claim": view,
         "storageClass": storage_class_view(view["storageClassName"], sc, sc_state != "denied"),

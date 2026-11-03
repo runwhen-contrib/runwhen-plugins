@@ -1,3 +1,4 @@
+from k8s_flux_health.clock import reference_time
 from k8s_flux_health.errors import RwError
 from k8s_flux_health.fetch import load_object, target_kind, wait_for_handled
 from k8s_flux_health.flux import (
@@ -48,7 +49,7 @@ def main(ctx, timeout="60s", reset=False, force=False):
     # The same annotation `flux reconcile` sets. The controller echoes the value into
     # status.lastHandledReconcileAt once it has handled the request. A dry run sends the
     # identical call as a server-side dry run and does not wait.
-    requested_at = request_timestamp()
+    requested_at = request_timestamp(reference_time(ctx))
     # reset (flux reconcile hr --reset) and force (--force) are further annotations on the same call;
     # a reset carries the request's own timestamp, so the controller's lastHandledResetAt can be matched.
     stamps = [f"{REQUESTED_AT}={requested_at}"]

@@ -1,7 +1,7 @@
 """Pure functions over Flux HelmRelease and Kustomization objects (parsed JSON in, outputs out)."""
 
 import re
-from datetime import datetime, timezone
+from datetime import timezone
 
 from k8s_flux_health.errors import RwError
 
@@ -326,10 +326,10 @@ def target_view(kind, obj):
     }
 
 
-def request_timestamp(now=None):
-    """The value for reconcile.fluxcd.io/requestedAt: RFC 3339 with microseconds, so two requests
-    in the same second differ (Flux reports a request as handled by echoing the value)."""
-    now = now or datetime.now(timezone.utc)
+def request_timestamp(now):
+    """The value for reconcile.fluxcd.io/requestedAt, from the run's reference time `now`: RFC 3339
+    with microseconds, so two requests in the same second differ (Flux reports a request as handled
+    by echoing the value)."""
     return now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 

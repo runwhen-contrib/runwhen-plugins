@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-
+from k8s_namespace_health.clock import reference_time
 from k8s_namespace_health.common import cap
 from k8s_namespace_health.fetch import (
     check_duration,
@@ -18,7 +17,7 @@ def main(ctx, since="1h"):
     pods = list_items(ctx, namespace, "pods")
     replicasets = list_secondary(ctx, namespace, "replicasets.apps")
     jobs = list_secondary(ctx, namespace, "jobs.batch")
-    now = datetime.now(timezone.utc)
+    now = reference_time(ctx)
     unhealthy = unhealthy_pods(pods, replicasets, jobs, ctx.settings.restart_threshold, since, now)
     return {
         "pods": cap(unhealthy, ctx.settings.max_items),
