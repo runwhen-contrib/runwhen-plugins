@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Containers of Running pods without a request or limit; null when the pods could not be read",
+  "type": [
+    "array",
+    "null"
+  ],
+  "items": {
+    "type": "object",
+    "properties": {
+      "pod": {
+        "type": "string"
+      },
+      "owner": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "resolved": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "resolved"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "container": {
+        "type": "string"
+      },
+      "init": {
+        "type": "boolean"
+      },
+      "cpuRequest": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "cpuLimit": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "memoryRequest": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "memoryLimit": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "missing": {
+        "type": "array",
+        "items": {
+          "enum": [
+            "cpuRequest",
+            "cpuLimit",
+            "memoryRequest",
+            "memoryLimit"
+          ]
+        }
+      }
+    },
+    "required": [
+      "pod",
+      "owner",
+      "container",
+      "init",
+      "cpuRequest",
+      "cpuLimit",
+      "memoryRequest",
+      "memoryLimit",
+      "missing"
+    ],
+    "additionalProperties": false
+  }
+}
