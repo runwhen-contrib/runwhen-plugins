@@ -1,0 +1,144 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-broken/ingresses/orphan
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - ingresses.networking.k8s.io
+  - orphan
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"Ingress\",\"metadata\":{\"annotations\":{},\"name\":\"orphan\",\"namespace\":\"rw-broken\"},\"spec\":{\"rules\":[{\"host\":\"orphan.rw-broken.local\",\"http\":{\"paths\":[{\"backend\":{\"service\":{\"name\":\"missing\",\"port\":{\"number\":80}}},\"path\":\"/\",\"pathType\":\"Prefix\"}]}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:03Z",
+            "generation": 1,
+            "name": "orphan",
+            "namespace": "rw-broken",
+            "resourceVersion": "634",
+            "uid": "383d4c2e-f97e-4b9e-bc1c-187635811d06"
+        },
+        "spec": {
+            "rules": [
+                {
+                    "host": "orphan.rw-broken.local",
+                    "http": {
+                        "paths": [
+                            {
+                                "backend": {
+                                    "service": {
+                                        "name": "missing",
+                                        "port": {
+                                            "number": 80
+                                        }
+                                    }
+                                },
+                                "path": "/",
+                                "pathType": "Prefix"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"crashloop\",\"namespace\":\"rw-broken\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"crashloop\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T18:39:28Z",
+                    "name": "crashloop",
+                    "namespace": "rw-broken",
+                    "resourceVersion": "7198",
+                    "uid": "206c675c-293d-46ce-af9c-7b73b98578fe"
+                },
+                "spec": {
+                    "clusterIP": "10.96.98.91",
+                    "clusterIPs": [
+                        "10.96.98.91"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 80
+                        }
+                    ],
+                    "selector": {
+                        "app": "crashloop"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    backends:
+      items:
+      - source: rule
+        host: orphan.rw-broken.local
+        path: /
+        pathType: Prefix
+        kind: service
+        service:
+          name: missing
+          portNumber: 80
+          portName: null
+        resource: null
+        serviceExists: false
+        serviceType: null
+        hasSelector: null
+        publishNotReady: null
+        portExists: null
+        targetPort: null
+        protocol: null
+        endpoints: null
+      total: 1

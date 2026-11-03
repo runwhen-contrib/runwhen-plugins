@@ -1,0 +1,244 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/ingresses/web
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - ingresses.networking.k8s.io
+  - web
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"Ingress\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"rules\":[{\"host\":\"web.rw-healthy.local\",\"http\":{\"paths\":[{\"backend\":{\"service\":{\"name\":\"web\",\"port\":{\"number\":80}}},\"path\":\"/\",\"pathType\":\"Prefix\"}]}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:00Z",
+            "generation": 1,
+            "name": "web",
+            "namespace": "rw-healthy",
+            "resourceVersion": "499",
+            "uid": "01e72069-124f-4ec9-9571-25eb7d9e0f3d"
+        },
+        "spec": {
+            "rules": [
+                {
+                    "host": "web.rw-healthy.local",
+                    "http": {
+                        "paths": [
+                            {
+                                "backend": {
+                                    "service": {
+                                        "name": "web",
+                                        "port": {
+                                            "number": 80
+                                        }
+                                    }
+                                },
+                                "path": "/",
+                                "pathType": "Prefix"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"ports\":[{\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"web\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "485",
+                    "uid": "7933aec9-247b-4b7d-8303-0c6f93b4ca7c"
+                },
+                "spec": {
+                    "clusterIP": "10.96.69.240",
+                    "clusterIPs": [
+                        "10.96.69.240"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 80
+                        }
+                    ],
+                    "selector": {
+                        "app": "web"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name in (web)
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.46"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "web-868f7b7477-xvk94",
+                            "namespace": "rw-healthy",
+                            "uid": "7715b3fa-92b4-4cc0-bc9f-91bf86204bae"
+                        }
+                    },
+                    {
+                        "addresses": [
+                            "10.244.0.47"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "web-868f7b7477-fmbfh",
+                            "namespace": "rw-healthy",
+                            "uid": "e4d6edd8-0f53-4cb2-af86-8977f3867ae2"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T18:50:16Z"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "generateName": "web-",
+                    "generation": 53,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "web"
+                    },
+                    "name": "web-gshxs",
+                    "namespace": "rw-healthy",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "web",
+                            "uid": "7933aec9-247b-4b7d-8303-0c6f93b4ca7c"
+                        }
+                    ],
+                    "resourceVersion": "9164",
+                    "uid": "5b641cf3-04b8-4104-b1d2-b415a9061fee"
+                },
+                "ports": [
+                    {
+                        "name": "",
+                        "port": 80,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    backends:
+      items:
+      - source: rule
+        host: web.rw-healthy.local
+        path: /
+        pathType: Prefix
+        kind: service
+        service:
+          name: web
+          portNumber: 80
+          portName: null
+        resource: null
+        serviceExists: true
+        serviceType: ClusterIP
+        hasSelector: true
+        publishNotReady: false
+        portExists: true
+        targetPort: 80
+        protocol: TCP
+        endpoints:
+          ready: 2
+          notReady: 0
+          serving: 2
+          terminating: 0
+          slices: 1
+      total: 1
