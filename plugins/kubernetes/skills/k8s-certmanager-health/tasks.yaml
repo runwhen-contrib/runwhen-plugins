@@ -1,0 +1,56 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (newest or most relevant first)
+  expiryWarningDays:
+    type: number
+    default: 14
+    description: A Certificate whose notAfter is this many days away or less has expiringSoon true in certificate-status
+tasks:
+  - name: certificate-status
+    title: Certificate status
+    description: >-
+      The Certificate's Ready and Issuing conditions (reason and message), its
+      validity window (notBefore, notAfter, renewalTime), the days left until it
+      expires and whether that is within the expiryWarningDays setting, how many
+      DNS names it covers, the name of its Secret (the Secret is never read), and
+      whether the Issuer or ClusterIssuer it refers to exists and is Ready. A
+      ClusterIssuer is cluster-scoped: when reading it is forbidden the
+      Certificate facts are still returned, issuer.ready is null and a
+      permission_denied error says why.
+    script: scripts/certificate_status.py
+    tags: [certificate, expiry, issuer, conditions]
+    readOnly: true
+    permissions:
+      - { apiGroups: [cert-manager.io], resources: [certificates], verbs: [get] }
+      - { apiGroups: [cert-manager.io], resources: [issuers], verbs: [get] }
+      - { apiGroups: [cert-manager.io], resources: [clusterissuers], verbs: [get] }
+    outputs:
+      certificate: { schema: ./schemas/certificate.v1.json, description: "Conditions, validity window, days to expiry, names and Secret name" }
+      issuer: { schema: ./schemas/issuer.v1.json, description: "The referenced Issuer or ClusterIssuer: whether it exists and is Ready" }
+
+  - name: requests
+    title: Certificate requests
+    description: >-
+      The CertificateRequests owned by the Certificate (matched by
+      ownerReferences), newest revision first: their Ready, Approved, Denied and
+      InvalidRequest conditions with reasons, revision and failure time; and the
+      state of the ACME Orders those requests created. Orders are reported as not
+      applicable (applicable false) when the cluster does not have the ACME types,
+      and as null with a permission_denied error when listing them is forbidden.
+    script: scripts/requests.py
+    tags: [certificaterequest, acme, orders, issuance]
+    readOnly: true
+    permissions:
+      - { apiGroups: [cert-manager.io], resources: [certificates], verbs: [get] }
+      - { apiGroups: [cert-manager.io], resources: [certificaterequests], verbs: [list] }
+      - { apiGroups: [acme.cert-manager.io], resources: [orders], verbs: [list] }
+    outputs:
+      requests: { schema: ./schemas/requests.v1.json, description: "Requests owned by the Certificate with their conditions and failure time" }
+      orders: { schema: ./schemas/orders.v1.json, description: "ACME Orders of those requests; applicable false when the ACME types are absent, null when unreadable" }

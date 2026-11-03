@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The issuer the Certificate refers to",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "group": {
+      "type": "string"
+    },
+    "scope": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "namespace",
+        "cluster",
+        null
+      ]
+    },
+    "lookedUp": {
+      "type": "boolean",
+      "description": "false for an issuer of another group (external issuer) or one that could not be read"
+    },
+    "exists": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "null when not looked up or not readable"
+    },
+    "ready": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The issuer's Ready condition is True; null when unknown or it has no Ready condition yet"
+    },
+    "readyCondition": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "lastTransitionTime": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "observedGeneration": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "status",
+            "reason",
+            "message",
+            "truncated",
+            "lastTransitionTime",
+            "observedGeneration"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "kind",
+    "group",
+    "scope",
+    "lookedUp",
+    "exists",
+    "ready",
+    "readyCondition"
+  ],
+  "additionalProperties": false
+}

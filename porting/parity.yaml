@@ -93,7 +93,15 @@ kubernetes:
       note: "D72: needs a GitHub credential on a kubernetes target; re-home as github plugin skills later" }
 
   # --- cluster add-ons -----------------------------------------------------------------------------------------
-  - { bundle: k8s-certmanager-healthcheck,        skills: [k8s-certmanager-health], status: planned }
+  - bundle: k8s-certmanager-healthcheck
+    skills: [k8s-certmanager-health]
+    status: ported
+    ported: [k8s-certmanager-health]
+    note: "per-Certificate target, not a namespace sweep; classic jq aborted on Certificates without status.conditions and dropped CertificateRequests lacking Approved/ownerReferences; classic only flagged notAfter <= now, now expiresInDays/expiringSoon against expiryWarningDays; Issuer/ClusterIssuer Ready and ACME Orders are new facts; the SLI count (unready + expired) is the platform's job over certificate-status"
+    tasks:
+      "Get Namespace Certificate Summary": k8s-certmanager-health/certificate-status
+      "Find Unhealthy Certificates": k8s-certmanager-health/certificate-status
+      "Find Failed Certificate Requests and Identify Issues": k8s-certmanager-health/requests
   - { bundle: k8s-karpenter-autoscaling-health,   skills: [k8s-karpenter-health], status: planned }
   - { bundle: k8s-karpenter-control-plane-health, skills: [k8s-karpenter-health], status: planned }
 
