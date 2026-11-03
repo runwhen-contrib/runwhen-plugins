@@ -1,0 +1,67 @@
+# Log content for k8s-workload-logs: `noisy` loops printing normal lines, ERROR
+# lines and one stack trace per language (Python, Java, Go, Node.js, .NET).
+# `quiet` (second container) prints only normal lines, so per-container counts differ.
+# The crashloop and oom Deployments in 20-broken.yaml supply `--previous` logs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: noisy
+  namespace: rw-broken
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: noisy}
+  template:
+    metadata:
+      labels: {app: noisy}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                printf '%s\n' 'GET /healthz 200 3ms'
+                printf '%s\n' 'GET /orders 200 41ms'
+                printf '%s\n' 'ERROR payment failed: connection refused to 10.0.0.9:5432'
+                printf '%s\n' 'request timeout after 30s calling inventory'
+                printf '%s\n' 'Traceback (most recent call last):'
+                printf '%s\n' '  File "/app/main.py", line 42, in handle'
+                printf '%s\n' '    total = compute(order)'
+                printf '%s\n' '  File "/app/pricing.py", line 7, in compute'
+                printf '%s\n' '    return order["price"] / order["qty"]'
+                printf '%s\n' 'ZeroDivisionError: division by zero'
+                printf '%s\n' 'GET /orders 200 38ms'
+                printf '%s\n' 'Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.length()" because "s" is null'
+                printf '\tat com.example.App.process(App.java:42)\n'
+                printf '\tat com.example.App.main(App.java:10)\n'
+                printf '%s\n' 'Caused by: java.io.IOException: boom'
+                printf '\tat com.example.Io.read(Io.java:7)\n'
+                printf '\t... 2 more\n'
+                printf '%s\n' 'GET /healthz 200 2ms'
+                printf '%s\n' 'panic: runtime error: index out of range [5] with length 3'
+                printf '\n'
+                printf '%s\n' 'goroutine 1 [running]:'
+                printf '%s\n' 'main.process(...)'
+                printf '\t/app/main.go:25\n'
+                printf '%s\n' 'main.main()'
+                printf '\t/app/main.go:12 +0x1d\n'
+                printf '%s\n' 'exit status 2'
+                printf '%s\n' 'TypeError: Cannot read properties of undefined (reading "x")'
+                printf '%s\n' '    at Object.<anonymous> (/app/index.js:3:9)'
+                printf '%s\n' '    at Module._compile (node:internal/modules/cjs/loader:1256:14)'
+                printf '%s\n' 'Unhandled exception. System.InvalidOperationException: Sequence contains no elements'
+                printf '%s\n' '   at System.Linq.ThrowHelper.ThrowNoElementsException()'
+                printf '%s\n' '   at MyApp.Program.Main(String[] args) in /src/Program.cs:line 12'
+                printf '%s\n' 'GET /orders 200 40ms'
+                sleep 5
+              done
+          resources:
+            requests: {cpu: 1m, memory: 2Mi}
+        - name: quiet
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo 'tick ok'; sleep 5; done"]
+          resources:
+            requests: {cpu: 1m, memory: 2Mi}

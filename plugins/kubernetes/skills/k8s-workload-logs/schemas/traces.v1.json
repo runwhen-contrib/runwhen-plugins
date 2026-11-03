@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Distinct stack traces found in the logs",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "language": {
+        "enum": [
+          "python",
+          "java",
+          "go",
+          "node",
+          "dotnet"
+        ]
+      },
+      "exception": {
+        "type": "string"
+      },
+      "firstLine": {
+        "type": "string",
+        "maxLength": 1024
+      },
+      "count": {
+        "type": "integer"
+      },
+      "pods": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 10
+      },
+      "containers": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 50
+      },
+      "inPrevious": {
+        "type": "boolean"
+      },
+      "sample": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "maxItems": 40
+      },
+      "sampleTruncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "language",
+      "exception",
+      "firstLine",
+      "count",
+      "pods",
+      "containers",
+      "inPrevious",
+      "sample",
+      "sampleTruncated"
+    ],
+    "additionalProperties": false
+  }
+}

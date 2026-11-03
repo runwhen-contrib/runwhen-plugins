@@ -1,0 +1,114 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 120s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (most frequent or most relevant first)
+  maxPods:
+    type: integer
+    default: 20
+    description: Most pods whose logs are read (pods with the most restarts, then not-ready pods, first); the rest are counted in inspected.pods
+  maxLines:
+    type: integer
+    default: 2000
+    description: Most log lines recent-logs writes to the artifact in total; when streams exceed it each keeps its newest lines
+  maxScanLines:
+    type: integer
+    default: 5000
+    description: Most lines per container error-patterns and stacktraces read from within the window (the newest); a stream that reaches it is marked truncated
+  excludeContainers:
+    type: string[]
+    default: [istio-proxy, linkerd-proxy, vault-agent, vault-agent-init]
+    description: Container names error-patterns and stacktraces skip (mesh and secret-injection sidecars whose logs are noise); recent-logs reads every container
+  patterns:
+    type: object
+    schema: { type: object, additionalProperties: { type: string } }
+    default:
+      error: '\b(error|err)\b'
+      exception: 'exception'
+      fatal: '\b(fatal|panic)\b'
+      oom: 'out of memory|\boom\b|oomkill'
+      connection: 'connection (refused|reset)|econnrefused|econnreset'
+      timeout: 'time[d ]?out|deadline exceeded'
+      http5xx: '(\b(status|code)\W{0,3}|HTTP/\d(\.\d)?"?\s+)5\d\d\b'
+    description: Category name to regular expression for error-patterns (searched case-insensitively, one count per matching line per category)
+  ignore:
+    type: string[]
+    default: ['\b(errors?|failures?|warnings?)"?\s*[:=]\s*(0|false|null|none|\[\]|"")']
+    description: Regular expressions; a line matching one (a line saying errors=0, for example) is counted by no category in error-patterns
+tasks:
+  - name: recent-logs
+    title: Recent logs
+    description: >-
+      The last tailLines lines of every container (init containers included) in
+      each pod the workload owns, as one text artifact with a header per
+      container, plus the previous run's log of every container that restarted.
+      Containers whose log cannot be read right now (waiting to start) are
+      listed in unavailable with the reason.
+    script: scripts/recent_logs.py
+    tags: [logs]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+    inputs:
+      tailLines: { type: integer, default: 200, min: 1, max: 5000, description: Lines read from the end of each container's log }
+      container: { type: string, required: false, description: Read only the container with this name }
+    outputs:
+      logs: { artifact: { contentType: text/plain, maxSize: 20Mi }, description: "Log text, one '==> pod/container [current|previous]' header per stream" }
+      streams: { schema: ./schemas/streams.v1.json, description: "Lines kept per stream; truncated when maxLines cut it" }
+      unavailable: { schema: ./schemas/unavailable.v1.json, description: "Containers with no readable log, and why" }
+      inspected: { schema: ./schemas/logs-inspected.v1.json, description: "How many pods exist and how many were read" }
+
+  - name: error-patterns
+    title: Error patterns in logs
+    description: >-
+      For each container of each pod the workload owns (current and previous
+      run), the number of log lines within since that match each category of the
+      patterns setting (default: error, exception, fatal or panic, out of
+      memory, connection refused or reset, timeout, HTTP 5xx), with up to three
+      sample lines per category. A line counts once in every category it matches.
+    script: scripts/error_patterns.py
+    tags: [logs, errors]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+    inputs:
+      since: { type: duration, default: 1h, description: Look-back window passed to kubectl logs --since }
+    outputs:
+      patterns: { schema: ./schemas/patterns.v1.json, description: "Categories with at least one match per container, highest count first" }
+      scanned: { schema: ./schemas/streams.v1.json, description: "Lines read per stream; truncated when maxScanLines was reached (older lines in the window were not read)" }
+      unavailable: { schema: ./schemas/unavailable.v1.json, description: "Containers with no readable log, and why" }
+      inspected: { schema: ./schemas/pattern-inspected.v1.json, description: "Pods and containers looked at, lines skipped by ignore" }
+
+  - name: stacktraces
+    title: Stack traces in logs
+    description: >-
+      Python, Java, Go, Node.js and .NET stack traces in the logs (current and
+      previous run) of the workload's containers within since, grouped by
+      language, exception type and first line: how many, in which pods and
+      containers, and one sample trace cut to 40 lines.
+    script: scripts/stacktraces.py
+    tags: [logs, stacktrace]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+    inputs:
+      since: { type: duration, default: 1h, description: Look-back window passed to kubectl logs --since }
+    outputs:
+      traces: { schema: ./schemas/traces.v1.json, description: "Distinct traces, most frequent first" }
+      scanned: { schema: ./schemas/streams.v1.json, description: "Lines read per stream; truncated when maxScanLines was reached (older lines in the window were not read)" }
+      unavailable: { schema: ./schemas/unavailable.v1.json, description: "Containers with no readable log, and why" }
+      inspected: { schema: ./schemas/logs-inspected.v1.json, description: "How many pods exist and how many were read" }
