@@ -178,7 +178,7 @@ kubernetes:
     note: "controller health maps to k8s-workload-health / k8s-workload-logs on the karpenter Deployment (no task in this skill); webhook and API-group inventory are not NodePool facts"
     tasks:
       "Check Karpenter Controller Workload Health in Cluster": "dropped: k8s-workload-health/rollout-status and pod-status on the karpenter Deployment"
-      "Verify Karpenter Admission Webhooks in Cluster": "dropped: cluster-wide webhook configuration inventory, not a NodePool or workload fact; a failing webhook shows in the controller's pod-status and logs"
+      "Verify Karpenter Admission Webhooks in Cluster": "dropped (gap): Karpenter webhook configurations, caBundle and the webhook Service are covered by no skill (k8s-ingress-health has no such task); a failing webhook shows only in the controller's pod-status and logs"
       "Inspect Warning Events in Karpenter Namespace": "dropped: k8s-workload-health/warning-events on the karpenter Deployment"
       "Summarize Installed Karpenter API Versions and CRDs": "dropped: the nodepool type only has targets where the CRD is installed; an absent NodeClass type is reported by nodepool-status (nodeClass.typeInstalled)"
       "Check Karpenter Service and Metrics Endpoints": "dropped: Service/Endpoints inventory of the controller namespace is not a NodePool fact; no sibling skill reads Services yet"

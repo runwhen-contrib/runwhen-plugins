@@ -50,10 +50,27 @@ def phase_of(claim):
     return "NotReady"
 
 
+def _not_ready_seconds(claim, phase, created, now):
+    """Seconds the claim has been not Ready, or None when it is Ready or Deleting.
+
+    A claim that has not got through Launched, Registered and Initialized never was Ready: it is
+    measured from creation. One that got through them and is not Ready (its node went NotReady) is
+    measured from the Ready condition's lastTransitionTime, so a claim that served for days and
+    failed a minute ago is not "stuck" for days; with no such time, from creation.
+    """
+    if phase in ("Ready", "Deleting"):
+        return None
+    since = created
+    if phase == "NotReady":
+        ready = condition_of(claim, "Ready")
+        since = parse_time(ready and ready["lastTransitionTime"]) or created
+    return seconds_since(since, now)
+
+
 def claim_view(claim, now, stuck_minutes):
     """One NodeClaim: phase, age, whether it is stuck, its node and what it was launched as.
 
-    stuck: older than `stuck_minutes` with no Ready=True and not being deleted. `capacityType`,
+    stuck: not Ready for longer than `stuck_minutes` (see _not_ready_seconds), not being deleted. `capacityType`,
     `instanceType` and `zone` come from the labels Karpenter sets, null when absent.
     """
     meta = claim["metadata"]
@@ -63,15 +80,15 @@ def claim_view(claim, now, stuck_minutes):
     deleted = parse_time(meta.get("deletionTimestamp"))
     age = seconds_since(created, now)
     phase = phase_of(claim)
+    not_ready = _not_ready_seconds(claim, phase, created, now)
     ref = (claim.get("spec") or {}).get("nodeClassRef") or {}
     return {
         "name": meta["name"],
         "creationTimestamp": meta.get("creationTimestamp"),
         "ageSeconds": age,
         "phase": phase,
-        "stuck": phase not in ("Ready", "Deleting")
-        and age is not None
-        and age > float(stuck_minutes) * 60,
+        "notReadySeconds": not_ready,
+        "stuck": not_ready is not None and not_ready > float(stuck_minutes) * 60,
         "deleting": phase == "Deleting",
         "deletingSeconds": seconds_since(deleted, now),
         "launched": condition_of(claim, "Launched"),

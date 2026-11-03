@@ -25,7 +25,7 @@ tasks:
       disruption budgets, how much of each spec.limits entry status.resources has
       used (cpu, memory, nodes, ...: percent, atOrAbove against the
       limitWarningPercent setting, exhausted), and the NodeClass it refers to:
-      whether it exists and is Ready (EC2NodeClass, AKSNodeClass and GCPNodeClass are
+      whether it exists and is Ready (EC2NodeClass, AKSNodeClass and GCENodeClass are
       read). A NodeClass of another group or kind is not looked up: lookedUp is
       false with no error. NodeClasses are cluster-scoped; when reading one is
       forbidden the pool facts are still returned, the NodeClass exists and ready are
@@ -37,7 +37,7 @@ tasks:
       - { apiGroups: [karpenter.sh], resources: [nodepools], verbs: [get] }
       - { apiGroups: [karpenter.k8s.aws], resources: [ec2nodeclasses], verbs: [get] }
       - { apiGroups: [karpenter.azure.com], resources: [aksnodeclasses], verbs: [get] }
-      - { apiGroups: [karpenter.k8s.gcp], resources: [gcpnodeclasses], verbs: [get] }
+      - { apiGroups: [karpenter.k8s.gcp], resources: [gcenodeclasses], verbs: [get] }
     outputs:
       pool: { schema: ./schemas/pool.v1.json, description: "Conditions, weight, disruption policy and budgets, expireAfter and the NodeClass reference" }
       limits: { schema: ./schemas/limits.v1.json, description: "Each limited or reported resource: limit, used, percent, atOrAbove, exhausted" }
@@ -49,8 +49,10 @@ tasks:
       The NodeClaims of the pool (label karpenter.sh/nodepool, and owned by this
       pool when they name an owner): phase from the Launched, Registered,
       Initialized and Ready conditions (Launching, Registering, Initializing, Ready,
-      NotReady or Deleting), age, stuck (older than the stuckMinutes setting without
-      Ready), the Drifted, Empty and Consolidatable conditions, node name, capacity
+      NotReady or Deleting), age, notReadySeconds and stuck (not Ready for longer than
+      the stuckMinutes setting: counted from creation for a claim that never became
+      Ready, from the Ready condition's last transition for one that went not Ready
+      later), the Drifted, Empty and Consolidatable conditions, node name, capacity
       type, instance type and zone; stuck claims first. Counts per phase and capacity
       type cover every claim, not just the ones listed. NodeClaims are cluster-scoped
       and listing them needs a ClusterRole; when it is forbidden the task fails.
@@ -67,18 +69,18 @@ tasks:
   - name: pending-pods
     title: Pending pods this pool could serve
     description: >-
-      Pending pods in every namespace whose PodScheduled condition is False with
-      reason Unschedulable and whose karpenter.sh/nodepool constraint (nodeSelector or
-      required node affinity) names this pool or is absent, oldest first with the
-      pods that select this pool before the rest: age, the scheduler's message,
-      requested cpu and memory, owner. Counts say how many pending pods exist, how
-      many are unschedulable, how many select this pool, are unconstrained or
-      select another pool. Events on those pods within the since window, of the
-      reasons FailedScheduling (the scheduler and Karpenter), Nominated and
-      FailedProvisioning, are grouped per pod and reason; when listing events is forbidden they
-      are null with a permission_denied error and the pods are kept. Pods and events
-      are cluster-wide reads that need a ClusterRole. Taints, tolerations and other
-      labels are not evaluated: "could serve" is the pool-label constraint only.
+      Pending pods in every namespace with PodScheduled False, reason Unschedulable,
+      whose karpenter.sh/nodepool constraint (nodeSelector or required node affinity)
+      allows this pool or is absent: those that select it (nodeSelector, or an In
+      requirement) first, then oldest first. Age, the scheduler's message, effective
+      requested cpu and memory, owner. DaemonSet-owned pods and pods pinned to a node by
+      name (matchFields metadata.name) are only counted (daemonSetPods, pinnedToNode).
+      Counts split pending pods by whether they select this pool, have another kind of
+      constraint (NotIn, Exists), are unconstrained or select another pool. Events of
+      reason FailedScheduling, Nominated and FailedProvisioning within the since window
+      are grouped per listed pod and reason; events is null (not []) when not read: no
+      pod listed, or listing them forbidden (permission_denied; the pods are kept).
+      Cluster-wide reads. Taints and tolerations are not evaluated.
     script: scripts/pending_pods.py
     timeout: 120s
     tags: [pending, unschedulable, karpenter, provisioning, capacity]
@@ -91,5 +93,5 @@ tasks:
       since: { type: duration, default: 1h, description: "Look-back window, applied to when each event was last seen" }
     outputs:
       pods: { schema: ./schemas/pending-pods.v1.json, description: "Unschedulable pods this pool could serve, selecting pods first, oldest first" }
-      counts: { schema: ./schemas/pending-counts.v1.json, description: "Pending, unschedulable, selecting this pool, unconstrained and selecting another pool, before the maxItems cap" }
-      events: { schema: ./schemas/pending-events.v1.json, description: "Events on those pods grouped per pod and reason; null when events could not be read" }
+      counts: { schema: ./schemas/pending-counts.v1.json, description: "Pending, unschedulable, DaemonSet and node-pinned pods, and the pods selecting this pool, otherwise constrained, unconstrained or selecting another pool, before the maxItems cap" }
+      events: { schema: ./schemas/pending-events.v1.json, description: "Events on the listed pods grouped per pod and reason; null when not read (no pod listed, or forbidden)" }

@@ -74,8 +74,14 @@ def with_status(obj, conditions):
     return obj
 
 
-def cond(ctype, status="True", reason=None, message=None):
-    return {"type": ctype, "status": status, "reason": reason, "message": message}
+def cond(ctype, status="True", reason=None, message=None, since=None):
+    return {
+        "type": ctype,
+        "status": status,
+        "reason": reason,
+        "message": message,
+        "lastTransitionTime": since,
+    }
 
 
 # ------------------------------------------------------------ helpers ----
@@ -102,7 +108,14 @@ def test_healthy_pool_reports_conditions_policy_and_class_reference():
     assert v["weight"] == 10 and v["consolidationPolicy"] == "WhenEmptyOrUnderutilized"
     assert v["consolidateAfter"] == "1m" and v["expireAfter"] == "720h"
     assert v["budgets"] == [
-        {"nodes": "10%", "reasons": [], "schedule": None, "duration": None, "allowsNone": False}
+        {
+            "nodes": "10%",
+            "reasons": [],
+            "schedule": None,
+            "duration": None,
+            "allowsNone": False,
+            "allowsNoneDuringSchedule": False,
+        }
     ]
     assert v["nodeClassRef"] == {
         "group": "karpenter.k8s.aws",
@@ -130,7 +143,10 @@ def test_a_zero_budget_allows_no_disruption_and_reasons_are_kept():
     assert [(b["nodes"], b["allowsNone"]) for b in budgets] == [("0", True), ("20%", False)]
     assert budgets[0]["reasons"] == ["Underutilized"]
     odd = np_.budget_view({"nodes": "0%", "schedule": "0 9 * * *", "duration": "8h"})
-    assert odd["allowsNone"] is True and odd["schedule"] == "0 9 * * *"
+    # a zero budget that only applies on a schedule blocks disruption only inside the window
+    assert odd["allowsNone"] is False and odd["allowsNoneDuringSchedule"] is True
+    assert odd["schedule"] == "0 9 * * *"
+    assert np_.budget_view({"nodes": "0"})["allowsNoneDuringSchedule"] is False
     assert np_.budget_view({"nodes": "ten"})["allowsNone"] is False
     assert np_.budget_view({})["nodes"] is None
 
@@ -244,7 +260,7 @@ def test_nodeclass_lookup_knows_the_three_provider_types_and_no_other():
     assert np_.nodeclass_lookup(pool("external-pool")) == (None, "kwok")
     for group, kind, plural in (
         ("karpenter.azure.com", "AKSNodeClass", "aksnodeclasses"),
-        ("karpenter.k8s.gcp", "GCPNodeClass", "gcpnodeclasses"),
+        ("karpenter.k8s.gcp", "GCENodeClass", "gcenodeclasses"),
     ):
         obj = {
             "spec": {
@@ -336,6 +352,32 @@ def test_a_young_claim_that_is_not_ready_yet_is_not_stuck():
     assert v["phase"] == "Registering" and v["stuck"] is False
     assert view("broken-pool-stuck1", stuck_minutes=60)["stuck"] is False
     assert view("broken-pool-stuck1", stuck_minutes=1)["stuck"] is True
+
+
+def test_a_claim_that_was_ready_and_went_not_ready_is_measured_from_that_transition():
+    # Created long ago and Ready for most of its life: its age says nothing about how long it
+    # has been unhealthy. Only the time since Ready last changed does.
+    base = claim("healthy-pool-aaaaa")
+    up = [cond("Launched"), cond("Registered"), cond("Initialized")]
+    recent = with_status(base, [*up, cond("Ready", "False", since="2026-11-03T20:58:00Z")])
+    v = nc.claim_view(recent, NOW, 15)
+    assert v["phase"] == "NotReady" and v["ageSeconds"] > 1700
+    assert v["notReadySeconds"] == 120 and v["stuck"] is False
+    old = with_status(base, [*up, cond("Ready", "False", since="2026-11-03T20:30:00Z")])
+    v = nc.claim_view(old, NOW, 15)
+    assert v["notReadySeconds"] == 1800 and v["stuck"] is True
+    # no Ready condition to measure from: the claim's own age is all there is
+    bare = nc.claim_view(with_status(base, up), NOW, 15)
+    assert bare["phase"] == "NotReady" and bare["notReadySeconds"] == bare["ageSeconds"]
+
+
+def test_a_claim_that_never_became_ready_is_measured_from_creation():
+    v = view("broken-pool-stuck1")
+    assert v["phase"] == "Registering" and v["notReadySeconds"] == v["ageSeconds"]
+    assert view("healthy-pool-aaaaa")["notReadySeconds"] is None  # Ready
+    gone = copy.deepcopy(claim("broken-pool-stuck1"))
+    gone["metadata"]["deletionTimestamp"] = "2026-11-03T20:58:00Z"
+    assert nc.claim_view(gone, NOW, 15)["notReadySeconds"] is None
 
 
 def test_phase_follows_the_first_condition_that_is_not_true():
@@ -484,10 +526,16 @@ def expr(operator, *values, key="karpenter.sh/nodepool"):
 
 
 def test_affinity_operators_and_ored_terms():
-    assert pp.pool_constraint(affinity([expr("NotIn", "a")]), "b") == (True, "nodeAffinity")
-    assert pp.pool_constraint(affinity([expr("NotIn", "a")]), "a") == (False, "nodeAffinity")
-    assert pp.pool_constraint(affinity([expr("Exists")]), "a") == (True, "nodeAffinity")
-    assert pp.pool_constraint(affinity([expr("DoesNotExist")]), "a") == (False, "nodeAffinity")
+    # only In (and nodeSelector) select the pool; the other operators are their own class
+    assert pp.pool_constraint(affinity([expr("NotIn", "a")]), "b") == (True, "nodeAffinityOther")
+    assert pp.pool_constraint(affinity([expr("NotIn", "a")]), "a") == (False, "nodeAffinityOther")
+    assert pp.pool_constraint(affinity([expr("Exists")]), "a") == (True, "nodeAffinityOther")
+    assert pp.pool_constraint(affinity([expr("DoesNotExist")]), "a") == (
+        False,
+        "nodeAffinityOther",
+    )
+    mixed = affinity([expr("In", "a")], [expr("NotIn", "b")])
+    assert pp.pool_constraint(mixed, "a") == (True, "nodeAffinityOther")  # not every term selects
     # terms are ORed: one that allows the pool is enough
     two = affinity([expr("In", "a")], [expr("In", "b")])
     assert pp.pool_constraint(two, "b") == (True, "nodeAffinity")
@@ -523,8 +571,11 @@ def test_pending_pods_for_the_pool_that_the_pods_select():
         "unschedulable": 3,
         "couldBeServed": 2,
         "constrainedToPool": 1,
+        "otherConstraint": 0,
         "unconstrained": 1,
         "selectOtherPool": 1,
+        "daemonSetPods": 0,
+        "pinnedToNode": 0,
     }
     full = rows[0]
     assert (
@@ -615,6 +666,18 @@ def test_pod_requests_follow_the_effective_request_rule():
         == 4000
     )
     assert pp.pod_requests(spec(containers=[c()])) == {"cpuMillicores": None, "memoryBytes": None}
+    # a sidecar that started before an ordinary init container runs alongside it: 1 + 5, not 5
+    before = spec(
+        containers=[c("100m")],
+        initContainers=[c("1", restartPolicy="Always"), c("5")],
+    )
+    assert pp.pod_requests(before)["cpuMillicores"] == 6000
+    # a sidecar listed after the init container did not start before it: peak 5, steady 1.1
+    after = spec(
+        containers=[c("100m")],
+        initContainers=[c("5"), c("1", restartPolicy="Always")],
+    )
+    assert pp.pod_requests(after)["cpuMillicores"] == 5000
 
 
 def test_pod_owner_is_the_controller():
@@ -625,6 +688,76 @@ def test_pod_owner_is_the_controller():
     ]
     row = pp.pod_view(p, pp.unschedulable_condition(p), "none", NOW)
     assert row["owner"] == {"kind": "ReplicaSet", "name": "rs"}
+
+
+def owned_by(p, kind):
+    p["metadata"]["ownerReferences"] = [{"kind": kind, "name": "owner", "controller": True}]
+    return p
+
+
+def pinned(p, node="kind-control-plane"):
+    p["spec"]["affinity"] = {
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+                "nodeSelectorTerms": [
+                    {"matchFields": [{"key": "metadata.name", "operator": "In", "values": [node]}]}
+                ]
+            }
+        }
+    }
+    return p
+
+
+def test_daemonset_pods_are_counted_apart_and_not_listed():
+    items = copy.deepcopy(load("pending-pods")["items"])
+    ds = pinned(owned_by(copy.deepcopy(named({"items": items}, "pending-any")), "DaemonSet"))
+    ds["metadata"]["name"] = "ds-pod"
+    items.append(ds)
+    rows, counts = pp.pending_pods_for(items, "full-pool", NOW, 200)
+    assert "ds-pod" not in [r["name"] for r in rows]
+    assert counts["daemonSetPods"] == 1 and counts["unschedulable"] == 4
+    # a DaemonSet pod is not "unconstrained": it cannot go to a node Karpenter would make
+    assert counts["unconstrained"] == 1 and counts["couldBeServed"] == 2
+    # a DaemonSet pod that carries no matchFields pin is still a DaemonSet pod
+    ds2 = owned_by(copy.deepcopy(named({"items": items}, "pending-any")), "DaemonSet")
+    ds2["metadata"]["name"] = "ds-2"
+    rows, counts = pp.pending_pods_for([*items, ds2], "full-pool", NOW, 200)
+    assert counts["daemonSetPods"] == 2 and "ds-2" not in [r["name"] for r in rows]
+
+
+def test_pods_pinned_to_a_node_by_name_are_counted_apart_and_not_listed():
+    items = copy.deepcopy(load("pending-pods")["items"])
+    one = pinned(copy.deepcopy(named({"items": items}, "pending-any")))
+    one["metadata"]["name"] = "pinned"
+    rows, counts = pp.pending_pods_for([*items, one], "full-pool", NOW, 200)
+    assert "pinned" not in [r["name"] for r in rows]
+    assert counts["pinnedToNode"] == 1 and counts["daemonSetPods"] == 0
+    assert counts["unschedulable"] == 4 and counts["couldBeServed"] == 2
+    # a term that pins by name and one that does not: not pinned (terms are ORed)
+    either = copy.deepcopy(one)
+    either["spec"]["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"][
+        "nodeSelectorTerms"
+    ].append({"matchExpressions": [expr("In", "x", key="zone")]})
+    either["metadata"]["name"] = "either"
+    rows, counts = pp.pending_pods_for([*items, either], "full-pool", NOW, 200)
+    assert "either" in [r["name"] for r in rows] and counts["pinnedToNode"] == 0
+
+
+def test_pods_that_only_exclude_the_pool_are_not_counted_as_constrained_to_it():
+    items = copy.deepcopy(load("pending-pods")["items"])
+    other = copy.deepcopy(named({"items": items}, "pending-any"))
+    other["metadata"]["name"] = "not-in"
+    other["spec"]["affinity"] = affinity([expr("NotIn", "broken-pool")])["spec"]["affinity"]
+    exists = copy.deepcopy(other)
+    exists["metadata"]["name"] = "exists"
+    exists["spec"]["affinity"] = affinity([expr("Exists")])["spec"]["affinity"]
+    rows, counts = pp.pending_pods_for([*items, other, exists], "full-pool", NOW, 200)
+    by = {r["name"]: r["constraint"] for r in rows}
+    assert by["not-in"] == by["exists"] == "nodeAffinityOther"
+    assert counts["constrainedToPool"] == 1 and counts["otherConstraint"] == 2
+    # listed after the pods that select the pool, before the unconstrained ones
+    assert [r["name"] for r in rows][0] == "pending-full"
+    assert [r["constraint"] for r in rows][-1] == "none"
 
 
 def rows_for(pool_name):
@@ -740,6 +873,9 @@ class FakeCtx:
         self.messages = []
         self.calls = []
 
+    def now(self):
+        return NOW
+
     def error(self, code, message, scope=None, hint=None, details=None):
         self.errors.append({"code": code, "scope": scope})
         self.messages.append(message)
@@ -773,7 +909,7 @@ class FakeCtx:
         elif noun in (
             "ec2nodeclasses.karpenter.k8s.aws",
             "aksnodeclasses.karpenter.azure.com",
-            "gcpnodeclasses.karpenter.k8s.gcp",
+            "gcenodeclasses.karpenter.k8s.gcp",
         ):
             if noun not in self.classes:
                 plural = noun.split(".")[0]
@@ -822,20 +958,10 @@ class LegacyCtx(FakeCtx):
         return super().run(argv, check=False)
 
 
-class FrozenDatetime(datetime):
-    """datetime whose now() is NOW, so ages, stuck and the event window do not move with the wall clock."""
-
-    @classmethod
-    def now(cls, tz=None):
-        return NOW
-
-
 def script(name):
     spec = importlib.util.spec_from_file_location(f"kp_{name}", SKILL / "scripts" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if hasattr(module, "datetime"):
-        module.datetime = FrozenDatetime
     return module.main
 
 
@@ -909,7 +1035,7 @@ def test_external_nodeclass_group_is_not_looked_up():
 def test_azure_and_gcp_nodeclasses_are_read_from_their_own_groups():
     for group, kind, noun in (
         ("karpenter.azure.com", "AKSNodeClass", "aksnodeclasses.karpenter.azure.com"),
-        ("karpenter.k8s.gcp", "GCPNodeClass", "gcpnodeclasses.karpenter.k8s.gcp"),
+        ("karpenter.k8s.gcp", "GCENodeClass", "gcenodeclasses.karpenter.k8s.gcp"),
     ):
         p = copy.deepcopy(pool("external-pool"))
         p["spec"]["template"]["spec"]["nodeClassRef"] = {"group": group, "kind": kind, "name": "c"}
@@ -1059,7 +1185,8 @@ def test_pending_script_with_no_pending_pods_reads_no_events():
     ctx = FakeCtx("full-pool", pods=[])
     out = script("pending_pods")(ctx)
     check_outputs("pending-pods", out)
-    assert out["pods"] == [] and out["events"] == [] and out["counts"]["pending"] == 0
+    # nothing was listed, so no event was read: null, not "no events"
+    assert out["pods"] == [] and out["events"] is None and out["counts"]["pending"] == 0
     assert not any("events" in c for c in ctx.calls)
 
 
@@ -1147,7 +1274,7 @@ RESOURCES = {
     "nodeclaims.karpenter.sh": ("karpenter.sh", "nodeclaims"),
     "ec2nodeclasses.karpenter.k8s.aws": ("karpenter.k8s.aws", "ec2nodeclasses"),
     "aksnodeclasses.karpenter.azure.com": ("karpenter.azure.com", "aksnodeclasses"),
-    "gcpnodeclasses.karpenter.k8s.gcp": ("karpenter.k8s.gcp", "gcpnodeclasses"),
+    "gcenodeclasses.karpenter.k8s.gcp": ("karpenter.k8s.gcp", "gcenodeclasses"),
     "pods": ("", "pods"),
     "events": ("", "events"),
 }
@@ -1234,7 +1361,7 @@ def test_declared_permissions_cover_every_kubectl_call_the_script_makes(task, ta
     if task == "nodepool-status":  # the NodeClass types of the other providers
         for group, kind, noun in (
             ("karpenter.azure.com", "AKSNodeClass", "aksnodeclasses.karpenter.azure.com"),
-            ("karpenter.k8s.gcp", "GCPNodeClass", "gcpnodeclasses.karpenter.k8s.gcp"),
+            ("karpenter.k8s.gcp", "GCENodeClass", "gcenodeclasses.karpenter.k8s.gcp"),
         ):
             ctx = FakeCtx("external-pool", pools=[aks_gcp_pool(group, kind)], classes={noun: []})
             script("nodepool_status")(ctx)

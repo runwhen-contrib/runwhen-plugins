@@ -19,7 +19,7 @@ from k8s_karpenter_health.common import (
 NODECLASS_TYPES = {
     ("karpenter.k8s.aws", "EC2NodeClass"): "ec2nodeclasses",
     ("karpenter.azure.com", "AKSNodeClass"): "aksnodeclasses",
-    ("karpenter.k8s.gcp", "GCPNodeClass"): "gcpnodeclasses",
+    ("karpenter.k8s.gcp", "GCENodeClass"): "gcenodeclasses",
 }
 UNITS = {"cpu": "cores", "memory": "bytes", "ephemeral-storage": "bytes"}
 
@@ -72,7 +72,10 @@ def nodeclass_view(pool, obj, state):
 
 
 def budget_view(budget):
-    """One disruption budget: nodes ('10%' or '5'), reasons, schedule and duration."""
+    """One disruption budget: nodes ('10%' or '5'), reasons, schedule and duration.
+
+    A zero budget with reasons only blocks those reasons; with a schedule it only blocks inside the
+    window (`allowsNoneDuringSchedule`), so `allowsNone` is true for neither."""
     nodes = budget.get("nodes")
     zero = False
     if nodes is not None:
@@ -80,12 +83,15 @@ def budget_view(budget):
             zero = parse_quantity(str(nodes).rstrip("%")) == 0
         except ValueError:
             zero = False
+    scheduled = bool(budget.get("schedule"))
     return {
         "nodes": None if nodes is None else str(nodes),
         "reasons": nested(budget.get("reasons") or []),
         "schedule": budget.get("schedule"),
         "duration": budget.get("duration"),
-        "allowsNone": zero,
+        # a zero budget with no schedule always blocks; with one it blocks only inside the window
+        "allowsNone": zero and not scheduled,
+        "allowsNoneDuringSchedule": zero and scheduled,
     }
 
 

@@ -4,7 +4,7 @@ description: >-
   Health facts for a Karpenter NodePool: its Ready and other conditions with
   reasons, spec.limits against the resources it has used (cpu, memory, nodes) with
   percent and whether it is at its limit, disruption policy and budgets, and the
-  NodeClass it refers to (EC2NodeClass, AKSNodeClass, GCPNodeClass) with whether
+  NodeClass it refers to (EC2NodeClass, AKSNodeClass, GCENodeClass) with whether
   that exists and is Ready; the pool's NodeClaims with phase, age and which are
   stuck before Ready; and the Pending pods that cannot schedule and that this pool
   could serve, with the scheduler's and Karpenter's events on them. Use when
@@ -32,15 +32,17 @@ forbidden (`nodeClass.exists` and `ready` are `null`, with a `permission_denied`
 error scoped `nodeclasses`); `pending-pods` keeps the pods when only events are
 forbidden (`events: null`, scope `events`). The other reads fail the task instead.
 
-`pending-pods` reaches beyond the pool's own objects (D47): a Pending pod is not
-owned by the pool, but the pool is the thing that should have made room for it, so
-the pods that select the pool (and the unconstrained ones it could serve) are its
-direct concern.
+`pending-pods` reaches beyond the pool's own objects (D47): a Pending pod is not owned
+by the pool, but the pool should have made room for it, so the pods that select it
+(and the unconstrained ones it could serve) are its direct concern.
 
 **Controller health is not a task here.** The Karpenter controller (a Deployment in
-the `karpenter` or `kube-system` namespace), its webhooks and its logs are ordinary
-workloads: use `kubernetes:k8s-workload-health/pod-status` and
-`kubernetes:k8s-workload-logs/error-patterns` on that Deployment.
+the `karpenter` or `kube-system` namespace) and its logs are an ordinary workload: use
+`kubernetes:k8s-workload-health/pod-status` and
+`kubernetes:k8s-workload-logs/error-patterns` on that Deployment. The classic webhook
+checks (Karpenter webhook configurations, caBundle, the webhook Service) are not ported
+and no skill covers them (`kubernetes:k8s-ingress-health` has no such task): a gap. A
+failing admission webhook shows only in the controller's pod status and logs.
 
 ## What each task tells you
 
@@ -48,8 +50,11 @@ workloads: use `kubernetes:k8s-workload-health/pod-status` and
   (Ready, ValidationSucceeded, NodeClassReady, ... status, reason, message);
   `notTrueConditions` lists the types that are not True. `weight`,
   `consolidationPolicy`, `consolidateAfter` and `expireAfter` come from the spec;
-  `budgets` are the disruption budgets as set (`allowsNone` is true for `0` or
-  `0%`; with no budgets Karpenter applies its default of 10%). `limits.items` has
+  `budgets` are the disruption budgets as set (with none Karpenter applies its
+  default of 10%). `allowsNone` is true for a `0` or `0%` budget with no schedule;
+  with a schedule it is `allowsNoneDuringSchedule` instead (it blocks only inside
+  the schedule window). Read `reasons` too: a zero budget with reasons blocks only
+  those disruption reasons. `limits.items` has
   one entry per resource in `spec.limits` or `status.resources`: `limit` and
   `used` in base units (cores, bytes, a count), `percent`, `atOrAbove` against the
   `limitWarningPercent` setting (default 90) and `exhausted` (used at or above the
@@ -58,22 +63,31 @@ workloads: use `kubernetes:k8s-workload-health/pod-status` and
 - `nodeclaims`: the NodeClaims labelled `karpenter.sh/nodepool=<pool>` (and owned by
   this pool when they name an owner). `phase` is Launching, Registering,
   Initializing, NotReady, Ready or Deleting, from the Launched, Registered,
-  Initialized and Ready conditions. `stuck` means older than the `stuckMinutes`
-  setting (default 15) without Ready, not being deleted. Each claim also has
+  Initialized and Ready conditions. `notReadySeconds` is how long it has been not
+  Ready: from creation for a claim that never got through those steps, from the Ready
+  condition's lastTransitionTime for one that did and then went not Ready (so an old
+  claim that failed a minute ago is not stuck); null when Ready or Deleting. `stuck`
+  means `notReadySeconds` is over the `stuckMinutes` setting (default 15). Each claim also has
   `nodeName`, `capacityType`, `instanceType`, `zone`, `drifted`, `empty` and
   `consolidatable` (true only when that condition is True) and the conditions.
   Stuck claims come first. `counts` cover every claim, including those past the cap.
 - `pending-pods`: Pending pods in any namespace whose PodScheduled condition is False
   with reason Unschedulable and whose `karpenter.sh/nodepool` constraint allows
-  this pool. `constraint` says how: `nodeSelector`, `nodeAffinity` (required terms)
-  or `none` (it would take any pool). Pods that select this pool come first, then
-  oldest. Each has the scheduler's `message`, `requests` (effective cpu and memory),
-  the age and `owner`. `counts` has the Pending total, how many are unschedulable,
-  and how many select this pool, are unconstrained or select another pool.
+  this pool. `constraint` says how: `nodeSelector` or `nodeAffinity` (an `In`
+  requirement in every required term) select the pool; `nodeAffinityOther` (NotIn,
+  Exists, DoesNotExist) does not, it only does not exclude it; `none` would take any
+  pool. Pods that select this pool come first, then the others, oldest first. Each has
+  the scheduler's `message`, `requests` (the scheduler's effective cpu and memory,
+  sidecars and init containers included), the age and `owner`. DaemonSet-owned pods and
+  pods pinned to a node by name (matchFields `metadata.name`) are never listed: Karpenter
+  cannot make a node for them; they are counted as `daemonSetPods` and `pinnedToNode`.
+  `counts` has the Pending total, how many are unschedulable, and `constrainedToPool`
+  (select the pool), `otherConstraint`, `unconstrained` and `selectOtherPool`.
   `events` are the events on those pods inside `since` (default 1h) with reason
   FailedScheduling (the scheduler's and Karpenter's), Nominated or FailedProvisioning,
   grouped per pod and reason, with counts and last seen. Other events on the pods
-  (image pulls, probes) are not read.
+  (image pulls, probes) are not read, and only the pods listed (up to `maxItems`) get
+  events: a pod past the cap has none here.
 
 ## How to read the result
 
@@ -85,6 +99,8 @@ Outputs are facts, not verdicts: nothing here says healthy or unhealthy.
   pods that are not Unschedulable (image pulls, volumes). `events: []` means no
   event was last seen inside `since`; events expire after about an hour (default
   event TTL), so a pod pending for longer shows none even though it is still stuck.
+  `events: null` is different: not read, because no pod was listed or listing events
+  was forbidden (a `permission_denied` error scoped `events` says which).
 - **`null` is unknown.** `nodeClass.exists`/`ready` are `null` when the NodeClass was
   not looked up (`lookedUp: false`): either the reference is to a group or kind this
   skill does not read (for example KWOK), with no error, or the read was forbidden,
