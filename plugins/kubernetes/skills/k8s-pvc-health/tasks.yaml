@@ -1,0 +1,96 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (newest or most relevant first)
+  usageThresholdPercent:
+    type: number
+    default: 85
+    description: A volume used at or above this percent has atOrAbove true in usage
+tasks:
+  - name: binding-status
+    title: Claim binding status
+    description: >-
+      The claim's phase, StorageClass (and whether that class exists), bound
+      PersistentVolume (its phase, capacity, reclaim policy, and whether it is
+      being deleted), requested versus bound capacity, resize conditions, and the
+      events about the claim within the look-back window. The StorageClass and
+      PersistentVolume reads are cluster-scoped: when they are forbidden the
+      claim and its events are still returned, with a permission_denied error
+      for the part that could not be read.
+    script: scripts/binding_status.py
+    tags: [binding, storageclass, events]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get] }
+      - { apiGroups: [""], resources: [events], verbs: [list] }
+      - { apiGroups: [storage.k8s.io], resources: [storageclasses], verbs: [get] }
+      - { apiGroups: [""], resources: [persistentvolumes], verbs: [get] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window, applied to when the event was last seen" }
+    outputs:
+      claim: { schema: ./schemas/claim.v1.json, description: "Phase, class, volume, requested vs bound capacity, conditions" }
+      storageClass: { schema: ./schemas/storage-class.v1.json, description: "The claim's StorageClass; exists is null when not looked up" }
+      volume: { schema: ./schemas/volume.v1.json, description: "The bound PersistentVolume; null when the claim names none" }
+      events: { schema: ./schemas/events.v1.json, description: "Events about the claim grouped by type and reason; null when they could not be read" }
+
+  - name: terminating
+    title: Claim termination
+    description: >-
+      Whether the claim has a deletionTimestamp, how long it has been
+      terminating, its finalizers, and the pods in the namespace that still mount
+      it (a pod that is not finished keeps the kubernetes.io/pvc-protection
+      finalizer in place).
+    script: scripts/terminating.py
+    tags: [terminating, finalizers]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      termination: { schema: ./schemas/termination.v1.json, description: "deletionTimestamp, age and finalizers" }
+      pods: { schema: ./schemas/pods.v1.json, description: "Pods mounting the claim, with whether each still holds it" }
+
+  - name: usage
+    title: Volume usage
+    description: >-
+      Filesystem usage of the mounted volume, from df run with kubectl exec in
+      one Running pod that mounts the claim: size, used and available bytes,
+      percent used, and whether it is at or above the usageThresholdPercent
+      setting. Needs pods/exec create, which is why it is its own task. Skipped
+      when no Running pod mounts the claim.
+    script: scripts/usage.py
+    tags: [usage, capacity, exec]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create] }
+    outputs:
+      usage: { schema: ./schemas/usage.v1.json, description: "Usage of the volume as the chosen container sees it" }
+
+  - name: attachment
+    title: Volume attachment
+    description: >-
+      For the claim's PersistentVolume: the nodes that pods currently mounting it
+      run on, the VolumeAttachment objects with their attached state and
+      attach/detach errors, and multiNodeConflict, true when a ReadWriteOnce
+      claim is mounted by active pods on more than one node. The VolumeAttachment
+      list is cluster-scoped: when forbidden the pods and access facts are still
+      returned, volumeAttachments is null and a permission_denied error says why.
+    script: scripts/attachment.py
+    tags: [attachment, readwriteonce, csi]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [storage.k8s.io], resources: [volumeattachments], verbs: [list] }
+    outputs:
+      access: { schema: ./schemas/access.v1.json, description: "Access modes, mounting nodes and multiNodeConflict" }
+      pods: { schema: ./schemas/pods.v1.json, description: "Pods mounting the claim and the node each runs on" }
+      volumeAttachments: { schema: ./schemas/volume-attachments.v1.json, description: "VolumeAttachments for the PV; null when they could not be listed" }
