@@ -1,3 +1,5 @@
+import os
+
 from k8s_workload_logs.errors import RwError
 from k8s_workload_logs.fetch import StreamReader, load_owned_pods
 from k8s_workload_logs.logs import (
@@ -34,15 +36,18 @@ def main(ctx, tail_lines=200, container=None):
     reduced = [reduce_stream(s, text, size) for s, text, size in reader]  # one raw text at a time
     reader.finish()
     sections, index = recent_logs(reduced, st.max_lines)
-    with ctx.artifacts.open("logs", "text/plain") as out:
+    # an artifact output is a file under $RW_OUT; the script returns no value for it
+    out_dir = os.environ.get("RW_OUT")
+    if not out_dir:
+        raise RwError("internal", "RW_OUT is not set: nowhere to write the logs artifact")
+    with open(os.path.join(out_dir, "logs"), "w", encoding="utf-8") as out:
         for stream, lines in sections:
-            out.write(render_section(stream, lines).encode("utf-8"))
+            out.write(render_section(stream, lines))
     streams, n_streams, o_streams = bound(index, st.max_items)
     unavailable, n_unavailable, o_unavailable = bound(
         plan["unavailable"] + reader.unavailable(), st.max_items
     )
     return {
-        "logs": out.ref,
         "streams": streams,
         "unavailable": unavailable,
         "inspected": inspected(

@@ -7,6 +7,7 @@ Stack traces are in traces.py.
 
 import re
 import time
+from collections.abc import Mapping
 
 from k8s_workload_logs.errors import RwError
 from k8s_workload_logs.k8s import LIMIT_BYTES
@@ -281,8 +282,11 @@ def compile_patterns(patterns, what="pattern"):
     """{name: regex} -> {name: compiled}. Searched case-insensitively. More than
     MAX_PATTERNS entries, a pattern over MAX_PATTERN_CHARS or an invalid regex
     raises RwError invalid_input naming the entry."""
-    if not isinstance(patterns, dict) or not all(isinstance(v, str) for v in patterns.values()):
+    if not isinstance(patterns, Mapping) or not all(isinstance(v, str) for v in patterns.values()):
         raise RwError("invalid_input", f"{what}s must be an object of name to regular expression")
+    patterns = {
+        k: v for k, v in patterns.items()
+    }  # the runner's settings are a read-only Mapping, not a dict
     if len(patterns) > MAX_PATTERNS:
         raise RwError(
             "invalid_input", f"at most {MAX_PATTERNS} {what}s are allowed, got {len(patterns)}"

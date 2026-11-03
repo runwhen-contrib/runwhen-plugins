@@ -5,6 +5,7 @@ in a loop; `crashloop` is waiting in CrashLoopBackOff with a previous run."""
 
 import importlib.util
 import json
+from collections.abc import Mapping
 import re
 import subprocess
 import types
@@ -452,7 +453,6 @@ class FakeCtx:
             "ignore": SETTINGS["ignore"],
         }
         self.settings = types.SimpleNamespace(**s)
-        self.artifacts = FakeArtifacts()
 
     def run(self, argv, timeout=None):
         self.calls.append(argv)
@@ -471,27 +471,33 @@ class FakeCtx:
         self.errors.append((code, scope, message))
 
 
-class FakeArtifacts:
-    def __init__(self):
-        self.written = {}
+@pytest.fixture(autouse=True)
+def rw_out(tmp_path, monkeypatch):
+    """The runner gives a task its artifact outputs as files under $RW_OUT."""
+    out = tmp_path / "rw-out"
+    out.mkdir()
+    monkeypatch.setenv("RW_OUT", str(out))
+    return out
 
-    def open(self, name, content_type):
-        return FakeWriter(self, name)
+
+def artifact(rw_out, name="logs"):
+    return (rw_out / name).read_text()
 
 
-class FakeWriter:
-    def __init__(self, parent, name):
-        self.parent, self.name, self.chunks = parent, name, []
+class AttrViewLike(Mapping):
+    """A read-only Mapping that is not a dict, like the SDK's AttrView."""
 
-    def __enter__(self):
-        return self
+    def __init__(self, data):
+        self._data = dict(data)
 
-    def __exit__(self, *exc):
-        self.parent.written[self.name] = b"".join(self.chunks).decode()
-        self.ref = {"$artifact": f"art_{self.name}"}
+    def __getitem__(self, key):
+        return self._data[key]
 
-    def write(self, b):
-        self.chunks.append(b)
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
 
 
 def noisy_ctx(extra=(), **kw):
@@ -551,11 +557,13 @@ def test_stacktraces_script_end_to_end():
     assert {t["language"] for t in out["traces"]} == {"python", "java", "go", "node", "dotnet"}
 
 
-def test_recent_logs_script_writes_the_artifact_and_an_index():
+def test_recent_logs_script_writes_the_artifact_file_and_an_index(rw_out):
     ctx = noisy_ctx(LOGS)
     out = script("recent_logs").main(ctx, tail_lines=50)
-    body = ctx.artifacts.written["logs"]
-    assert out["logs"] == {"$artifact": "art_logs"}
+    body = artifact(rw_out)
+    assert "logs" not in out  # an artifact output is the file, the script returns no value for it
+    assert list(out) == ["streams", "unavailable", "inspected"]
+    assert body.startswith("==> noisy-7cc85fc74-bzrdb/app [current] 120 lines\n")
     assert "==> noisy-7cc85fc74-bzrdb/app [current] 120 lines\n" in body
     assert "==> noisy-7cc85fc74-bzrdb/quiet [current] 20 lines\n" in body
     assert "--tail=50" in next(c for c in ctx.calls if "logs" in c and "app" in c)
@@ -565,12 +573,12 @@ def test_recent_logs_script_writes_the_artifact_and_an_index():
     ]
 
 
-def test_recent_logs_respects_max_lines():
+def test_recent_logs_respects_max_lines(rw_out):
     ctx = noisy_ctx(LOGS)
     ctx.settings.max_lines = 50
     out = script("recent_logs").main(ctx)
     assert sum(s["lines"] for s in out["streams"]) == 50
-    assert ctx.artifacts.written["logs"].count("\n") == 50 + 2  # lines plus two headers
+    assert artifact(rw_out).count("\n") == 50 + 2  # lines plus two headers
 
 
 def test_recent_logs_container_input_reads_only_that_container():
@@ -792,7 +800,7 @@ def test_outputs_validate_against_their_schemas():
     for name, task in zip(["recent_logs", "error_patterns", "stacktraces"], TASKS["tasks"]):
         ctx = noisy_ctx(LOGS)
         out = script(name).main(ctx)
-        assert set(out) == set(task["outputs"])
+        assert set(out) == {k for k, d in task["outputs"].items() if "artifact" not in d}
         for key, decl in task["outputs"].items():
             if "schema" in decl:
                 schema = json.loads((SKILL / decl["schema"]).read_text())
@@ -1025,18 +1033,17 @@ def test_dotnet_frame_pattern_is_linear():
 # M4: the real SDK Context and LocalArtifactSink.
 
 
-def test_recent_logs_with_the_real_sdk_context(tmp_path):
-    context = pytest.importorskip("runwhen_capability.context")
-    ctx = context.Context("kubernetes", "recent-logs", tmp_path, task="recent-logs")
-    fake = noisy_ctx(LOGS)
-    ctx.resource, ctx.settings, ctx.run = fake.resource, fake.settings, fake.run
-    out = script("recent_logs").main(ctx)
-    marker = out["logs"].model_dump(mode="json")
-    assert list(marker) == ["$artifact"]
-    (written,) = list((tmp_path / ".rw-artifacts").iterdir())
-    body = written.read_text()
-    assert body.startswith("==> noisy-7cc85fc74-bzrdb/app [current] 120 lines\n")
-    assert "==> noisy-7cc85fc74-bzrdb/quiet [current] 20 lines\n" in body
+def test_recent_logs_writes_to_rw_out_and_fails_clearly_without_it(tmp_path, monkeypatch):
+    out_dir = tmp_path / "elsewhere"
+    out_dir.mkdir()
+    monkeypatch.setenv("RW_OUT", str(out_dir))
+    script("recent_logs").main(noisy_ctx(LOGS))
+    assert (out_dir / "logs").read_text().startswith("==> noisy-7cc85fc74-bzrdb/app [current]")
+    monkeypatch.delenv("RW_OUT")
+    ctx = noisy_ctx(LOGS)
+    with pytest.raises(RwError) as exc:
+        script("recent_logs").main(ctx)
+    assert exc.value.code == "internal" and "RW_OUT" in exc.value.message
 
 
 @pytest.mark.parametrize(
@@ -1102,7 +1109,7 @@ def test_clip_leaves_ordinary_text_alone():
     assert logs.clip("GET /secrets 200")[0] == "GET /secrets 200"
 
 
-def test_redaction_reaches_every_output():
+def test_redaction_reaches_every_output(rw_out):
     log = (
         "ERROR login failed password=hunter2\n"
         'Traceback (most recent call last):\n  File "a.py", line 1, in f\n'
@@ -1111,9 +1118,8 @@ def test_redaction_reaches_every_output():
     ctx = noisy_ctx([(["logs"], log)])
     patterns = script("error_patterns").main(ctx)["patterns"]
     sample = script("stacktraces").main(ctx)["traces"][0]["sample"]
-    ctx2 = noisy_ctx([(["logs"], log)])
-    script("recent_logs").main(ctx2)
-    for blob in (json.dumps(patterns), json.dumps(sample), ctx2.artifacts.written["logs"]):
+    script("recent_logs").main(noisy_ctx([(["logs"], log)]))
+    for blob in (json.dumps(patterns), json.dumps(sample), artifact(rw_out)):
         assert "hunter2" not in blob and "abc123" not in blob and "[REDACTED]" in blob
 
 
@@ -1204,3 +1210,27 @@ def test_every_kubectl_logs_call_has_a_timeout_and_a_slow_stream_is_an_error_not
     assert log_timeouts == [fetch.LOG_CALL_TIMEOUT] * 2 and fetch.LOG_CALL_TIMEOUT == 20
     assert ctx.errors[0][0] == "timeout" and ctx.errors[0][1].endswith("/quiet")
     assert [s["container"] for s in out["scanned"]] == ["app"] and out["patterns"]
+
+
+# The SDK runner hands settings over as read-only Mappings that are not dicts, with every key
+# (at every depth) snake_cased.
+
+
+def test_error_patterns_accepts_mapping_settings_and_keeps_category_names():
+    ctx = noisy_ctx([(["logs"], "ERROR a\nconn refused here\n")])
+    ctx.settings.patterns = AttrViewLike({"conn_refused": "conn refused", "error": r"\berror\b"})
+    ctx.settings.ignore = ["x"]
+    out = script("error_patterns").main(ctx)
+    assert {r["category"] for r in out["patterns"]} == {"conn_refused", "error"}
+
+
+def test_compile_patterns_accepts_any_mapping_and_still_rejects_other_types():
+    assert set(logs.compile_patterns(AttrViewLike({"a": "x"}))) == {"a"}
+    for bad in (["x"], "x", None, {"a": 1}):
+        with pytest.raises(RwError) as exc:
+            logs.compile_patterns(bad)
+        assert exc.value.code == "invalid_input"
+
+
+def test_the_patterns_setting_documents_snake_case_category_names():
+    assert "snake_case" in TASKS["settings"]["patterns"]["description"]

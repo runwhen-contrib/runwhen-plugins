@@ -46,7 +46,7 @@ prefer `error-patterns` counts over pasting `recent-logs` text into a reply.
   it, `lineTruncated` says some line passed 1024 characters and was cut.
 - `error-patterns`: for each pod and container (current or previous run), how
   many lines within `since` match each category of the `patterns` setting, with
-  up to three sample lines. A line counts once in every category it matches
+  up to three sample lines (name categories in snake_case: the runner snake-cases nested setting keys). A line counts once in every category it matches
   (`connection refused` while `out of memory` counts in both). Lines like
   `error: 0` match the `ignore` setting and count nowhere (`linesIgnored`).
 - `stacktraces`: traces within `since`, grouped by language, exception type and
