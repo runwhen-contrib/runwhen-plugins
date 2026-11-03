@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Webhooks of Istio's mutating and validating configurations; null when not read",
+  "type": [
+    "array",
+    "null"
+  ],
+  "items": {
+    "type": "object",
+    "properties": {
+      "configuration": {
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "mutating",
+          "validating"
+        ]
+      },
+      "webhook": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "failurePolicy": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sideEffects": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timeoutSeconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "caBundlePresent": {
+        "type": "boolean"
+      },
+      "service": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "namespace",
+          "name",
+          "port",
+          "path"
+        ]
+      },
+      "url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "pointsAtTarget": {
+        "type": "boolean",
+        "description": "The webhook's Service is the target Deployment's name in its namespace"
+      },
+      "endpoints": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "ready": {
+            "type": "integer"
+          },
+          "notReady": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ready",
+          "notReady"
+        ],
+        "description": "Ready and not-ready endpoints behind the Service (EndpointSlices); null when not looked up (another namespace, or not allowed)"
+      }
+    },
+    "required": [
+      "configuration",
+      "kind",
+      "webhook",
+      "failurePolicy",
+      "sideEffects",
+      "timeoutSeconds",
+      "caBundlePresent",
+      "service",
+      "url",
+      "pointsAtTarget",
+      "endpoints"
+    ]
+  }
+}

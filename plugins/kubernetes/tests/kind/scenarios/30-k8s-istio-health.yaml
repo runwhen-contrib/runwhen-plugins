@@ -1,0 +1,211 @@
+# Simulated Istio for k8s-istio-health: no Istio runs here. Namespace rw-istio is labelled
+# istio-injection=enabled, and the "sidecars" are busybox containers named istio-proxy that
+# print Envoy-like log and access-log lines. `meshed` has a noisy proxy (warning, error, 503 UF,
+# 503 NR, 504 URX), `meshed-quiet` a quiet one, `bare` has no sidecar although injection is on,
+# `bare-optout` has none because its template says sidecar.istio.io/inject=false, `istiod` is a
+# busybox container named discovery, and `istio-ingressgateway` cannot pull its image.
+# The webhook configurations are named like Istio's and cannot match anything
+# (failurePolicy Ignore, an objectSelector no object has).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-istio
+  labels:
+    istio-injection: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meshed
+  namespace: rw-istio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: meshed}
+  template:
+    metadata:
+      labels:
+        app: meshed
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: [sleep, "86400"]
+        - name: istio-proxy
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                printf '2026-11-03T20:00:00.000000Z\tinfo\tads\tXDS: Pushing request to the client\n'
+                printf '2026-11-03T20:00:01.000000Z\twarning\tenvoy config\tgRPC config stream to xds-grpc closed: 14, connection error\n'
+                printf '2026-11-03T20:00:02.000000Z\terror\tenvoy connection\tTLS error: 268435581:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED\n'
+                printf '[2026-11-03T20:00:03.123Z] "GET /ok HTTP/1.1" 200 - via_upstream - "-" 0 5 3 2 "-" "curl/8.5" "r-1" "web" "10.244.0.9:8080" inbound|8080|| 127.0.0.6:41 10.244.0.9:8080 10.244.0.4:55 - default\n'
+                printf '[2026-11-03T20:00:04.123Z] "GET /pay HTTP/1.1" 503 UF upstream_reset_before_response_started{connection_failure} - "-" 0 91 1 - "-" "curl/8.5" "r-2" "pay" "10.244.0.9:9090" outbound|9090||pay.rw-istio.svc.cluster.local - 10.96.0.20:9090 10.244.0.4:56 - default\n'
+                printf '[2026-11-03T20:00:05.123Z] "POST /order?id=17 HTTP/1.1" 503 NR no_route - "-" 0 0 0 - "-" "curl/8.5" "r-3" "orders" "-" - - 10.96.0.21:80 10.244.0.4:57 - default\n'
+                printf '[2026-11-03T20:00:06.123Z] "GET /slow HTTP/1.1" 504 URX upstream_max_stream_duration_reached - "-" 0 0 15000 - "-" "curl/8.5" "r-4" "slow" "10.244.0.9:7070" outbound|7070||slow.rw-istio.svc.cluster.local - 10.96.0.22:7070 10.244.0.4:58 - default\n'
+                sleep 20
+              done
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meshed-quiet
+  namespace: rw-istio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: meshed-quiet}
+  template:
+    metadata:
+      labels:
+        app: meshed-quiet
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: [sleep, "86400"]
+        - name: istio-proxy
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                printf '2026-11-03T20:00:00.000000Z\tinfo\tads\tXDS: Pushing request to the client\n'
+                printf '[2026-11-03T20:00:03.123Z] "GET /ok HTTP/1.1" 200 - via_upstream - "-" 0 5 3 2 "-" "curl/8.5" "r-1" "web" "10.244.0.9:8080" inbound|8080|| 127.0.0.6:41 10.244.0.9:8080 10.244.0.4:55 - default\n'
+                sleep 20
+              done
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bare
+  namespace: rw-istio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: bare}
+  template:
+    metadata:
+      labels:
+        app: bare
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: [sleep, "86400"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bare-optout
+  namespace: rw-istio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: bare-optout}
+  template:
+    metadata:
+      labels:
+        app: bare-optout
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: [sleep, "86400"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istiod
+  namespace: rw-istio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: istiod}
+  template:
+    metadata:
+      labels:
+        app: istiod
+        istio: pilot
+    spec:
+      containers:
+        - name: discovery
+          image: busybox:1.36
+          command: [sleep, "86400"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-ingressgateway
+  namespace: rw-istio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: istio-ingressgateway}
+  template:
+    metadata:
+      labels:
+        app: istio-ingressgateway
+        istio: ingressgateway
+    spec:
+      containers:
+        - name: istio-proxy
+          image: busybox:does-not-exist-1.20.3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: istiod
+  namespace: rw-istio
+spec:
+  selector: {app: istiod}
+  ports:
+    - {name: https-webhook, port: 443, targetPort: 15017}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: istio-sidecar-injector
+webhooks:
+  - name: rev.namespace.sidecar-injector.istio.io
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Ignore
+    timeoutSeconds: 10
+    clientConfig:
+      service: {name: istiod, namespace: rw-istio, path: /inject, port: 443}
+    namespaceSelector:
+      matchLabels: {rw.test/never-matches: "true"}
+    objectSelector:
+      matchLabels: {rw.test/never-matches: "true"}
+    rules:
+      - {apiGroups: [""], apiVersions: [v1], operations: [CREATE], resources: [pods]}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: istio-validator-rw-istio
+webhooks:
+  - name: validation.istio.io
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Ignore
+    timeoutSeconds: 10
+    clientConfig:
+      service: {name: istiod, namespace: rw-istio, path: /validate, port: 443}
+    namespaceSelector:
+      matchLabels: {rw.test/never-matches: "true"}
+    objectSelector:
+      matchLabels: {rw.test/never-matches: "true"}
+    rules:
+      - {apiGroups: [""], apiVersions: [v1], operations: [CREATE], resources: [pods]}

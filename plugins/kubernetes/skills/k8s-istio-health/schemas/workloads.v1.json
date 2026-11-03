@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deployments, StatefulSets and DaemonSets of the namespace, those missing the sidecar while injection is expected first",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "kind": {
+        "enum": [
+          "Deployment",
+          "StatefulSet",
+          "DaemonSet"
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "replicas": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "injectOverride": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "sidecar.istio.io/inject on the pod template (label, else annotation), lower-cased"
+      },
+      "injectOverrideSource": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "label",
+          "annotation",
+          null
+        ]
+      },
+      "templateRevision": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "istio.io/rev label on the pod template"
+      },
+      "dataplaneMode": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "istio.io/dataplane-mode of the pod template, else of the namespace; none means the pod opted out of ambient"
+      },
+      "hostNetwork": {
+        "type": "boolean"
+      },
+      "injectionExpected": {
+        "type": [
+          "boolean",
+          "null"
+        ],
+        "description": "Whether Istio's webhook would inject this workload's pods; null when the namespace could not be read and the template does not decide"
+      },
+      "sidecarInTemplate": {
+        "type": "boolean",
+        "description": "istio-proxy is written into the pod template itself (manual injection)"
+      },
+      "pods": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "podsWithSidecar": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "podsWithoutSidecar": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "podsMissingSidecar": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        },
+        "description": "Names of pods without istio-proxy, at most 50"
+      },
+      "sidecarNotReady": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "sidecarResources": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpu",
+                "memory"
+              ]
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "memory": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "cpu",
+                "memory"
+              ]
+            },
+            "pods": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requests",
+            "limits",
+            "pods"
+          ]
+        }
+      },
+      "missingWhileExpected": {
+        "type": [
+          "boolean",
+          "null"
+        ],
+        "description": "injectionExpected is true and at least one pod has no istio-proxy"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "kind",
+      "name",
+      "replicas",
+      "injectOverride",
+      "injectOverrideSource",
+      "templateRevision",
+      "dataplaneMode",
+      "hostNetwork",
+      "injectionExpected",
+      "sidecarInTemplate",
+      "pods",
+      "podsWithSidecar",
+      "podsWithoutSidecar",
+      "podsMissingSidecar",
+      "sidecarNotReady",
+      "sidecarResources",
+      "missingWhileExpected",
+      "truncated"
+    ],
+    "title": "One workload"
+  }
+}
