@@ -5,7 +5,7 @@
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-pgop/postgresclusters/hippo-broken
 dryRun: true
-now: '2026-11-03T21:30:47.129Z'
+now: '2026-11-03T22:05:42.698Z'
 calls:
 - argv:
   - kubectl
@@ -25,12 +25,12 @@ calls:
             "annotations": {
                 "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"postgres-operator.crunchydata.com/v1beta1\",\"kind\":\"PostgresCluster\",\"metadata\":{\"annotations\":{},\"name\":\"hippo-broken\",\"namespace\":\"rw-pgop\"},\"spec\":{\"backups\":{\"pgbackrest\":{\"repos\":[{\"name\":\"repo1\",\"schedules\":{\"full\":\"0 2 * * 0\"}}]}},\"instances\":[{\"name\":\"instance1\",\"replicas\":2}],\"postgresVersion\":15}}\n"
             },
-            "creationTimestamp": "2026-11-03T21:13:03Z",
+            "creationTimestamp": "2026-11-03T21:33:39Z",
             "generation": 1,
             "name": "hippo-broken",
             "namespace": "rw-pgop",
-            "resourceVersion": "28268",
-            "uid": "d4141637-b4d8-4447-a875-3958fce50f45"
+            "resourceVersion": "31849",
+            "uid": "a23b91c9-f955-48f1-accd-7c67480c11ec"
         },
         "spec": {
             "backups": {
@@ -103,7 +103,7 @@ calls:
   - hippo-broken
   - --type=merge
   - -p
-  - '{"spec": {"metadata": {"annotations": {"postgres-operator.crunchydata.com/restarted": "2026-11-03T21:30:47Z"}}}}'
+  - '{"spec": {"metadata": {"annotations": {"restarted": "2026-11-03T22:05:42Z"}}}}'
   - --dry-run=server
   rc: 0
   stdout: |
@@ -116,6 +116,6 @@ expect:
     restart:
       applied: false
       method: annotation
-      annotation: postgres-operator.crunchydata.com/restarted
+      annotation: restarted
       membersExpected: 2
       completed: null
