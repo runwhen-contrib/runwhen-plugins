@@ -4,7 +4,8 @@
   "type": "object",
   "properties": {
     "annotation": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 1024
     },
     "present": {
       "type": "boolean"
@@ -20,23 +21,52 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 1024
               },
               "health": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 1024
               },
               "healthy": {
                 "type": "boolean"
+              },
+              "service": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "port": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
               }
             },
             "required": [
               "name",
               "health",
-              "healthy"
+              "healthy",
+              "service",
+              "port"
             ],
             "additionalProperties": false
           }
         }
+      ]
+    },
+    "total": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "truncated": {
+      "type": [
+        "boolean",
+        "null"
       ]
     },
     "notHealthy": {
@@ -50,6 +80,8 @@
     "annotation",
     "present",
     "backends",
+    "total",
+    "truncated",
     "notHealthy"
   ],
   "additionalProperties": false

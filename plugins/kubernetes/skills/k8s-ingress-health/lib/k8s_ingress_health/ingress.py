@@ -10,11 +10,12 @@ from datetime import datetime, timedelta, timezone
 
 from k8s_ingress_health.errors import RwError
 
-_DURATION = re.compile(r"(\d+)\s*(ms|[smhdw])")
-_UNIT_MS = {"ms": 1, "s": 1000, "m": 60_000, "h": 3_600_000, "d": 86_400_000, "w": 604_800_000}
+_DURATION = re.compile(r"(\d+)\s*(ms|[smhd])")
+_UNIT_MS = {"ms": 1, "s": 1000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 
 NESTED_LIMIT = 50  # most entries in a list nested inside an output entry
 TEXT_LIMIT = 1024  # most characters in a free-text field
+MAX_SERVICES = 100  # most distinct backend Services looked up
 
 GKE_BACKENDS_ANNOTATION = "ingress.kubernetes.io/backends"
 CLASS_ANNOTATION = "kubernetes.io/ingress.class"
@@ -59,6 +60,18 @@ def nested(items):
     return list(items)[:NESTED_LIMIT]
 
 
+def cut(text):
+    """text cut to TEXT_LIMIT characters (a name or short field, no flag). None stays None."""
+    return None if text is None else str(text)[:TEXT_LIMIT]
+
+
+def wrap(items, max_items, **extra):
+    """A list output cut at max_items: {items, total, truncated} plus any extra facts."""
+    items = list(items)
+    rows = items[: int(max_items)]
+    return {"items": rows, "total": len(items), "truncated": len(items) > len(rows), **extra}
+
+
 def trunc(text):
     """(text cut to TEXT_LIMIT characters, whether it was cut). None stays None, not cut."""
     if text is None:
@@ -98,9 +111,9 @@ def backend_refs(ingress):
 def _ref(source, host, path, path_type, backend):
     ref = {
         "source": source,
-        "host": host,
-        "path": path,
-        "pathType": path_type,
+        "host": cut(host),
+        "path": cut(path),
+        "pathType": cut(path_type),
         "kind": "service" if backend.get("service") else "resource",
         "service": None,
         "resource": None,
@@ -109,16 +122,16 @@ def _ref(source, host, path, path_type, backend):
     if svc:
         port = svc.get("port") or {}
         ref["service"] = {
-            "name": svc.get("name"),
+            "name": cut(svc.get("name")),
             "portNumber": port.get("number"),
-            "portName": port.get("name"),
+            "portName": cut(port.get("name")),
         }
     else:
         res = backend.get("resource") or {}
         ref["resource"] = {
-            "apiGroup": res.get("apiGroup"),
-            "kind": res.get("kind"),
-            "name": res.get("name"),
+            "apiGroup": cut(res.get("apiGroup")),
+            "kind": cut(res.get("kind")),
+            "name": cut(res.get("name")),
         }
     return ref
 
@@ -143,12 +156,36 @@ def match_port(service, port_number, port_name):
     return None
 
 
-def endpoint_counts(slices):
-    """Ready and not-ready endpoints across a Service's EndpointSlices.
+def slices_for_port(slices, service_port):
+    """The EndpointSlices that carry one Service port.
 
-    An endpoint whose `ready` condition is unset counts as ready (the API's
-    rule). A pod listed by dual-stack slices is counted once. `slices` is the
-    number of EndpointSlices that were read.
+    A Service port with a name is carried by slices whose `ports[]` has that name.
+    An unnamed one (a Service with a single port) is carried by slices with an
+    unnamed port whose number is the port's targetPort, when that is a number. A
+    slice with no ports carries none: the pods behind it do not expose the port.
+    """
+    name = service_port.get("name")
+    target = service_port.get("targetPort", service_port.get("port"))
+    try:
+        want = int(target)
+    except (TypeError, ValueError):
+        want = None  # a container port name: not resolvable from the Service
+
+    def carries(slice_port):
+        if name:
+            return slice_port.get("name") == name
+        return not slice_port.get("name") and (want is None or slice_port.get("port") == want)
+
+    return [sl for sl in slices if any(carries(p) for p in sl.get("ports") or [])]
+
+
+def endpoint_counts(slices):
+    """Endpoint counts across the given EndpointSlices.
+
+    A pod listed by several slices is counted once, and is ready if it is ready in
+    any of them. An unset `ready` or `serving` condition counts as true (the API's
+    rule); `terminating` counts only an explicit true. `terminating` endpoints are
+    usually also not ready. `slices` is the number of slices counted.
     """
     seen = {}
     for sl in slices:
@@ -159,19 +196,30 @@ def endpoint_counts(slices):
                 if ref.get("name")
                 else tuple(ep.get("addresses") or ())
             )
-            if ident not in seen:
-                seen[ident] = (ep.get("conditions") or {}).get("ready") is not False
-    ready = sum(1 for r in seen.values() if r)
-    return {"ready": ready, "notReady": len(seen) - ready, "slices": len(slices)}
+            cond = ep.get("conditions") or {}
+            cur = seen.setdefault(ident, [False, False, False])
+            cur[0] |= cond.get("ready") is not False
+            cur[1] |= cond.get("serving") is not False
+            cur[2] |= cond.get("terminating") is True
+    ready = sum(1 for c in seen.values() if c[0])
+    return {
+        "ready": ready,
+        "notReady": len(seen) - ready,
+        "serving": sum(1 for c in seen.values() if c[1]),
+        "terminating": sum(1 for c in seen.values() if c[2]),
+        "slices": len(slices),
+    }
 
 
-def backend_entries(ingress, services, endpoints):
+def backend_entries(ingress, services, slices_by_service):
     """One entry per backend ref with what the cluster says about its Service.
 
     `services` maps a Service name to its object, or to None when it does not
-    exist; a name missing from the map was not looked up (forbidden), so every
-    fact derived from the Service is None, not False. `endpoints` maps a name to
-    endpoint_counts() or is missing when the slices could not be read.
+    exist; a name missing from the map was not looked up (forbidden, or past the
+    lookup cap), so every fact derived from the Service is None, not False.
+    `slices_by_service` maps a name to its EndpointSlices and is missing a name
+    when they could not be read. Endpoints are counted per backend port; they are
+    None when the port does not exist on the Service (nothing to count).
     """
     out = []
     for ref in backend_refs(ingress):
@@ -180,6 +228,8 @@ def backend_entries(ingress, services, endpoints):
         entry.update(
             serviceExists=None,
             serviceType=None,
+            hasSelector=None,
+            publishNotReady=None,
             portExists=None,
             targetPort=None,
             protocol=None,
@@ -189,24 +239,65 @@ def backend_entries(ingress, services, endpoints):
             svc = services[svc_ref["name"]]
             entry["serviceExists"] = svc is not None
             if svc is not None:
-                entry["serviceType"] = (svc.get("spec") or {}).get("type") or "ClusterIP"
+                spec = svc.get("spec") or {}
+                entry["serviceType"] = spec.get("type") or "ClusterIP"
+                entry["hasSelector"] = bool(spec.get("selector"))
+                entry["publishNotReady"] = bool(spec.get("publishNotReadyAddresses"))
                 sp = match_port(svc, svc_ref["portNumber"], svc_ref["portName"])
-                entry["portExists"] = sp is not None
+                slices = slices_by_service.get(svc_ref["name"])
                 if sp is not None:
-                    entry["targetPort"] = sp.get("targetPort", sp.get("port"))
+                    entry["portExists"] = True
+                    target = sp.get("targetPort", sp.get("port"))
+                    entry["targetPort"] = cut(target) if isinstance(target, str) else target
                     entry["protocol"] = sp.get("protocol")
-                entry["endpoints"] = endpoints.get(svc_ref["name"])
+                    if slices is not None:
+                        entry["endpoints"] = endpoint_counts(slices_for_port(slices, sp))
+                elif entry["serviceType"] == "ExternalName" and not spec.get("ports"):
+                    # no ports to match: not authoritative either way, and no endpoints expected
+                    if slices is not None:
+                        entry["endpoints"] = endpoint_counts(slices)
+                else:
+                    entry["portExists"] = False
         out.append(entry)
     return out
 
 
 def tls_view(ingress, max_items):
     """The Ingress's TLS hosts and the Secret each names. The Secret is never read."""
-    rows = [
-        {"hosts": nested(t.get("hosts") or []), "secretName": t.get("secretName")}
-        for t in (ingress.get("spec") or {}).get("tls") or []
-    ]
-    return cap(rows, max_items)
+    rows = []
+    for t in (ingress.get("spec") or {}).get("tls") or []:
+        hosts = t.get("hosts") or []
+        rows.append(
+            {
+                "hosts": [cut(h) for h in nested(hosts)],
+                "secretName": cut(t.get("secretName")),
+                "truncated": len(hosts) > NESTED_LIMIT,
+            }
+        )
+    return wrap(rows, max_items)
+
+
+# A GKE container-native (NEG) backend name: k8s1-<cluster hash>-<namespace>-<service>-<port>-<hash>.
+_NEG = re.compile(r"^k8s1-[0-9a-f]{8}-(?P<mid>.+)-(?P<port>\d+)-[0-9a-f]{8}$")
+
+
+def parse_neg_name(name, namespace):
+    """(service, port) out of a NEG-style backend name, None for what does not parse.
+
+    The name does not say where the namespace ends and the Service begins, so the
+    Service is read only when the middle starts with the Ingress's own namespace;
+    GKE cuts long names, so it may be a prefix of the real Service name. The port
+    is the Service port. Instance-group backends (k8s-be-<nodePort>--<hash>) give
+    neither.
+    """
+    m = _NEG.match(name)
+    if not m:
+        return None, None
+    mid, prefix = m["mid"], f"{namespace}-" if namespace else None
+    service = (
+        mid[len(prefix) :] if prefix and mid.startswith(prefix) and len(mid) > len(prefix) else None
+    )
+    return (cut(service) if service else None), int(m["port"])
 
 
 def gke_backends(ingress, max_items):
@@ -218,37 +309,73 @@ def gke_backends(ingress, max_items):
     case `backends` is None (unknown), not empty. An absent annotation is
     present: False with backends [] (nothing was reported, which is not health).
     """
-    raw = ((ingress.get("metadata") or {}).get("annotations") or {}).get(GKE_BACKENDS_ANNOTATION)
+    meta = ingress.get("metadata") or {}
+    raw = (meta.get("annotations") or {}).get(GKE_BACKENDS_ANNOTATION)
     view = {"annotation": GKE_BACKENDS_ANNOTATION, "present": raw is not None}
     if raw is None:
-        return dict(view, backends=[], notHealthy=0), None
+        return dict(view, backends=[], total=0, truncated=False, notHealthy=0), None
     try:
         doc = json.loads(raw)
         if not isinstance(doc, dict):
             raise ValueError(f"expected a JSON object, got {type(doc).__name__}")
     except ValueError as exc:
-        return dict(view, backends=None, notHealthy=None), f"{GKE_BACKENDS_ANNOTATION}: {exc}"
-    rows = [
-        {"name": name, "health": str(h), "healthy": str(h).upper() == "HEALTHY"}
-        for name, h in sorted(doc.items())
-    ]
+        return (
+            dict(view, backends=None, total=None, truncated=None, notHealthy=None),
+            f"{GKE_BACKENDS_ANNOTATION}: {exc}"[:TEXT_LIMIT],
+        )
+    rows = []
+    for name, h in sorted(doc.items()):
+        service, port = parse_neg_name(name, meta.get("namespace"))
+        rows.append(
+            {
+                "name": cut(name),
+                "health": cut(h),
+                "healthy": str(h).upper() == "HEALTHY",
+                "service": service,
+                "port": port,
+            }
+        )
     # Unhealthy backends first, so a cut at maxItems keeps the ones that matter.
     rows.sort(key=lambda r: r["healthy"])
+    out = wrap(rows, max_items)
     return dict(
-        view, backends=cap(rows, max_items), notHealthy=sum(1 for r in rows if not r["healthy"])
+        view,
+        backends=out["items"],
+        total=out["total"],
+        truncated=out["truncated"],
+        notHealthy=sum(1 for r in rows if not r["healthy"]),
     ), None
+
+
+_GKE_LB = {
+    "forwardingRule": "ingress.kubernetes.io/forwarding-rule",
+    "httpsForwardingRule": "ingress.kubernetes.io/https-forwarding-rule",
+    "urlMap": "ingress.kubernetes.io/url-map",
+    "targetProxy": "ingress.kubernetes.io/target-proxy",
+    "httpsTargetProxy": "ingress.kubernetes.io/https-target-proxy",
+    "staticIp": "ingress.kubernetes.io/static-ip",
+}
+
+
+def gke_load_balancer(ingress):
+    """The names of the GCP load balancer objects the GKE controller recorded on the Ingress.
+
+    Plain annotation values, so a caller can point the gcp plugin at them; this
+    skill never talks to GCP. `present` is true when any of them is set.
+    """
+    annotations = (ingress.get("metadata") or {}).get("annotations") or {}
+    view = {field: cut(annotations.get(key)) for field, key in _GKE_LB.items()}
+    return {"present": any(v is not None for v in view.values()), **view}
 
 
 # ------------------------------------------------------------- address ----
 
 
-def lb_addresses(status):
-    """[{ip, hostname}] from a status.loadBalancer.ingress list (Ingress or Service)."""
-    rows = [
-        {"ip": a.get("ip"), "hostname": a.get("hostname")}
+def _all_addresses(status):
+    return [
+        {"ip": cut(a.get("ip")), "hostname": cut(a.get("hostname"))}
         for a in ((status or {}).get("loadBalancer") or {}).get("ingress") or []
     ]
-    return nested(rows)
 
 
 def _address_keys(addrs):
@@ -256,40 +383,74 @@ def _address_keys(addrs):
 
 
 def ingress_view(ingress):
-    addrs = lb_addresses(ingress.get("status"))
+    addrs = _all_addresses(ingress.get("status"))
     meta = ingress.get("metadata") or {}
     return {
-        "name": meta.get("name"),
-        "namespace": meta.get("namespace"),
-        "ingressClassName": (ingress.get("spec") or {}).get("ingressClassName"),
-        "classAnnotation": (meta.get("annotations") or {}).get(CLASS_ANNOTATION),
-        "addresses": addrs,
+        "name": cut(meta.get("name")),
+        "namespace": cut(meta.get("namespace")),
+        "ingressClassName": cut((ingress.get("spec") or {}).get("ingressClassName")),
+        "classAnnotation": cut((meta.get("annotations") or {}).get(CLASS_ANNOTATION)),
+        "addresses": nested(addrs),
+        "addressesTruncated": len(addrs) > NESTED_LIMIT,
         "assigned": bool(_address_keys(addrs)),
     }
 
 
-def class_view(name, ic, looked):
-    """The IngressClass the Ingress names. `looked` is False when the read was forbidden.
+def class_source(ingress):
+    """(source, name) of the class an Ingress asks for: spec.ingressClassName, else the
+    legacy kubernetes.io/ingress.class annotation, else ('none', None)."""
+    name = (ingress.get("spec") or {}).get("ingressClassName")
+    if name:
+        return "spec", name
+    legacy = ((ingress.get("metadata") or {}).get("annotations") or {}).get(CLASS_ANNOTATION)
+    if legacy:
+        return "annotation", legacy
+    return "none", None
 
-    exists is None when it was not looked up (no class named, or forbidden); only
-    False means the class is missing.
+
+def class_view(source, name, ic, ic_state, classes):
+    """What is known about the Ingress's class.
+
+    source `spec`: the named IngressClass was read (`ic`, `ic_state` ok | not_found |
+    denied). source `annotation`: the legacy value is a controller's class string, not
+    an IngressClass object, so nothing is looked up. source `none`: no class is
+    named and `classes` (every IngressClass, None when the list was forbidden) says
+    which are the default; exactly one default is the effective class. `lookedUp` is
+    true when a named class was read; with `exists` null and a source other than
+    `none` it means the read was forbidden.
     """
-    if not name:
-        return {"name": None, "exists": None, "controller": None, "isDefault": None}
-    if not looked:
-        return {"name": name, "exists": None, "controller": None, "isDefault": None}
-    if ic is None:
-        return {"name": name, "exists": False, "controller": None, "isDefault": None}
-    annotations = (ic.get("metadata") or {}).get("annotations") or {}
-    return {
-        "name": name,
-        "exists": True,
-        "controller": (ic.get("spec") or {}).get("controller"),
-        "isDefault": annotations.get(DEFAULT_CLASS_ANNOTATION) == "true",
+    view = {
+        "name": cut(name),
+        "classSource": source,
+        "lookedUp": False,
+        "exists": None,
+        "controller": None,
+        "isDefault": None,
+        "defaultClasses": None,
+        "effectiveClass": cut(name),
+        "multipleDefaults": None,
     }
+    if source == "spec" and ic_state in ("ok", "not_found"):
+        view["lookedUp"] = True
+        view["exists"] = ic_state == "ok"
+        if ic_state == "ok":
+            annotations = (ic.get("metadata") or {}).get("annotations") or {}
+            view["controller"] = cut((ic.get("spec") or {}).get("controller"))
+            view["isDefault"] = annotations.get(DEFAULT_CLASS_ANNOTATION) == "true"
+    elif source == "none" and classes is not None:
+        defaults = sorted(
+            c["metadata"]["name"]
+            for c in classes
+            if ((c.get("metadata") or {}).get("annotations") or {}).get(DEFAULT_CLASS_ANNOTATION)
+            == "true"
+        )
+        view["defaultClasses"] = [cut(d) for d in nested(defaults)]
+        view["multipleDefaults"] = len(defaults) > 1
+        view["effectiveClass"] = cut(defaults[0]) if len(defaults) == 1 else None
+    return view
 
 
-def service_addresses(ingress, services, max_items):
+def service_addresses(ingress, services, max_items, **extra):
     """Each backend Service's type and LoadBalancer address, against the Ingress's own.
 
     `differsFromIngress` is the classic conflict check: a Service of type
@@ -297,7 +458,7 @@ def service_addresses(ingress, services, max_items):
     is None when it cannot be said (not a LoadBalancer Service, the Service is
     missing or was not looked up, or either side has no address yet).
     """
-    ing_addrs = _address_keys(lb_addresses(ingress.get("status")))
+    ing_addrs = _address_keys(_all_addresses(ingress.get("status")))
     rows = []
     for name in service_names(backend_refs(ingress)):
         row = {
@@ -305,6 +466,7 @@ def service_addresses(ingress, services, max_items):
             "exists": None,
             "type": None,
             "addresses": [],
+            "addressesTruncated": False,
             "differsFromIngress": None,
         }
         if name in services:
@@ -312,12 +474,14 @@ def service_addresses(ingress, services, max_items):
             row["exists"] = svc is not None
             if svc is not None:
                 row["type"] = (svc.get("spec") or {}).get("type") or "ClusterIP"
-                row["addresses"] = lb_addresses(svc.get("status"))
-                svc_addrs = _address_keys(row["addresses"])
+                addrs = _all_addresses(svc.get("status"))
+                row["addresses"] = nested(addrs)
+                row["addressesTruncated"] = len(addrs) > NESTED_LIMIT
+                svc_addrs = _address_keys(addrs)
                 if row["type"] == "LoadBalancer" and svc_addrs and ing_addrs:
                     row["differsFromIngress"] = not (svc_addrs & ing_addrs)
         rows.append(row)
-    return cap(rows, max_items)
+    return wrap(rows, max_items, **extra)
 
 
 # -------------------------------------------------------------- events ----
@@ -349,7 +513,8 @@ def warning_events(events, subjects, since, now, max_items):
     known (a Service that does not exist is matched by name). An event whose
     involvedObject carries a different uid belongs to an earlier object of the
     same name and is left out. Grouped by object, type and reason, newest first.
-    `count` sums the events' own lifetime counters.
+    `count` sums the events' own counters, which count over the event's whole
+    lifetime, not only the window.
     """
     cutoff = now - parse_duration(since)
     wanted = {(kind, name): uid for kind, name, uid in subjects}
@@ -373,17 +538,18 @@ def warning_events(events, subjects, since, now, max_items):
         g = groups.get(gkey)
         if g is None:
             groups[gkey] = g = {
-                "kind": key[0],
-                "name": key[1],
+                "kind": cut(key[0]),
+                "name": cut(key[1]),
                 "type": ev.get("type"),
-                "reason": ev.get("reason"),
+                "reason": cut(ev.get("reason")),
                 "count": 0,
                 "firstSeen": first,
                 "lastSeen": last,
                 "message": ev.get("message"),
                 "truncated": False,
-                "reportingComponent": ev.get("reportingComponent")
-                or (ev.get("source") or {}).get("component"),
+                "reportingComponent": cut(
+                    ev.get("reportingComponent") or (ev.get("source") or {}).get("component")
+                ),
             }
         g["count"] += count
         if first and (g["firstSeen"] is None or first < g["firstSeen"]):
@@ -392,9 +558,9 @@ def warning_events(events, subjects, since, now, max_items):
             g["lastSeen"] = last
             g["message"] = ev.get("message")
     rows = sorted(groups.values(), key=lambda g: (g["lastSeen"], g["reason"] or ""), reverse=True)
-    rows = cap(rows, max_items)
-    for g in rows:
+    out = wrap(rows, max_items)
+    for g in out["items"]:
         g["firstSeen"] = fmt_time(g["firstSeen"])
         g["lastSeen"] = fmt_time(g["lastSeen"])
         g["message"], g["truncated"] = trunc(g["message"])
-    return rows
+    return out

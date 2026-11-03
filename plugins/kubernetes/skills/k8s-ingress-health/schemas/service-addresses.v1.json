@@ -1,64 +1,94 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Each backend Service's type and LoadBalancer address against the Ingress's",
-  "type": "array",
-  "items": {
-    "type": "object",
-    "properties": {
-      "service": {
-        "type": "string"
-      },
-      "exists": {
-        "type": [
-          "boolean",
-          "null"
-        ]
-      },
-      "type": {
-        "type": [
-          "string",
-          "null"
-        ]
-      },
-      "addresses": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "ip": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "hostname": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "maxLength": 1024
           },
-          "required": [
-            "ip",
-            "hostname"
-          ],
-          "additionalProperties": false
-        }
-      },
-      "differsFromIngress": {
-        "type": [
-          "boolean",
-          "null"
-        ]
+          "exists": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ip": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 1024
+                },
+                "hostname": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "ip",
+                "hostname"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 50
+          },
+          "addressesTruncated": {
+            "type": "boolean"
+          },
+          "differsFromIngress": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "service",
+          "exists",
+          "type",
+          "addresses",
+          "addressesTruncated",
+          "differsFromIngress"
+        ],
+        "additionalProperties": false
       }
     },
-    "required": [
-      "service",
-      "exists",
-      "type",
-      "addresses",
-      "differsFromIngress"
-    ],
-    "additionalProperties": false
-  }
+    "total": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "servicesTruncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "truncated",
+    "servicesTruncated"
+  ],
+  "additionalProperties": false
 }

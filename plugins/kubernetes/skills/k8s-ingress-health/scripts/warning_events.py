@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 
 from k8s_ingress_health.fetch import fetch_services, load_ingress
 from k8s_ingress_health.ingress import (
+    MAX_SERVICES,
     backend_refs,
+    cut,
     parse_duration,
     service_names,
     warning_events,
@@ -14,7 +16,7 @@ def main(ctx, since="1h"):
     parse_duration(since)  # bad input fails before any kubectl call
     ingress = load_ingress(ctx)
     names = service_names(backend_refs(ingress))
-    services = fetch_services(ctx, names)
+    services, services_truncated = fetch_services(ctx, names)
 
     # The Ingress by uid; a Service by uid when it exists, else by name (an event
     # about a Service that was deleted is still worth seeing).
@@ -30,8 +32,9 @@ def main(ctx, since="1h"):
     return {
         "events": warning_events(events["items"], subjects, since, now, ctx.settings.max_items),
         "inspected": {
-            "ingress": ingress["metadata"]["name"],
-            "services": names,
-            "servicesLookedUp": len(services) == len(names),
+            "ingress": cut(ingress["metadata"]["name"]),
+            "services": [cut(n) for n in names[:MAX_SERVICES]],
+            "servicesLookedUp": len(services) == min(len(names), MAX_SERVICES),
+            "servicesTruncated": services_truncated,
         },
     }

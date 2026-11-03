@@ -1,13 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "The IngressClass the Ingress names; exists is null when not looked up",
+  "title": "The class the Ingress asks for, or the cluster's default when it names none",
   "type": "object",
   "properties": {
     "name": {
       "type": [
         "string",
         "null"
+      ],
+      "maxLength": 1024
+    },
+    "classSource": {
+      "enum": [
+        "spec",
+        "annotation",
+        "none"
       ]
+    },
+    "lookedUp": {
+      "type": "boolean"
     },
     "exists": {
       "type": [
@@ -19,9 +30,38 @@
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "maxLength": 1024
     },
     "isDefault": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "defaultClasses": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 50
+        }
+      ]
+    },
+    "effectiveClass": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "multipleDefaults": {
       "type": [
         "boolean",
         "null"
@@ -30,9 +70,14 @@
   },
   "required": [
     "name",
+    "classSource",
+    "lookedUp",
     "exists",
     "controller",
-    "isDefault"
+    "isDefault",
+    "defaultClasses",
+    "effectiveClass",
+    "multipleDefaults"
   ],
   "additionalProperties": false
 }
