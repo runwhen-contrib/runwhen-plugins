@@ -1,0 +1,130 @@
+# Canned answers of scenario 'functions-healthy', written by tests/stub/capture/capture_functions.py from the
+# real gcloud 592.0.0 in the runtime image (see ../../README.md). Project, functions and members are invented.
+# Every value is one line of JSON.
+- argv: ["functions", "list", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "functions-list.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/list.py (2nd gen from the v2 API with filter environment=\"GEN_2\", 1st gen from v1; unreachable regions are only warned about)"
+- argv: ["functions", "describe", "orders-api", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "describe-us-central1-orders-api.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000001", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "build-us-central1-orders-api.json"
+  source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
+- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"orders-api\" AND resource.labels.location=\"us-central1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "logs-orders-api.json"
+  source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"
+- argv: ["auth", "print-access-token", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "token.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/auth/print-access-token"
+  cli_source: "gcloud 592.0.0: surface/auth/print_access_token.py"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_count%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.response_code_class&pageSize=1000"]
+  rc: 0
+  stdout: "mon-orders-api-executions.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000"]
+  rc: 0
+  stdout: "mon-orders-api-p50.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000"]
+  rc: 0
+  stdout: "mon-orders-api-p95.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000"]
+  rc: 0
+  stdout: "mon-orders-api-p99.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- argv: ["functions", "describe", "thumbnailer", "--region=europe-west1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "describe-europe-west1-thumbnailer.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000002", "--region=europe-west1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "build-europe-west1-thumbnailer.json"
+  source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
+- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"thumbnailer\" AND resource.labels.location=\"europe-west1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "logs-thumbnailer.json"
+  source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_count%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22thumbnailer%22%20AND%20resource.labels.location%3D%22europe-west1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.response_code_class&pageSize=1000"]
+  rc: 0
+  stdout: "mon-thumbnailer-executions.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22thumbnailer%22%20AND%20resource.labels.location%3D%22europe-west1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000"]
+  rc: 0
+  stdout: "mon-thumbnailer-p50.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22thumbnailer%22%20AND%20resource.labels.location%3D%22europe-west1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000"]
+  rc: 0
+  stdout: "mon-thumbnailer-p95.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22thumbnailer%22%20AND%20resource.labels.location%3D%22europe-west1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000"]
+  rc: 0
+  stdout: "mon-thumbnailer-p99.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- argv: ["functions", "describe", "legacy-cron", "--region=us-east1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "describe-us-east1-legacy-cron.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000100", "--region=us-east1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "build-us-east1-legacy-cron.json"
+  source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
+- argv: ["logging", "read", "resource.type=\"cloud_function\" AND resource.labels.function_name=\"legacy-cron\" AND resource.labels.region=\"us-east1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "logs-legacy-cron.json"
+  source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_count%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.status&pageSize=1000"]
+  rc: 0
+  stdout: "mon-legacy-cron-executions.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000"]
+  rc: 0
+  stdout: "mon-legacy-cron-p50.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000"]
+  rc: 0
+  stdout: "mon-legacy-cron-p95.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000"]
+  rc: 0
+  stdout: "mon-legacy-cron-p99.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"

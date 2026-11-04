@@ -1,0 +1,39 @@
+# Canned answers of scenario 'functions-leaky', written by tests/stub/capture/capture_functions.py from the
+# real gcloud 592.0.0 in the runtime image (see ../../README.md). Project, functions and members are invented.
+# Every value is one line of JSON.
+- argv: ["functions", "list", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "functions-list.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/list.py (2nd gen from the v2 API with filter environment=\"GEN_2\", 1st gen from v1; unreachable regions are only warned about)"
+- argv: ["functions", "describe", "billing-hook", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "describe-us-central1-billing-hook.json"
+  stderr: "CRITICAL: Function has the following conditions:\n  [ERROR] build failed: password=RWCANARY-6 was rejected\n\n"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000004", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "build-us-central1-billing-hook.json"
+  source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
+- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"billing-hook\" AND resource.labels.location=\"us-central1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "logs-billing-hook.json"
+  source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"
+- argv: ["functions", "describe", "legacy-leak", "--region=us-east1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "describe-us-east1-legacy-leak.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000102", "--region=us-east1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "build-us-east1-legacy-leak.json"
+  source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
+- argv: ["logging", "read", "resource.type=\"cloud_function\" AND resource.labels.function_name=\"legacy-leak\" AND resource.labels.region=\"us-east1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "logs-legacy-leak.json"
+  source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"

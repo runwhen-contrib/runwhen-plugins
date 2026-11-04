@@ -21,6 +21,9 @@ SETTINGS = {
     "usageThresholdTib": 0.5,  # declared by gcp-bucket-health only; harmless elsewhere
     "sizeTimeout": "300s",
     "publicBucketThreshold": 0,
+    "maxLogEntries": 50,  # declared by gcp-functions-health only; harmless elsewhere
+    "errorRateThreshold": 0.05,
+    "latencyTimeoutRatio": 0.9,
 }
 PROJECT = {
     "path": "gcp/projects/shop-prod-1234",
@@ -36,6 +39,18 @@ def bucket_target(name, project="shop-prod-1234"):
         "project": project,
         "name": name,
     }
+
+
+def function_target(name, project="shop-prod-1234", region=None):
+    """A gcp/cloud-function target: `gcp/projects/<p>/regions/<region>/cloud-functions/<name>`, or
+    (no region) `gcp/projects/<p>/cloud-functions/<name>`, a target with no region ancestor."""
+    target = {"type": "gcp/cloud-function", "project": project, "name": name}
+    if region:
+        target["path"] = f"gcp/projects/{project}/regions/{region}/cloud-functions/{name}"
+        target["region"] = region  # the chain's `region` identity
+    else:
+        target["path"] = f"gcp/projects/{project}/cloud-functions/{name}"
+    return target
 
 
 def load_script(name, skill):

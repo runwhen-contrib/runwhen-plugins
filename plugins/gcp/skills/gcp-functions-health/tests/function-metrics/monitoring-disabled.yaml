@@ -1,0 +1,205 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/regions/us-central1/cloud-functions/orders-api
+now: '2026-11-04T04:58:26.835Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - orders-api
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "buildConfig": {
+        "build": "projects/123456789012/locations/us-central1/builds/a1b2c3d4-0000-4000-8000-000000000001",
+        "dockerRegistry": "ARTIFACT_REGISTRY",
+        "entryPoint": "handler",
+        "environmentVariables": {
+          "BUILD_FLAVOUR": "release"
+        },
+        "runtime": "python312"
+      },
+      "environment": "GEN_2",
+      "labels": {
+        "deployment-tool": "console",
+        "team": "web"
+      },
+      "name": "projects/shop-prod-1234/locations/us-central1/functions/orders-api",
+      "serviceConfig": {
+        "allTrafficOnLatestRevision": true,
+        "availableCpu": "1",
+        "availableMemory": "512Mi",
+        "environmentVariables": {
+          "LOG_EXECUTION_ID": "true",
+          "LOG_LEVEL": "info"
+        },
+        "ingressSettings": "ALLOW_ALL",
+        "maxInstanceCount": 20,
+        "maxInstanceRequestConcurrency": 80,
+        "minInstanceCount": 0,
+        "revision": "orders-api-00007-xaz",
+        "secretEnvironmentVariables": [
+          {
+            "key": "STRIPE_KEY",
+            "projectId": "shop-prod-1234",
+            "secret": "stripe-key",
+            "version": "latest"
+          }
+        ],
+        "service": "projects/shop-prod-1234/locations/us-central1/services/orders-api",
+        "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+        "timeoutSeconds": 60,
+        "uri": "https://orders-api-k3j2h1g0fa-uc.a.run.app"
+      },
+      "state": "ACTIVE",
+      "updateTime": "2026-10-30T14:02:11.123456Z",
+      "url": "https://us-central1-shop-prod-1234.cloudfunctions.net/orders-api"
+    }
+  stderr: ''
+- argv:
+  - gcloud
+  - auth
+  - print-access-token
+  - --billing-project=shop-prod-1234
+  - --quiet
+  rc: 0
+  stdout: |
+    fake-access-token-not-a-secret
+  stderr: ''
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_count%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A26Z&interval.startTime=2026-11-04T03%3A58%3A26Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.response_code_class&pageSize=1000
+  rc: 22
+  stdout: |
+    {
+      "error": {
+        "code": 403,
+        "details": [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "googleapis.com",
+            "metadata": {
+              "consumer": "projects/123456789012",
+              "service": "monitoring.googleapis.com"
+            },
+            "reason": "SERVICE_DISABLED"
+          }
+        ],
+        "message": "Cloud Monitoring API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/monitoring.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+        "status": "PERMISSION_DENIED"
+      }
+    }
+  stderr: |
+    curl: (22) The requested URL returned error: 403
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A26Z&interval.startTime=2026-11-04T03%3A58%3A26Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000
+  rc: 22
+  stdout: |
+    {
+      "error": {
+        "code": 403,
+        "details": [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "googleapis.com",
+            "metadata": {
+              "consumer": "projects/123456789012",
+              "service": "monitoring.googleapis.com"
+            },
+            "reason": "SERVICE_DISABLED"
+          }
+        ],
+        "message": "Cloud Monitoring API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/monitoring.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+        "status": "PERMISSION_DENIED"
+      }
+    }
+  stderr: |
+    curl: (22) The requested URL returned error: 403
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A26Z&interval.startTime=2026-11-04T03%3A58%3A26Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000
+  rc: 22
+  stdout: |
+    {
+      "error": {
+        "code": 403,
+        "details": [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "googleapis.com",
+            "metadata": {
+              "consumer": "projects/123456789012",
+              "service": "monitoring.googleapis.com"
+            },
+            "reason": "SERVICE_DISABLED"
+          }
+        ],
+        "message": "Cloud Monitoring API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/monitoring.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+        "status": "PERMISSION_DENIED"
+      }
+    }
+  stderr: |
+    curl: (22) The requested URL returned error: 403
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A26Z&interval.startTime=2026-11-04T03%3A58%3A26Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000
+  rc: 22
+  stdout: |
+    {
+      "error": {
+        "code": 403,
+        "details": [
+          {
+            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+            "domain": "googleapis.com",
+            "metadata": {
+              "consumer": "projects/123456789012",
+              "service": "monitoring.googleapis.com"
+            },
+            "reason": "SERVICE_DISABLED"
+          }
+        ],
+        "message": "Cloud Monitoring API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/monitoring.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+        "status": "PERMISSION_DENIED"
+      }
+    }
+  stderr: |
+    curl: (22) The requested URL returned error: 403
+expect:
+  status: failed
+  errorCodes:
+  - dependency

@@ -7,7 +7,7 @@ answer from canned scenarios. Nothing here contacts Google.
 
 ```
 bin/gcloud        the gcloud stub (python3 -I, standard library only; logic in stublib.py)
-bin/curl          the curl stub: the one Cloud Monitoring read of bucket-size
+bin/curl          the curl stub: the Cloud Monitoring reads (bucket-size, function-metrics)
 bin/gsutil        a guard: gsutil is not used and not in the image; exits 2
 bin/bq            a guard, same
 stublib.py        what the stubs share: scenario lookup, argv matching, the curl header check
@@ -16,7 +16,7 @@ record.sh         records one fixture through harness.py (the only way to record
 identities.json   the invented project, numbers, e-mail domains, buckets and the fake token; the
                   stubs and tests/unit/test_fixture_hygiene.py read the same list
 scenarios/<name>/calls.yaml   what each argv answers: stdout file, stderr, rc, citations
-capture/          capture.sh + capture.py: how the canned answers are produced (below)
+capture/          capture.sh + capture.py (buckets, projects), capture_functions.sh + .py (Cloud Functions): how the canned answers are produced (below)
 ```
 
 ## Recording a fixture (the only way)
@@ -75,9 +75,23 @@ task, would never see it.
 | `partial-throttled` | the `broken` project, but the IAM read of `shop-logs` is throttled: public-access is partial |
 | `du-fallback` | Cloud Monitoring has no series for `shop-assets` (10^12 + 5 bytes): bucket-size falls back to `gcloud storage du` |
 | `monitoring-disabled` | the bucket list works, the Cloud Monitoring API is off: bucket-size fails with `dependency` |
+| `functions-healthy` | project `shop-prod-1234` with 3 working functions: `orders-api` (2nd gen HTTP, us-central1), `thumbnailer` (2nd gen, Storage event, europe-west1) and `legacy-cron` (1st gen, Pub/Sub, us-east1); no ERROR log entries |
+| `functions-broken` | the three plus `checkout` (2nd gen, FAILED, failed build), `nightly-report` (1st gen, OFFLINE, failed build); `orders-api` logs errors and answers 5xx, `nightly-report` times out |
+| `functions-forbidden`, `functions-throttled`, `functions-api-disabled` | the Cloud Functions, Cloud Build and Cloud Logging APIs answer 403 / 429 / `SERVICE_DISABLED` |
+| `functions-build-denied` | functions work, Cloud Build is denied: function-state is partial |
+| `functions-not-found` | function `nope` does not exist (describe 404, absent from the list) |
+| `functions-empty`, `functions-unreachable`, `functions-split` | no function at all; the list works but gcloud warns about regions it could not reach; one id in two regions (two functions, each under its region) |
+| `functions-leaky` | two failing functions whose env values, secret references, build steps and failure detail, state message, log lines and structured payloads all hold synthetic secrets ("canaries", a fixed marker plus a number): nothing of them may reach an output. The only place canaries live (test_fixture_hygiene.py enforces it) |
+| `functions-idle`, `functions-monitoring-disabled`, `functions-partial-metrics` | Monitoring has no series for `orders-api`; Cloud Monitoring is off; two percentile queries are throttled |
+| `functions-discover-denied`, `-disabled`, `-unreachable`, `-split` | the bucket pilot's project and bucket answers, then a functions list that is denied / disabled / skipped regions / has an id in two regions: gcp-base/discover |
+| `functions-discover-buckets-denied` | the bucket list is denied (the `forbidden` scenario's answer), the project and the functions list work: discover still lists the functions |
 
 Project, buckets, members and the service account are invented. The token is
 `identities.json`'s fake one.
+
+The `functions list` call is also in the bucket pilot's `healthy`, `broken`, `project-denied`, `forbidden`,
+`throttled`, `api-disabled` and `unauthenticated` scenarios (failing the same way there) (gcp-base/discover lists functions after the buckets); `capture/capture_functions.sh`
+adds it and writes all `functions-*` scenarios (the other scenarios are `capture/capture.sh`'s).
 
 ## Matching
 
