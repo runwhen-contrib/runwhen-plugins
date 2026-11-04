@@ -1,0 +1,187 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jaeger/deployments/jaeger
+inputs:
+  services:
+  - checkout
+now: '2026-11-04T00:25:19.858Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jaeger
+  - get
+  - deployments.apps
+  - jaeger
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=Deployment
+    s:metadata.name=jaeger
+    s:metadata.namespace=rw-jaeger
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app":"jaeger","app.kubernetes.io/component":"all-in-one"}}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-jaeger
+  - get
+  - pods
+  - -l
+  - app=jaeger,app.kubernetes.io/component=all-in-one
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"s:status.startTime="}{.status.startTime}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}{range
+    .status.containerStatuses[*]}{"r:"}{.name}{"="}{.restartCount}{"|"}{.state.running.startedAt}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=jaeger-f6bd9dd68-j59qx
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    s:status.startTime=2026-11-04T00:13:08Z
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:10Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:10Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:jaeger=jaegertracing/all-in-one:1.76.0
+    p:query=16686
+    p:otlp-http=4318
+    p:admin=14269
+    r:jaeger=0|2026-11-04T00:13:09Z
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/services
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":["jaeger-all-in-one","checkout","catalog","gateway","inventory"],"total":5,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22error%22%3A%22true%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[{"traceID":"186dca0922051074d05b33ad19b8ae83","spans":[{"traceID":"186dca0922051074d05b33ad19b8ae83","spanID":"cc4054f4c75aa260","operationName":"POST
+    /pay","references":[],"startTime":1793751158268378,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"43b207ff536240f94aef86e1a43e4b33","spans":[{"traceID":"43b207ff536240f94aef86e1a43e4b33","spanID":"ec52f4b2e15dbf77","operationName":"POST
+    /pay","references":[],"startTime":1793751148315330,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"09e833f1bb3458aafb7248f4ed995045","spans":[{"traceID":"09e833f1bb3458aafb7248f4ed995045","spanID":"6b076880f8aad5a4","operationName":"POST
+    /pay","references":[],"startTime":1793751160268371,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"95690da1ad15a2be4ee3f6ec839c4dea","spans":[{"traceID":"95690da1ad15a2be4ee3f6ec839c4dea","spanID":"b5d39afd54f685c8","operationName":"POST
+    /pay","references":[],"startTime":1793751156315320,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"c46acd7c45eed9068256a001faf6fed3","spans":[{"traceID":"c46acd7c45eed9068256a001faf6fed3","spanID":"7e6656c0c87b4ecc","operationName":"POST
+    payments","references":[],"startTime":1793751173317276,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://payments:8080/charge"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"client"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"376f899f5a404f4511f118b9bc003a72","spans":[{"traceID":"376f899f5a404f4511f118b9bc003a72","spanID":"cd6b7ffb64e29ff9","operationName":"POST
+    /pay","references":[],"startTime":1793751149268358,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"612361451cbe1a182347aefcb4893b8a","spans":[{"traceID":"612361451cbe1a182347aefcb4893b8a","spanID":"8dd20b71262d7619","operationName":"POST
+    payments","references":[],"startTime":1793751160317283,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://payments:8080/charge"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"client"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"1982eb99900026ae659bca0917e30bb4","spans":[{"traceID":"1982eb99900026ae659bca0917e30bb4","spanID":"ea5f343fa74fadc4","operationName":"POST
+    /pay","references":[],"startTime":1793751144268375,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22400%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22401%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22403%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22404%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[{"traceID":"c5d8f5d2375579561e25c4d143d9bd59","spans":[{"traceID":"c5d8f5d2375579561e25c4d143d9bd59","spanID":"f8648ef14b49471a","operationName":"GET
+    /cart","references":[],"startTime":1793751181316202,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"56dae3fcb1e0bb437bd2401df6a66457","spans":[{"traceID":"56dae3fcb1e0bb437bd2401df6a66457","spanID":"898aada294196549","operationName":"GET
+    /cart","references":[],"startTime":1793751157316193,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"6013335a6819222fe02e2aecf57c7738","spans":[{"traceID":"6013335a6819222fe02e2aecf57c7738","spanID":"cdc0b3a6e64c7f15","operationName":"GET
+    /reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code","references":[],"startTime":1793751163316972,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"4504a4e939e5ef1f0ebda83764498e41","spans":[{"traceID":"4504a4e939e5ef1f0ebda83764498e41","spanID":"9f91a94598bdee01","operationName":"GET
+    /reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code","references":[],"startTime":1793751178316968,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"8e276a1d8d01cd8f95d1b183df07e3db","spans":[{"traceID":"8e276a1d8d01cd8f95d1b183df07e3db","spanID":"bd6207b4438cc6eb","operationName":"GET
+    /cart","references":[],"startTime":1793751143316200,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22429%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22400%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22401%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22403%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22404%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22429%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    httpErrors:
+      services:
+        $containsWhere:
+          name: checkout
+          operations:
+            $containsWhere: {operation: 'GET /reset/{id}/confirm', clientErrorSpans: 2, byStatus: {'404': 2}, urlPaths: ['/reset/{id}/confirm']}

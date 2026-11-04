@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-litellm/deployments/litellm-draining
-now: '2026-11-03T23:52:36.278Z'
+now: '2026-11-04T00:25:44.344Z'
 calls:
 - argv:
   - kubectl
@@ -15,7 +15,7 @@ calls:
   - litellm-draining
   - -o
   - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}{range
-    .spec.template.spec.containers[*].ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}
+    .spec.template.spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}
   rc: 0
   stdout: |
     @
@@ -26,6 +26,7 @@ calls:
     j:spec.selector={"matchLabels":{"app.kubernetes.io/name":"litellm-draining"}}
     j:spec.template.metadata.labels={"app.kubernetes.io/name":"litellm-draining"}
     j:status.readyReplicas=
+    c:litellm=python:3.12-alpine
     p:http=4000
   stderr: ''
 - argv:
@@ -48,16 +49,16 @@ calls:
                     "annotations": {
                         "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"litellm\",\"namespace\":\"rw-litellm\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":4000,\"targetPort\":\"http\"}],\"selector\":{\"app.kubernetes.io/name\":\"litellm\"}}}\n"
                     },
-                    "creationTimestamp": "2026-11-03T23:48:40Z",
+                    "creationTimestamp": "2026-11-04T00:20:36Z",
                     "name": "litellm",
                     "namespace": "rw-litellm",
-                    "resourceVersion": "56272",
-                    "uid": "f2d8987b-c79e-415a-b510-e72f22ac54dc"
+                    "resourceVersion": "62281",
+                    "uid": "721a480d-e2b0-477a-b973-8f810f0f205d"
                 },
                 "spec": {
-                    "clusterIP": "10.96.210.162",
+                    "clusterIP": "10.96.196.18",
                     "clusterIPs": [
-                        "10.96.210.162"
+                        "10.96.196.18"
                     ],
                     "internalTrafficPolicy": "Cluster",
                     "ipFamilies": [
@@ -89,16 +90,16 @@ calls:
                     "annotations": {
                         "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"litellm-degraded\",\"namespace\":\"rw-litellm\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":8080,\"targetPort\":4000}],\"selector\":{\"app.kubernetes.io/name\":\"litellm-degraded\"}}}\n"
                     },
-                    "creationTimestamp": "2026-11-03T23:48:40Z",
+                    "creationTimestamp": "2026-11-04T00:20:36Z",
                     "name": "litellm-degraded",
                     "namespace": "rw-litellm",
-                    "resourceVersion": "56295",
-                    "uid": "328ae742-e2cc-49cf-a36d-ad9e16e3b520"
+                    "resourceVersion": "62296",
+                    "uid": "7282339c-e290-4eb3-8cca-88721f5a3651"
                 },
                 "spec": {
-                    "clusterIP": "10.96.62.237",
+                    "clusterIP": "10.96.181.142",
                     "clusterIPs": [
-                        "10.96.62.237"
+                        "10.96.181.142"
                     ],
                     "internalTrafficPolicy": "Cluster",
                     "ipFamilies": [
@@ -130,16 +131,16 @@ calls:
                     "annotations": {
                         "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"litellm-draining\",\"namespace\":\"rw-litellm\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":4000,\"targetPort\":\"http\"}],\"selector\":{\"app.kubernetes.io/name\":\"litellm-draining\"}}}\n"
                     },
-                    "creationTimestamp": "2026-11-03T23:48:40Z",
+                    "creationTimestamp": "2026-11-04T00:20:36Z",
                     "name": "litellm-draining",
                     "namespace": "rw-litellm",
-                    "resourceVersion": "56304",
-                    "uid": "f179e936-146d-42d5-9d8a-ae227d733ee3"
+                    "resourceVersion": "62316",
+                    "uid": "259bf3a7-f6cb-44dd-bc9a-cc74a2f52921"
                 },
                 "spec": {
-                    "clusterIP": "10.96.220.4",
+                    "clusterIP": "10.96.229.63",
                     "clusterIPs": [
-                        "10.96.220.4"
+                        "10.96.229.63"
                     ],
                     "internalTrafficPolicy": "Cluster",
                     "ipFamilies": [
@@ -192,7 +193,7 @@ calls:
                 "endpoints": [
                     {
                         "addresses": [
-                            "10.244.0.252"
+                            "10.244.0.123"
                         ],
                         "conditions": {
                             "ready": false,
@@ -202,25 +203,25 @@ calls:
                         "nodeName": "rw-plugins-control-plane",
                         "targetRef": {
                             "kind": "Pod",
-                            "name": "litellm-draining-857f86889c-27pgn",
+                            "name": "litellm-draining-857f86889c-zhb7n",
                             "namespace": "rw-litellm",
-                            "uid": "df55406d-3a69-4236-8657-193836f15fa9"
+                            "uid": "18982fbd-56ea-46b5-a67c-43e4630912c1"
                         }
                     }
                 ],
                 "kind": "EndpointSlice",
                 "metadata": {
                     "annotations": {
-                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T23:48:40Z"
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-04T00:20:36Z"
                     },
-                    "creationTimestamp": "2026-11-03T23:48:40Z",
+                    "creationTimestamp": "2026-11-04T00:20:36Z",
                     "generateName": "litellm-draining-",
                     "generation": 2,
                     "labels": {
                         "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
                         "kubernetes.io/service-name": "litellm-draining"
                     },
-                    "name": "litellm-draining-n62rf",
+                    "name": "litellm-draining-cftkr",
                     "namespace": "rw-litellm",
                     "ownerReferences": [
                         {
@@ -229,11 +230,11 @@ calls:
                             "controller": true,
                             "kind": "Service",
                             "name": "litellm-draining",
-                            "uid": "f179e936-146d-42d5-9d8a-ae227d733ee3"
+                            "uid": "259bf3a7-f6cb-44dd-bc9a-cc74a2f52921"
                         }
                     ],
-                    "resourceVersion": "56344",
-                    "uid": "469731ed-58a3-47ea-8b44-af23ecd0ddfc"
+                    "resourceVersion": "62348",
+                    "uid": "af6b698b-3255-434f-9b7c-79015bd971a6"
                 },
                 "ports": [
                     {
@@ -260,4 +261,5 @@ expect:
         $containsWhere:
           name: litellm-draining
           exposesPort: true
+          targetPortMatches: true
           endpoints: {sliceCount: 1, readyEndpoints: 0, notReadyEndpoints: 1}

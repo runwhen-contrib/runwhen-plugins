@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-litellm/deployments/nope
-now: '2026-11-03T23:52:41.006Z'
+now: '2026-11-04T00:25:49.813Z'
 calls:
 - argv:
   - kubectl
@@ -15,7 +15,7 @@ calls:
   - nope
   - -o
   - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}{range
-    .spec.template.spec.containers[*].ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}
+    .spec.template.spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}
   rc: 1
   stdout: ''
   stderr: |
