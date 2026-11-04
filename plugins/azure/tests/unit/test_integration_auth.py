@@ -50,7 +50,7 @@ FAKE_AZ = textwrap.dedent(
         time.sleep(30)
     if cmd == ["account", "set"]:
         if mode == "no-subscription":
-            sys.stderr.write("ERROR: The subscription of '%s' doesn't exist in cloud 'AzureCloud'.\\n" % argv[-1])
+            sys.stderr.write("ERROR: Subscription '%s' not found. Check the spelling and casing and try again.\\n" % argv[-1])
             sys.exit(1)
         sys.exit(0)
     if mode == "ok-warning":

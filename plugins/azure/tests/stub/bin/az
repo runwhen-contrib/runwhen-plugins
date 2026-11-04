@@ -1,0 +1,102 @@
+#!/usr/bin/env -S python3 -I
+"""A stand-in for the `az` CLI that serves canned responses (plugins/azure/tests/stub/README.md).
+
+    RW_STUB_SCENARIO=healthy az keyvault show --name kv-orders-prod --subscription <id>
+
+The argv after `az` is looked up in scenarios/<RW_STUB_SCENARIO>/calls.yaml; the first matching
+call answers with its stdout file, its stderr and its exit code. An argv with no canned answer
+exits 2 with a message on stderr that names it, so a test notices a command it did not expect.
+
+No dependencies (it runs as `python3 -I`, so not even PyYAML): calls.yaml is JSON written as YAML
+(`#` comment lines are dropped before it is parsed).
+"""
+
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SCENARIOS = os.path.join(os.path.dirname(HERE), "scenarios")
+
+
+def normalise(argv):
+    """argv without the `--output json` / `-o json` / `--output=json` / `-o=json` noise a caller adds."""
+    out, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--output", "-o") and i + 1 < len(argv) and argv[i + 1] == "json":
+            i += 2
+            continue
+        if a in ("--output=json", "-o=json"):
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
+def matches(pattern, argv):
+    """Same length, and each argument equal to its pattern; `*` in a pattern matches any text
+    (a timestamp that depends on when the run happened)."""
+    if len(pattern) != len(argv):
+        return False
+    for want, got in zip(pattern, argv):
+        if "*" in want:
+            head, *rest = want.split("*")
+            if not got.startswith(head):
+                return False
+            pos = len(head)
+            for part in rest[:-1]:
+                pos = got.find(part, pos)
+                if pos < 0:
+                    return False
+                pos += len(part)
+            tail = rest[-1]
+            if len(got) - pos < len(tail) or not got.endswith(tail):
+                return False
+        elif want != got:
+            return False
+    return True
+
+
+def load_calls(directory):
+    with open(os.path.join(directory, "calls.yaml"), encoding="utf-8") as handle:
+        text = "".join(line for line in handle if not line.lstrip().startswith("#"))
+    return json.loads(text)["calls"]
+
+
+def main(argv):
+    name = os.environ.get("RW_STUB_SCENARIO")
+    if not name:
+        sys.stderr.write("az stub: RW_STUB_SCENARIO is not set\n")
+        return 2
+    directory = os.path.join(SCENARIOS, name)
+    if not os.path.isfile(os.path.join(directory, "calls.yaml")):
+        sys.stderr.write(f"az stub: no scenario {name!r} under {SCENARIOS}\n")
+        return 2
+    call_argv = normalise(argv)
+    log = os.environ.get("RW_STUB_LOG")
+    if log:
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(argv) + "\n")
+    calls = load_calls(directory)
+    for call in calls:
+        if matches(call["argv"], call_argv):
+            if call.get("stdout"):
+                with open(os.path.join(directory, call["stdout"]), encoding="utf-8") as handle:
+                    sys.stdout.write(handle.read())
+            sys.stdout.flush()
+            if call.get("stderr"):
+                sys.stderr.write(call["stderr"])
+            return int(call.get("rc", 0))
+    sys.stderr.write(
+        f"az stub: no canned response in scenario {name!r} for: az {' '.join(call_argv)}\n"
+        f"az stub: known: {len(calls)} calls, first words: "
+        + ", ".join(sorted({" ".join(c["argv"][:2]) for c in calls}))
+        + "\n"
+    )
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
