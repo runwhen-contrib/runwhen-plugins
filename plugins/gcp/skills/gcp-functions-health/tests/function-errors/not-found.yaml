@@ -1,0 +1,28 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/cloud-functions/nope
+identity:
+  region: us-central1
+now: '2026-11-04T04:06:05.946Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - nope
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.functions.describe) ResponseError: status=[404], code=[], message=[Function nope does not exist in us-central1]
+expect:
+  status: failed
+  errorCodes:
+  - not_found

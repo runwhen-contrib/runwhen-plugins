@@ -102,7 +102,11 @@ def bucket_names_in(stdout):
 
 
 def test_the_scan_covers_fixtures_of_both_skills_and_the_stub_data():
-    assert {p.parents[2].name for p in fixtures()} == {"gcp-base", "gcp-bucket-health"}
+    assert {p.parents[2].name for p in fixtures()} == {
+        "gcp-base",
+        "gcp-bucket-health",
+        "gcp-functions-health",
+    }
     assert len(fixtures()) >= 20 and len(stub_files()) >= 50
 
 
@@ -184,6 +188,7 @@ BASE_SCENARIOS = {"healthy", "broken", "forbidden", "throttled", "api-disabled"}
 REQUIRED = {
     "gcp-base": BASE_SCENARIOS | {"unauthenticated", "project-denied"},
     "gcp-bucket-health": BASE_SCENARIOS | {"not-found"},
+    "gcp-functions-health": BASE_SCENARIOS | {"not-found"},
 }
 
 
@@ -216,6 +221,15 @@ EXPECTED = {
     "partial-throttled": ("partial", ["rate_limited"]),
     "monitoring-disabled": ("failed", ["dependency"]),
     "du-fallback": ("ok", []),
+    "build-denied": ("partial", ["permission_denied"]),
+    "idle": ("ok", []),
+    "partial-metrics": ("partial", ["rate_limited"]),
+    "split": ("failed", ["invalid_input"]),
+    "unreachable": ("failed", ["unreachable"]),
+    "functions-denied": ("partial", ["permission_denied"]),
+    "functions-disabled": ("partial", ["dependency"]),
+    "functions-unreachable": ("partial", ["unreachable"]),
+    "functions-split": ("partial", ["internal"]),
     "healthy": ("ok", []),
     "broken": ("ok", []),
 }
@@ -224,7 +238,9 @@ EXPECTED = {
 @pytest.mark.parametrize("path", fixtures(), ids=relative)
 def test_each_fixture_expects_what_its_name_says_and_asserts_its_outputs(path):
     doc = yaml.safe_load(path.read_text())
-    name = path.stem.removesuffix("-bucket")
+    name = path.stem
+    for suffix in ("-bucket", "-gen1", "-no-region"):  # a second fixture of the same scenario
+        name = name.removesuffix(suffix)
     status, error_codes = EXPECTED[name]
     assert doc["expect"]["status"] == status and doc["expect"]["errorCodes"] == error_codes
     if status in ("ok", "partial"):
@@ -235,7 +251,8 @@ def test_each_fixture_expects_what_its_name_says_and_asserts_its_outputs(path):
 READ_ONLY_GCLOUD = {
     ("storage", "buckets", "list"), ("storage", "buckets", "describe"),
     ("storage", "buckets", "get-iam-policy"), ("storage", "du"), ("projects", "describe"),
-    ("auth", "print-access-token"),
+    ("auth", "print-access-token"), ("functions", "list"), ("functions", "describe"),
+    ("builds", "describe"), ("logging", "read"),
 }  # fmt: skip
 
 
@@ -257,7 +274,8 @@ def test_every_recorded_call_is_a_read_only_call_against_the_stub_projects(path)
         else:
             assert argv[0] == "gcloud" and argv[-1] == "--quiet", argv
             assert any(tuple(argv[1 : 1 + n]) in READ_ONLY_GCLOUD for n in (2, 3)), argv
-            assert f"--billing-project={doc['resource'].split('/')[2]}" in argv
+            if argv[1:3] != ["auth", "print-access-token"]:  # a function target pays nothing there
+                assert f"--billing-project={doc['resource'].split('/')[2]}" in argv
             assert not any(a.startswith(("--impersonate", "--access-token")) for a in argv)
         for arg in argv:
             if arg.startswith("--project="):

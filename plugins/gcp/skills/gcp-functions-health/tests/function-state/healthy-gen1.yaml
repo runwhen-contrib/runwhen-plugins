@@ -1,0 +1,108 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/cloud-functions/legacy-cron
+identity:
+  region: us-east1
+now: '2026-11-04T04:05:42.662Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - legacy-cron
+  - --region=us-east1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "availableMemoryMb": 256,
+      "buildId": "a1b2c3d4-0000-4000-8000-000000000100",
+      "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000100",
+      "entryPoint": "run",
+      "environmentVariables": {
+        "REGION": "us-east1",
+        "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+      },
+      "eventTrigger": {
+        "eventType": "google.pubsub.topic.publish",
+        "failurePolicy": {},
+        "resource": "projects/shop-prod-1234/topics/nightly",
+        "service": "pubsub.googleapis.com"
+      },
+      "ingressSettings": "ALLOW_ALL",
+      "labels": {
+        "team": "ops"
+      },
+      "maxInstances": 5,
+      "name": "projects/shop-prod-1234/locations/us-east1/functions/legacy-cron",
+      "runtime": "nodejs20",
+      "serviceAccountEmail": "jobs@shop-prod-1234.iam.gserviceaccount.com",
+      "sourceUploadUrl": "https://storage.googleapis.com/uploads-0000000000.us-east1.cloudfunctions.appspot.com/upload.zip",
+      "status": "ACTIVE",
+      "timeout": "60s",
+      "updateTime": "2026-09-12T08:31:40.511Z",
+      "versionId": "12"
+    }
+  stderr: ''
+- argv:
+  - gcloud
+  - builds
+  - describe
+  - a1b2c3d4-0000-4000-8000-000000000100
+  - --region=us-east1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "createTime": "2026-10-30T14:00:02.481516Z",
+      "finishTime": "2026-10-30T14:02:09.909112Z",
+      "id": "a1b2c3d4-0000-4000-8000-000000000100",
+      "logUrl": "https://console.cloud.google.com/cloud-build/builds;region=us-central1/a1b2c3d4-0000-4000-8000-000000000100?project=123456789012",
+      "projectId": "shop-prod-1234",
+      "startTime": "2026-10-30T14:00:03.120442Z",
+      "status": "SUCCESS",
+      "steps": [
+        {
+          "args": [
+            "/cnb/lifecycle/builder"
+          ],
+          "env": [
+            "GOOGLE_ENTRYPOINT=handler",
+            "ORDERS_DB_URL=postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+          ],
+          "name": "gcr.io/gae-runtimes/buildpacks/python312/builder",
+          "status": "SUCCESS"
+        }
+      ],
+      "tags": [
+        "gcf-deploy"
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    function:
+      name: legacy-cron
+      region: us-east1
+      generation: 1
+      state: ACTIVE
+      versionId: '12'
+      runService: null
+      revision: null
+      trigger:
+        kind: event
+        eventType: google.pubsub.topic.publish
+        url: null
+      build:
+        status: SUCCESS

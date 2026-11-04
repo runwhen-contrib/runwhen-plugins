@@ -16,8 +16,10 @@ PLUGIN = Path(__file__).parents[2]
 SKILLS = PLUGIN / "skills"
 PLUGINS = PLUGIN.parent
 SHARED = ("errors.py", "gcloud.py")
+# read Cloud Functions (list, describe): carried by the skills that do, verbatim like the files above
+FUNCTION_READERS = {"gcp-base", "gcp-functions-health"}
 # every gcp skill that runs gcloud carries the shared files; a skill missing here is untested
-SKILLS_WITH_COPIES = {"gcp-base", "gcp-bucket-health"}
+SKILLS_WITH_COPIES = {"gcp-base", "gcp-bucket-health", "gcp-functions-health"}
 
 
 def copies(name):
@@ -34,6 +36,25 @@ def test_every_skills_copy_of_a_shared_file_is_identical_to_gcp_bases(name):
 @pytest.mark.parametrize("name", SHARED)
 def test_each_skill_that_runs_gcloud_has_a_copy_and_none_is_unregistered(name):
     assert {p.parents[2].name for p in copies(name)} == SKILLS_WITH_COPIES
+
+
+def test_every_function_reader_carries_an_identical_copy_of_fnlist():
+    paths = sorted(SKILLS.glob("*/lib/*/fnlist.py"))
+    assert {p.parents[2].name for p in paths} == FUNCTION_READERS
+    reference = (SKILLS / "gcp-base" / "lib" / "gcp_base" / "fnlist.py").read_bytes()
+    for path in paths:
+        assert path.read_bytes() == reference, f"{path} differs from gcp-base's fnlist.py"
+
+
+def test_fnlist_imports_only_its_siblings_the_sdk_and_the_stdlib():
+    import ast
+
+    tree = ast.parse((SKILLS / "gcp-base" / "lib" / "gcp_base" / "fnlist.py").read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0:
+            assert node.module.split(".")[0] in {"runwhen_capability"}
+        if isinstance(node, ast.ImportFrom) and node.level > 0:
+            assert node.module in {"errors", "gcloud"}
 
 
 @pytest.mark.parametrize("name", SHARED)
@@ -112,7 +133,8 @@ def test_the_root_declares_the_key_discover_reports():
     assert types["project"]["canonicalKey"] == dc.CANONICAL_KEY
     assert types["project"]["rootKey"] == "projectId"
     assert types["bucket"]["parent"] == "project"
-    assert set(types) == {"project", "bucket"}
+    assert types["cloud-function"] == {"parent": "project", "plural": "cloud-functions"}
+    assert set(types) == {"project", "bucket", "cloud-function"}
 
 
 @pytest.mark.parametrize("skill", all_skills())

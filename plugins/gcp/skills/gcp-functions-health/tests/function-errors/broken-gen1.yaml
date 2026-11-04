@@ -1,0 +1,96 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/cloud-functions/nightly-report
+identity:
+  region: us-east1
+now: '2026-11-04T04:06:00.373Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - nightly-report
+  - --region=us-east1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "availableMemoryMb": 256,
+      "buildId": "a1b2c3d4-0000-4000-8000-000000000101",
+      "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000101",
+      "entryPoint": "run",
+      "environmentVariables": {
+        "REGION": "us-east1",
+        "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+      },
+      "httpsTrigger": {
+        "securityLevel": "SECURE_ALWAYS",
+        "url": "https://us-east1-shop-prod-1234.cloudfunctions.net/nightly-report"
+      },
+      "ingressSettings": "ALLOW_ALL",
+      "labels": {
+        "team": "ops"
+      },
+      "maxInstances": 5,
+      "name": "projects/shop-prod-1234/locations/us-east1/functions/nightly-report",
+      "runtime": "nodejs20",
+      "serviceAccountEmail": "jobs@shop-prod-1234.iam.gserviceaccount.com",
+      "sourceUploadUrl": "https://storage.googleapis.com/uploads-0000000000.us-east1.cloudfunctions.appspot.com/upload.zip",
+      "status": "OFFLINE",
+      "timeout": "60s",
+      "updateTime": "2026-09-12T08:31:40.511Z",
+      "versionId": "4"
+    }
+  stderr: ''
+- argv:
+  - gcloud
+  - logging
+  - read
+  - resource.type="cloud_function" AND resource.labels.function_name="nightly-report" AND resource.labels.region="us-east1"
+    AND severity>=ERROR
+  - --project=shop-prod-1234
+  - --freshness=3600s
+  - --limit=51
+  - --order=desc
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    [
+      {
+        "insertId": "223358364",
+        "labels": {
+          "execution_id": "7f1k2l9x0p3q"
+        },
+        "logName": "projects/shop-prod-1234/logs/cloudfunctions.googleapis.com%2Fcloud-functions",
+        "receiveTimestamp": "2026-11-04T00:30:00.250Z",
+        "resource": {
+          "labels": {
+            "function_name": "nightly-report",
+            "project_id": "shop-prod-1234",
+            "region": "us-east1"
+          },
+          "type": "cloud_function"
+        },
+        "severity": "ERROR",
+        "textPayload": "Function execution took 60001 ms, finished with status: 'timeout'",
+        "timestamp": "2026-11-04T00:30:00.250Z"
+      }
+    ]
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    logs:
+      filter: resource.type="cloud_function" AND resource.labels.function_name="nightly-report"
+        AND resource.labels.region="us-east1" AND severity>=ERROR
+      matched: 1
+      truncated: false

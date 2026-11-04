@@ -1,0 +1,221 @@
+[
+  {
+    "buildConfig": {
+      "build": "projects/123456789012/locations/us-central1/builds/a1b2c3d4-0000-4000-8000-000000000001",
+      "dockerRegistry": "ARTIFACT_REGISTRY",
+      "entryPoint": "handler",
+      "environmentVariables": {
+        "BUILD_FLAVOUR": "release"
+      },
+      "runtime": "python312"
+    },
+    "environment": "GEN_2",
+    "labels": {
+      "deployment-tool": "console",
+      "team": "web"
+    },
+    "name": "projects/shop-prod-1234/locations/us-central1/functions/orders-api",
+    "serviceConfig": {
+      "allTrafficOnLatestRevision": true,
+      "availableCpu": "1",
+      "availableMemory": "512Mi",
+      "environmentVariables": {
+        "LOG_EXECUTION_ID": "true",
+        "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+      },
+      "ingressSettings": "ALLOW_ALL",
+      "maxInstanceCount": 20,
+      "maxInstanceRequestConcurrency": 80,
+      "minInstanceCount": 0,
+      "revision": "orders-api-00007-xaz",
+      "secretEnvironmentVariables": [
+        {
+          "key": "STRIPE_KEY",
+          "projectId": "shop-prod-1234",
+          "secret": "stripe-key",
+          "version": "latest"
+        }
+      ],
+      "service": "projects/shop-prod-1234/locations/us-central1/services/orders-api",
+      "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+      "timeoutSeconds": 60,
+      "uri": "https://orders-api-k3j2h1g0fa-uc.a.run.app"
+    },
+    "state": "ACTIVE",
+    "updateTime": "2026-10-30T14:02:11.123456Z",
+    "url": "https://us-central1-shop-prod-1234.cloudfunctions.net/orders-api"
+  },
+  {
+    "buildConfig": {
+      "build": "projects/123456789012/locations/us-central1/builds/a1b2c3d4-0000-4000-8000-000000000003",
+      "dockerRegistry": "ARTIFACT_REGISTRY",
+      "entryPoint": "handler",
+      "environmentVariables": {
+        "BUILD_FLAVOUR": "release"
+      },
+      "runtime": "python312"
+    },
+    "environment": "GEN_2",
+    "labels": {
+      "deployment-tool": "console",
+      "team": "web"
+    },
+    "name": "projects/shop-prod-1234/locations/us-central1/functions/checkout",
+    "serviceConfig": {
+      "allTrafficOnLatestRevision": true,
+      "availableCpu": "1",
+      "availableMemory": "512Mi",
+      "environmentVariables": {
+        "LOG_EXECUTION_ID": "true",
+        "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+      },
+      "ingressSettings": "ALLOW_ALL",
+      "maxInstanceCount": 20,
+      "maxInstanceRequestConcurrency": 80,
+      "minInstanceCount": 0,
+      "revision": "checkout-00002-pkq",
+      "secretEnvironmentVariables": [
+        {
+          "key": "STRIPE_KEY",
+          "projectId": "shop-prod-1234",
+          "secret": "stripe-key",
+          "version": "latest"
+        }
+      ],
+      "service": "projects/shop-prod-1234/locations/us-central1/services/checkout",
+      "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+      "timeoutSeconds": 60,
+      "uri": "https://checkout-k3j2h1g0fa-uc.a.run.app"
+    },
+    "state": "FAILED",
+    "stateMessages": [
+      {
+        "message": "Build failed with status: FAILURE and message: ModuleNotFoundError: No module named 'stripe_client'. Check the build logs.",
+        "severity": "ERROR",
+        "type": "BuildFailed"
+      },
+      {
+        "message": "Revision 'checkout-00003-abc' is not ready and cannot serve traffic.",
+        "severity": "WARNING",
+        "type": "CloudRunService"
+      }
+    ],
+    "updateTime": "2026-10-30T14:02:11.123456Z",
+    "url": "https://us-central1-shop-prod-1234.cloudfunctions.net/checkout"
+  },
+  {
+    "buildConfig": {
+      "build": "projects/123456789012/locations/europe-west1/builds/a1b2c3d4-0000-4000-8000-000000000002",
+      "dockerRegistry": "ARTIFACT_REGISTRY",
+      "entryPoint": "resize",
+      "environmentVariables": {
+        "BUILD_FLAVOUR": "release"
+      },
+      "runtime": "python312"
+    },
+    "environment": "GEN_2",
+    "eventTrigger": {
+      "eventFilters": [
+        {
+          "attribute": "bucket",
+          "value": "shop-assets"
+        }
+      ],
+      "eventType": "google.cloud.storage.object.v1.finalized",
+      "pubsubTopic": "projects/shop-prod-1234/topics/gcf-v2-triggers-thumbnailer",
+      "retryPolicy": "RETRY_POLICY_DO_NOT_RETRY",
+      "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+      "trigger": "projects/shop-prod-1234/locations/europe-west1/triggers/thumbnailer-123456",
+      "triggerRegion": "europe-west1"
+    },
+    "labels": {
+      "deployment-tool": "console",
+      "team": "web"
+    },
+    "name": "projects/shop-prod-1234/locations/europe-west1/functions/thumbnailer",
+    "serviceConfig": {
+      "allTrafficOnLatestRevision": true,
+      "availableCpu": "1",
+      "availableMemory": "512Mi",
+      "environmentVariables": {
+        "LOG_EXECUTION_ID": "true",
+        "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+      },
+      "ingressSettings": "ALLOW_ALL",
+      "maxInstanceRequestConcurrency": 80,
+      "minInstanceCount": 0,
+      "revision": "thumbnailer-00007-xaz",
+      "secretEnvironmentVariables": [
+        {
+          "key": "STRIPE_KEY",
+          "projectId": "shop-prod-1234",
+          "secret": "stripe-key",
+          "version": "latest"
+        }
+      ],
+      "service": "projects/shop-prod-1234/locations/europe-west1/services/thumbnailer",
+      "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+      "timeoutSeconds": 60,
+      "uri": "https://thumbnailer-k3j2h1g0fa-uc.a.run.app"
+    },
+    "state": "ACTIVE",
+    "updateTime": "2026-10-30T14:02:11.123456Z",
+    "url": "https://europe-west1-shop-prod-1234.cloudfunctions.net/thumbnailer"
+  },
+  {
+    "availableMemoryMb": 256,
+    "buildId": "a1b2c3d4-0000-4000-8000-000000000100",
+    "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000100",
+    "entryPoint": "run",
+    "environmentVariables": {
+      "REGION": "us-east1",
+      "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+    },
+    "eventTrigger": {
+      "eventType": "google.pubsub.topic.publish",
+      "failurePolicy": {},
+      "resource": "projects/shop-prod-1234/topics/nightly",
+      "service": "pubsub.googleapis.com"
+    },
+    "ingressSettings": "ALLOW_ALL",
+    "labels": {
+      "team": "ops"
+    },
+    "maxInstances": 5,
+    "name": "projects/shop-prod-1234/locations/us-east1/functions/legacy-cron",
+    "runtime": "nodejs20",
+    "serviceAccountEmail": "jobs@shop-prod-1234.iam.gserviceaccount.com",
+    "sourceUploadUrl": "https://storage.googleapis.com/uploads-0000000000.us-east1.cloudfunctions.appspot.com/upload.zip",
+    "status": "ACTIVE",
+    "timeout": "60s",
+    "updateTime": "2026-09-12T08:31:40.511Z",
+    "versionId": "12"
+  },
+  {
+    "availableMemoryMb": 256,
+    "buildId": "a1b2c3d4-0000-4000-8000-000000000101",
+    "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000101",
+    "entryPoint": "run",
+    "environmentVariables": {
+      "REGION": "us-east1",
+      "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+    },
+    "httpsTrigger": {
+      "securityLevel": "SECURE_ALWAYS",
+      "url": "https://us-east1-shop-prod-1234.cloudfunctions.net/nightly-report"
+    },
+    "ingressSettings": "ALLOW_ALL",
+    "labels": {
+      "team": "ops"
+    },
+    "maxInstances": 5,
+    "name": "projects/shop-prod-1234/locations/us-east1/functions/nightly-report",
+    "runtime": "nodejs20",
+    "serviceAccountEmail": "jobs@shop-prod-1234.iam.gserviceaccount.com",
+    "sourceUploadUrl": "https://storage.googleapis.com/uploads-0000000000.us-east1.cloudfunctions.appspot.com/upload.zip",
+    "status": "OFFLINE",
+    "timeout": "60s",
+    "updateTime": "2026-09-12T08:31:40.511Z",
+    "versionId": "4"
+  }
+]

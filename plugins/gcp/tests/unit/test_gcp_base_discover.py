@@ -18,6 +18,7 @@ SKILL = PLUGIN / "skills" / "gcp-base"
 P = "shop-prod-1234"
 LIST = ["storage", "buckets", "list", f"--project={P}", "--raw", f"--billing-project={P}"]
 DESCRIBE = ["projects", "describe", P, f"--billing-project={P}"]
+FLIST = ["functions", "list", f"--project={P}", f"--billing-project={P}"]
 CRED = {
     "apiBaseUrl": "https://papi.example",
     "token": "tok-SECRET",
@@ -56,15 +57,24 @@ def test_a_healthy_project_is_listed_with_its_facts_and_canonical_key(run_script
         "created": "2025-03-14T09:21:05.123000+00:00",  # gcloud's own rendering of timeCreated
     }
     summary = out["summary"]
-    assert summary["counts"] == {"project": 1, "bucket": 3}
+    assert summary["counts"] == {"project": 1, "bucket": 3, "cloud-function": 3}
     assert summary["root"] == {"canonicalKey": {"name": "projectId", "value": P}}
     assert validate("rw.discovery.summary.v1", summary) == []
+    assert out["functions"]["read"] is True and out["functions"]["total"] == 3
+    assert out["functions"]["items"][0] == {
+        "name": "orders-api",
+        "region": "us-central1",
+        "generation": 2,
+        "state": "ACTIVE",
+        "runtime": "python312",
+        "updateTime": "2026-10-30T14:02:11.123456Z",
+    }
 
 
 def test_the_outputs_fit_their_schemas_and_the_sync_fits_the_contract(run_script, stub_run):
     run = discover(run_script, stub_run("broken"))
     out = run.envelope["outputs"]
-    for name in ("project", "buckets"):
+    for name in ("project", "buckets", "functions"):
         schema = json.loads((SKILL / "schemas" / f"{name}.v1.json").read_text())
         jsonschema.Draft202012Validator.check_schema(schema)
         jsonschema.validate(out[name], schema)
@@ -75,20 +85,49 @@ def test_the_outputs_fit_their_schemas_and_the_sync_fits_the_contract(run_script
         {"type": "project", "name": P},
         {"type": "bucket", "name": "shop-assets"},
     ]
-    assert items[0]["providerUid"] == "123456789012" and len(items) == 1 + 6
+    assert items[0]["providerUid"] == "123456789012" and len(items) == 1 + 6 + 5
     assert document["commit"]["partitions"] == [
-        {"type": "bucket", "parentPath": f"gcp/projects/{P}", "status": "complete", "count": 6}
+        {"type": "bucket", "parentPath": f"gcp/projects/{P}", "status": "complete", "count": 6},
+        {
+            "type": "cloud-function",
+            "parentPath": f"gcp/projects/{P}",
+            "status": "complete",
+            "count": 5,
+        },
     ]
+    functions = {
+        i["identity"]["chain"][-1]["name"]: i
+        for i in items
+        if i["identity"]["chain"][-1]["type"] == "cloud-function"
+    }
+    assert set(functions) == {
+        "orders-api",
+        "checkout",
+        "thumbnailer",
+        "legacy-cron",
+        "nightly-report",
+    }
+    assert functions["checkout"]["document"] == {
+        "region": "us-central1",
+        "generation": 2,
+        "state": "FAILED",
+        "runtime": "python312",
+        "updateTime": "2026-10-30T14:02:11.123456Z",
+    }
+    assert functions["nightly-report"]["document"]["state"] == "OFFLINE"  # 1st gen: `status`
+    assert functions["nightly-report"]["document"]["generation"] == 1
+    assert functions["orders-api"]["labels"] == {"deployment-tool": "console", "team": "web"}
+    assert functions["checkout"]["identity"]["chain"][0] == {"type": "project", "name": P}
     labelled = next(i for i in items if i["displayName"] == "shop-assets")
     assert labelled["labels"] == {"env": "prod", "team": "web"}
 
 
-def test_the_calls_are_the_two_read_only_gcloud_commands_with_the_credential_env(
+def test_the_calls_are_the_three_read_only_gcloud_commands_with_the_credential_env(
     run_script, stub_run
 ):
     stub = stub_run("healthy")
     discover(run_script, stub)
-    assert stub.asked() == [LIST, DESCRIBE]
+    assert stub.asked() == [LIST, DESCRIBE, FLIST]
     assert all(c["timeout"] == 60.0 for c in stub.log)
     # every call is billed to the project and runs with the ambient credentials neutralised
     for call in stub.log:
@@ -103,7 +142,9 @@ def test_max_items_cuts_the_listing_but_not_the_sync(run_script, stub_run):
     run = discover(run_script, stub_run("broken"), settings={"maxItems": 2})
     listing = run.envelope["outputs"]["buckets"]
     assert (len(listing["items"]), listing["total"], listing["omitted"]) == (2, 6, 4)
-    assert len(json.loads(run.files["sync.json"])["batches"][0]["items"]) == 7
+    functions = run.envelope["outputs"]["functions"]
+    assert (len(functions["items"]), functions["total"], functions["omitted"]) == (2, 5, 3)
+    assert len(json.loads(run.files["sync.json"])["batches"][0]["items"]) == 12
 
 
 @pytest.mark.parametrize("bad", [0, 10001, True, "5"])
@@ -132,7 +173,7 @@ def test_a_project_the_identity_may_not_read_still_lists_its_buckets_partially(
         "displayName": None,
         "lifecycleState": None,
     }
-    assert env["outputs"]["buckets"]["total"] == 6
+    assert env["outputs"]["buckets"]["total"] == 6 and env["outputs"]["functions"]["total"] == 5
     assert env["outputs"]["summary"]["root"]["canonicalKey"]["value"] == P
     assert [e["scope"] for e in env["outputs"]["summary"]["errors"]] == ["project"]
     document = json.loads(run.files["sync.json"])
@@ -181,6 +222,99 @@ def test_a_listing_that_is_not_a_list_of_named_buckets_is_an_error(run_script, s
     stub.set(LIST, stdout=stdout)
     run = discover(run_script, stub)
     assert run.envelope["status"] == "failed" and run.envelope["errors"][0]["code"] == "internal"
+
+
+# ---- the functions: a second type, read after the buckets --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "scenario, code, status",
+    [
+        ("functions-discover-denied", "permission_denied", "forbidden"),
+        ("functions-discover-disabled", "dependency", "failed"),
+    ],
+)
+def test_a_functions_list_that_fails_leaves_the_buckets_and_a_scoped_error(
+    run_script, stub_run, scenario, code, status
+):
+    run = discover(run_script, stub_run(scenario))
+    env = run.envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [(code, "functions")]
+    out = env["outputs"]
+    assert out["buckets"]["total"] == 3
+    # not an empty list: unread, with its counts null, and its partition is not complete
+    assert out["functions"] == {
+        "read": False, "items": [], "total": None, "omitted": None,
+        "unreachableRegions": [], "ambiguousIds": [],
+    }  # fmt: skip
+    assert out["summary"]["counts"] == {"project": 1, "bucket": 3}  # no cloud-function count
+    parts = json.loads(run.files["sync.json"])["commit"]["partitions"]
+    assert parts[1] == {
+        "type": "cloud-function",
+        "parentPath": f"gcp/projects/{P}",
+        "status": status,
+        "count": 0,
+    }
+    assert validate("rw.discovery.v1", json.loads(run.files["sync.json"])) == []
+
+
+def test_regions_gcloud_could_not_reach_make_the_functions_partition_failed(run_script, stub_run):
+    run = discover(run_script, stub_run("functions-discover-unreachable"))
+    env = run.envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("unreachable", "functions")]
+    assert "asia-east1, southamerica-east1" in env["errors"][0]["message"]
+    functions = env["outputs"]["functions"]
+    assert functions["read"] is True and functions["total"] == 3
+    assert functions["unreachableRegions"] == ["asia-east1", "southamerica-east1"]
+    parts = json.loads(run.files["sync.json"])["commit"]["partitions"]
+    assert (parts[1]["status"], parts[1]["count"]) == ("failed", 3)  # nothing is swept for it
+
+
+def test_one_id_in_two_regions_is_reported_and_not_synced(run_script, stub_run):
+    run = discover(run_script, stub_run("functions-discover-split"))
+    env = run.envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("internal", "functions")]
+    assert "orders-api" in env["errors"][0]["message"]
+    functions = env["outputs"]["functions"]
+    assert functions["ambiguousIds"] == ["orders-api"] and functions["total"] == 3
+    document = json.loads(run.files["sync.json"])
+    names = [
+        i["identity"]["chain"][-1]["name"]
+        for b in document["batches"]
+        for i in b["items"]
+        if i["identity"]["chain"][-1]["type"] == "cloud-function"
+    ]
+    assert names == ["legacy-cron"]  # the two orders-api rows are not resources
+    assert document["commit"]["partitions"][1]["status"] == "failed"
+
+
+def test_an_empty_functions_list_is_a_complete_partition_of_zero(run_script, stub_run):
+    stub = stub_run("healthy")
+    stub.set(FLIST, stdout="[]\n")
+    run = discover(run_script, stub)
+    assert run.envelope["status"] == "ok"
+    assert run.envelope["outputs"]["functions"]["total"] == 0
+    parts = json.loads(run.files["sync.json"])["commit"]["partitions"]
+    assert parts[1] == {
+        "type": "cloud-function",
+        "parentPath": f"gcp/projects/{P}",
+        "status": "complete",
+        "count": 0,
+    }
+
+
+@pytest.mark.parametrize("stdout", ["", "{}", "[1]", '[{"name": "nope"}]'])
+def test_a_functions_list_of_an_unknown_shape_is_a_scoped_error_never_an_empty_list(
+    run_script, stub_run, stdout
+):
+    stub = stub_run("healthy")
+    stub.set(FLIST, stdout=stdout)
+    env = discover(run_script, stub).envelope
+    assert env["status"] == "partial" and env["outputs"]["functions"]["read"] is False
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("internal", "functions")]
 
 
 # ---- the project resource: partial for the reasons that leave the buckets useful ---------------
@@ -349,8 +483,13 @@ def test_with_the_credential_it_opens_sends_the_batches_and_commits(
     assert http.requests[0][1]["Authorization"] == "Bearer tok-SECRET"
     assert [i["identity"]["chain"][-1]["type"] for i in http.requests[1][2]["items"]] == [
         "project", "bucket", "bucket", "bucket",
+        "cloud-function", "cloud-function", "cloud-function",
     ]  # fmt: skip
-    assert http.requests[2][2]["summary"]["counts"] == {"project": 1, "bucket": 3}
+    assert http.requests[2][2]["summary"]["counts"] == {
+        "project": 1,
+        "bucket": 3,
+        "cloud-function": 3,
+    }
     assert "tok-SECRET" not in run.files["sync.json"] + json.dumps(run.envelope)
 
 
@@ -396,6 +535,8 @@ def test_discover_declares_the_sync_credential_the_permissions_and_a_budget():
         {"permission": "storage.buckets.list"},
         {"permission": "storage.buckets.getIamPolicy"},  # the list asks for the FULL projection
         {"permission": "resourcemanager.projects.get"},
+        {"permission": "cloudfunctions.functions.list"},
+        {"permission": "cloudfunctions.locations.list"},  # the 1st gen half of the list
         {"permission": "serviceusage.services.use"},  # --billing-project on every call
     ]
     assert task["timeout"] == f"{budget.TASK_BUDGET}s"

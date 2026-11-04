@@ -1,0 +1,235 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/cloud-functions/legacy-cron
+identity:
+  region: us-east1
+now: '2026-11-04T04:06:09.263Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - legacy-cron
+  - --region=us-east1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "availableMemoryMb": 256,
+      "buildId": "a1b2c3d4-0000-4000-8000-000000000100",
+      "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000100",
+      "entryPoint": "run",
+      "environmentVariables": {
+        "REGION": "us-east1",
+        "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+      },
+      "eventTrigger": {
+        "eventType": "google.pubsub.topic.publish",
+        "failurePolicy": {},
+        "resource": "projects/shop-prod-1234/topics/nightly",
+        "service": "pubsub.googleapis.com"
+      },
+      "ingressSettings": "ALLOW_ALL",
+      "labels": {
+        "team": "ops"
+      },
+      "maxInstances": 5,
+      "name": "projects/shop-prod-1234/locations/us-east1/functions/legacy-cron",
+      "runtime": "nodejs20",
+      "serviceAccountEmail": "jobs@shop-prod-1234.iam.gserviceaccount.com",
+      "sourceUploadUrl": "https://storage.googleapis.com/uploads-0000000000.us-east1.cloudfunctions.appspot.com/upload.zip",
+      "status": "ACTIVE",
+      "timeout": "60s",
+      "updateTime": "2026-09-12T08:31:40.511Z",
+      "versionId": "12"
+    }
+  stderr: ''
+- argv:
+  - gcloud
+  - auth
+  - print-access-token
+  - --quiet
+  rc: 0
+  stdout: |
+    fake-access-token-not-a-secret
+  stderr: ''
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_count%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A09Z&interval.startTime=2026-11-04T03%3A06%3A09Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.status&pageSize=1000
+  rc: 0
+  stdout: |
+    {
+      "timeSeries": [
+        {
+          "metric": {
+            "labels": {
+              "status": "ok"
+            },
+            "type": "cloudfunctions.googleapis.com/function/execution_count"
+          },
+          "metricKind": "DELTA",
+          "points": [
+            {
+              "interval": {
+                "endTime": "2026-11-04T01:00:00Z",
+                "startTime": "2026-11-04T00:00:00Z"
+              },
+              "value": {
+                "int64Value": "24"
+              }
+            }
+          ],
+          "resource": {
+            "labels": {},
+            "type": "global"
+          },
+          "valueType": "INT64"
+        }
+      ],
+      "unit": "1"
+    }
+  stderr: ''
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A09Z&interval.startTime=2026-11-04T03%3A06%3A09Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000
+  rc: 0
+  stdout: |
+    {
+      "timeSeries": [
+        {
+          "metric": {
+            "type": "cloudfunctions.googleapis.com/function/execution_times"
+          },
+          "metricKind": "DELTA",
+          "points": [
+            {
+              "interval": {
+                "endTime": "2026-11-04T01:00:00Z",
+                "startTime": "2026-11-04T00:00:00Z"
+              },
+              "value": {
+                "doubleValue": 1500000000.0
+              }
+            }
+          ],
+          "resource": {
+            "labels": {},
+            "type": "global"
+          },
+          "valueType": "DOUBLE"
+        }
+      ],
+      "unit": "ns"
+    }
+  stderr: ''
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A09Z&interval.startTime=2026-11-04T03%3A06%3A09Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000
+  rc: 0
+  stdout: |
+    {
+      "timeSeries": [
+        {
+          "metric": {
+            "type": "cloudfunctions.googleapis.com/function/execution_times"
+          },
+          "metricKind": "DELTA",
+          "points": [
+            {
+              "interval": {
+                "endTime": "2026-11-04T01:00:00Z",
+                "startTime": "2026-11-04T00:00:00Z"
+              },
+              "value": {
+                "doubleValue": 2200000000.0
+              }
+            }
+          ],
+          "resource": {
+            "labels": {},
+            "type": "global"
+          },
+          "valueType": "DOUBLE"
+        }
+      ],
+      "unit": "ns"
+    }
+  stderr: ''
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22legacy-cron%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A09Z&interval.startTime=2026-11-04T03%3A06%3A09Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000
+  rc: 0
+  stdout: |
+    {
+      "timeSeries": [
+        {
+          "metric": {
+            "type": "cloudfunctions.googleapis.com/function/execution_times"
+          },
+          "metricKind": "DELTA",
+          "points": [
+            {
+              "interval": {
+                "endTime": "2026-11-04T01:00:00Z",
+                "startTime": "2026-11-04T00:00:00Z"
+              },
+              "value": {
+                "doubleValue": 2400000000.0
+              }
+            }
+          ],
+          "resource": {
+            "labels": {},
+            "type": "global"
+          },
+          "valueType": "DOUBLE"
+        }
+      ],
+      "unit": "ns"
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    metrics:
+      generation: 1
+      hasData: true
+      executions: 24
+      errors: 0
+      byOutcome:
+        ok: 24
+      latency:
+        p50Ms: 1500.0
+        p95Ms: 2200.0
+        p99Ms: 2400.0

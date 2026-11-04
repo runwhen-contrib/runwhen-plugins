@@ -21,6 +21,9 @@ SETTINGS = {
     "usageThresholdTib": 0.5,  # declared by gcp-bucket-health only; harmless elsewhere
     "sizeTimeout": "300s",
     "publicBucketThreshold": 0,
+    "maxLogEntries": 50,  # declared by gcp-functions-health only; harmless elsewhere
+    "errorRateThreshold": 0.05,
+    "latencyTimeoutRatio": 0.9,
 }
 PROJECT = {
     "path": "gcp/projects/shop-prod-1234",
@@ -36,6 +39,19 @@ def bucket_target(name, project="shop-prod-1234"):
         "project": project,
         "name": name,
     }
+
+
+def function_target(name, project="shop-prod-1234", region=None):
+    """A gcp/cloud-function target; `region` is the optional identity field."""
+    target = {
+        "path": f"gcp/projects/{project}/cloud-functions/{name}",
+        "type": "gcp/cloud-function",
+        "project": project,
+        "name": name,
+    }
+    if region:
+        target["region"] = region
+    return target
 
 
 def load_script(name, skill):

@@ -1,0 +1,28 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/cloud-functions/orders-api
+identity:
+  region: us-central1
+now: '2026-11-04T04:05:51.093Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - orders-api
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.functions.describe) ResponseError: status=[429], code=[], message=[Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'cloudfunctions.googleapis.com' for consumer 'project_number:123456789012'.]
+expect:
+  status: failed
+  errorCodes:
+  - rate_limited

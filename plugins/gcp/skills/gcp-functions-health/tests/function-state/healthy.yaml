@@ -1,0 +1,128 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/cloud-functions/orders-api
+identity:
+  region: us-central1
+now: '2026-11-04T04:05:41.263Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - orders-api
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "buildConfig": {
+        "build": "projects/123456789012/locations/us-central1/builds/a1b2c3d4-0000-4000-8000-000000000001",
+        "dockerRegistry": "ARTIFACT_REGISTRY",
+        "entryPoint": "handler",
+        "environmentVariables": {
+          "BUILD_FLAVOUR": "release"
+        },
+        "runtime": "python312"
+      },
+      "environment": "GEN_2",
+      "labels": {
+        "deployment-tool": "console",
+        "team": "web"
+      },
+      "name": "projects/shop-prod-1234/locations/us-central1/functions/orders-api",
+      "serviceConfig": {
+        "allTrafficOnLatestRevision": true,
+        "availableCpu": "1",
+        "availableMemory": "512Mi",
+        "environmentVariables": {
+          "LOG_EXECUTION_ID": "true",
+          "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+        },
+        "ingressSettings": "ALLOW_ALL",
+        "maxInstanceCount": 20,
+        "maxInstanceRequestConcurrency": 80,
+        "minInstanceCount": 0,
+        "revision": "orders-api-00007-xaz",
+        "secretEnvironmentVariables": [
+          {
+            "key": "STRIPE_KEY",
+            "projectId": "shop-prod-1234",
+            "secret": "stripe-key",
+            "version": "latest"
+          }
+        ],
+        "service": "projects/shop-prod-1234/locations/us-central1/services/orders-api",
+        "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+        "timeoutSeconds": 60,
+        "uri": "https://orders-api-k3j2h1g0fa-uc.a.run.app"
+      },
+      "state": "ACTIVE",
+      "updateTime": "2026-10-30T14:02:11.123456Z",
+      "url": "https://us-central1-shop-prod-1234.cloudfunctions.net/orders-api"
+    }
+  stderr: ''
+- argv:
+  - gcloud
+  - builds
+  - describe
+  - a1b2c3d4-0000-4000-8000-000000000001
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "createTime": "2026-10-30T14:00:02.481516Z",
+      "finishTime": "2026-10-30T14:02:09.909112Z",
+      "id": "a1b2c3d4-0000-4000-8000-000000000001",
+      "logUrl": "https://console.cloud.google.com/cloud-build/builds;region=us-central1/a1b2c3d4-0000-4000-8000-000000000001?project=123456789012",
+      "projectId": "shop-prod-1234",
+      "startTime": "2026-10-30T14:00:03.120442Z",
+      "status": "SUCCESS",
+      "steps": [
+        {
+          "args": [
+            "/cnb/lifecycle/builder"
+          ],
+          "env": [
+            "GOOGLE_ENTRYPOINT=handler",
+            "ORDERS_DB_URL=postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+          ],
+          "name": "gcr.io/gae-runtimes/buildpacks/python312/builder",
+          "status": "SUCCESS"
+        }
+      ],
+      "tags": [
+        "gcf-deploy"
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    function:
+      name: orders-api
+      region: us-central1
+      generation: 2
+      state: ACTIVE
+      runService: orders-api
+      revision: orders-api-00007-xaz
+      maxInstances: 20
+      environmentVariableCount: 2
+      secretReferenceCount: 1
+      deployment:
+        buildId: a1b2c3d4-0000-4000-8000-000000000001
+        buildLocation: us-central1
+      build:
+        id: a1b2c3d4-0000-4000-8000-000000000001
+        status: SUCCESS
+        failureType: null
