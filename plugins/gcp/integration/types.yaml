@@ -1,9 +1,15 @@
-# GCP = project -> bucket (D51): a type exists only if a skill targets it. gcp-bucket-health
-# targets buckets, so that is the one child type. Every later GCP skill adds the type it targets
-# (function, model endpoint, ...) here; names and parents never change (D21).
+# GCP = project -> bucket, cloud-function (D51): a type exists only if a skill targets it.
+# gcp-bucket-health targets buckets and gcp-functions-health targets Cloud Functions. Every later
+# GCP skill adds the type it targets (model endpoint, ...) here; names and parents never change (D21).
 types:
   # The project id (the globally unique, human-chosen id such as `shop-prod-1234`, not the
   # numeric project number) is the root's name and its canonical key. The key is the same value
   # as the root's name, so gcp-base/discover reports it without a call that may be forbidden.
   project: { root: true, rootKey: projectId, canonicalKey: projectId, plural: projects }
   bucket: { parent: project, plural: buckets }
+  # A Cloud Functions function, first or second generation. Its name is the function id (the NAME
+  # column of `gcloud functions list`); the region is a field of the function (the discovered
+  # document's `region`, the target's `region` identity field), not a type. Ids are unique per
+  # region only, so a project that holds the same id in two regions is reported by discover
+  # (a scoped error and a failed partition), not silently merged.
+  cloud-function: { parent: project, plural: cloud-functions }

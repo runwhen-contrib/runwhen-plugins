@@ -2,8 +2,8 @@
 name: gcp-base
 description: >-
   The Google Cloud integration's own skill. discover reads a project and lists its Cloud
-  Storage buckets (name, location, storage class, creation time) and reports the project id
-  as the root's canonical key. Use to see what a gcp connection holds, or to find out why
+  Storage buckets (name, location, storage class, creation time) and its Cloud Functions (id,
+  region, generation, state, runtime) and reports the project id as the root's canonical key. Use to see what a gcp connection holds, or to find out why
   another gcp skill reports permission_denied, not_found or dependency (a disabled API).
 runwhen:
   role: [discovery]
@@ -14,10 +14,12 @@ runwhen:
 
 ## When to use
 
-Reach for `discover` to see what a project holds: its number and state, and every Cloud Storage
-bucket the identity may list. The platform also runs it on its own every 15 minutes, to keep the
-`gcp/bucket` resources that the other gcp skills target. It only reads: two gcloud calls,
-`gcloud projects describe` and `gcloud storage buckets list --raw`, with the connection's
+Reach for `discover` to see what a project holds: its number and state, every Cloud Storage
+bucket and every Cloud Function (both generations, all regions) the identity may list. The
+platform also runs it on its own every 15 minutes, to keep the `gcp/bucket` and
+`gcp/cloud-function` resources that the other gcp skills target. It only reads: three gcloud calls,
+`gcloud projects describe`, `gcloud storage buckets list --raw` and `gcloud functions list`
+(which needs `cloudfunctions.functions.list` and `cloudfunctions.locations.list`), with the connection's
 credential (`gcp/adc`: a service-account key, or the pod's own identity through the metadata
 server), each billed to the project it reads (`--billing-project`, which needs
 `serviceusage.services.use`; an assumption to verify against a real project, parked P18).
@@ -48,6 +50,19 @@ of the budget (less a 10s margin), and a request that would start with nothing l
   `partial`; the buckets stand. A response in a shape this task does not know (neither Resource
   Manager v1's `lifecycleState`/`name` nor v3's `state`/`displayName`) is an `internal` error
   scoped `project`, not silent nulls.
+- `functions.read` false, with an error scoped `functions` (`permission_denied`, `dependency` for a
+  disabled Cloud Functions API, `rate_limited`, ...): the functions could not be listed; the buckets
+  and the project stand and the run is `partial`. Its sync partition is `forbidden` / `failed`, so
+  nothing is swept: it is never "the project has no functions". `functions.items` empty with
+  `total` 0 and `read` true is a project with none.
+- `functions.unreachableRegions` not empty: gcloud exits 0 but could not reach those regions
+  (it only warns); their functions are missing, the run is `partial` (`unreachable`) and the
+  partition is `failed`. `functions.ambiguousIds`: the same function id exists in more than one
+  region; a function is named by its id alone, so those are listed in `items` (with their regions)
+  but not synced as resources (`internal` error scoped `functions`); the target needs its region.
+- `state` is the generation's own field: 2nd gen `state` (`ACTIVE`, `FAILED`, `DEPLOYING`, ...),
+  1st gen `status` (`ACTIVE`, `OFFLINE`, ...); null when the row carries neither. A bucket list that
+  fails fails the task before the functions are read.
 - `buckets.items` empty and `total` 0: the project has no buckets (an identity that may not list
   them fails with `permission_denied`; it never returns an empty list).
 - `buckets.omitted` above zero: the list was cut at `maxItems`; raise the setting, or read the
@@ -72,6 +87,8 @@ of the budget (less a 10s margin), and a request that would start with nothing l
 - Missing permission: grant a role that carries it (see the IAM permissions reference for
   `storage.buckets.list` and `resourcemanager.projects.get`), then run
   `gcp:gcp-base/discover` again.
+- A function listed here is the target of `gcp:gcp-functions-health/function-state`,
+  `gcp:gcp-functions-health/function-errors` and `gcp:gcp-functions-health/function-metrics`.
 - A bucket listed here is the target of `gcp:gcp-bucket-health/bucket-config`,
   `gcp:gcp-bucket-health/public-access` and `gcp:gcp-bucket-health/bucket-size`.
 
