@@ -383,3 +383,21 @@ kubernetes:
       "Resolve LiteLLM Master Key": "dropped: a secret read (Secrets, pod env, printenv through exec): not ported, no V13 skill reads the key"
   - { bundle: k8s-litellm-spend-governance, skills: [], status: planned, plugin: misc,
       note: "needs the LiteLLM master key: misc plugin skill on a generic/bearer connection (D72), M4" }
+
+azure:
+  # --- pilot (M3) ---------------------------------------------------------------------------------------------
+  # Azure skills target one resource (a type below azure/subscription, D51); the classic resource-group scope is the
+  # set of targets discovery lists, not a task input. Tests are recorded against the az stub (tests/stub/README.md).
+  - bundle: azure-kv-health
+    skills: [azure-kv-health]
+    status: ported
+    ported: [azure-kv-health]
+    pilot: true
+    note: "per-vault target (azure/keyvault) instead of a resource-group loop. Classic false-passes not reproduced: a failed `az keyvault list`/metrics/`az rest` call became an empty loop or 'N/A' and no issue (availability, configuration, performance, resource health); availability judged only the last hourly point; null soft-delete read as misconfigured; the SLI scored a JSON load failure as healthy. Resource Health no longer registers Microsoft.ResourceHealth (a write in a read task): an unregistered provider is a dependency error. The log-analytics extension is not installed on the fly: the query goes through `az rest` to the Log Analytics API."
+    tasks:
+      "Check Key Vault Resource Health": azure-kv-health/resource-health
+      "Check Key Vault Availability": azure-kv-health/availability
+      "Check Key Vault Configuration": azure-kv-health/configuration
+      "Check Expiring Key Vault Items": azure-kv-health/expiring-items
+      "Check Key Vault Logs for Issues": azure-kv-health/audit-failures
+      "Check Key Vault Performance Metrics": azure-kv-health/performance

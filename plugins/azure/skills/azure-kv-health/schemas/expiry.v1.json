@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Secrets, certificates and keys that are expired or expire soon (metadata only)",
+  "type": "object",
+  "properties": {
+    "vault": {
+      "type": "string"
+    },
+    "thresholdDays": {
+      "type": "integer"
+    },
+    "scanned": {
+      "type": "object",
+      "properties": {
+        "secrets": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "certificates": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "keys": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "secrets",
+        "certificates",
+        "keys"
+      ],
+      "additionalProperties": false,
+      "description": "Items listed per kind; null for a kind that could not be listed (the run is partial, with an error scoped to it)"
+    },
+    "noExpiry": {
+      "type": "object",
+      "properties": {
+        "secrets": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "certificates": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "keys": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "secrets",
+        "certificates",
+        "keys"
+      ],
+      "additionalProperties": false,
+      "description": "Items of that kind with no expiry date; null as in scanned"
+    },
+    "expired": {
+      "type": "integer",
+      "description": "Items in the list below that are already expired"
+    },
+    "items": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "secret",
+                  "certificate",
+                  "key"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "expires": {
+                "type": "string",
+                "description": "As Azure reports it"
+              },
+              "daysRemaining": {
+                "type": "integer",
+                "description": "Whole days from the run's reference time to expiry, rounded down; negative once expired"
+              },
+              "expired": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "expires",
+              "daysRemaining",
+              "expired",
+              "enabled"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer"
+        },
+        "omitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted"
+      ],
+      "additionalProperties": false,
+      "description": "Expired or expiring within thresholdDays, soonest first, cut to maxItems"
+    }
+  },
+  "required": [
+    "vault",
+    "thresholdDays",
+    "scanned",
+    "noExpiry",
+    "expired",
+    "items"
+  ],
+  "additionalProperties": false
+}
