@@ -1,0 +1,117 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/vm-scale-sets/vmss-orders-jobs
+now: '2026-11-04T03:57:07.585Z'
+calls:
+- argv:
+  - az
+  - vmss
+  - show
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "automaticRepairsPolicy": {
+        "enabled": false,
+        "gracePeriod": "PT30M",
+        "repairAction": "Replace"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+      "location": "westeurope",
+      "name": "vmss-orders-jobs",
+      "orchestrationMode": "Uniform",
+      "overprovision": true,
+      "platformFaultDomainCount": 1,
+      "provisioningState": "Succeeded",
+      "resourceGroup": "rg-orders-dev",
+      "scaleInPolicy": {
+        "forceDeletion": false,
+        "rules": [
+          "Default"
+        ]
+      },
+      "singlePlacementGroup": false,
+      "sku": {
+        "capacity": 5,
+        "name": "Standard_D4s_v5",
+        "tier": "Standard"
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d02",
+      "upgradePolicy": {
+        "mode": "Manual"
+      },
+      "virtualMachineProfile": {
+        "extensionProfile": {
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "provisioningState": "Succeeded",
+              "type": "CustomScript",
+              "typeHandlerVersion": "2.1"
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaceConfigurations": [
+            {
+              "name": "nic",
+              "primary": true
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "computerNamePrefix": "ers-jobs",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true
+          },
+          "secrets": []
+        },
+        "storageProfile": {
+          "imageReference": {
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            },
+            "osType": "Linux"
+          }
+        }
+      },
+      "zoneBalance": false,
+      "zones": []
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    scaleSet:
+      scaleSet: vmss-orders-jobs
+      sku:
+        capacity: 5
+      upgradeMode: Manual
+      automaticRepairsEnabled: false
+      automaticOsUpgradeEnabled: null
+      hasLoadBalancerHealthProbe: false

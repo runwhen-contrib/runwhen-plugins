@@ -1,0 +1,194 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/vm-scale-sets/vmss-orders-jobs
+now: '2026-11-04T03:57:28.707Z'
+calls:
+- argv:
+  - az
+  - vmss
+  - show
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "automaticRepairsPolicy": {
+        "enabled": false,
+        "gracePeriod": "PT30M",
+        "repairAction": "Replace"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+      "location": "westeurope",
+      "name": "vmss-orders-jobs",
+      "orchestrationMode": "Uniform",
+      "overprovision": true,
+      "platformFaultDomainCount": 1,
+      "provisioningState": "Succeeded",
+      "resourceGroup": "rg-orders-dev",
+      "scaleInPolicy": {
+        "forceDeletion": false,
+        "rules": [
+          "Default"
+        ]
+      },
+      "singlePlacementGroup": false,
+      "sku": {
+        "capacity": 5,
+        "name": "Standard_D4s_v5",
+        "tier": "Standard"
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d02",
+      "upgradePolicy": {
+        "mode": "Manual"
+      },
+      "virtualMachineProfile": {
+        "extensionProfile": {
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "provisioningState": "Succeeded",
+              "type": "CustomScript",
+              "typeHandlerVersion": "2.1"
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaceConfigurations": [
+            {
+              "name": "nic",
+              "primary": true
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "computerNamePrefix": "ers-jobs",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true
+          },
+          "secrets": []
+        },
+        "storageProfile": {
+          "imageReference": {
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            },
+            "osType": "Linux"
+          }
+        }
+      },
+      "zoneBalance": false,
+      "zones": []
+    }
+  stderr: ''
+- argv:
+  - az
+  - vmss
+  - get-instance-view
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "extensions": [
+        {
+          "name": "CustomScript",
+          "statusesSummary": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "count": 4
+            },
+            {
+              "code": "ProvisioningState/failed/3",
+              "count": 1
+            }
+          ]
+        }
+      ],
+      "statuses": [
+        {
+          "code": "ProvisioningState/succeeded",
+          "displayStatus": "Provisioning succeeded",
+          "level": "Info",
+          "time": "2026-11-04T01:12:09+00:00"
+        }
+      ],
+      "virtualMachine": {
+        "statusesSummary": [
+          {
+            "code": "ProvisioningState/succeeded",
+            "count": 3
+          },
+          {
+            "code": "ProvisioningState/failed/VMExtensionProvisioningError",
+            "count": 1
+          },
+          {
+            "code": "ProvisioningState/updating",
+            "count": 1
+          }
+        ]
+      }
+    }
+  stderr: ''
+- argv:
+  - az
+  - vmss
+  - list-instances
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --expand
+  - instanceView
+  - --output
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (AuthorizationFailed) The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs' or the scope is invalid. If access was recently granted, please refresh your credentials.
+    Code: AuthorizationFailed
+    Message: The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs' or the scope is invalid. If access was recently granted, please refresh your credentials.
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    instances:
+      scaleSet: vmss-orders-jobs
+      counts: null
+      instances: null
+      statusesSummary:
+        $containsWhere:
+          code: ProvisioningState/updating
+          count: 1

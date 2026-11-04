@@ -1,0 +1,167 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/virtual-machines/vm-orders-batch02
+inputs:
+  check: disk
+now: '2026-11-04T03:59:25.626Z'
+calls:
+- argv:
+  - az
+  - vm
+  - get-instance-view
+  - --name
+  - vm-orders-batch02
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "diagnosticsProfile": {
+        "bootDiagnostics": {
+          "enabled": false
+        }
+      },
+      "hardwareProfile": {
+        "vmSize": "Standard_D4s_v5"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachines/vm-orders-batch02",
+      "instanceView": {
+        "computerName": "vm-orders-batch02",
+        "disks": [
+          {
+            "name": "vm-orders-batch02_OsDisk",
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Provisioning succeeded",
+                "level": "Info",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ]
+          }
+        ],
+        "extensions": [
+          {
+            "name": "AzureMonitorLinuxAgent",
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Provisioning succeeded",
+                "level": "Info",
+                "message": "Extension enabled",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "type": "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent",
+            "typeHandlerVersion": "1.33.1"
+          },
+          {
+            "name": "CustomScript",
+            "statuses": [
+              {
+                "code": "ProvisioningState/failed/3",
+                "displayStatus": "Provisioning failed",
+                "level": "Error",
+                "message": "Enable failed: failed to execute command: command terminated with exit status=3\n[stdout]\n\n[stderr]\nmkdir: cannot create directory '/data/app': No space left on device\n",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "type": "Microsoft.Azure.Extensions.CustomScript",
+            "typeHandlerVersion": "2.1.10"
+          }
+        ],
+        "hyperVGeneration": "V2",
+        "osName": "ubuntu",
+        "osVersion": "24.04",
+        "platformFaultDomain": 0,
+        "platformUpdateDomain": 0,
+        "statuses": [
+          {
+            "code": "ProvisioningState/failed/VMExtensionProvisioningError",
+            "displayStatus": "Provisioning failed",
+            "level": "Error",
+            "message": "VM has reported a failure when processing extension 'CustomScript'. Error message: \"Enable failed: failed to execute command: command terminated with exit status=3\".",
+            "time": "2026-11-04T01:12:09+00:00"
+          },
+          {
+            "code": "PowerState/running",
+            "displayStatus": "VM running",
+            "level": "Info"
+          }
+        ],
+        "vmAgent": {
+          "statuses": [
+            {
+              "code": "ProvisioningState/Unavailable",
+              "displayStatus": "Not Ready",
+              "level": "Warning",
+              "message": "VM Agent is unresponsive.",
+              "time": "2026-11-04T01:12:09+00:00"
+            }
+          ],
+          "vmAgentVersion": "Unknown"
+        }
+      },
+      "location": "westeurope",
+      "name": "vm-orders-batch02",
+      "networkProfile": {
+        "networkInterfaces": [
+          {
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Network/networkInterfaces/vm-orders-batch02-nic",
+            "resourceGroup": "rg-orders-dev"
+          }
+        ]
+      },
+      "osProfile": {
+        "adminUsername": "azureuser",
+        "allowExtensionOperations": true,
+        "computerName": "vm-orders-batch02",
+        "linuxConfiguration": {
+          "disablePasswordAuthentication": true,
+          "provisionVMAgent": true
+        },
+        "secrets": []
+      },
+      "provisioningState": "Failed",
+      "resourceGroup": "rg-orders-dev",
+      "storageProfile": {
+        "dataDisks": [],
+        "imageReference": {
+          "exactVersion": "24.04.202510150",
+          "offer": "ubuntu-24_04-lts",
+          "publisher": "Canonical",
+          "sku": "server",
+          "version": "latest"
+        },
+        "osDisk": {
+          "caching": "ReadWrite",
+          "createOption": "FromImage",
+          "diskSizeGB": 64,
+          "managedDisk": {
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/disks/vm-orders-batch02_OsDisk",
+            "resourceGroup": "rg-orders-dev",
+            "storageAccountType": "Premium_LRS"
+          },
+          "name": "vm-orders-batch02_OsDisk",
+          "osType": "Linux"
+        }
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "timeCreated": "2026-06-12T08:30:11.1234567+00:00",
+      "type": "Microsoft.Compute/virtualMachines",
+      "vmId": "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c02"
+    }
+  stderr: ''
+expect:
+  status: skipped
+  errorCodes: []

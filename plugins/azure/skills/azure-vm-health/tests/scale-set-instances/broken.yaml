@@ -1,0 +1,582 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/vm-scale-sets/vmss-orders-jobs
+now: '2026-11-04T03:57:19.042Z'
+calls:
+- argv:
+  - az
+  - vmss
+  - show
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "automaticRepairsPolicy": {
+        "enabled": false,
+        "gracePeriod": "PT30M",
+        "repairAction": "Replace"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+      "location": "westeurope",
+      "name": "vmss-orders-jobs",
+      "orchestrationMode": "Uniform",
+      "overprovision": true,
+      "platformFaultDomainCount": 1,
+      "provisioningState": "Succeeded",
+      "resourceGroup": "rg-orders-dev",
+      "scaleInPolicy": {
+        "forceDeletion": false,
+        "rules": [
+          "Default"
+        ]
+      },
+      "singlePlacementGroup": false,
+      "sku": {
+        "capacity": 5,
+        "name": "Standard_D4s_v5",
+        "tier": "Standard"
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d02",
+      "upgradePolicy": {
+        "mode": "Manual"
+      },
+      "virtualMachineProfile": {
+        "extensionProfile": {
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "provisioningState": "Succeeded",
+              "type": "CustomScript",
+              "typeHandlerVersion": "2.1"
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaceConfigurations": [
+            {
+              "name": "nic",
+              "primary": true
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "computerNamePrefix": "ers-jobs",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true
+          },
+          "secrets": []
+        },
+        "storageProfile": {
+          "imageReference": {
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            },
+            "osType": "Linux"
+          }
+        }
+      },
+      "zoneBalance": false,
+      "zones": []
+    }
+  stderr: ''
+- argv:
+  - az
+  - vmss
+  - get-instance-view
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "extensions": [
+        {
+          "name": "CustomScript",
+          "statusesSummary": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "count": 4
+            },
+            {
+              "code": "ProvisioningState/failed/3",
+              "count": 1
+            }
+          ]
+        }
+      ],
+      "statuses": [
+        {
+          "code": "ProvisioningState/succeeded",
+          "displayStatus": "Provisioning succeeded",
+          "level": "Info",
+          "time": "2026-11-04T01:12:09+00:00"
+        }
+      ],
+      "virtualMachine": {
+        "statusesSummary": [
+          {
+            "code": "ProvisioningState/succeeded",
+            "count": 3
+          },
+          {
+            "code": "ProvisioningState/failed/VMExtensionProvisioningError",
+            "count": 1
+          },
+          {
+            "code": "ProvisioningState/updating",
+            "count": 1
+          }
+        ]
+      }
+    }
+  stderr: ''
+- argv:
+  - az
+  - vmss
+  - list-instances
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --expand
+  - instanceView
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/virtualMachines/0",
+        "instanceId": "0",
+        "instanceView": {
+          "computerName": "ers-jobs000000",
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "statuses": [
+                {
+                  "code": "ProvisioningState/succeeded",
+                  "displayStatus": "Provisioning succeeded",
+                  "level": "Info",
+                  "time": "2026-11-04T01:12:09+00:00"
+                }
+              ],
+              "type": "Microsoft.Azure.Extensions.CustomScript",
+              "typeHandlerVersion": "2.1.10"
+            }
+          ],
+          "osName": "ubuntu",
+          "osVersion": "24.04",
+          "platformFaultDomain": 0,
+          "platformUpdateDomain": 0,
+          "statuses": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "displayStatus": "Provisioning succeeded",
+              "level": "Info",
+              "time": "2026-11-04T01:12:09+00:00"
+            },
+            {
+              "code": "PowerState/running",
+              "displayStatus": "VM running",
+              "level": "Info"
+            }
+          ],
+          "vmAgent": {
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Ready",
+                "level": "Info",
+                "message": "Guest Agent is running",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "vmAgentVersion": "2.13.1.1"
+          },
+          "vmHealth": {
+            "status": {
+              "code": "HealthState/healthy",
+              "displayStatus": "Healthy",
+              "level": "Info"
+            }
+          }
+        },
+        "latestModelApplied": true,
+        "location": "westeurope",
+        "modelDefinitionApplied": "VirtualMachineScaleSet",
+        "name": "vmss-orders-jobs_0",
+        "protectionPolicy": {
+          "protectFromScaleIn": false,
+          "protectFromScaleSetActions": false
+        },
+        "provisioningState": "Succeeded",
+        "resourceGroup": "rg-orders-dev",
+        "sku": {
+          "name": "Standard_D4s_v5",
+          "tier": "Standard"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets/virtualMachines",
+        "vmId": "7a3b2e4c-9d5f-4c1a-8e32-4f6b8c0d2e00",
+        "zones": []
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/virtualMachines/1",
+        "instanceId": "1",
+        "instanceView": {
+          "computerName": "ers-jobs000001",
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "statuses": [
+                {
+                  "code": "ProvisioningState/succeeded",
+                  "displayStatus": "Provisioning succeeded",
+                  "level": "Info",
+                  "time": "2026-11-04T01:12:09+00:00"
+                }
+              ],
+              "type": "Microsoft.Azure.Extensions.CustomScript",
+              "typeHandlerVersion": "2.1.10"
+            }
+          ],
+          "osName": "ubuntu",
+          "osVersion": "24.04",
+          "platformFaultDomain": 0,
+          "platformUpdateDomain": 1,
+          "statuses": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "displayStatus": "Provisioning succeeded",
+              "level": "Info",
+              "time": "2026-11-04T01:12:09+00:00"
+            },
+            {
+              "code": "PowerState/running",
+              "displayStatus": "VM running",
+              "level": "Info"
+            }
+          ],
+          "vmAgent": {
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Ready",
+                "level": "Info",
+                "message": "Guest Agent is running",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "vmAgentVersion": "2.13.1.1"
+          },
+          "vmHealth": {
+            "status": {
+              "code": "HealthState/healthy",
+              "displayStatus": "Healthy",
+              "level": "Info"
+            }
+          }
+        },
+        "latestModelApplied": false,
+        "location": "westeurope",
+        "modelDefinitionApplied": "VirtualMachineScaleSet",
+        "name": "vmss-orders-jobs_1",
+        "protectionPolicy": {
+          "protectFromScaleIn": false,
+          "protectFromScaleSetActions": false
+        },
+        "provisioningState": "Succeeded",
+        "resourceGroup": "rg-orders-dev",
+        "sku": {
+          "name": "Standard_D4s_v5",
+          "tier": "Standard"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets/virtualMachines",
+        "vmId": "7a3b2e4c-9d5f-4c1a-8e32-4f6b8c0d2e01",
+        "zones": []
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/virtualMachines/2",
+        "instanceId": "2",
+        "instanceView": {
+          "computerName": "ers-jobs000002",
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "statuses": [
+                {
+                  "code": "ProvisioningState/succeeded",
+                  "displayStatus": "Provisioning succeeded",
+                  "level": "Info",
+                  "time": "2026-11-04T01:12:09+00:00"
+                }
+              ],
+              "type": "Microsoft.Azure.Extensions.CustomScript",
+              "typeHandlerVersion": "2.1.10"
+            }
+          ],
+          "osName": "ubuntu",
+          "osVersion": "24.04",
+          "platformFaultDomain": 0,
+          "platformUpdateDomain": 2,
+          "statuses": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "displayStatus": "Provisioning succeeded",
+              "level": "Info",
+              "time": "2026-11-04T01:12:09+00:00"
+            },
+            {
+              "code": "PowerState/running",
+              "displayStatus": "VM running",
+              "level": "Info"
+            }
+          ],
+          "vmAgent": {
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Ready",
+                "level": "Info",
+                "message": "Guest Agent is running",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "vmAgentVersion": "2.13.1.1"
+          },
+          "vmHealth": {
+            "status": {
+              "code": "HealthState/unhealthy",
+              "displayStatus": "Unhealthy",
+              "level": "Error",
+              "message": "Application health probe failed: connection refused on port 8080"
+            }
+          }
+        },
+        "latestModelApplied": true,
+        "location": "westeurope",
+        "modelDefinitionApplied": "VirtualMachineScaleSet",
+        "name": "vmss-orders-jobs_2",
+        "protectionPolicy": {
+          "protectFromScaleIn": false,
+          "protectFromScaleSetActions": false
+        },
+        "provisioningState": "Succeeded",
+        "resourceGroup": "rg-orders-dev",
+        "sku": {
+          "name": "Standard_D4s_v5",
+          "tier": "Standard"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets/virtualMachines",
+        "vmId": "7a3b2e4c-9d5f-4c1a-8e32-4f6b8c0d2e02",
+        "zones": []
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/virtualMachines/3",
+        "instanceId": "3",
+        "instanceView": {
+          "computerName": "ers-jobs000003",
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "statuses": [
+                {
+                  "code": "ProvisioningState/failed/3",
+                  "displayStatus": "Provisioning failed",
+                  "level": "Error",
+                  "message": "Enable failed: exit status=3",
+                  "time": "2026-11-04T01:12:09+00:00"
+                }
+              ],
+              "type": "Microsoft.Azure.Extensions.CustomScript",
+              "typeHandlerVersion": "2.1.10"
+            }
+          ],
+          "osName": "ubuntu",
+          "osVersion": "24.04",
+          "platformFaultDomain": 0,
+          "platformUpdateDomain": 3,
+          "statuses": [
+            {
+              "code": "ProvisioningState/failed/VMExtensionProvisioningError",
+              "displayStatus": "Provisioning failed",
+              "level": "Error",
+              "time": "2026-11-04T01:12:09+00:00"
+            },
+            {
+              "code": "PowerState/running",
+              "displayStatus": "VM running",
+              "level": "Info"
+            }
+          ],
+          "vmAgent": {
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Ready",
+                "level": "Info",
+                "message": "Guest Agent is running",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "vmAgentVersion": "2.13.1.1"
+          },
+          "vmHealth": {
+            "status": {
+              "code": "HealthState/healthy",
+              "displayStatus": "Healthy",
+              "level": "Info"
+            }
+          }
+        },
+        "latestModelApplied": true,
+        "location": "westeurope",
+        "modelDefinitionApplied": "VirtualMachineScaleSet",
+        "name": "vmss-orders-jobs_3",
+        "protectionPolicy": {
+          "protectFromScaleIn": false,
+          "protectFromScaleSetActions": false
+        },
+        "provisioningState": "Failed",
+        "resourceGroup": "rg-orders-dev",
+        "sku": {
+          "name": "Standard_D4s_v5",
+          "tier": "Standard"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets/virtualMachines",
+        "vmId": "7a3b2e4c-9d5f-4c1a-8e32-4f6b8c0d2e03",
+        "zones": []
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/virtualMachines/4",
+        "instanceId": "4",
+        "instanceView": {
+          "computerName": "ers-jobs000004",
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "statuses": [
+                {
+                  "code": "ProvisioningState/succeeded",
+                  "displayStatus": "Provisioning succeeded",
+                  "level": "Info",
+                  "time": "2026-11-04T01:12:09+00:00"
+                }
+              ],
+              "type": "Microsoft.Azure.Extensions.CustomScript",
+              "typeHandlerVersion": "2.1.10"
+            }
+          ],
+          "osName": "ubuntu",
+          "osVersion": "24.04",
+          "platformFaultDomain": 0,
+          "platformUpdateDomain": 4,
+          "statuses": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "displayStatus": "Provisioning succeeded",
+              "level": "Info",
+              "time": "2026-11-04T01:12:09+00:00"
+            },
+            {
+              "code": "PowerState/running",
+              "displayStatus": "VM running",
+              "level": "Info"
+            }
+          ],
+          "vmAgent": {
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Ready",
+                "level": "Info",
+                "message": "Guest Agent is running",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "vmAgentVersion": "2.13.1.1"
+          },
+          "vmHealth": {
+            "status": {
+              "code": "HealthState/healthy",
+              "displayStatus": "Healthy",
+              "level": "Info"
+            }
+          }
+        },
+        "latestModelApplied": false,
+        "location": "westeurope",
+        "modelDefinitionApplied": "VirtualMachineScaleSet",
+        "name": "vmss-orders-jobs_4",
+        "protectionPolicy": {
+          "protectFromScaleIn": false,
+          "protectFromScaleSetActions": false
+        },
+        "provisioningState": "Updating",
+        "resourceGroup": "rg-orders-dev",
+        "sku": {
+          "name": "Standard_D4s_v5",
+          "tier": "Standard"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets/virtualMachines",
+        "vmId": "7a3b2e4c-9d5f-4c1a-8e32-4f6b8c0d2e04",
+        "zones": []
+      }
+    ]
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    instances:
+      scaleSet: vmss-orders-jobs
+      capacity: 5
+      counts:
+        total: 5
+        provisioningFailed: 1
+        modelOutdated: 2
+        unhealthy: 1
+        withFailedExtensions: 1
+        byProvisioningState:
+          Failed: 1
+          Succeeded: 3
+          Updating: 1
+      instances:
+        total: 5
+        omitted: 0
+        items:
+          $containsWhere:
+            instanceId: '3'
+            provisioningState: Failed
+            failedExtensions: 1

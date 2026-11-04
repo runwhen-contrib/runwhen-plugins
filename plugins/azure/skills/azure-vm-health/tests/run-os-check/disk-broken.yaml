@@ -1,0 +1,218 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/virtual-machines/vm-orders-web01
+inputs:
+  check: disk
+now: '2026-11-04T03:59:06.274Z'
+calls:
+- argv:
+  - az
+  - vm
+  - get-instance-view
+  - --name
+  - vm-orders-web01
+  - -g
+  - rg-orders-prod
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "diagnosticsProfile": {
+        "bootDiagnostics": {
+          "enabled": true
+        }
+      },
+      "hardwareProfile": {
+        "vmSize": "Standard_D2s_v5"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachines/vm-orders-web01",
+      "instanceView": {
+        "bootDiagnostics": {
+          "consoleScreenshotBlobUri": "https://stordersdiag.blob.core.windows.net/bootdiagnostics-vm-orders-web01/vm-orders-web01.screenshot.bmp",
+          "serialConsoleLogBlobUri": "https://stordersdiag.blob.core.windows.net/bootdiagnostics-vm-orders-web01/vm-orders-web01.serialconsole.log"
+        },
+        "computerName": "vm-orders-web01",
+        "disks": [
+          {
+            "name": "vm-orders-web01_OsDisk",
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Provisioning succeeded",
+                "level": "Info",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ]
+          }
+        ],
+        "extensions": [
+          {
+            "name": "AzureMonitorLinuxAgent",
+            "statuses": [
+              {
+                "code": "ProvisioningState/succeeded",
+                "displayStatus": "Provisioning succeeded",
+                "level": "Info",
+                "message": "Extension enabled",
+                "time": "2026-11-04T01:12:09+00:00"
+              }
+            ],
+            "type": "Microsoft.Azure.Monitor.AzureMonitorLinuxAgent",
+            "typeHandlerVersion": "1.33.1"
+          }
+        ],
+        "hyperVGeneration": "V2",
+        "osName": "ubuntu",
+        "osVersion": "24.04",
+        "platformFaultDomain": 0,
+        "platformUpdateDomain": 0,
+        "statuses": [
+          {
+            "code": "ProvisioningState/succeeded",
+            "displayStatus": "Provisioning succeeded",
+            "level": "Info",
+            "time": "2026-11-04T01:12:09+00:00"
+          },
+          {
+            "code": "PowerState/running",
+            "displayStatus": "VM running",
+            "level": "Info"
+          }
+        ],
+        "vmAgent": {
+          "extensionHandlers": [],
+          "statuses": [
+            {
+              "code": "ProvisioningState/succeeded",
+              "displayStatus": "Ready",
+              "level": "Info",
+              "message": "Guest Agent is running",
+              "time": "2026-11-04T01:12:09+00:00"
+            }
+          ],
+          "vmAgentVersion": "2.13.1.1"
+        }
+      },
+      "location": "eastus",
+      "name": "vm-orders-web01",
+      "networkProfile": {
+        "networkInterfaces": [
+          {
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/networkInterfaces/vm-orders-web01-nic",
+            "resourceGroup": "rg-orders-prod"
+          }
+        ]
+      },
+      "osProfile": {
+        "adminUsername": "azureuser",
+        "allowExtensionOperations": true,
+        "computerName": "vm-orders-web01",
+        "linuxConfiguration": {
+          "disablePasswordAuthentication": true,
+          "provisionVMAgent": true
+        },
+        "secrets": []
+      },
+      "provisioningState": "Succeeded",
+      "resourceGroup": "rg-orders-prod",
+      "storageProfile": {
+        "dataDisks": [],
+        "imageReference": {
+          "exactVersion": "24.04.202510150",
+          "offer": "ubuntu-24_04-lts",
+          "publisher": "Canonical",
+          "sku": "server",
+          "version": "latest"
+        },
+        "osDisk": {
+          "caching": "ReadWrite",
+          "createOption": "FromImage",
+          "diskSizeGB": 64,
+          "managedDisk": {
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/disks/vm-orders-web01_OsDisk",
+            "resourceGroup": "rg-orders-prod",
+            "storageAccountType": "Premium_LRS"
+          },
+          "name": "vm-orders-web01_OsDisk",
+          "osType": "Linux"
+        }
+      },
+      "tags": {
+        "env": "prod",
+        "team": "orders"
+      },
+      "timeCreated": "2026-06-12T08:30:11.1234567+00:00",
+      "type": "Microsoft.Compute/virtualMachines",
+      "vmId": "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c01"
+    }
+  stderr: ''
+- argv:
+  - az
+  - vm
+  - run-command
+  - invoke
+  - --name
+  - vm-orders-web01
+  - -g
+  - rg-orders-prod
+  - --command-id
+  - RunShellScript
+  - --scripts
+  - |
+    #!/bin/sh
+    # runwhen azure-vm-health run-os-check: disk v1. Read-only: df and nothing else.
+    LC_ALL=C
+    export LC_ALL
+    echo "RW_BEGIN disk"
+    df -P -k -x tmpfs -x devtmpfs -x squashfs -x overlay
+    rc=$?
+    echo "RW_END disk rc=$rc"
+    exit 0
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "value": [
+        {
+          "code": "ProvisioningState/succeeded",
+          "displayStatus": "Provisioning succeeded",
+          "level": "Info",
+          "message": "Enable succeeded: \n[stdout]\nRW_BEGIN disk\nFilesystem     1024-blocks     Used Available Capacity Mounted on\n/dev/root         30298176 28190480   2092696      94% /\n/dev/sdc1        515928320 504009200  11919120      98% /data\n/dev/sda16          901520    63864    774532       8% /boot\n/dev/sda15          106832     6186    100646       6% /boot/efi\nRW_END disk rc=0\n\n[stderr]\n\n"
+        }
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    osCheck:
+      vm: vm-orders-web01
+      check: disk
+      executed: true
+      dryRun: false
+      scriptSha256: 7a2d702123b13e8a52a336ac9bc5b9abbac85cab0ec349bbb5dac876794b8868
+      invocation:
+        code: ProvisioningState/succeeded
+        level: Info
+      disk:
+        overThreshold: true
+        filesystems:
+          total: 4
+          items:
+            $containsWhere:
+              mount: /data
+              usedPercent: 97.7
+              overThreshold: true
+      memory: null
+      uptime: null
+      patches: null

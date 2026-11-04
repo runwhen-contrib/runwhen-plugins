@@ -1,0 +1,30 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/vm-scale-sets/vmss-orders-jobs
+now: '2026-11-04T03:57:12.136Z'
+calls:
+- argv:
+  - az
+  - vmss
+  - show
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (TooManyRequests) The request is being throttled as the limit has been reached for operation type - 'Read'. For more information, see https://aka.ms/srpthrottlinglimits. Please try again later.
+    Code: TooManyRequests
+    Message: The request is being throttled as the limit has been reached for operation type - 'Read'. For more information, see https://aka.ms/srpthrottlinglimits. Please try again later.
+expect:
+  status: failed
+  errorCodes:
+  - rate_limited

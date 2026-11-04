@@ -1,0 +1,147 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/virtual-machines/vm-orders-batch02
+now: '2026-11-04T03:56:15.522Z'
+calls:
+- argv:
+  - az
+  - vm
+  - show
+  - --name
+  - vm-orders-batch02
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "diagnosticsProfile": {
+        "bootDiagnostics": {
+          "enabled": false
+        }
+      },
+      "hardwareProfile": {
+        "vmSize": "Standard_D4s_v5"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachines/vm-orders-batch02",
+      "location": "westeurope",
+      "name": "vm-orders-batch02",
+      "networkProfile": {
+        "networkInterfaces": [
+          {
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Network/networkInterfaces/vm-orders-batch02-nic",
+            "resourceGroup": "rg-orders-dev"
+          }
+        ]
+      },
+      "osProfile": {
+        "adminUsername": "azureuser",
+        "allowExtensionOperations": true,
+        "computerName": "vm-orders-batch02",
+        "linuxConfiguration": {
+          "disablePasswordAuthentication": true,
+          "provisionVMAgent": true
+        },
+        "secrets": []
+      },
+      "provisioningState": "Failed",
+      "resourceGroup": "rg-orders-dev",
+      "storageProfile": {
+        "dataDisks": [],
+        "imageReference": {
+          "exactVersion": "24.04.202510150",
+          "offer": "ubuntu-24_04-lts",
+          "publisher": "Canonical",
+          "sku": "server",
+          "version": "latest"
+        },
+        "osDisk": {
+          "caching": "ReadWrite",
+          "createOption": "FromImage",
+          "diskSizeGB": 64,
+          "managedDisk": {
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/disks/vm-orders-batch02_OsDisk",
+            "resourceGroup": "rg-orders-dev",
+            "storageAccountType": "Premium_LRS"
+          },
+          "name": "vm-orders-batch02_OsDisk",
+          "osType": "Linux"
+        }
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "timeCreated": "2026-06-12T08:30:11.1234567+00:00",
+      "type": "Microsoft.Compute/virtualMachines",
+      "vmId": "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c02"
+    }
+  stderr: ''
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachines/vm-orders-batch02/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachines/vm-orders-batch02/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
+      "location": "eastus",
+      "name": "current",
+      "properties": {
+        "availabilityState": "Unavailable",
+        "category": "Unplanned",
+        "context": "Azure initiated",
+        "detailedStatus": "The host server was rebooted unexpectedly; the VM is being recovered on another host (event 3QK1-8T0).",
+        "healthEventCategory": "Unplanned",
+        "healthEventCause": "PlatformInitiated",
+        "healthEventId": "3QK1-8T0",
+        "healthEventType": "ServiceHealth",
+        "occurredTime": "2026-11-04T01:30:00Z",
+        "reasonChronicity": "Transient",
+        "reasonType": "Unplanned",
+        "reportedTime": "2026-11-04T01:31:44.2250000Z",
+        "rootCauseAttributionTime": "2026-11-04T01:30:00Z",
+        "serviceImpactingEvents": [
+          {
+            "correlationId": "8a1b2c3d-0000-4000-8000-000000000001",
+            "eventStartTime": "2026-11-04T01:30:00Z",
+            "eventStatusLastModifiedTime": "2026-11-04T02:10:00Z",
+            "incidentProperties": {
+              "incidentType": "Incident",
+              "region": "eastus",
+              "service": "Virtual Machines",
+              "title": "Virtual Machines - Unexpected host reboot"
+            },
+            "status": {
+              "value": "Active"
+            }
+          }
+        ],
+        "summary": "We're sorry, your virtual machine is unavailable because of an unplanned platform event.",
+        "title": "Unavailable"
+      },
+      "type": "Microsoft.ResourceHealth/AvailabilityStatuses"
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    health:
+      resource: vm-orders-batch02
+      resourceType: azure/virtual-machine
+      availabilityState: Unavailable
+      healthy: false
+      reasonType: Unplanned
+      serviceImpactingEvents: 1

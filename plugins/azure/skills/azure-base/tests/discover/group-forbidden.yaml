@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
-now: '2026-11-04T04:32:39.702Z'
+now: '2026-11-04T04:43:48.073Z'
 calls:
 - argv:
   - az
@@ -472,6 +472,180 @@ calls:
   stderr: ''
 - argv:
   - az
+  - vm
+  - list
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": false
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "Standard_D4s_v5"
+        },
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachines/vm-orders-batch02",
+        "location": "westeurope",
+        "name": "vm-orders-batch02",
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Network/networkInterfaces/vm-orders-batch02-nic",
+              "resourceGroup": "rg-orders-dev"
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "allowExtensionOperations": true,
+          "computerName": "vm-orders-batch02",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "provisionVMAgent": true
+          },
+          "secrets": []
+        },
+        "provisioningState": "Failed",
+        "resourceGroup": "rg-orders-dev",
+        "storageProfile": {
+          "dataDisks": [],
+          "imageReference": {
+            "exactVersion": "24.04.202510150",
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "diskSizeGB": 64,
+            "managedDisk": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/disks/vm-orders-batch02_OsDisk",
+              "resourceGroup": "rg-orders-dev",
+              "storageAccountType": "Premium_LRS"
+            },
+            "name": "vm-orders-batch02_OsDisk",
+            "osType": "Linux"
+          }
+        },
+        "tags": {
+          "env": "dev",
+          "team": "orders"
+        },
+        "timeCreated": "2026-06-12T08:30:11.1234567+00:00",
+        "type": "Microsoft.Compute/virtualMachines",
+        "vmId": "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c02"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - vmss
+  - list
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "automaticRepairsPolicy": {
+          "enabled": false,
+          "gracePeriod": "PT30M",
+          "repairAction": "Replace"
+        },
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+        "location": "westeurope",
+        "name": "vmss-orders-jobs",
+        "orchestrationMode": "Uniform",
+        "overprovision": true,
+        "platformFaultDomainCount": 1,
+        "provisioningState": "Succeeded",
+        "resourceGroup": "rg-orders-dev",
+        "scaleInPolicy": {
+          "forceDeletion": false,
+          "rules": [
+            "Default"
+          ]
+        },
+        "singlePlacementGroup": false,
+        "sku": {
+          "capacity": 5,
+          "name": "Standard_D4s_v5",
+          "tier": "Standard"
+        },
+        "tags": {
+          "env": "dev",
+          "team": "orders"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets",
+        "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d02",
+        "upgradePolicy": {
+          "mode": "Manual"
+        },
+        "virtualMachineProfile": {
+          "extensionProfile": {
+            "extensions": [
+              {
+                "name": "CustomScript",
+                "provisioningState": "Succeeded",
+                "type": "CustomScript",
+                "typeHandlerVersion": "2.1"
+              }
+            ]
+          },
+          "networkProfile": {
+            "networkInterfaceConfigurations": [
+              {
+                "name": "nic",
+                "primary": true
+              }
+            ]
+          },
+          "osProfile": {
+            "adminUsername": "azureuser",
+            "computerNamePrefix": "ers-jobs",
+            "linuxConfiguration": {
+              "disablePasswordAuthentication": true
+            },
+            "secrets": []
+          },
+          "storageProfile": {
+            "imageReference": {
+              "offer": "ubuntu-24_04-lts",
+              "publisher": "Canonical",
+              "sku": "server",
+              "version": "latest"
+            },
+            "osDisk": {
+              "caching": "ReadWrite",
+              "createOption": "FromImage",
+              "managedDisk": {
+                "storageAccountType": "Premium_LRS"
+              },
+              "osType": "Linux"
+            }
+          }
+        },
+        "zoneBalance": false,
+        "zones": []
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
   - keyvault
   - list
   - -g
@@ -887,6 +1061,203 @@ calls:
   stderr: ''
 - argv:
   - az
+  - vm
+  - list
+  - -g
+  - rg-orders-prod
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "Standard_D2s_v5"
+        },
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachines/vm-orders-web01",
+        "location": "eastus",
+        "name": "vm-orders-web01",
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/networkInterfaces/vm-orders-web01-nic",
+              "resourceGroup": "rg-orders-prod"
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "allowExtensionOperations": true,
+          "computerName": "vm-orders-web01",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "provisionVMAgent": true
+          },
+          "secrets": []
+        },
+        "provisioningState": "Succeeded",
+        "resourceGroup": "rg-orders-prod",
+        "storageProfile": {
+          "dataDisks": [],
+          "imageReference": {
+            "exactVersion": "24.04.202510150",
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "diskSizeGB": 64,
+            "managedDisk": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/disks/vm-orders-web01_OsDisk",
+              "resourceGroup": "rg-orders-prod",
+              "storageAccountType": "Premium_LRS"
+            },
+            "name": "vm-orders-web01_OsDisk",
+            "osType": "Linux"
+          }
+        },
+        "tags": {
+          "env": "prod",
+          "team": "orders"
+        },
+        "timeCreated": "2026-06-12T08:30:11.1234567+00:00",
+        "type": "Microsoft.Compute/virtualMachines",
+        "vmId": "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c01"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - vmss
+  - list
+  - -g
+  - rg-orders-prod
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "automaticRepairsPolicy": {
+          "enabled": true,
+          "gracePeriod": "PT30M",
+          "repairAction": "Replace"
+        },
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-api",
+        "location": "eastus",
+        "name": "vmss-orders-api",
+        "orchestrationMode": "Uniform",
+        "overprovision": false,
+        "platformFaultDomainCount": 1,
+        "provisioningState": "Succeeded",
+        "resourceGroup": "rg-orders-prod",
+        "scaleInPolicy": {
+          "forceDeletion": false,
+          "rules": [
+            "Default"
+          ]
+        },
+        "singlePlacementGroup": false,
+        "sku": {
+          "capacity": 3,
+          "name": "Standard_D2s_v5",
+          "tier": "Standard"
+        },
+        "tags": {
+          "env": "prod",
+          "team": "orders"
+        },
+        "type": "Microsoft.Compute/virtualMachineScaleSets",
+        "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d01",
+        "upgradePolicy": {
+          "automaticOSUpgradePolicy": {
+            "disableAutomaticRollback": false,
+            "enableAutomaticOSUpgrade": false
+          },
+          "mode": "Rolling",
+          "rollingUpgradePolicy": {
+            "maxBatchInstancePercent": 20,
+            "maxUnhealthyInstancePercent": 20,
+            "maxUnhealthyUpgradedInstancePercent": 20,
+            "pauseTimeBetweenBatches": "PT0S"
+          }
+        },
+        "virtualMachineProfile": {
+          "extensionProfile": {
+            "extensions": [
+              {
+                "name": "HealthExtension",
+                "provisioningState": "Succeeded",
+                "settings": {
+                  "port": 8080,
+                  "protocol": "http",
+                  "requestPath": "/healthz"
+                },
+                "type": "ApplicationHealthLinux",
+                "typeHandlerVersion": "1.0"
+              }
+            ]
+          },
+          "networkProfile": {
+            "healthProbe": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/loadBalancers/lb-orders/probes/http",
+              "resourceGroup": "rg-orders-prod"
+            },
+            "networkInterfaceConfigurations": [
+              {
+                "name": "nic",
+                "primary": true
+              }
+            ]
+          },
+          "osProfile": {
+            "adminUsername": "azureuser",
+            "computerNamePrefix": "ders-api",
+            "linuxConfiguration": {
+              "disablePasswordAuthentication": true
+            },
+            "secrets": []
+          },
+          "storageProfile": {
+            "imageReference": {
+              "offer": "ubuntu-24_04-lts",
+              "publisher": "Canonical",
+              "sku": "server",
+              "version": "latest"
+            },
+            "osDisk": {
+              "caching": "ReadWrite",
+              "createOption": "FromImage",
+              "managedDisk": {
+                "storageAccountType": "Premium_LRS"
+              },
+              "osType": "Linux"
+            }
+          }
+        },
+        "zoneBalance": false,
+        "zones": [
+          "1",
+          "2",
+          "3"
+        ]
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
   - keyvault
   - list
   - -g
@@ -904,6 +1275,96 @@ calls:
 - argv:
   - az
   - aks
+  - list
+  - -g
+  - RG-Platform
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    []
+  stderr: ''
+- argv:
+  - az
+  - vm
+  - list
+  - -g
+  - RG-Platform
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": false
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "Standard_B2s"
+        },
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/RG-Platform/providers/Microsoft.Compute/virtualMachines/vm-platform-legacy",
+        "location": "northeurope",
+        "name": "vm-platform-legacy",
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/RG-Platform/providers/Microsoft.Network/networkInterfaces/vm-platform-legacy-nic",
+              "resourceGroup": "RG-Platform"
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "allowExtensionOperations": true,
+          "computerName": "vm-platform-legacy",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "provisionVMAgent": true
+          },
+          "secrets": []
+        },
+        "provisioningState": "Succeeded",
+        "resourceGroup": "RG-Platform",
+        "storageProfile": {
+          "dataDisks": [],
+          "imageReference": {
+            "exactVersion": "24.04.202510150",
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "diskSizeGB": 64,
+            "managedDisk": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/RG-Platform/providers/Microsoft.Compute/disks/vm-platform-legacy_OsDisk",
+              "resourceGroup": "RG-Platform",
+              "storageAccountType": "Premium_LRS"
+            },
+            "name": "vm-platform-legacy_OsDisk",
+            "osType": "Linux"
+          }
+        },
+        "tags": {
+          "team": "platform"
+        },
+        "timeCreated": "2026-06-12T08:30:11.1234567+00:00",
+        "type": "Microsoft.Compute/virtualMachines",
+        "vmId": "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c03"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - vmss
   - list
   - -g
   - RG-Platform
@@ -933,8 +1394,10 @@ expect:
         resourcegroup: 3
         keyvault: 1
         aks-cluster: 2
+        virtual-machine: 3
+        vm-scale-set: 2
       partitions:
-        complete: 6
+        complete: 12
         forbidden: 1
         failed: 0
     aksClusters:
@@ -943,3 +1406,16 @@ expect:
       items:
         $contains:
         - name: aks-orders-prod
+    virtualMachines:
+      total: 3
+      omitted: 0
+      items:
+        $contains:
+        - name: vm-orders-web01
+          osType: Linux
+    vmScaleSets:
+      total: 2
+      omitted: 0
+      items:
+        $contains:
+        - name: vmss-orders-api
