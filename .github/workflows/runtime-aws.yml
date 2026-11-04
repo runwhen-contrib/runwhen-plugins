@@ -1,7 +1,7 @@
 name: runtime-aws
 
 # The aws@1 runtime image (runtimes/aws). PRs and branch pushes build it for
-# linux/amd64 and linux/arm64 and smoke-test both; pushes to main and v13/plugins also publish it.
+# linux/amd64 and linux/arm64 and smoke-test both; pushes to main, v13/plugins and the milestone branches v13/plugins-m* also publish it.
 # A tag runtimes/aws/v<semver> publishes nothing new: it checks that runtime.yaml pins
 # exactly the digests already pushed and adds the version tag to that image (runtimes/README.md).
 
@@ -13,7 +13,7 @@ on:
       - "ci/tests/test_check_runtime.py"
       - ".github/workflows/runtime-aws.yml"
   push:
-    branches: [main, v13/plugins]
+    branches: [main, v13/plugins, "v13/plugins-m*"]
     paths:
       - "runtimes/aws/**"
       # Pinning the pushed digests must not rebuild (and re-push) a different image.
@@ -52,7 +52,7 @@ jobs:
             python ci/check_runtime.py tag "${TAG}"
           else
             # Until the "pin aws runtime digests" PR the digests are the placeholder.
-            python ci/check_runtime.py validate --allow-placeholder
+            python ci/check_runtime.py validate --allow-placeholder --runtime-dir runtimes/aws
           fi
       - name: Tags are cut from main only
         if: env.IS_TAG == 'true'
@@ -178,7 +178,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Registry digests equal runtime.yaml
-        run: python ci/check_runtime.py compare
+        run: python ci/check_runtime.py compare --runtime-dir runtimes/aws
       - name: Tag the pinned image with the version
         env:
           TAG: ${{ github.ref_name }}

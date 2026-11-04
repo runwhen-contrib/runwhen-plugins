@@ -53,6 +53,8 @@ The versions, digests, release flow and workflow are the same as for `kubernetes
 ```
 docker build -t rwp-runtime-aws:dev runtimes/aws
 docker run --rm -i --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
+# as the runner runs it (the smoke also makes one CLI call against a fake endpoint)
+docker run --rm -i --user 65532 --read-only --tmpfs /work:rw,mode=1777 --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
 python ci/check_runtime.py validate --allow-placeholder --runtime-dir runtimes/aws
 ```
 
