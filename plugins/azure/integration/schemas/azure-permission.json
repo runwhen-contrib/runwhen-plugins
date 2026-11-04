@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Azure permission",
-  "description": "One permission in Azure RBAC's own terms (D68): a control-plane action (Microsoft.KeyVault/vaults/read) or a data-plane action (Microsoft.KeyVault/vaults/secrets/readMetadata/action). Exactly one of action or dataAction is named. It is checked at the scope of the resource a task targets: a role assignment at the resource, its resource group or the subscription grants it.",
+  "description": "One permission in Azure RBAC's own terms (D68): a control-plane action (Microsoft.KeyVault/vaults/read) or a data-plane action (Microsoft.KeyVault/vaults/secrets/readMetadata/action). Exactly one of action or dataAction is named. It is checked at the scope of the resource a task targets: a role assignment at the resource, its resource group or the subscription grants it. An optional `scope: subscription` marks an action that is read at the subscription instead (Microsoft.Insights/eventtypes/management/values/read, Microsoft.ContainerService/locations/kubernetesVersions/read).",
   "oneOf": [
     {
       "type": "object",
@@ -12,9 +12,17 @@
           "type": "string",
           "pattern": "^[A-Za-z][A-Za-z0-9]*([.][A-Za-z0-9]+)+(/[A-Za-z0-9]+)+(/(read|write|delete|action))?$",
           "maxLength": 200
+        },
+        "scope": {
+          "enum": [
+            "subscription"
+          ],
+          "description": "Optional. `subscription`: the action is read at the subscription, not at the resource the task targets, so a permission check evaluates it at subscription scope (the Activity Log and the list of Kubernetes versions of a region are subscription-level reads). Absent: the scope of the target resource."
         }
       },
-      "required": ["action"],
+      "required": [
+        "action"
+      ],
       "additionalProperties": false
     },
     {
@@ -26,9 +34,17 @@
           "type": "string",
           "pattern": "^[A-Za-z][A-Za-z0-9]*([.][A-Za-z0-9]+)+(/[A-Za-z0-9]+)+(/(read|write|delete|action))?$",
           "maxLength": 200
+        },
+        "scope": {
+          "enum": [
+            "subscription"
+          ],
+          "description": "Optional. `subscription`: the action is read at the subscription, not at the resource the task targets, so a permission check evaluates it at subscription scope (the Activity Log and the list of Kubernetes versions of a region are subscription-level reads). Absent: the scope of the target resource."
         }
       },
-      "required": ["dataAction"],
+      "required": [
+        "dataAction"
+      ],
       "additionalProperties": false
     }
   ]

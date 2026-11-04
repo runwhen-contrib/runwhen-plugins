@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Failed operations on an AKS cluster in the Activity Log",
+  "type": "object",
+  "properties": {
+    "cluster": {
+      "type": "string"
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "start": {
+      "type": "string"
+    },
+    "end": {
+      "type": "string"
+    },
+    "scanLimit": {
+      "type": "integer",
+      "description": "The activityScanLimit setting"
+    },
+    "eventsScanned": {
+      "type": "integer",
+      "description": "Failed events read for the cluster's resource group"
+    },
+    "scanCut": {
+      "type": "boolean",
+      "description": "The group has more failed events than scanLimit: the cluster's list may be incomplete and an empty one proves nothing"
+    },
+    "eventsForCluster": {
+      "type": "integer",
+      "description": "Of those, about the cluster or something under it"
+    },
+    "eventsForOtherResources": {
+      "type": "integer"
+    },
+    "failures": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "target": {
+                "type": "string",
+                "description": "cluster, or the rest of the resource id under it (agentPools/<pool>)",
+                "maxLength": 256
+              },
+              "level": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256
+              },
+              "subStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256
+              },
+              "errorCode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256,
+                "description": "The code of the deepest cause in the error's details (what went wrong), cut to 256 characters"
+              },
+              "outerCode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256,
+                "description": "The code on the error itself, often generic (DeploymentFailed, ResourceOperationFailure); equal to errorCode when the error does not nest"
+              },
+              "message": {
+                "type": "string",
+                "description": "The newest event's deepest error message, with who was refused (client and object id) redacted, cut to 1024 characters"
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "count": {
+                "type": "integer"
+              },
+              "firstSeen": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastSeen": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "operation",
+              "target",
+              "level",
+              "subStatus",
+              "errorCode",
+              "outerCode",
+              "message",
+              "truncated",
+              "count",
+              "firstSeen",
+              "lastSeen"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Groups of failed operations, most frequent first, cut to maxItems"
+        },
+        "total": {
+          "type": "integer",
+          "description": "Entries found"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Entries left out of items by maxItems"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "cluster",
+    "windowSeconds",
+    "start",
+    "end",
+    "scanLimit",
+    "eventsScanned",
+    "scanCut",
+    "eventsForCluster",
+    "eventsForOtherResources",
+    "failures"
+  ],
+  "additionalProperties": false
+}

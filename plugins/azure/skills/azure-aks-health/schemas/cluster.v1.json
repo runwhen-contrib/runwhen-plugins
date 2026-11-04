@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An AKS cluster's state, version, access and monitoring settings",
+  "type": "object",
+  "properties": {
+    "cluster": {
+      "type": "string"
+    },
+    "resourceGroup": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skuTier": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free, Standard or Premium"
+    },
+    "provisioningState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Succeeded, Failed, Canceled, or an operation in progress such as Updating or Upgrading"
+    },
+    "transitioning": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "provisioningState is neither Succeeded, Failed nor Canceled: an operation is still running"
+    },
+    "powerState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Running or Stopped"
+    },
+    "running": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "kubernetesVersion": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The version requested (the control plane's target)"
+    },
+    "currentKubernetesVersion": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The version the control plane runs now"
+    },
+    "supportPlan": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "KubernetesOfficial or AKSLongTermSupport"
+    },
+    "nodeResourceGroup": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nodePoolCount": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "fqdn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The API server's public host name; null on a private cluster"
+    },
+    "privateCluster": {
+      "type": "boolean"
+    },
+    "authorizedIpRangeCount": {
+      "type": "integer",
+      "description": "Address ranges allowed to reach the API server; 0 on a public cluster means any address"
+    },
+    "localAccountsDisabled": {
+      "type": "boolean"
+    },
+    "rbacEnabled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "aadManaged": {
+      "type": "boolean",
+      "description": "Microsoft Entra integration is AKS-managed"
+    },
+    "azureRbacEnabled": {
+      "type": "boolean",
+      "description": "Azure RBAC authorizes Kubernetes requests"
+    },
+    "identityType": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "SystemAssigned, UserAssigned or None"
+    },
+    "networkPlugin": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "networkPluginMode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "networkPolicy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outboundType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "loadBalancerSku": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "autoUpgradeChannel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nodeOsUpgradeChannel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "oidcIssuerEnabled": {
+      "type": "boolean"
+    },
+    "workloadIdentityEnabled": {
+      "type": "boolean"
+    },
+    "containerInsights": {
+      "type": "boolean",
+      "description": "The monitoring add-on or the Azure Monitor containerInsights profile is on"
+    },
+    "managedPrometheus": {
+      "type": "boolean",
+      "description": "Azure Monitor managed Prometheus metrics are on"
+    },
+    "diagnostics": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "settingsCount": {
+          "type": "integer",
+          "description": "Diagnostic settings on the cluster"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "description": "Setting names, sorted, at most 50"
+        },
+        "logAnalytics": {
+          "type": "boolean",
+          "description": "Some setting sends to a Log Analytics workspace"
+        },
+        "enabledLogCategories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "description": "Log categories and category groups switched on in any setting, sorted, at most 50"
+        },
+        "enabledLogCategoriesOmitted": {
+          "type": "integer",
+          "description": "Enabled categories not in the list"
+        }
+      },
+      "required": [
+        "settingsCount",
+        "names",
+        "logAnalytics",
+        "enabledLogCategories",
+        "enabledLogCategoriesOmitted"
+      ],
+      "additionalProperties": false,
+      "description": "Null when the diagnostic settings could not be read (the run is partial, error scoped diagnostics)"
+    }
+  },
+  "required": [
+    "cluster",
+    "resourceGroup",
+    "location",
+    "skuTier",
+    "provisioningState",
+    "transitioning",
+    "powerState",
+    "running",
+    "kubernetesVersion",
+    "currentKubernetesVersion",
+    "supportPlan",
+    "nodeResourceGroup",
+    "nodePoolCount",
+    "fqdn",
+    "privateCluster",
+    "authorizedIpRangeCount",
+    "localAccountsDisabled",
+    "rbacEnabled",
+    "aadManaged",
+    "azureRbacEnabled",
+    "identityType",
+    "networkPlugin",
+    "networkPluginMode",
+    "networkPolicy",
+    "outboundType",
+    "loadBalancerSku",
+    "autoUpgradeChannel",
+    "nodeOsUpgradeChannel",
+    "oidcIssuerEnabled",
+    "workloadIdentityEnabled",
+    "containerInsights",
+    "managedPrometheus",
+    "diagnostics"
+  ],
+  "additionalProperties": false
+}
