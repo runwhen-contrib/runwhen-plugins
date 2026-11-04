@@ -5,7 +5,7 @@ fixtures are recorded against a stand-in for the CLI (lane F plan, Appendix C5).
 python script with no dependencies that answers `az` commands from canned files:
 
 ```
-PATH=plugins/azure/tests/stub/bin:$PATH RW_STUB_SCENARIO=healthy \
+PATH=plugins/azure/tests/stub/bin:$PATH AZ_STUB_SCENARIO=healthy \
   rwtask test azure-kv-health/availability --plugin-dir plugins/azure --record \
   --scenario healthy --resource azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/kv-orders-prod
 ```
@@ -17,8 +17,11 @@ and for the unit tests.
 ## How a call is answered
 
 `bin/az` takes the arguments after `az`, drops `--output json` / `-o json` (a caller adds it), and
-looks for the first call in `scenarios/$RW_STUB_SCENARIO/calls.yaml` whose `argv` equals the
-rest. `calls.yaml` is JSON written as YAML (the stub has no YAML parser); lines starting with `#`
+looks for the first call in `scenarios/$AZ_STUB_SCENARIO/calls.yaml` whose `argv` equals the
+rest. The scenario is `$AZ_STUB_SCENARIO`. **Not** `RW_STUB_SCENARIO`: the SDK runner removes every `RW_*`
+variable from the environment of a task script, so a variable with that prefix never reaches the stub
+under `rwtask run` or `rwtask test` (the stub still reads `RW_STUB_SCENARIO` when it is run directly).
+`calls.yaml` is JSON written as YAML (the stub has no YAML parser); lines starting with `#`
 are comments. Each call:
 
 | key | meaning |
@@ -30,7 +33,7 @@ are comments. Each call:
 | `source` | the documentation URL the canned shape follows; required |
 
 An argv with no canned call exits **2** and prints `az stub: no canned response in scenario ...
-for: az <argv>`, so a test notices a command it did not expect. `RW_STUB_LOG=<file>` appends each
+for: az <argv>`, so a test notices a command it did not expect. `AZ_STUB_LOG=<file>` appends each
 argv (JSON, one per line) to that file.
 
 ## Scenarios

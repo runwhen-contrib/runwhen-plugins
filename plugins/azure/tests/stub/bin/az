@@ -1,11 +1,16 @@
 #!/usr/bin/env -S python3 -I
 """A stand-in for the `az` CLI that serves canned responses (plugins/azure/tests/stub/README.md).
 
-    RW_STUB_SCENARIO=healthy az keyvault show --name kv-orders-prod --subscription <id>
+    AZ_STUB_SCENARIO=healthy az keyvault show --name kv-orders-prod --subscription <id>
 
-The argv after `az` is looked up in scenarios/<RW_STUB_SCENARIO>/calls.yaml; the first matching
+The argv after `az` is looked up in scenarios/<AZ_STUB_SCENARIO>/calls.yaml; the first matching
 call answers with its stdout file, its stderr and its exit code. An argv with no canned answer
 exits 2 with a message on stderr that names it, so a test notices a command it did not expect.
+
+The scenario is named by AZ_STUB_SCENARIO, not RW_STUB_SCENARIO: the SDK runner strips every
+RW_* variable from the environment of a task script (bundle.py `_inherited_env`), so a RW_ name
+never reaches az when `rwtask run` or `rwtask test` start the task. RW_STUB_SCENARIO and
+RW_STUB_LOG are still read when set (a unit test that calls the stub directly), as a fallback.
 
 No dependencies (it runs as `python3 -I`, so not even PyYAML): calls.yaml is JSON written as YAML
 (`#` comment lines are dropped before it is parsed).
@@ -66,16 +71,16 @@ def load_calls(directory):
 
 
 def main(argv):
-    name = os.environ.get("RW_STUB_SCENARIO")
+    name = os.environ.get("AZ_STUB_SCENARIO") or os.environ.get("RW_STUB_SCENARIO")
     if not name:
-        sys.stderr.write("az stub: RW_STUB_SCENARIO is not set\n")
+        sys.stderr.write("az stub: AZ_STUB_SCENARIO is not set\n")
         return 2
     directory = os.path.join(SCENARIOS, name)
     if not os.path.isfile(os.path.join(directory, "calls.yaml")):
         sys.stderr.write(f"az stub: no scenario {name!r} under {SCENARIOS}\n")
         return 2
     call_argv = normalise(argv)
-    log = os.environ.get("RW_STUB_LOG")
+    log = os.environ.get("AZ_STUB_LOG") or os.environ.get("RW_STUB_LOG")
     if log:
         with open(log, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(argv) + "\n")

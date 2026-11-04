@@ -21,7 +21,7 @@ SUB = "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"
 def az(*argv, scenario="healthy", extra=None, cwd=None):
     env = {"PATH": "/usr/bin:/bin:" + str(Path(sys.executable).parent)}
     if scenario is not None:
-        env["RW_STUB_SCENARIO"] = scenario
+        env["AZ_STUB_SCENARIO"] = scenario
     env.update(extra or {})
     return subprocess.run([str(AZ), *argv], env=env, capture_output=True, text=True, cwd=cwd)
 
@@ -110,7 +110,7 @@ def test_python_path_and_the_working_directory_cannot_shadow_the_standard_librar
     assert done.returncode == 0 and "shadowed" not in done.stderr
 
 
-def test_rw_stub_log_records_each_argv(tmp_path):
+def test_stub_log_records_each_argv(tmp_path):
     log = tmp_path / "log"
     az(
         "account",
@@ -119,9 +119,9 @@ def test_rw_stub_log_records_each_argv(tmp_path):
         "json",
         "--subscription",
         SUB,
-        extra={"RW_STUB_LOG": str(log)},
+        extra={"AZ_STUB_LOG": str(log)},
     )
-    az("nope", extra={"RW_STUB_LOG": str(log)})
+    az("nope", extra={"AZ_STUB_LOG": str(log)})
     lines = [json.loads(line) for line in log.read_text().splitlines()]
     assert lines == [["account", "show", "--output", "json", "--subscription", SUB], ["nope"]]
 
@@ -172,3 +172,24 @@ def test_the_error_scenarios_fail_the_calls_that_need_the_missing_permission():
     data = {tuple(c["argv"][:3]): c["rc"] for c in calls("data-plane-forbidden")}
     assert data[("keyvault", "secret", "list")] == data[("keyvault", "key", "list")] == 1
     assert data[("keyvault", "show", "--name")] == 0
+
+
+def test_the_rw_prefixed_names_still_work_when_the_stub_is_run_directly():
+    # the SDK runner strips RW_* from a task's environment, so recordings use AZ_STUB_SCENARIO
+    env = {"PATH": "/usr/bin:/bin", "RW_STUB_SCENARIO": "healthy"}
+    done = subprocess.run(
+        [str(AZ), "account", "show", "--subscription", SUB], env=env, capture_output=True, text=True
+    )
+    assert done.returncode == 0
+
+
+def test_az_stub_scenario_wins_over_rw_stub_scenario():
+    done = az(
+        "account",
+        "show",
+        "--subscription",
+        SUB,
+        scenario="healthy",
+        extra={"RW_STUB_SCENARIO": "nope"},
+    )
+    assert done.returncode == 0
