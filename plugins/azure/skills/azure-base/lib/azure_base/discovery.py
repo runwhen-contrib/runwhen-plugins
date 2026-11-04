@@ -13,6 +13,7 @@ under it, while the other groups still are. A resource group's name is lower-cas
 (ARM treats names case-insensitively, so `RG-Prod` and `rg-prod` are one group); the name as ARM
 spells it is the item's display name."""
 
+import re
 import time
 
 from .az import az_json
@@ -29,6 +30,10 @@ GROUP_PLURAL = (
 LABEL_LIMIT = 50  # Azure allows 50 tags per resource
 LABEL_TEXT = 255
 LIST_BUDGET = 300  # seconds for the per-group listings; the rest of the task's 600s is the push
+# az's words for a subscription that never registered the provider of the type it was asked to list
+NOT_REGISTERED = re.compile(
+    r"MissingSubscriptionRegistration|not registered to use namespace", re.I
+)
 LISTED = {"keyvault": "Key Vaults", "aks-cluster": "AKS clusters"}  # the child types, in words
 
 
@@ -159,7 +164,7 @@ CHILD_TYPES = (
 )
 
 
-def group_listing(groups, vault_counts, limit, cluster_counts):
+def group_listing(groups, vault_counts, limit, cluster_counts, unregistered):
     items, total, omitted = bound(groups, limit)
     return {
         "items": [
@@ -169,6 +174,7 @@ def group_listing(groups, vault_counts, limit, cluster_counts):
                 "id": g["id"],
                 "keyvaults": vault_counts.get(group_key(g["name"])),
                 "aksClusters": cluster_counts.get(group_key(g["name"])),
+                "providerNotRegistered": unregistered.get(group_key(g["name"]), []),
             }
             for g in items
         ],
@@ -286,34 +292,43 @@ def discover(ctx, max_items, *, clock=time.monotonic, budget=LIST_BUDGET):
     groups = read_groups(ctx, name)
     partitions = [partition("resourcegroup", "complete", path, len(groups))]
     children = {type_name: {} for type_name, _ in CHILD_TYPES}  # type -> {group key: resources}
-    out_of_time = []
+    out_of_time = {type_name: [] for type_name, _ in CHILD_TYPES}  # type -> groups not listed
+    unregistered = {}  # group key -> the types whose resource provider the subscription lacks
     for group in groups:
         key, where = group_key(group["name"]), group_path(path, group)
-        if clock() - started >= budget:
-            out_of_time.append(group["name"])
-            for type_name, _ in CHILD_TYPES:
+        for type_name, reader in CHILD_TYPES:
+            # the budget is checked before EACH reader: once it is spent, this group's remaining
+            # types (and every later group's) are failed partitions with a timeout, not swept
+            if clock() - started >= budget:
+                out_of_time[type_name].append(group["name"])
                 partitions.append(
                     partition(
                         type_name, "failed", where, reason="the time budget for listing was used up"
                     )
                 )
-            continue
-        for type_name, reader in CHILD_TYPES:
+                continue
             try:
                 found = reader(ctx, name, group)
             except RwError as exc:
+                if exc.code == "dependency" and NOT_REGISTERED.search(exc.message):
+                    # no resource of a type whose provider is not registered can exist: the
+                    # listing is complete and empty, and the fact is reported beside it
+                    children[type_name][key] = []
+                    unregistered.setdefault(key, []).append(type_name)
+                    partitions.append(partition(type_name, "complete", where, 0))
+                    continue
                 status = "forbidden" if exc.code == "permission_denied" else "failed"
                 partitions.append(partition(type_name, status, where, reason=exc.message))
                 ctx.error(exc.code, exc.message, scope=f"{type_name}:{key}")
                 continue
             children[type_name][key] = found
             partitions.append(partition(type_name, "complete", where, len(found)))
-    if out_of_time:
-        for type_name, _ in CHILD_TYPES:
+    for type_name, skipped in out_of_time.items():
+        if skipped:
             ctx.error(
                 "timeout",
                 f"the {budget}s budget for listing {LISTED[type_name]} ran out; "
-                f"{len(out_of_time)} resource groups were not listed",
+                f"{len(skipped)} resource groups were not listed",
                 scope=type_name,
             )
 
@@ -342,7 +357,9 @@ def discover(ctx, max_items, *, clock=time.monotonic, budget=LIST_BUDGET):
     outputs = {
         "summary": summary,
         "subscription": subscription,
-        "resourceGroups": group_listing(groups, counts_by_group, max_items, clusters_by_group),
+        "resourceGroups": group_listing(
+            groups, counts_by_group, max_items, clusters_by_group, unregistered
+        ),
         "keyvaults": vault_listing(vaults, max_items),
         "aksClusters": cluster_listing(clusters, max_items),
     }

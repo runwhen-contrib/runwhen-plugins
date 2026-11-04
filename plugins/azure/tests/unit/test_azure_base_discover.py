@@ -451,21 +451,11 @@ def test_a_group_listing_that_fails_for_another_reason_is_a_failed_partition(run
     assert run.errors[0]["code"] == "rate_limited"
 
 
-def test_the_listing_budget_stops_further_groups_and_leaves_them_failed_not_swept():
+def budget_ctx(answers):
     from types import SimpleNamespace
 
-    answers = {
-        ("account", "show", "--subscription", SUB): (0, ACCOUNT, ""),
-        ("group", "list", "--subscription", SUB): (
-            0,
-            json.dumps([group_row(n) for n in ("rg-a", "rg-b", "rg-c")]),
-            "",
-        ),
-        list_argv("rg-a"): (0, json.dumps([vault_row("kv-a-vault", "rg-a")]), ""),
-        aks_argv("rg-a"): (0, json.dumps([aks_row("aks-a", "rg-a")]), ""),
-    }
     errors = []
-    ctx = SimpleNamespace(
+    return SimpleNamespace(
         settings=SimpleNamespace(command_timeout="60s", max_items=200),
         resource={"path": f"azure/subscriptions/{SUB}", "type": "azure/subscription", "name": SUB},
         run=Replies(answers),
@@ -474,28 +464,110 @@ def test_the_listing_budget_stops_further_groups_and_leaves_them_failed_not_swep
             {"code": code, "message": message, "scope": scope}
         ),
     )
-    ticks = iter(
-        [0, 1, 400, 400, 401]
-    )  # start, rg-a ok, rg-b and rg-c past the budget, the summary
-    outputs, sync_doc = dc.discover(ctx, 200, clock=lambda: next(ticks), budget=300)
-    states = {
-        p["parentPath"].rsplit("/", 1)[-1]: p
-        for p in sync_doc["commit"]["partitions"]
-        if p["type"] == "keyvault"
+
+
+def test_the_listing_budget_is_checked_before_each_reader_and_leaves_the_rest_failed_not_swept():
+    """The budget is spent between two readers of the SAME group: rg-a's vaults are listed, its
+    clusters are not (a failed partition with a timeout), and rg-b and rg-c are not listed at all.
+    Every type a fan-out skill adds is one more row of CHILD_TYPES and gets this for free."""
+    answers = {
+        ("account", "show", "--subscription", SUB): (0, ACCOUNT, ""),
+        ("group", "list", "--subscription", SUB): (
+            0,
+            json.dumps([group_row(n) for n in ("rg-a", "rg-b", "rg-c")]),
+            "",
+        ),
+        list_argv("rg-a"): (0, json.dumps([vault_row("kv-a-vault", "rg-a")]), ""),
     }
-    assert states["rg-a"]["status"] == "complete"
-    assert states["rg-b"]["status"] == states["rg-c"]["status"] == "failed"
-    assert "budget" in states["rg-b"]["reason"]
-    # the budget is spent between groups: a group is listed whole, both types, or not at all
-    assert [(e["code"], e["scope"]) for e in errors] == [
+    ctx = budget_ctx(answers)
+    # start; rg-a keyvault (ok); then rg-a aks, rg-b x2, rg-c x2 (past the budget); the summary
+    ticks = iter([0, 1, 400, 400, 400, 400, 400, 401])
+    outputs, sync_doc = dc.discover(ctx, 200, clock=lambda: next(ticks), budget=300)
+    by_type = {
+        (p["type"], p["parentPath"].rsplit("/", 1)[-1]): p
+        for p in sync_doc["commit"]["partitions"]
+        if p["type"] != "resourcegroup"
+    }
+    assert by_type[("keyvault", "rg-a")]["status"] == "complete"
+    assert by_type[("aks-cluster", "rg-a")]["status"] == "failed"
+    assert "budget" in by_type[("aks-cluster", "rg-a")]["reason"]
+    assert "count" not in by_type[("aks-cluster", "rg-a")]  # a failed partition sweeps nothing
+    for group in ("rg-b", "rg-c"):
+        assert by_type[("keyvault", group)]["status"] == "failed"
+        assert by_type[("aks-cluster", group)]["status"] == "failed"
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [
         ("timeout", "keyvault"),
         ("timeout", "aks-cluster"),
     ]
-    assert ctx.run.calls[-2:] == [list(list_argv("rg-a")), list(aks_argv("rg-a"))]
-    assert outputs["summary"]["partitions"]["failed"] == 4  # rg-b and rg-c, a partition per type
-    assert {
-        p["status"] for p in sync_doc["commit"]["partitions"] if p["type"] == "aks-cluster"
-    } == {"complete", "failed"}
+    assert "2 resource groups" in ctx.errors[0]["message"]  # rg-b and rg-c
+    assert "3 resource groups" in ctx.errors[1]["message"]  # rg-a, rg-b and rg-c
+    assert ctx.run.calls[-1] == list(list_argv("rg-a"))  # nothing was asked after the budget
+    assert outputs["summary"]["partitions"]["failed"] == 5
+    assert [v["name"] for v in outputs["keyvaults"]["items"]] == ["kv-a-vault"]
+    assert outputs["aksClusters"]["total"] == 0
+    assert validate("rw.discovery.v1", sync_doc) == []
+
+
+def unregistered_answers(*types):
+    not_registered = (
+        1,
+        "",
+        "ERROR: (MissingSubscriptionRegistration) The subscription is not registered to use "
+        "namespace 'Microsoft.ContainerService'. See https://aka.ms/rps-not-found for how to "
+        "register subscriptions.\nCode: MissingSubscriptionRegistration\n",
+    )
+    answers = {
+        ("account", "show", "--subscription", SUB): (0, ACCOUNT, ""),
+        ("group", "list", "--subscription", SUB): (0, json.dumps([group_row("rg-a")]), ""),
+        list_argv("rg-a"): (0, json.dumps([vault_row("kv-a-vault", "rg-a")]), ""),
+        aks_argv("rg-a"): (0, "[]", ""),
+    }
+    if "aks-cluster" in types:
+        answers[aks_argv("rg-a")] = not_registered
+    if "keyvault" in types:
+        answers[list_argv("rg-a")] = not_registered
+    return Replies(answers)
+
+
+def test_an_unregistered_provider_is_a_complete_empty_partition_and_a_fact_not_a_failure(
+    run_script,
+):
+    """Azure refuses `az aks list` when the subscription never registered Microsoft.ContainerService.
+    No cluster can exist then, so the listing is complete with count 0 (it may be swept) and the
+    group says which providers are missing; the run is ok, with no error."""
+    run = discover(run_script, runner=unregistered_answers("aks-cluster"))
+    assert (run.envelope["status"], run.errors) == ("ok", [])
+    partitions = json.loads(run.files["sync.json"])["commit"]["partitions"]
+    assert {"type": "aks-cluster", "status": "complete", "count": 0}.items() <= partitions[
+        2
+    ].items()
+    out = run.envelope["outputs"]
+    (group,) = out["resourceGroups"]["items"]
+    assert group["providerNotRegistered"] == ["aks-cluster"] and group["aksClusters"] == 0
+    assert group["keyvaults"] == 1
+    assert out["aksClusters"]["total"] == 0
+
+
+def test_each_type_reports_its_own_unregistered_provider(run_script):
+    run = discover(run_script, runner=unregistered_answers("aks-cluster", "keyvault"))
+    (group,) = run.envelope["outputs"]["resourceGroups"]["items"]
+    assert group["providerNotRegistered"] == ["keyvault", "aks-cluster"]
+    assert run.envelope["status"] == "ok"
+
+
+def test_a_group_whose_providers_are_registered_reports_none(run_script):
+    (group, *_) = discover(run_script).envelope["outputs"]["resourceGroups"]["items"]
+    assert group["providerNotRegistered"] == []
+
+
+def test_a_missing_az_is_still_a_failed_partition_not_an_unregistered_provider(run_script):
+    runner = unregistered_answers()
+    runner.answers[aks_argv("rg-a")] = (127, "", "az: command not found")
+    run = discover(run_script, runner=runner)
+    assert run.envelope["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in run.errors] == [("dependency", "aks-cluster:rg-a")]
+    (group,) = run.envelope["outputs"]["resourceGroups"]["items"]
+    assert group["providerNotRegistered"] == [] and group["aksClusters"] is None
 
 
 def test_a_rejected_vault_fails_exactly_its_resource_groups_partition():

@@ -22,9 +22,10 @@ skills target) current.
 It only reads, through the connection's own az session (`azure/cli`: `AZURE_CONFIG_DIR`); the
 subscription comes from the resource it runs on and goes to every az call as `--subscription`. The
 `commandTimeout` setting (default 60s) bounds each az command. `discover` has a 600s task timeout,
-which covers the az calls and the push to the platform: the vault listings stop after 300s (the
-groups not yet listed become `failed` partitions and the run reports a `timeout` error scoped
-`keyvault` and one scoped `aks-cluster`), the push is clamped to what is left of the budget (less a 10s margin), and a request
+which covers the az calls and the push to the platform: the listings stop after 300s, checked
+before each listing (the types not yet listed, in the group where it ran out and in every later
+group, become `failed` partitions and the run reports one `timeout` error scoped to each type:
+`keyvault`, `aks-cluster`), the push is clamped to what is left of the budget (less a 10s margin), and a request
 that would start with nothing left fails with `timeout`.
 
 The plugin's resources are addressed `azure/subscriptions/<id>/resourcegroups/<group>/keyvaults/<name>` and
@@ -60,6 +61,10 @@ without case; the display name keeps ARM's spelling.
   The same holds for its AKS clusters (`aks-cluster:<group>`, `aksClusters: null`) and the two are
   independent: a group can have its vaults listed and its clusters refused. The other groups are
   complete.
+- `providerNotRegistered` on a group lists the types (`keyvault`, `aks-cluster`) whose resource
+  provider the subscription has not registered. Azure refuses the listing (`MissingSubscriptionRegistration`),
+  but no resource of that type can exist, so the partition is `complete` with count 0 (it may be swept) and the
+  run is not partial.
 - `subscription.state` other than `Enabled` (`Warned`, `PastDue`, `Disabled`): Azure limits what the
   subscription's resources answer; the other azure skills may fail with `permission_denied`.
 - Soft-deleted vaults are not listed. A vault is listed under the name it was created with; the
