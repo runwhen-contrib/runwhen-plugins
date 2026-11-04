@@ -8,6 +8,7 @@ runtime: a `Dockerfile` and a `runtime.yaml` that the plugin registry reads (tag
 | Runtime | Image | For |
 | --- | --- | --- |
 | `kubernetes` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes` | `kubernetes` plugin tasks |
+| `gcp` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-gcp` | `gcp` plugin tasks |
 
 ## kubernetes
 
@@ -37,6 +38,35 @@ docker build -t rwp-runtime-kubernetes:dev runtimes/kubernetes
 docker run --rm -i --entrypoint sh rwp-runtime-kubernetes:dev -s < runtimes/kubernetes/smoke.sh
 python ci/check_runtime.py validate --allow-placeholder
 ```
+
+## gcp
+
+The same rw-task base pin as `kubernetes`, plus only the Google Cloud CLI: `google-cloud-cli`
+from Google's apt repository at an exact version (`GCLOUD_VERSION` in the Dockerfile; the package
+carries its own python and ships `gcloud`, `gsutil` and `bq`). Nothing else is added: the base
+image's kubectl and psql are still there but no gcp task uses them; az, aws, oc, helm, flux and
+argocd are absent. The image sets `CLOUDSDK_CONFIG=/work/.config/gcloud` (the
+runner's root is read-only; `/work` is the writable mount) and turns off gcloud's update check,
+usage reporting and prompts. A blank `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` counts as unset
+(checked with `gcloud config get auth/credential_file_override`); the cloud-identity connection
+relies on that. Credentials never come from `gcloud auth login`: the `gcp/adc` type
+materializes `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`.
+
+To move gcloud, change `GCLOUD_VERSION` and `runtime.yaml` `tools.gcloud`, and bump `version`
+(`gcloud --version` is the check; the tool version list of the apt repository is
+`https://packages.cloud.google.com/apt/dists/cloud-sdk/main/binary-amd64/Packages`).
+
+Local check, native architecture (the smoke test never contacts Google and uses a throwaway
+gcloud config directory):
+
+```
+docker build -t rwp-runtime-gcp:dev runtimes/gcp
+docker run --rm -i --entrypoint sh rwp-runtime-gcp:dev -s < runtimes/gcp/smoke.sh
+python ci/check_runtime.py validate --runtime-dir runtimes/gcp --allow-placeholder
+```
+
+`check_runtime.py validate` and `compare` read `runtimes/kubernetes` unless `--runtime-dir` says
+otherwise, so every runtime workflow passes its own directory.
 
 ## Versions
 
