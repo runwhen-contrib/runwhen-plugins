@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS filer pods",
+  "description": "Per Running filer pod: /healthz (ok, or unhealthy when it answered with an error status) and whether the root entry could be read (/?metadata=true). podCount counts every filer-role pod; notRunning names those that cannot be asked. filerPods is the same count as a plain fact: 0 means the release runs no filer pod (the task is still ok).",
+  "type": "object",
+  "properties": {
+    "podCount": {
+      "type": "integer"
+    },
+    "notRunning": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "healthz": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rootReadable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pod",
+          "healthz",
+          "rootReadable"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "filerPods": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "podCount",
+    "filerPods",
+    "notRunning",
+    "items"
+  ],
+  "additionalProperties": false
+}

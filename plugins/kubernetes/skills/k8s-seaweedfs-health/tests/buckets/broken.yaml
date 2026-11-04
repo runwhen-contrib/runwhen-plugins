@@ -1,0 +1,605 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-seaweedfs/statefulsets/swfs-broken
+now: '2026-11-03T23:57:48.399Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - statefulsets
+  - swfs-broken
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-broken\",\"app.kubernetes.io/name\":\"seaweedfs\"},\"name\":\"swfs-broken\",\"namespace\":\"rw-seaweedfs\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-broken\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"serviceName\":\"swfs-broken\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-broken\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"spec\":{\"containers\":[{\"args\":[\"server\",\"-dir=/data\",\"-ip.bind=0.0.0.0\",\"-master.volumeSizeLimitMB=16\",\"-volume.max=3\",\"-filer\",\"-s3\",\"-s3.config=/etc/swfs/s3.json\",\"-metricsPort=9327\"],\"image\":\"chrislusf/seaweedfs:4.41\",\"name\":\"seaweedfs\",\"ports\":[{\"containerPort\":9333,\"name\":\"swfs-master\"},{\"containerPort\":8080,\"name\":\"swfs-volume\"},{\"containerPort\":8888,\"name\":\"swfs-filer\"},{\"containerPort\":8333,\"name\":\"swfs-s3\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/cluster/status\",\"port\":9333},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"256Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"64Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"},{\"mountPath\":\"/etc/swfs\",\"name\":\"s3\",\"readOnly\":true}]}],\"volumes\":[{\"emptyDir\":{},\"name\":\"data\"},{\"configMap\":{\"name\":\"swfs-broken-s3\"},\"name\":\"s3\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T23:54:44Z",
+            "generation": 1,
+            "labels": {
+                "app.kubernetes.io/component": "all-in-one",
+                "app.kubernetes.io/instance": "swfs-broken",
+                "app.kubernetes.io/name": "seaweedfs"
+            },
+            "name": "swfs-broken",
+            "namespace": "rw-seaweedfs",
+            "resourceVersion": "57517",
+            "uid": "ca2d85b1-17c3-44ee-a91f-f58632395e72"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/component": "all-in-one",
+                    "app.kubernetes.io/instance": "swfs-broken",
+                    "app.kubernetes.io/name": "seaweedfs"
+                }
+            },
+            "serviceName": "swfs-broken",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-broken",
+                        "app.kubernetes.io/name": "seaweedfs"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-ip.bind=0.0.0.0",
+                                "-master.volumeSizeLimitMB=16",
+                                "-volume.max=3",
+                                "-filer",
+                                "-s3",
+                                "-s3.config=/etc/swfs/s3.json",
+                                "-metricsPort=9327"
+                            ],
+                            "image": "chrislusf/seaweedfs:4.41",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "ports": [
+                                {
+                                    "containerPort": 9333,
+                                    "name": "swfs-master",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8080,
+                                    "name": "swfs-volume",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "swfs-filer",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8333,
+                                    "name": "swfs-s3",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/cluster/status",
+                                    "port": 9333,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/etc/swfs",
+                                    "name": "s3",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "volumes": [
+                        {
+                            "emptyDir": {},
+                            "name": "data"
+                        },
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "swfs-broken-s3"
+                            },
+                            "name": "s3"
+                        }
+                    ]
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "swfs-broken-5d8b4846f8",
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "swfs-broken-5d8b4846f8",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=seaweedfs,app.kubernetes.io/instance=swfs-broken
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T23:54:44Z",
+                    "generateName": "swfs-broken-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-broken",
+                        "app.kubernetes.io/name": "seaweedfs",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "swfs-broken-5d8b4846f8",
+                        "statefulset.kubernetes.io/pod-name": "swfs-broken-0"
+                    },
+                    "name": "swfs-broken-0",
+                    "namespace": "rw-seaweedfs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "swfs-broken",
+                            "uid": "ca2d85b1-17c3-44ee-a91f-f58632395e72"
+                        }
+                    ],
+                    "resourceVersion": "57513",
+                    "uid": "90839f07-590a-439d-b859-dac0efa35485"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-ip.bind=0.0.0.0",
+                                "-master.volumeSizeLimitMB=16",
+                                "-volume.max=3",
+                                "-filer",
+                                "-s3",
+                                "-s3.config=/etc/swfs/s3.json",
+                                "-metricsPort=9327"
+                            ],
+                            "image": "chrislusf/seaweedfs:4.41",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "ports": [
+                                {
+                                    "containerPort": 9333,
+                                    "name": "swfs-master",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8080,
+                                    "name": "swfs-volume",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "swfs-filer",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8333,
+                                    "name": "swfs-s3",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/cluster/status",
+                                    "port": 9333,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/etc/swfs",
+                                    "name": "s3",
+                                    "readOnly": true
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-9tqt4",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "swfs-broken-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "swfs-broken",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "emptyDir": {},
+                            "name": "data"
+                        },
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "swfs-broken-s3"
+                            },
+                            "name": "s3"
+                        },
+                        {
+                            "name": "kube-api-access-9tqt4",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "10m",
+                        "memory": "64Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:54:44Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:54:44Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:54:50Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:54:50Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T23:54:44Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "10m",
+                                "memory": "64Mi"
+                            },
+                            "containerID": "containerd://28ac3f8e50bf36ba707525adc8bb1fc0945d8916261031607ebdf50d5d084a38",
+                            "image": "docker.io/chrislusf/seaweedfs:4.41",
+                            "imageID": "docker.io/chrislusf/seaweedfs@sha256:43b768cd62b00d132439cda881b93fd1adebf1b315e996e794087743821d771d",
+                            "lastState": {},
+                            "name": "seaweedfs",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T23:54:44Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/etc/swfs",
+                                    "name": "s3",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-9tqt4",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.26",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.26"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "256Mi"
+                        },
+                        "requests": {
+                            "memory": "64Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T23:54:44Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:9333/proxy/vol/status
+  rc: 0
+  stdout: '{"Version":"30GB 4.41 de34a1a87","Volumes":{"DataCenters":{"DefaultDataCenter":{"DefaultRack":{"10.244.0.26:8080":[{"Id":1,"Size":3000056,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"dataa","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793750094,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":2,"Size":3000056,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"datab","Version":3,"FileCount":1,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":true,"CompactRevision":0,"ModifiedAtSecond":1793750094,"RemoteStorageName":"","RemoteStorageKey":""},{"Id":3,"Size":8,"ReplicaPlacement":{},"Ttl":{"Count":0,"Unit":0},"DiskType":"","DiskId":0,"Collection":"datac","Version":3,"FileCount":0,"DeleteCount":0,"DeletedByteCount":0,"ReadOnly":false,"CompactRevision":0,"ModifiedAtSecond":1793750094,"RemoteStorageName":"","RemoteStorageKey":""}]}}},"Free":0,"Max":3}}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8333/proxy/
+  rc: 0
+  stdout: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Owner><ID>anonymous</ID><DisplayName>anonymous</DisplayName></Owner><Buckets><Bucket><Name>dataa</Name><CreationDate>2026-11-03T23:54:54Z</CreationDate></Bucket><Bucket><Name>datab</Name><CreationDate>2026-11-03T23:54:54Z</CreationDate></Bucket><Bucket><Name>runwhen-s3-check</Name><CreationDate>2026-11-03T23:54:55Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8888/proxy/buckets/dataa?metadata=true
+  rc: 0
+  stdout: '{"FullPath":"/buckets/dataa","Mtime":"2026-11-03T23:54:54.131707093Z","Crtime":"2026-11-03T23:54:54Z","Ctime":"0001-01-01T00:00:00Z","Atime":"2026-11-03T23:54:54.131707093Z","Mode":2147484153,"Uid":1000,"Gid":1000,"Mime":"","TtlSec":0,"UserName":"","GroupNames":null,"SymlinkTarget":"","Md5":null,"FileSize":0,"Rdev":0,"Inode":12982483259178263527,"Extended":null,"HardLinkId":null,"HardLinkCounter":0,"Content":null,"Remote":null,"Quota":1048576,"WORMEnforcedAtTsNs":0}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8333/proxy/dataa/?list-type=2&max-keys=1
+  rc: 0
+  stdout: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>dataa</Name><Prefix></Prefix><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>f1</Key><ETag>&#34;ab980f655267a307dd6a69f0072b2b14&#34;</ETag><Size>3000000</Size><StorageClass>STANDARD</StorageClass><LastModified>2026-11-03T23:54:54Z</LastModified></Contents><KeyCount>1</KeyCount></ListBucketResult>
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8888/proxy/buckets/datab?metadata=true
+  rc: 0
+  stdout: '{"FullPath":"/buckets/datab","Mtime":"2026-11-03T23:54:54.214906968Z","Crtime":"2026-11-03T23:54:54Z","Ctime":"0001-01-01T00:00:00Z","Atime":"2026-11-03T23:54:54.214906968Z","Mode":2147484153,"Uid":1000,"Gid":1000,"Mime":"","TtlSec":0,"UserName":"","GroupNames":null,"SymlinkTarget":"","Md5":null,"FileSize":0,"Rdev":0,"Inode":2666572329266151996,"Extended":null,"HardLinkId":null,"HardLinkCounter":0,"Content":null,"Remote":null,"Quota":-10485760,"WORMEnforcedAtTsNs":0}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8333/proxy/datab/?list-type=2&max-keys=1
+  rc: 0
+  stdout: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>datab</Name><Prefix></Prefix><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated><Contents><Key>f1</Key><ETag>&#34;29d2dfef351f9d063700873a2db2b75b&#34;</ETag><Size>3000000</Size><StorageClass>STANDARD</StorageClass><LastModified>2026-11-03T23:54:54Z</LastModified></Contents><KeyCount>1</KeyCount></ListBucketResult>
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8888/proxy/buckets/datac?metadata=true
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (NotFound): the server could not find the requested resource
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-seaweedfs/pods/http:swfs-broken-0:8333/proxy/datac/?list-type=2&max-keys=1
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (NotFound): the server could not find the requested resource
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    buckets:
+      count: 3
+      inspected: 3
+      truncated: false
+    gateway:
+      podCount: 1
+      anonymousListBuckets: allowed

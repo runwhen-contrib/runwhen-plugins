@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS master leadership",
+  "description": "Per master pod: /cluster/healthz (ok, or unhealthy when the pod answered with a non-5xx error status; a 5xx is an error), whether it claims leadership (an absent IsLeader is false: followers omit it), the leader it names (null: the master names none, a fact, not a failed read), and raft peers ([] when the master reports none, as a single master does). leaderCount is how many queried masters claim leadership (1 is normal; 0 with queried masters is a cluster with no leader); leaderAgreement is whether every queried master names the same leader (null when none was queried). A master that was not queried has queried false and notQueriedReason: why the pod was not asked, or the error code of its failed /cluster/status.",
+  "type": "object",
+  "properties": {
+    "podCount": {
+      "type": "integer"
+    },
+    "queriedCount": {
+      "type": "integer"
+    },
+    "leaderCount": {
+      "type": "integer"
+    },
+    "leaders": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50
+    },
+    "leaderReported": {
+      "type": "boolean"
+    },
+    "leaderAgreement": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "queried": {
+            "type": "boolean"
+          },
+          "notQueriedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "healthz": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isLeader": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "leader": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "peers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "peerCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "maxVolumeId": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pod",
+          "queried",
+          "notQueriedReason",
+          "healthz",
+          "isLeader",
+          "leader",
+          "peers",
+          "peerCount",
+          "maxVolumeId"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    }
+  },
+  "required": [
+    "podCount",
+    "queriedCount",
+    "leaderCount",
+    "leaders",
+    "leaderReported",
+    "leaderAgreement",
+    "members"
+  ],
+  "additionalProperties": false
+}

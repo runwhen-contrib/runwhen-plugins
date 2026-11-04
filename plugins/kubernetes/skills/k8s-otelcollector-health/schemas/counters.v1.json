@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Collector drop and failure counters",
+  "description": "Cumulative counters since the collector process started, per pod and per exporter, receiver or processor and data type: exporter send_failed (an export attempt gave up) and enqueue_failed (the exporter's queue was full), receiver refused (the receiver turned data away, usually because the pipeline pushed back) and processor dropped or refused (for example the memory limiter). errorTypes are the error_type labels of the series when the collector sets them (for example Unavailable). A series the collector does not expose is absent, which is not the same as zero. Largest first; nonZeroCount counts those above zero.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": "integer"
+    },
+    "nonZeroCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string",
+            "enum": [
+              "exporter",
+              "receiver",
+              "processor"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "counter": {
+            "type": "string",
+            "enum": [
+              "send_failed",
+              "enqueue_failed",
+              "refused",
+              "dropped"
+            ]
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "errorTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "pod",
+          "component",
+          "name",
+          "counter",
+          "dataType",
+          "value",
+          "errorTypes"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "count",
+    "nonZeroCount",
+    "truncated",
+    "items"
+  ],
+  "additionalProperties": false
+}

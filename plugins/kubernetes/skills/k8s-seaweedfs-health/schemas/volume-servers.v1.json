@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS volume servers against the master topology",
+  "description": "Each volume-role pod against the data nodes master /dir/status lists, matched on pod IP: registered false is a pod the master does not know (not started, wrong master address, or its heartbeat is failing). unmatchedDataNodes are topology nodes no volume pod of this release explains (servers outside the release, or stale entries).",
+  "type": "object",
+  "properties": {
+    "podCount": {
+      "type": "integer"
+    },
+    "registeredCount": {
+      "type": "integer"
+    },
+    "dataNodeCount": {
+      "type": "integer"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "podIP": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "dataNodeUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "volumes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "maxVolumes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pod",
+          "podIP",
+          "running",
+          "registered",
+          "dataNodeUrl",
+          "volumes",
+          "maxVolumes"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    },
+    "unmatchedDataNodes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50
+    }
+  },
+  "required": [
+    "podCount",
+    "registeredCount",
+    "dataNodeCount",
+    "items",
+    "unmatchedDataNodes"
+  ],
+  "additionalProperties": false
+}

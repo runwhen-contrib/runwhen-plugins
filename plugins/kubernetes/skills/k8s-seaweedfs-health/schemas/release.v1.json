@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS release workloads and pods",
+  "description": "The StatefulSets and Deployments of one SeaweedFS release (desired against ready replicas, images) and its pods with the roles each serves (from the app.kubernetes.io/component label), phase, ready, restarts and every container including init containers (init true). workloads.unread names the kinds the identity may not list: their absence means unknown, not none.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "namespace": {
+      "type": "string"
+    },
+    "workloads": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unread": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "component": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "desired": {
+                "type": "integer"
+              },
+              "ready": {
+                "type": "integer"
+              },
+              "updated": {
+                "type": "integer"
+              },
+              "generationObserved": {
+                "type": "boolean"
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "component",
+              "desired",
+              "ready",
+              "updated",
+              "generationObserved",
+              "images"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "count",
+        "truncated",
+        "unread",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "pods": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "component": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 4
+              },
+              "phase": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "podIP": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "deleting": {
+                "type": "boolean"
+              },
+              "restarts": {
+                "type": "integer"
+              },
+              "containers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "init": {
+                      "type": "boolean"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "restartCount": {
+                      "type": "integer"
+                    },
+                    "state": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "init",
+                    "ready",
+                    "restartCount",
+                    "state",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "name",
+              "component",
+              "roles",
+              "phase",
+              "ready",
+              "podIP",
+              "deleting",
+              "restarts",
+              "containers"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "count",
+        "truncated",
+        "items"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "name",
+    "namespace",
+    "workloads",
+    "pods"
+  ],
+  "additionalProperties": false
+}

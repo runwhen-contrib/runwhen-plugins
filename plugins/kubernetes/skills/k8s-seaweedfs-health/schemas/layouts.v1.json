@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS writable volume layouts",
+  "description": "From master /dir/status: one entry per collection / replication / TTL / disk type with the volume ids that can take writes. writableCount 0 means the master has no volume to assign writes to for that layout (a new one is grown only if a slot is free). withoutWritable counts those layouts.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": "integer"
+    },
+    "withoutWritable": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "replication": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          },
+          "diskType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "writableCount": {
+            "type": "integer"
+          },
+          "writableVolumeIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "collection",
+          "replication",
+          "ttl",
+          "diskType",
+          "writableCount",
+          "writableVolumeIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "count",
+    "withoutWritable",
+    "truncated",
+    "items"
+  ],
+  "additionalProperties": false
+}

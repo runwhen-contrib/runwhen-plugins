@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS volume server disks",
+  "description": "From each Running volume server pod's /status: the disks it stores volumes on (size, used, free, percent) with belowMinFree against the minFreeDiskPercent setting, and its volume and read-only volume counts. podCount counts every volume-role pod; queriedCount those that answered; truncated is true when more than maxPods were Running.",
+  "type": "object",
+  "properties": {
+    "podCount": {
+      "type": "integer"
+    },
+    "queriedCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "notRunning": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "disks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dir": {
+                  "type": "string"
+                },
+                "allBytes": {
+                  "type": "integer"
+                },
+                "usedBytes": {
+                  "type": "integer"
+                },
+                "freeBytes": {
+                  "type": "integer"
+                },
+                "percentFree": {
+                  "type": "number"
+                },
+                "percentUsed": {
+                  "type": "number"
+                },
+                "belowMinFree": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "dir",
+                "allBytes",
+                "usedBytes",
+                "freeBytes",
+                "percentFree",
+                "percentUsed",
+                "belowMinFree"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "minFreePercent": {
+            "type": "number"
+          },
+          "volumeCount": {
+            "type": "integer"
+          },
+          "readOnlyVolumeCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pod",
+          "version",
+          "disks",
+          "minFreePercent",
+          "volumeCount",
+          "readOnlyVolumeCount"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "podCount",
+    "queriedCount",
+    "truncated",
+    "notRunning",
+    "items"
+  ],
+  "additionalProperties": false
+}

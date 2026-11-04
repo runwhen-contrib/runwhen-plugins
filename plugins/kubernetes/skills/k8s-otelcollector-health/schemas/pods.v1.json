@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Collector pods asked for their metrics",
+  "description": "Every pod of the workload: queried true when its metrics page was read (with the collector's process uptime in seconds, which is also how long its counters have been counting, and the number of series), or false with the reason it was not (not Running, no IP, or the error from the proxy). count is every pod; queriedCount those read; truncated is true when more than maxPods were Running.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": "integer"
+    },
+    "queriedCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pod": {
+            "type": "string"
+          },
+          "queried": {
+            "type": "boolean"
+          },
+          "notQueriedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uptimeSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "seriesCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pod",
+          "queried",
+          "notQueriedReason",
+          "uptimeSeconds",
+          "seriesCount"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "count",
+    "queriedCount",
+    "truncated",
+    "items"
+  ],
+  "additionalProperties": false
+}
