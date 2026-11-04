@@ -15,7 +15,9 @@ Built on the rw-task image from `runwhen-contrib/rw-tasks-codecollection` (branc
 python 3.12, the `runwhen-capability` SDK with `google-re2`, `kubectl`, `jq`, `curl`, and the
 non-root `runwhen` user (uid 1000; the runner runs it as uid 65532 with a read-only root and
 `/work` writable). The Dockerfile adds `git` and `tzdata` (CronJob `spec.timeZone` is resolved
-with `zoneinfo`). `oc`, `helm`, `flux` and `argocd` are left out on purpose.
+with `zoneinfo`), and `gke-gcloud-auth-plugin` (the kubernetes plugin's `gke` auth method writes a
+kubeconfig that runs it) from Google's pinned Cloud SDK component tarball, checked against the sha256
+Google publishes. `oc`, `helm`, `flux` and `argocd` are left out on purpose.
 
 `FROM` is pinned by the base's multi-arch index digest (`v13-plugins-d1c7d04`). To move the base,
 re-resolve it:
