@@ -1,5 +1,5 @@
-"""ring: the members of each Loki hash ring, from the ring pages (JSON when a client asks for it,
-HTML otherwise)."""
+"""ring: the members of each Loki hash ring, from the ring pages. The request asks for JSON
+(`Accept: application/json`); a Loki that ignores it and answers HTML is read from its table."""
 
 import json
 
@@ -18,14 +18,16 @@ from k8s_loki_health.proxy import status_error
 from k8s_loki_health.ringpage import members as html_members
 
 DEFAULT_PATHS = ("/ring", "/distributor/ring", "/compactor/ring")
+ASK_JSON = {"Accept": "application/json"}  # dskit's ring page answers JSON when asked
 
 
 def ring_members(reply, what):
-    """(the member list, the server's `now` text or None) of a ring page. The page is JSON for a
-    client that asks for it, which `ctx.k8s_proxy_get` cannot (it sends `Accept: */*`), and HTML
-    otherwise; both are read. A page that is neither a ring's JSON (`shards`) nor a ring's HTML
-    table, or any status but 200, is an error, never an empty ring. A 404 is not an error here:
-    the caller reads it as 'this pod does not serve that ring' before calling this."""
+    """(the member list, the server's `now` text or None, the page's format 'json' or 'html') of a
+    ring page. The request asks for JSON, which is what a Loki that honours `Accept` answers; the
+    HTML table is read only as a fallback for one that ignores it. A page that is neither a
+    ring's JSON (`shards`) nor a ring's HTML table, or any status but 200, is an error, never an
+    empty ring. A 404 is not an error here: the caller reads it as 'this pod does not serve that
+    ring' before calling this."""
     if reply.status != 200:
         raise status_error(reply, what)
     try:
@@ -35,7 +37,7 @@ def ring_members(reply, what):
     if doc is None:
         parsed = html_members(reply.body)
         if parsed is not None:
-            return parsed
+            return parsed[0], parsed[1], "html"
     shards = doc.get("shards") if isinstance(doc, dict) else None
     if not isinstance(shards, list) or not all(isinstance(s, dict) for s in shards):
         raise RwError(
@@ -43,7 +45,7 @@ def ring_members(reply, what):
             f"{what} did not return a ring page (JSON with shards, or the HTML ring table): "
             f"{reply.body.strip()[:80]!r}",
         )
-    return shards, doc.get("now")
+    return shards, doc.get("now"), "json"
 
 
 def member_view(shard, now, unparsed):
@@ -68,7 +70,7 @@ def member_view(shard, now, unparsed):
     }
 
 
-def ring_view(path, shards, viewed_from, unserved_by, now, unparsed):
+def ring_view(path, shards, viewed_from, unserved_by, now, unparsed, fmt):
     members = [member_view(s, now, unparsed) for s in shards]
     by_state = {}
     for member in members:
@@ -77,6 +79,7 @@ def ring_view(path, shards, viewed_from, unserved_by, now, unparsed):
     return {
         "path": path,
         "served": True,
+        "format": fmt,
         "viewedFrom": viewed_from,
         "unservedBy": unserved_by,
         "memberCount": len(members),
@@ -91,6 +94,7 @@ def unserved(path, unserved_by):
     return {
         "path": path,
         "served": False,
+        "format": None,
         "viewedFrom": None,
         "unservedBy": unserved_by,
         "memberCount": 0,
@@ -153,12 +157,12 @@ def collect(ctx, workload, pods, scheme, port, paths, now, limit, budget=None):
         for pod in asked:
             name = pod["metadata"]["name"]
             try:
-                reply = fetch_one(ctx, workload, pod, scheme, port, path, budget)
+                reply = fetch_one(ctx, workload, pod, scheme, port, path, budget, ASK_JSON)
                 if reply.status == 404:
                     unserved_by.append(name)
                     answered += 1
                     continue
-                shards, server_now = ring_members(reply, f"{path} on pod {name}")
+                shards, server_now, fmt = ring_members(reply, f"{path} on pod {name}")
             except RwError as exc:
                 if exc.code == "permission_denied":
                     raise
@@ -168,7 +172,7 @@ def collect(ctx, workload, pods, scheme, port, paths, now, limit, budget=None):
             answered += 1
             unparsed = []
             clock = reference_time(ctx, server_now, now, path, name)
-            found = ring_view(path, shards, name, unserved_by, clock, unparsed)
+            found = ring_view(path, shards, name, unserved_by, clock, unparsed, fmt)
             report_unparsed(ctx, unparsed, path, name)
             break
         if found is not None:

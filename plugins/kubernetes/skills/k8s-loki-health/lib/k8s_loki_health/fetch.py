@@ -147,10 +147,10 @@ def pod_condition(pod, kind):
     return None
 
 
-def fetch_one(ctx, workload, pod, scheme, port, path, budget=None):
-    """GET `path` from one pod: a Reply (200, 404 or 503) or RwError. With a `budget`, an ask that
-    is past the deadline, or on a path that timed out for the last pods, raises `timeout`
-    without asking."""
+def fetch_one(ctx, workload, pod, scheme, port, path, budget=None, headers=None):
+    """GET `path` from one pod, with the request `headers`: a Reply (200, 404 or 503) or RwError.
+    With a `budget`, an ask that is past the deadline, or on a path that timed out for the last
+    pods, raises `timeout` without asking."""
     where = (
         workload["metadata"]["namespace"],
         pod["metadata"]["name"],
@@ -159,10 +159,10 @@ def fetch_one(ctx, workload, pod, scheme, port, path, budget=None):
         path,
     )
     if budget is None:
-        return proxy_get(ctx, *where)
+        return proxy_get(ctx, *where, headers=headers)
     budget.check(path)
     try:
-        reply = proxy_get(ctx, *where, budget.request_timeout())
+        reply = proxy_get(ctx, *where, budget.request_timeout(), headers)
     except RwError as exc:
         budget.record(path, exc.code == "timeout")
         raise

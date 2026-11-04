@@ -27,14 +27,18 @@ class Reply:
     redirect_dropped: str = None  # the host a redirect pointed to, which was not followed
 
 
-def proxy_get(ctx, namespace, pod, scheme, port, path, timeout=REQUEST_TIMEOUT):
-    """GET `path` (with its query) from `scheme://pod:port` through the pod proxy: a Reply for any
-    status the backend gave, or RwError for what the API server answered itself (forbidden, no
-    such pod, unreachable, timeout). A same-pod redirect is followed once. A 2xx body cut at the
-    SDK's size limit is `internal`: never parsed in part."""
+def proxy_get(ctx, namespace, pod, scheme, port, path, timeout=REQUEST_TIMEOUT, headers=None):
+    """GET `path` (with its query) from `scheme://pod:port` through the pod proxy, with the request
+    `headers` (only the SDK's allowlist: Accept, Content-Type, ...): a Reply for any status the
+    backend gave, or RwError for what the API server answered itself (forbidden, no such pod,
+    unreachable, timeout). A same-pod redirect is followed once. A 2xx body cut at the SDK's size
+    limit is `internal`: never parsed in part."""
+    extra = {"headers": headers} if headers else {}
     hops = 0
     while True:
-        raw = ctx.k8s_proxy_get(namespace, "pods", pod, port, path, scheme=scheme, timeout=timeout)
+        raw = ctx.k8s_proxy_get(
+            namespace, "pods", pod, port, path, scheme=scheme, timeout=timeout, **extra
+        )
         status = raw["status"]
         location = raw.get("location")
         if 300 <= status < 400 and location and hops < 1:

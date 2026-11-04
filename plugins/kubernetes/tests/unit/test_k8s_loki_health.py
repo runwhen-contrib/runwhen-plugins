@@ -5,7 +5,8 @@ Deployment whose ingester never heartbeats (its ring member is UNHEALTHY and /re
 Ring token lists in the data are cut to three entries. The scripts run through the SDK's test
 context (`ctx.run` raises on a non-zero exit like the real runner; `stub_commands` matches the
 exact kubectl argv, so an unexpected call fails). The pod proxy reads go through
-`ctx.k8s_proxy_get`, stood in for by `proxy_fake.ProxyFake`."""
+`ctx.k8s_proxy_get`, stood in for by `proxy_fake.ProxyFake`; the ring task asks for JSON with an
+`Accept` header and reads the HTML table only when a Loki ignores it."""
 
 import importlib.util
 import json
@@ -190,8 +191,11 @@ def test_ready_reply_is_never_true_for_unexpected_text():
 
 
 def test_ring_members_rejects_what_is_not_ring_json():
-    shards, server_now = ring.ring_members(proxy.Reply(200, json.dumps(load("ring.json"))), "w")
+    shards, server_now, fmt = ring.ring_members(
+        proxy.Reply(200, json.dumps(load("ring.json"))), "w"
+    )
     assert shards[0]["state"] == "ACTIVE" and server_now == load("ring.json")["now"]
+    assert fmt == "json"
     for body in ("<html><body><h1>Cortex Ruler Status</h1></body></html>", "[]", '{"x":1}', ""):
         with pytest.raises(RwError) as exc:
             ring.ring_members(proxy.Reply(200, body), "w")
@@ -274,6 +278,16 @@ def test_proxy_get_asks_the_pod_proxy_with_scheme_port_path_and_timeout():
             "timeout": 7,
         }
     ]
+
+
+def test_proxy_get_passes_request_headers_only_when_given():
+    ctx = FakeProxyCtx("ok")
+    proxy.proxy_get(
+        ctx, "ns", "loki-0", "http", 3100, "/ring", headers={"Accept": "application/json"}
+    )
+    proxy.proxy_get(ctx, "ns", "loki-0", "http", 3100, "/ready")
+    assert ctx.k8s_proxy_get.requests[0]["headers"] == {"Accept": "application/json"}
+    assert "headers" not in ctx.k8s_proxy_get.requests[1]
 
 
 def test_proxy_get_raises_what_the_api_server_answers_itself():
@@ -537,11 +551,11 @@ def test_ring_html_page_is_an_error_never_an_empty_ring():
 
 
 def test_ring_html_page_of_a_real_loki_is_read_into_the_same_members():
-    """`ctx.k8s_proxy_get` sends `Accept: */*`, and Loki then serves the ring as HTML (the helper
-    cannot ask for JSON): the table is read, heartbeat placed from its "(01:27:30)" on the day of
-    the page's own clock."""
+    """A Loki that ignores `Accept: application/json` serves the ring as HTML: the table is read,
+    heartbeat placed from its "(01:27:30)" on the day of the page's own clock."""
     got = ring.ring_members(proxy.Reply(200, load("ring.html")), "w")
-    members, server_now = got
+    members, server_now, fmt = got
+    assert fmt == "html"
     assert server_now == "2026-11-04T01:27:38Z"
     [m] = members
     assert (m["id"], m["state"], m["address"], m["token_count"]) == (
@@ -561,7 +575,7 @@ def test_ring_html_page_of_a_real_loki_is_read_into_the_same_members():
 
 
 def test_ring_html_page_with_an_unhealthy_member_keeps_the_state_and_the_old_heartbeat():
-    members, server_now = ring.ring_members(proxy.Reply(200, load("ring-stale.html")), "w")
+    members, server_now, _ = ring.ring_members(proxy.Reply(200, load("ring-stale.html")), "w")
     view = ring.member_view(members[0], at(server_now), [])
     assert view["state"] == "UNHEALTHY" and view["heartbeatAgeSeconds"] == 218.0
 
@@ -572,7 +586,7 @@ def test_ring_html_heartbeat_before_midnight_belongs_to_the_day_before():
         .replace("2026-11-04 01:27:38", "2026-11-04 00:00:05")
         .replace("(01:27:30)", "(23:59:58)")
     )
-    members, _ = ring.ring_members(proxy.Reply(200, page), "w")
+    members, _, _ = ring.ring_members(proxy.Reply(200, page), "w")
     assert members[0]["timestamp"] == "2026-11-03T23:59:58Z"
 
 
@@ -583,7 +597,7 @@ def test_ring_html_in_another_zone_is_placed_in_utc():
         .replace("01:27:38", "03:27:38")
         .replace("(01:27:30)", "(03:27:30)")
     )
-    members, server_now = ring.ring_members(proxy.Reply(200, page), "w")
+    members, server_now, _ = ring.ring_members(proxy.Reply(200, page), "w")
     assert (
         members[0]["timestamp"] == "2026-11-04T01:27:30Z" and server_now == "2026-11-04T01:27:38Z"
     )
@@ -591,7 +605,7 @@ def test_ring_html_in_another_zone_is_placed_in_utc():
 
 def test_ring_html_unparseable_heartbeat_is_reported_through_the_unparsed_list():
     page = load("ring.html").replace("8s ago (01:27:30)", "8s ago")
-    members, server_now = ring.ring_members(proxy.Reply(200, page), "w")
+    members, server_now, _ = ring.ring_members(proxy.Reply(200, page), "w")
     unparsed = []
     view = ring.member_view(members[0], at(server_now), unparsed)
     assert view["lastHeartbeat"] is None and unparsed[0][:2] == ("loki-0", "timestamp")
@@ -604,13 +618,33 @@ def test_ring_html_that_is_not_a_ring_table_is_an_error():
         assert exc.value.code == "internal"
 
 
-def test_ring_task_reads_the_html_pages_the_helper_gets():
+def test_ring_task_falls_back_to_the_html_table_for_a_loki_that_ignores_accept():
     page = load("ring.html")
     env, _ = run("ring", replies={p: page for p in RING_PATHS})
     assert env["status"] == "ok" and env["errors"] == [], env["errors"]
     check_schemas("ring", env)
     r = ring_of(env, "/ring")
     assert r["served"] is True and r["byState"] == {"ACTIVE": 1} and r["memberCount"] == 1
+    assert [ring_of(env, p)["format"] for p in RING_PATHS] == ["html"] * 3
+
+
+def test_ring_task_asks_for_json_on_every_ring_request_and_reports_the_format():
+    env, _ = run("ring")
+    assert env["status"] == "ok" and env["errors"] == [], env["errors"]
+    check_schemas("ring", env)
+    assert [ring_of(env, p)["format"] for p in RING_PATHS] == ["json"] * 3
+    asked = [r for r in LAST["proxy"] if r["path"] in RING_PATHS]
+    assert [r["path"] for r in asked] == list(RING_PATHS)
+    assert all(r["headers"] == {"Accept": "application/json"} for r in asked)
+
+
+def test_ring_unserved_and_unread_paths_have_no_format():
+    env, _ = run(
+        "ring", replies={"/distributor/ring": NO_ROUTE, "/compactor/ring": (0, "<html></html>", "")}
+    )
+    assert ring_of(env, "/ring")["format"] == "json"
+    assert ring_of(env, "/distributor/ring")["format"] is None  # served false
+    assert ring_of(env, "/compactor/ring")["format"] is None  # served null
 
 
 def test_ring_a_failing_path_is_served_null_and_the_rest_survives():
@@ -705,14 +739,18 @@ class Clocked:
     def clock(self):
         return self.now
 
-    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+    def k8s_proxy_get(
+        self, namespace, kind, name, port, path, *, headers=None, scheme="http", timeout=30
+    ):
         def answer(request):
             self.calls.append(request)
             out = served_as(self.answer(len(self.calls) - 1, request))
             self.now += self.step
             return out
 
-        return ProxyFake(answer)(namespace, kind, name, port, path, scheme=scheme, timeout=timeout)
+        return ProxyFake(answer)(
+            namespace, kind, name, port, path, headers=headers, scheme=scheme, timeout=timeout
+        )
 
     def error(self, code, message, scope=None, **_):
         self.errors.append((code, scope, message))
