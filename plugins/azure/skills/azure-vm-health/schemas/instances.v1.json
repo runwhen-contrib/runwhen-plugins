@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A scale set's instance states against its model",
+  "type": "object",
+  "properties": {
+    "scaleSet": {
+      "type": "string"
+    },
+    "orchestrationMode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "capacity": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "provisioningState": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "statusesSummary": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "code",
+              "count"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Instance counts per status code from the scale set's instance view; null when it could not be read (an error scoped instance-view)"
+    },
+    "extensionsSummary": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "statuses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "count"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "name",
+              "statuses"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Per extension, instance counts per status code"
+    },
+    "counts": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer"
+            },
+            "provisioningFailed": {
+              "type": "integer"
+            },
+            "modelOutdated": {
+              "type": "integer",
+              "description": "Instances whose latestModelApplied is false"
+            },
+            "modelUnknown": {
+              "type": "integer",
+              "description": "Instances that do not say whether the latest model is applied"
+            },
+            "unhealthy": {
+              "type": "integer",
+              "description": "Instances whose health state is not healthy"
+            },
+            "healthUnknown": {
+              "type": "integer",
+              "description": "Instances with no health state: no health extension or probe reports one; not a healthy reading"
+            },
+            "withFailedExtensions": {
+              "type": "integer"
+            },
+            "byProvisioningState": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "byPowerState": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "required": [
+            "total",
+            "provisioningFailed",
+            "modelOutdated",
+            "modelUnknown",
+            "unhealthy",
+            "healthUnknown",
+            "withFailedExtensions",
+            "byProvisioningState",
+            "byPowerState"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "null when the instances could not be listed (an error scoped instances), including Flexible orchestration"
+    },
+    "instances": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "instanceId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "provisioningState": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "powerState": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "latestModelApplied": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "health": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The HealthState/* status without the prefix (healthy, unhealthy, ...); null when none is reported"
+                  },
+                  "healthMessage": {
+                    "type": "string",
+                    "description": "Cut to 1024 characters"
+                  },
+                  "agentReady": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "failedExtensions": {
+                    "type": "integer"
+                  },
+                  "zone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "instanceId",
+                  "name",
+                  "provisioningState",
+                  "powerState",
+                  "latestModelApplied",
+                  "health",
+                  "healthMessage",
+                  "agentReady",
+                  "failedExtensions",
+                  "zone",
+                  "truncated"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "total": {
+              "type": "integer",
+              "description": "Instances found"
+            },
+            "omitted": {
+              "type": "integer",
+              "description": "Instances left out of items by maxItems or the nested limit"
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "omitted"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Instances with something to look at first (failed, outdated model, unhealthy, failed extension), then by instance id"
+    }
+  },
+  "required": [
+    "scaleSet",
+    "orchestrationMode",
+    "capacity",
+    "provisioningState",
+    "statusesSummary",
+    "extensionsSummary",
+    "counts",
+    "instances"
+  ],
+  "additionalProperties": false
+}

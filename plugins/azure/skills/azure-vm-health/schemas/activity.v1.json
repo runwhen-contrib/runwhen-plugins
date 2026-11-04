@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Critical, Error and Warning activity log entries of a virtual machine or scale set over a window",
+  "type": "object",
+  "properties": {
+    "resource": {
+      "type": "string"
+    },
+    "resourceType": {
+      "enum": [
+        "azure/virtual-machine",
+        "azure/vm-scale-set"
+      ]
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "eventsRead": {
+      "type": "integer",
+      "description": "Events read from the log, of every level"
+    },
+    "readCapReached": {
+      "type": "boolean",
+      "description": "The read stopped at its cap: the log held more events than were read and the counts are lower bounds"
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "Critical": {
+          "type": "integer"
+        },
+        "Error": {
+          "type": "integer"
+        },
+        "Warning": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "Critical",
+        "Error",
+        "Warning"
+      ],
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "time": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "level": {
+                "type": "string"
+              },
+              "operation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "subStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "Cut to 1024 characters"
+              },
+              "correlationId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "time",
+              "level",
+              "operation",
+              "status",
+              "subStatus",
+              "message",
+              "correlationId",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "description": "Critical, Error and Warning events found"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Critical, Error and Warning events left out of items by maxItems or the nested limit"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "resource",
+    "resourceType",
+    "windowSeconds",
+    "eventsRead",
+    "readCapReached",
+    "counts",
+    "events"
+  ],
+  "additionalProperties": false
+}

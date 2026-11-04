@@ -1,0 +1,144 @@
+[
+  {
+    "enabled": true,
+    "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/microsoft.insights/autoscalesettings/as-orders-jobs",
+    "location": "westeurope",
+    "name": "as-orders-jobs",
+    "notifications": [
+      {
+        "email": {
+          "customEmails": [],
+          "sendToSubscriptionAdministrator": false,
+          "sendToSubscriptionCoAdministrators": false
+        },
+        "operation": "Scale",
+        "webhooks": []
+      }
+    ],
+    "profiles": [
+      {
+        "capacity": {
+          "default": "2",
+          "maximum": "5",
+          "minimum": "2"
+        },
+        "name": "default",
+        "rules": [
+          {
+            "metricTrigger": {
+              "dividePerInstance": false,
+              "metricName": "Percentage CPU",
+              "metricResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+              "operator": "GreaterThan",
+              "statistic": "Average",
+              "threshold": 75.0,
+              "timeAggregation": "Average",
+              "timeGrain": "PT1M",
+              "timeWindow": "PT5M"
+            },
+            "scaleAction": {
+              "cooldown": "PT5M",
+              "direction": "Increase",
+              "type": "ChangeCount",
+              "value": "1"
+            }
+          },
+          {
+            "metricTrigger": {
+              "dividePerInstance": false,
+              "metricName": "Percentage CPU",
+              "metricResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+              "operator": "LessThan",
+              "statistic": "Average",
+              "threshold": 25.0,
+              "timeAggregation": "Average",
+              "timeGrain": "PT1M",
+              "timeWindow": "PT10M"
+            },
+            "scaleAction": {
+              "cooldown": "PT10M",
+              "direction": "Decrease",
+              "type": "ChangeCount",
+              "value": "1"
+            }
+          }
+        ]
+      }
+    ],
+    "resourceGroup": "rg-orders-dev",
+    "tags": {},
+    "targetResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+    "type": "Microsoft.Insights/autoscaleSettings"
+  },
+  {
+    "enabled": true,
+    "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/microsoft.insights/autoscalesettings/as-orders-batch",
+    "location": "westeurope",
+    "name": "as-orders-batch",
+    "notifications": [
+      {
+        "email": {
+          "customEmails": [],
+          "sendToSubscriptionAdministrator": false,
+          "sendToSubscriptionCoAdministrators": false
+        },
+        "operation": "Scale",
+        "webhooks": []
+      }
+    ],
+    "profiles": [
+      {
+        "capacity": {
+          "default": "1",
+          "maximum": "4",
+          "minimum": "1"
+        },
+        "name": "default",
+        "rules": [
+          {
+            "metricTrigger": {
+              "dividePerInstance": false,
+              "metricName": "Percentage CPU",
+              "metricResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-batch",
+              "operator": "GreaterThan",
+              "statistic": "Average",
+              "threshold": 80.0,
+              "timeAggregation": "Average",
+              "timeGrain": "PT1M",
+              "timeWindow": "PT5M"
+            },
+            "scaleAction": {
+              "cooldown": "PT5M",
+              "direction": "Increase",
+              "type": "ChangeCount",
+              "value": "1"
+            }
+          },
+          {
+            "metricTrigger": {
+              "dividePerInstance": false,
+              "metricName": "Percentage CPU",
+              "metricResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-batch",
+              "operator": "LessThan",
+              "statistic": "Average",
+              "threshold": 30.0,
+              "timeAggregation": "Average",
+              "timeGrain": "PT1M",
+              "timeWindow": "PT10M"
+            },
+            "scaleAction": {
+              "cooldown": "PT10M",
+              "direction": "Decrease",
+              "type": "ChangeCount",
+              "value": "1"
+            }
+          }
+        ]
+      }
+    ],
+    "resourceGroup": "rg-orders-dev",
+    "tags": {},
+    "targetResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-batch",
+    "type": "Microsoft.Insights/autoscaleSettings"
+  }
+]

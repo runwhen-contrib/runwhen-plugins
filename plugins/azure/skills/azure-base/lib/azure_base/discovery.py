@@ -1,11 +1,11 @@
-"""discover: the subscription, its resource groups and their Key Vaults, as facts and as an
-rw.discovery.v1 sync.
+"""discover: the subscription, its resource groups and their Key Vaults, AKS clusters, virtual
+machines and scale sets, as facts and as an rw.discovery.v1 sync.
 
 The az calls return plain facts; `build_sync` turns them into the recorded sync (open, item
 batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync"). The child
 types are the ones the plugin's skills target (D51): the resource group, which addresses the
-resources below it (subscription -> resourcegroup -> keyvault | aks-cluster), the Key Vault and the
-AKS cluster. CHILD_TYPES is the table of them: one row per type a skill targets.
+resources below it (subscription -> resourcegroup -> keyvault | aks-cluster | virtual-machine | vm-scale-set), and
+the types themselves. CHILD_TYPES is the table of them: one row per type a skill targets.
 
 Every call that lists below the subscription passes `-g`: one partition per resource group, so a
 group that cannot be read (forbidden, throttled, out of time) is not complete and nothing is swept
@@ -34,7 +34,12 @@ LIST_BUDGET = 300  # seconds for the per-group listings; the rest of the task's 
 NOT_REGISTERED = re.compile(
     r"MissingSubscriptionRegistration|not registered to use namespace", re.I
 )
-LISTED = {"keyvault": "Key Vaults", "aks-cluster": "AKS clusters"}  # the child types, in words
+LISTED = {  # the child types, in words
+    "keyvault": "Key Vaults",
+    "aks-cluster": "AKS clusters",
+    "virtual-machine": "virtual machines",
+    "vm-scale-set": "scale sets",
+}
 
 
 def target_subscription(resource):
@@ -156,15 +161,65 @@ def read_aks_clusters(ctx, subscription, group):
     return sorted(clusters, key=lambda c: c["name"].lower())
 
 
+def read_virtual_machines(ctx, subscription, group):
+    """The virtual machine facts of one resource group, by name (with the OS type the list row's OS
+    disk says). A failure to list raises."""
+    rows = az_json(ctx, ["vm", "list", "-g", group["name"], "--subscription", subscription])
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise RwError("internal", "az vm list returned no list")
+    machines = []
+    for row in rows:
+        if not row.get("name") or not row.get("id"):
+            raise RwError("internal", "az vm list returned a virtual machine without a name or id")
+        storage = row.get("storageProfile") if isinstance(row.get("storageProfile"), dict) else {}
+        disk = storage.get("osDisk") if isinstance(storage.get("osDisk"), dict) else {}
+        machines.append(
+            {
+                "name": str(row["name"]),
+                "resourceGroup": group["name"],
+                "location": str(row.get("location") or ""),
+                "id": str(row["id"]),
+                "tags": labels(row.get("tags")),
+                "osType": str(disk.get("osType") or ""),
+            }
+        )
+    return sorted(machines, key=lambda m: m["name"].lower())
+
+
+def read_vm_scale_sets(ctx, subscription, group):
+    """The VM scale set facts of one resource group, by name. A failure to list raises."""
+    rows = az_json(ctx, ["vmss", "list", "-g", group["name"], "--subscription", subscription])
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise RwError("internal", "az vmss list returned no list")
+    sets = []
+    for row in rows:
+        if not row.get("name") or not row.get("id"):
+            raise RwError("internal", "az vmss list returned a scale set without a name or id")
+        sets.append(
+            {
+                "name": str(row["name"]),
+                "resourceGroup": group["name"],
+                "location": str(row.get("location") or ""),
+                "id": str(row["id"]),
+                "tags": labels(row.get("tags")),
+            }
+        )
+    return sorted(sets, key=lambda s: s["name"].lower())
+
+
 # One row per child type of the resource group a skill targets: (type name in types.yaml, reader).
 # A reader takes (ctx, subscription, group) and returns [{name, resourceGroup, location, id, tags}].
 CHILD_TYPES = (
     ("keyvault", read_vaults),
     ("aks-cluster", read_aks_clusters),
+    ("virtual-machine", read_virtual_machines),
+    ("vm-scale-set", read_vm_scale_sets),
 )
 
 
-def group_listing(groups, vault_counts, limit, cluster_counts, unregistered):
+def group_listing(
+    groups, vault_counts, limit, cluster_counts, machine_counts, scale_set_counts, unregistered
+):
     items, total, omitted = bound(groups, limit)
     return {
         "items": [
@@ -175,6 +230,8 @@ def group_listing(groups, vault_counts, limit, cluster_counts, unregistered):
                 "keyvaults": vault_counts.get(group_key(g["name"])),
                 "aksClusters": cluster_counts.get(group_key(g["name"])),
                 "providerNotRegistered": unregistered.get(group_key(g["name"]), []),
+                "virtualMachines": machine_counts.get(group_key(g["name"])),
+                "vmScaleSets": scale_set_counts.get(group_key(g["name"])),
             }
             for g in items
         ],
@@ -197,6 +254,23 @@ def cluster_listing(clusters, limit):
     return vault_listing(clusters, limit)
 
 
+def machine_listing(machines, limit):
+    """Like vault_listing, with the OS type of each virtual machine."""
+    items, total, omitted = bound(machines, limit)
+    return {
+        "items": [
+            {k: v[k] for k in ("name", "resourceGroup", "location", "id", "osType")} for v in items
+        ],
+        "total": total,
+        "omitted": omitted,
+    }
+
+
+def scale_set_listing(scale_sets, limit):
+    """Same shape as vault_listing: name, resource group, location and id of each scale set."""
+    return vault_listing(scale_sets, limit)
+
+
 def partition(type_name, status, parent_path, count=None, reason=None):
     entry = {"type": type_name, "status": status, "parentPath": parent_path}
     if status == "complete" and count is not None:
@@ -207,7 +281,7 @@ def partition(type_name, status, parent_path, count=None, reason=None):
 
 
 def group_path(path, group):
-    """The resource path of a group: where its Key Vaults and AKS clusters sit."""
+    """The resource path of a group: where its children sit."""
     return f"{path}/{GROUP_PLURAL}/{group_key(group['name'])}"
 
 
@@ -259,7 +333,8 @@ def build_sync(path, name, subscription, groups, children, partitions, summary):
                         "chain": [root, link, {"type": type_name, "name": child["name"]}],
                     },
                     "displayName": child["name"],
-                    "document": {k: child[k] for k in ("name", "resourceGroup", "location", "id")},
+                    # every fact of the row but its tags (the labels): osType for a virtual machine
+                    "document": {k: v for k, v in child.items() if k != "tags"},
                 }
                 if len(child["id"]) <= 255:
                     child_item["providerUid"] = child["id"]
@@ -339,14 +414,19 @@ def discover(ctx, max_items, *, clock=time.monotonic, budget=LIST_BUDGET):
         )
 
     vaults, clusters = flat("keyvault"), flat("aks-cluster")
+    machines, scale_sets = flat("virtual-machine"), flat("vm-scale-set")
     counts_by_group = {k: len(v) for k, v in children["keyvault"].items()}
     clusters_by_group = {k: len(v) for k, v in children["aks-cluster"].items()}
+    machines_by_group = {k: len(v) for k, v in children["virtual-machine"].items()}
+    scale_sets_by_group = {k: len(v) for k, v in children["vm-scale-set"].items()}
     summary = summarize(
         {
             "subscription": 1,
             "resourcegroup": len(groups),
             "keyvault": len(vaults),
             "aks-cluster": len(clusters),
+            "virtual-machine": len(machines),
+            "vm-scale-set": len(scale_sets),
         },
         partitions,
         ctx.errors,
@@ -358,9 +438,17 @@ def discover(ctx, max_items, *, clock=time.monotonic, budget=LIST_BUDGET):
         "summary": summary,
         "subscription": subscription,
         "resourceGroups": group_listing(
-            groups, counts_by_group, max_items, clusters_by_group, unregistered
+            groups,
+            counts_by_group,
+            max_items,
+            clusters_by_group,
+            machines_by_group,
+            scale_sets_by_group,
+            unregistered,
         ),
         "keyvaults": vault_listing(vaults, max_items),
         "aksClusters": cluster_listing(clusters, max_items),
+        "virtualMachines": machine_listing(machines, max_items),
+        "vmScaleSets": scale_set_listing(scale_sets, max_items),
     }
     return outputs, sync

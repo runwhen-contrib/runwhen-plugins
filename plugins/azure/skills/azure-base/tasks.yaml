@@ -6,8 +6,8 @@ settings:
   commandTimeout: { type: duration, default: 60s, description: "How long one az command may run before it is stopped (timeout)" }
 tasks:
   - name: discover
-    title: Discover subscription, resource groups, Key Vaults and AKS clusters
-    description: Reads the subscription (id, name, tenant, state), lists its resource groups and, group by group, their Key Vaults and AKS clusters, as facts and as an rw.discovery.v1 sync (subscription -> resource group -> Key Vault | AKS cluster; one partition per group and type, so a group whose vaults or clusters cannot be listed is reported and not swept). Reports the subscription id as the root's canonical key. Read-only.
+    title: Discover groups, Key Vaults, AKS, VMs and scale sets
+    description: Reads the subscription (id, name, tenant, state), lists its resource groups and, group by group, their Key Vaults, AKS clusters, virtual machines and scale sets, as facts and as an rw.discovery.v1 sync (subscription -> resource group -> Key Vault | AKS cluster | virtual machine | scale set; one partition per group and type, so a group whose resources of one type cannot be listed is reported and not swept). Reports the subscription id as the root's canonical key. Read-only.
     script: scripts/discover.py
     tags: [discovery, inventory]
     readOnly: true
@@ -17,10 +17,14 @@ tasks:
       - { action: Microsoft.Resources/subscriptions/resourceGroups/read }  # az group list
       - { action: Microsoft.KeyVault/vaults/read }  # az keyvault list -g <group>, once per resource group
       - { action: Microsoft.ContainerService/managedClusters/read }  # az aks list -g <group>, once per resource group
+      - { action: Microsoft.Compute/virtualMachines/read }  # az vm list -g <group>, once per resource group
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }  # az vmss list -g <group>, once per resource group
     outputs:
       summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-step errors and root.canonicalKey (subscriptionId)" }
       subscription: { schema: ./schemas/subscription.v1.json, description: "Subscription id, name, tenant and state" }
-      resourceGroups: { schema: ./schemas/resourcegroups.v1.json, description: "Name, location, id and Key Vault and AKS cluster counts of each resource group, cut to maxItems" }
+      resourceGroups: { schema: ./schemas/resourcegroups.v1.json, description: "Name, location, id and Key Vault, AKS cluster, virtual machine and scale set counts of each resource group, cut to maxItems" }
       keyvaults: { schema: ./schemas/keyvaults.v1.json, description: "Name, resource group, location and id of each Key Vault, cut to maxItems" }
       aksClusters: { schema: ./schemas/aksclusters.v1.json, description: "Name, resource group, location and id of each AKS cluster, cut to maxItems" }
-      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this subscription, its resource groups and their Key Vaults and AKS clusters" }
+      virtualMachines: { schema: ./schemas/virtualmachines.v1.json, description: "Name, resource group, location, id and OS type of each virtual machine, cut to maxItems" }
+      vmScaleSets: { schema: ./schemas/vmscalesets.v1.json, description: "Name, resource group, location and id of each VM scale set, cut to maxItems" }
+      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this subscription, its resource groups and their Key Vaults, AKS clusters, virtual machines and scale sets" }

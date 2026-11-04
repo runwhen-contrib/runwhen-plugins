@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A virtual machine's instance view: power, provisioning, agent, extensions and boot diagnostics",
+  "type": "object",
+  "properties": {
+    "vm": {
+      "type": "string"
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "vmSize": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "osType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provisioningState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The model's provisioning state (Succeeded, Failed, Updating, Creating...)"
+    },
+    "instanceProvisioningState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The ProvisioningState/* status of the instance view, without the prefix"
+    },
+    "powerState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The PowerState/* status without the prefix: running, stopped, deallocated, starting, stopping, deallocating; null when Azure reports none"
+    },
+    "running": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "powerState is running; null when no power state was reported"
+    },
+    "statuses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Cut to 1024 characters"
+          },
+          "time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "level",
+          "displayStatus",
+          "message",
+          "time",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50,
+      "description": "Every status of the instance view, the first 50"
+    },
+    "computerName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "osName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "osVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "platformFaultDomain": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "platformUpdateDomain": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "reported": {
+          "type": "boolean",
+          "description": "The instance view carries a VM agent report; false for a deallocated VM or an agent that never reported"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ready": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Azure's status for the agent is Ready; null when there is no agent status (not a healthy reading)"
+        },
+        "statuses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "level": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "displayStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "Cut to 1024 characters"
+              },
+              "time": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "code",
+              "level",
+              "displayStatus",
+              "message",
+              "time",
+              "truncated"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        }
+      },
+      "required": [
+        "reported",
+        "version",
+        "ready",
+        "statuses"
+      ],
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer",
+          "description": "Extensions whose status level is Error or whose code names a failure"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "typeHandlerVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "level": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "displayStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "Cut to 1024 characters"
+              },
+              "failed": {
+                "type": "boolean"
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "type",
+              "typeHandlerVersion",
+              "code",
+              "level",
+              "displayStatus",
+              "message",
+              "failed",
+              "truncated"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        },
+        "omitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "failed",
+        "items",
+        "omitted"
+      ],
+      "additionalProperties": false
+    },
+    "bootDiagnostics": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "diagnosticsProfile.bootDiagnostics.enabled; null when the VM does not say"
+        },
+        "consoleScreenshotAvailable": {
+          "type": "boolean",
+          "description": "The instance view holds a console screenshot blob; false for a stopped VM"
+        },
+        "serialLogAvailable": {
+          "type": "boolean",
+          "description": "The instance view holds a serial console log blob; false for a stopped VM"
+        },
+        "status": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "displayStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Cut to 1024 characters"
+                },
+                "time": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "code",
+                "level",
+                "displayStatus",
+                "message",
+                "time",
+                "truncated"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Azure's status for boot diagnostics when it reports one (for example why the blobs are missing)"
+        }
+      },
+      "required": [
+        "enabled",
+        "consoleScreenshotAvailable",
+        "serialLogAvailable",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "vm",
+    "location",
+    "vmSize",
+    "osType",
+    "provisioningState",
+    "instanceProvisioningState",
+    "powerState",
+    "running",
+    "statuses",
+    "computerName",
+    "osName",
+    "osVersion",
+    "platformFaultDomain",
+    "platformUpdateDomain",
+    "agent",
+    "extensions",
+    "bootDiagnostics"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The autoscale settings that target a scale set",
+  "type": "object",
+  "properties": {
+    "scaleSet": {
+      "type": "string"
+    },
+    "currentCapacity": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "settingsInGroup": {
+      "type": "integer",
+      "description": "Autoscale settings in the scale set's resource group, of any target"
+    },
+    "found": {
+      "type": "boolean",
+      "description": "At least one setting targets this scale set. False is a fact (none configured, or in another group), not a verdict"
+    },
+    "anyEnabled": {
+      "type": "boolean"
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "profiles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "minimum": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "maximum": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "default": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "fixedDate": {
+                      "type": "boolean"
+                    },
+                    "recurrence": {
+                      "type": "boolean"
+                    },
+                    "capacityAtMaximum": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "currentCapacity is at or above the profile's maximum; null when either is unknown"
+                    },
+                    "capacityAtMinimum": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "currentCapacity is at or below the profile's minimum; null when either is unknown"
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "metric": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "statistic": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "timeAggregation": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "operator": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "threshold": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "timeWindow": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "direction": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "changeType": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "value": {
+                            "type": [
+                              "string",
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "cooldown": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "metric",
+                          "statistic",
+                          "timeAggregation",
+                          "operator",
+                          "threshold",
+                          "timeWindow",
+                          "direction",
+                          "changeType",
+                          "value",
+                          "cooldown"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 50
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "minimum",
+                    "maximum",
+                    "default",
+                    "fixedDate",
+                    "recurrence",
+                    "capacityAtMaximum",
+                    "capacityAtMinimum",
+                    "rules"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "name",
+              "enabled",
+              "profiles"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "description": "Autoscale settings found"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Autoscale settings left out of items by maxItems or the nested limit"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "scaleSet",
+    "currentCapacity",
+    "settingsInGroup",
+    "found",
+    "anyEnabled",
+    "settings"
+  ],
+  "additionalProperties": false
+}
