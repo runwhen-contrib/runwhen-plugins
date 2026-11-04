@@ -53,8 +53,10 @@ def offered(reply):
     return sorted(minors, key=lambda m: key(m["version"]), reverse=True)
 
 
-def versions_facts(minors, current):
-    """Where the cluster's version stands among the offered minors."""
+def versions_facts(minors, current, plan=None):
+    """Where the cluster's version stands among the offered minors. `plan` is the cluster's own
+    support plan: a minor that only a long-term-support plan covers is offered, but not to a
+    cluster on KubernetesOfficial."""
     minor = minor_of(current)
     mine = next((m for m in minors if m["version"] == minor), None)
     stable = [m for m in minors if not m["isPreview"]]
@@ -63,6 +65,8 @@ def versions_facts(minors, current):
         "minorSupported": mine is not None,
         "minorIsPreview": None if mine is None else mine["isPreview"],
         "minorSupportPlans": [] if mine is None else mine["supportPlans"],
+        # the cluster's own plan is one AKS lists for its minor; null when either is unknown
+        "planCoversMinor": None if mine is None or plan is None else plan in mine["supportPlans"],
         "latestPatchOfMinor": mine["patches"][-1] if mine and mine["patches"] else None,
         # the exact version is still one AKS offers (a retired patch is not listed any more)
         "patchOffered": None if mine is None else current in mine["patches"],
@@ -123,6 +127,7 @@ def read(ctx):
         "minorSupported": None,
         "minorIsPreview": None,
         "minorSupportPlans": [],
+        "planCoversMinor": None,
         "latestPatchOfMinor": None,
         "patchOffered": None,
         "defaultMinor": None,
@@ -149,6 +154,7 @@ def read(ctx):
                     )
                 ),  # fmt: skip
                 current,
+                out["supportPlan"],
             )
         )
     except RwError as exc:

@@ -8,7 +8,7 @@ description: >-
   network settings, diagnostic settings, failed operations in the Activity Log over a window, and
   node CPU, memory and disk from Azure Monitor against thresholds. Use when a cluster is stuck
   updating or failed, an upgrade or node pool operation did not finish, a cluster may be stopped
-  or out of support, or the nodes look short of capacity. Anything inside the cluster (pods,
+  or no longer among the versions AKS offers, or the nodes look short of capacity. Anything inside the cluster (pods,
   nodes as Kubernetes sees them, events) belongs to the kubernetes plugin.
 runwhen:
   role: health
@@ -48,7 +48,7 @@ see pods, Kubernetes nodes or events (D72): see "What to try next" for the kuber
   (`versionDiffers`), VM size, Spot or Regular and zones; with the totals, `failedPools` and
   `notRunningPools`.
 - `version-support` returns `version`: the cluster's minor against the minors AKS offers
-  (`minorSupported`, `minorIsPreview`, `minorSupportPlans`, `minorsBehind`), whether the exact
+  (`minorSupported`, `minorIsPreview`, `minorSupportPlans`, `planCoversMinor`, `minorsBehind`), whether the exact
   version is still offered (`patchOffered`) and the newest patch of the minor, and the control plane
   `upgrades` AKS offers (`available`, `versions`, `latestStable`).
 - `activity-failures` returns `activity`: failed operations of the cluster's resource group that
@@ -74,8 +74,10 @@ see pods, Kubernetes nodes or events (D72): see "What to try next" for the kuber
   that need one stay Pending. `autoscaleEnabled: false` has no bounds (`minCount` and `maxCount` are
   null): the count is fixed. `versionDiffers: true` on a pool: it is on a different version from the
   one requested, as during an upgrade or after a failed one.
-- `minorSupported: false`: the cluster's minor is not among the versions AKS offers in the region,
-  so it is out of support. `minorSupported: null`: the offered list could not be read (the run is
+- `minorSupported: false`: the cluster's minor is not in the list AKS currently offers in the region.
+  That is a fact about the list, not a stated end-of-support date. `planCoversMinor: false` on an
+  offered minor: only a plan other than the cluster's (for example long-term support, while the
+  cluster is on `KubernetesOfficial`) covers that minor. `minorSupported: null`: the offered list could not be read (the run is
   `partial`, error scoped `versions`). AKS gives no end-of-support date through the API, so the
   task reports none. `patchOffered: false` on a supported minor: the patch was retired, upgrade the
   patch. `upgrades.available: false` means AKS offers nothing newer from this version.

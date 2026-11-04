@@ -555,6 +555,7 @@ def test_version_support_of_a_supported_cluster(go):
     )
     assert (v["minorSupported"], v["minorIsPreview"], v["patchOffered"]) == (True, False, True)
     assert v["minorSupportPlans"] == ["KubernetesOfficial"] and v["latestPatchOfMinor"] == "1.33.5"
+    assert v["planCoversMinor"] is True
     assert (v["defaultMinor"], v["latestStableMinor"], v["minorsBehind"]) == ("1.34", "1.34", 1)
     assert [m["version"] for m in v["supportedMinors"]] == ["1.35", "1.34", "1.33", "1.32"]
     assert v["supportedMinors"][0]["isPreview"] is True
@@ -579,7 +580,7 @@ def test_version_support_of_a_cluster_out_of_support(go):
     v = out(go("version-support", "broken"), "version-support")
     assert (v["minor"], v["minorSupported"], v["minorsBehind"]) == ("1.29", False, 3)
     assert (v["minorIsPreview"], v["patchOffered"], v["latestPatchOfMinor"]) == (None, None, None)
-    assert v["minorSupportPlans"] == []
+    assert v["minorSupportPlans"] == [] and v["planCoversMinor"] is None  # not offered: no plans
     assert v["upgrades"]["versions"] == [{"version": "1.30.14", "isPreview": False}]
 
 
@@ -621,6 +622,68 @@ def test_a_retired_patch_is_not_offered_though_its_minor_is(go):
     )  # fmt: skip
     v = out(go("version-support", "healthy", runner=runner), "version-support")
     assert (v["minorSupported"], v["patchOffered"]) == (True, False)
+
+
+def lts_only_replies(plan):
+    """A cluster on 1.32 whose minor only AKSLongTermSupport covers, on the given support plan."""
+    show = json.loads(stub_json("healthy", "aks-show.json"))
+    show["kubernetesVersion"] = show["currentKubernetesVersion"] = "1.32.8"
+    show["supportPlan"] = plan
+    offered = json.loads(stub_json("healthy", "aks-versions.json"))
+    for row in offered["values"]:
+        if row["version"] == "1.32":
+            row["capabilities"]["supportPlan"] = ["AKSLongTermSupport"]
+    return Replies(
+        {
+            SHOW_PROD: (0, json.dumps(show), ""),
+            ("aks", "get-versions", "--location", "eastus", "--subscription", SUB): (
+                0,
+                json.dumps(offered),
+                "",
+            ),
+            (
+                "aks",
+                "get-upgrades",
+                "--name",
+                PROD,
+                "-g",
+                "rg-orders-prod",
+                "--subscription",
+                SUB,
+            ): (
+                0,
+                stub_json("healthy", "aks-upgrades.json"),
+                "",
+            ),
+        }
+    )
+
+
+def test_a_minor_only_long_term_support_covers_is_offered_but_not_to_an_official_cluster(go):
+    v = out(
+        go("version-support", "healthy", runner=lts_only_replies("KubernetesOfficial")),
+        "version-support",
+    )
+    assert (v["minorSupported"], v["minorSupportPlans"]) == (True, ["AKSLongTermSupport"])
+    assert (v["supportPlan"], v["planCoversMinor"]) == ("KubernetesOfficial", False)
+
+
+def test_the_same_minor_is_covered_for_a_cluster_on_long_term_support(go):
+    v = out(
+        go("version-support", "healthy", runner=lts_only_replies("AKSLongTermSupport")),
+        "version-support",
+    )
+    assert (v["supportPlan"], v["planCoversMinor"]) == ("AKSLongTermSupport", True)
+
+
+def test_the_plan_is_unknown_when_the_cluster_reports_none(go):
+    runner = lts_only_replies("KubernetesOfficial")
+    key = SHOW_PROD
+    show = json.loads(runner.answers[key][1])
+    show["supportPlan"] = None
+    runner.answers[key] = (0, json.dumps(show), "")
+    v = out(go("version-support", "healthy", runner=runner), "version-support")
+    assert v["supportPlan"] is None and v["planCoversMinor"] is None
 
 
 def versions_replies(scenario, versions=None, upgrades=None):
