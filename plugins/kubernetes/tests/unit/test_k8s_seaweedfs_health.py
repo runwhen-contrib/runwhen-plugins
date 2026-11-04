@@ -2,7 +2,10 @@
 kind-rw-plugins scenario rw-seaweedfs (two all-in-one `weed server -s3` pods: swfs-ok and swfs-broken).
 Scripts run through runwhen_capability.testing: a real Context with the V13 semantics (ctx.run raises on
 non-zero exit, ctx.error side channel, ctx.now fixed) and stubbed commands; no test reaches a cluster.
-The S3 write task runs against a small simulator of the gateway behind the pod proxy."""
+The S3 write task runs against a small simulator of the gateway behind the pod proxy. Proxied GETs go
+through `ctx.k8s_proxy_get` (S17: it never follows a redirect), stood in for here by a function that
+answers from the same stub tables as `ctx.run`; the PUT and DELETE of the S3 task still run as
+`kubectl replace|delete --raw` (the helper has no write verbs)."""
 
 import copy
 import importlib.util
@@ -19,6 +22,7 @@ from k8s_seaweedfs_health import api, discovery, k8s
 from k8s_seaweedfs_health import buckets as buckets_mod
 from k8s_seaweedfs_health.errors import RwError
 from k8s_seaweedfs_health.k8s import proxy_path
+from proxy_fake import cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-seaweedfs-health"
@@ -106,6 +110,10 @@ def get_workloads(rel, plural):
 
 
 def raw(pod, port, path, verb="get"):
+    """The key of one proxied request: a GET is a `ctx.k8s_proxy_get` call (recorded in `calls` as
+    this tuple), a PUT (replace) or DELETE is the `kubectl <verb> --raw` argv."""
+    if verb == "get":
+        return ("k8s_proxy_get", NS, pod, str(port), "/" + path.lstrip("/"))
     return ("kubectl", verb, "--raw", proxy_path(NS, pod, port, path))
 
 
@@ -153,6 +161,65 @@ UPSTREAM = {
 }
 
 
+# what a stub written as kubectl's (rc, stdout, stderr) is, as the helper answers it: the workload's
+# own 400/403/404/500/503 are replies, an error of the API server is an RwError
+BACKEND = {
+    "400": reply(400, "bad request"),
+    "403": reply(403, "Forbidden"),
+    "404": reply(404, "404 page not found"),
+    "500": reply(500, "internal error"),
+    "503": reply(503, "service unavailable"),
+}
+API_SERVER = {
+    "pod": RwError("not_found", 'pods "swfs-ok-0" not found'),
+    "refused": RwError("unreachable", "error trying to reach service: connection refused"),
+    "timeout": RwError("timeout", "request did not complete within requested timeout"),
+    "429": RwError("rate_limited", "slow down"),
+}
+
+
+def proxied(answer):
+    """The `ctx.k8s_proxy_get` answer (a reply dict or an RwError) for a stub (rc, out, err)."""
+    rc, out, err = answer
+    if rc == 0:
+        return reply(200, out)
+    for name, response in BACKEND.items():
+        if answer == UPSTREAM[name]:
+            return response
+    for name, error in API_SERVER.items():
+        if answer == UPSTREAM[name]:
+            return error
+    if " cannot " in err and "forbidden" in err.lower():
+        return RwError("permission_denied", err)
+    raise AssertionError(f"no proxy equivalent for the stub {answer!r}")
+
+
+def install_proxy(tc, calls, stubs, gateway=None):
+    """Make `ctx.k8s_proxy_get` answer from `stubs` (keys made by raw()) or from the S3 `gateway`,
+    and record each request in `calls` as raw() spells it."""
+    requests = []
+
+    def k8s_proxy_get(namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        assert (namespace, kind, scheme) == (NS, "pods", "http"), (namespace, kind, scheme)
+        key = ("k8s_proxy_get", namespace, name, str(port), path)
+        calls.append(key)
+        requests.append(key)
+        if gateway is not None:
+            uri = f"/api/v1/namespaces/{namespace}/pods/{name}/proxy{path}"
+            answer = gateway.run(["kubectl", "get", "--raw", uri], None, timeout=timeout)
+        elif key in stubs:
+            answer = stubs[key]
+        else:
+            raise AssertionError(f"ctx.k8s_proxy_get called with an unstubbed request {key!r}")
+        out = proxied(answer)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    tc.ctx.k8s_proxy_get = k8s_proxy_get
+    return requests
+
+
 def release_stubs(rel, master=True, extra=None):
     """The kubectl answers every task needs, plus the master reads of a healthy release."""
     pod = POD[rel]
@@ -181,7 +248,8 @@ def run(task, resource, stubs, settings=None, dry_run=False, now=NOW, **inputs):
     with make_context(
         resource=resource, settings={**SETTINGS, **(settings or {})}, dry_run=dry_run, now=now
     ) as tc:
-        calls = stub_commands(tc, stubs)
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        install_proxy(tc, calls, stubs)
         env = run_main(script(task), tc, **inputs)
         return env, tc.errors, list(calls)
 
@@ -582,8 +650,116 @@ def test_a_command_that_outlives_its_timeout_is_the_timeout_error():
             raise subprocess.TimeoutExpired(argv, 20)
 
     with pytest.raises(RwError) as exc:
-        k8s.proxy_get(Ctx(), NS, "p", 9333, "cluster/status")
+        k8s.proxy_delete(Ctx(), NS, "p", 8333, "b/k")
     assert exc.value.code == "timeout"
+
+
+class HelperCtx:
+    """A ctx whose k8s_proxy_get answers from `answer(request)` and records the requests."""
+
+    def __init__(self, answer):
+        self.requests = []
+        self._answer = answer
+
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        self.requests.append((namespace, kind, name, port, path, scheme, timeout))
+        out = self._answer(path)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+
+def test_proxy_get_returns_a_2xx_body_and_the_workloads_other_statuses_are_typed_errors():
+    assert k8s.proxy_get(HelperCtx(lambda p: reply(200, "{}")), NS, "p", 9333, "dir/status") == "{}"
+    for status, code, kind in (
+        (401, "permission_denied", "upstream_denied"),
+        (403, "permission_denied", "upstream_denied"),
+        (404, "dependency", "upstream_missing"),
+        (400, "internal", "upstream_error"),
+        (500, "internal", "upstream_error"),
+        (503, "internal", "upstream_error"),
+    ):
+        with pytest.raises(k8s.ProxyError) as exc:
+            k8s.proxy_get(HelperCtx(lambda p: reply(status, "nope")), NS, "p", 9333, "x")
+        assert (exc.value.code, exc.value.kind) == (code, kind)
+        assert f"HTTP {status}" in exc.value.message and "nope" in exc.value.message
+
+
+def test_proxy_get_raises_the_api_servers_own_errors_with_their_kind():
+    for code, kind in (
+        ("permission_denied", "rbac"),
+        ("not_found", "pod_missing"),
+        ("unreachable", "unreachable"),
+        ("timeout", "timeout"),
+    ):
+        with pytest.raises(k8s.ProxyError) as exc:
+            k8s.proxy_get(HelperCtx(lambda p: RwError(code, "api")), NS, "p", 9333, "x")
+        assert (exc.value.code, exc.value.kind) == (code, kind)
+
+
+def test_proxy_get_asks_the_helper_with_a_leading_slash_scheme_and_timeout():
+    ctx = HelperCtx(lambda p: reply(200, "ok"))
+    k8s.proxy_get(ctx, NS, "p", 8333, "b/?list-type=2", "https", timeout=7)
+    k8s.proxy_get(ctx, NS, "p", 8333, "")
+    assert ctx.requests == [
+        (NS, "pods", "p", 8333, "/b/?list-type=2", "https", 7),
+        (NS, "pods", "p", 8333, "/", "http", 20),
+    ]
+
+
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location and names the host; the skill reports it and asks once."""
+    ctx = HelperCtx(lambda p: cross_host_redirect("sso.example.invalid"))
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_get(ctx, NS, "p", 9333, "cluster/status")
+    assert (exc.value.code, exc.value.kind) == ("dependency", "upstream_redirect")
+    assert "off cluster to sso.example.invalid (not followed)" in exc.value.message
+    assert len(ctx.requests) == 1
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = HelperCtx(
+        lambda p: reply(301, "", location="/new/status") if p == "/old" else reply(200, "moved")
+    )
+    assert k8s.proxy_get(ctx, NS, "p", 9333, "old") == "moved"
+    assert [r[4] for r in ctx.requests] == ["/old", "/new/status"]
+    loop = HelperCtx(lambda p: reply(302, "", location="/again"))
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_get(loop, NS, "p", 9333, "a")
+    assert exc.value.kind == "upstream_redirect" and len(loop.requests) == 2
+
+
+def test_a_cut_2xx_body_is_internal_never_parsed_in_part():
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_json(
+            HelperCtx(lambda p: reply(200, '{"a": ', truncated=True)), NS, "p", 9333, "x", "w"
+        )
+    assert exc.value.code == "internal"
+
+
+def test_a_redirected_health_endpoint_is_an_error_not_unhealthy_and_not_followed():
+    stubs = release_stubs("ok")
+    with make_context(resource=sts_resource("ok"), settings=SETTINGS, now=NOW) as tc:
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        install_proxy(tc, calls, stubs)
+        base = tc.ctx.k8s_proxy_get
+
+        def redirecting(namespace, kind, name, port, path, **kw):
+            if path == "/cluster/healthz":
+                calls.append(("k8s_proxy_get", namespace, name, str(port), path))
+                return cross_host_redirect("sso.example.invalid")
+            return base(namespace, kind, name, port, path, **kw)
+
+        tc.ctx.k8s_proxy_get = redirecting
+        env = run_main(script("cluster_status"), tc)
+        errors = tc.errors
+    assert env["status"] == "partial"
+    assert codes(errors) == [("dependency", f"master/{POD['ok']}/healthz")]
+    assert "sso.example.invalid" in errors[0]["message"]
+    assert env["outputs"]["master"]["members"][0]["healthz"] is None
+    assert [c for c in calls if c[-1] == "/cluster/healthz"] == [
+        raw(POD["ok"], 9333, "cluster/healthz")
+    ]
 
 
 def test_proxy_json_rejects_a_body_that_is_not_a_json_object():
@@ -591,8 +767,8 @@ def test_proxy_json_rejects_a_body_that_is_not_a_json_object():
         def __init__(self, out):
             self.out = out
 
-        def run(self, argv, **kw):
-            return SimpleNamespace(returncode=0, stdout=self.out, stderr="")
+        def k8s_proxy_get(self, *args, **kw):
+            return reply(200, self.out)
 
     for out in ("", "<html>login</html>", "[1]", "null", "3"):
         with pytest.raises(RwError) as exc:
@@ -708,17 +884,29 @@ def test_master_healthz_error_status_is_unhealthy_not_healthy():
     )
 
 
+@pytest.mark.parametrize("answer", [UPSTREAM["503"], UPSTREAM["500"], UPSTREAM["400"]])
+def test_health_endpoint_5xx_is_the_workloads_answer_so_it_is_unhealthy(answer):
+    # through ctx.k8s_proxy_get a 503/500 is the workload's own status (an API-server error is a typed
+    # error of its own), so it reads as "unhealthy", where `kubectl get --raw` could not tell them apart
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/healthz"): answer})
+    env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
+    assert env["status"] == "ok" and errors == []
+    assert env["outputs"]["master"]["members"][0]["healthz"] == "unhealthy"
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 8888, "healthz"): answer})
+    env, errors, _ = run("filer_status", sts_resource("ok"), stubs)
+    assert errors == [] and env["outputs"]["filer"]["items"][0]["healthz"] == "unhealthy"
+
+
 @pytest.mark.parametrize(
     "answer,code",
     [
-        (UPSTREAM["503"], "unreachable"),
-        (UPSTREAM["500"], "internal"),
+        (UPSTREAM["refused"], "unreachable"),
         (UPSTREAM["timeout"], "timeout"),
         (UPSTREAM["429"], "rate_limited"),
+        (UPSTREAM["pod"], "not_found"),
     ],
 )
-def test_health_endpoint_5xx_timeout_and_429_are_typed_errors_before_unhealthy(answer, code):
-    # kubectl shows a 503/500 the same whether the workload or the API server sent it: an error, not "unhealthy"
+def test_health_endpoint_api_server_errors_are_typed_errors_never_unhealthy(answer, code):
     stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/healthz"): answer})
     env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
     assert env["status"] == "partial" and codes(errors) == [(code, f"master/{POD['ok']}/healthz")]
@@ -752,7 +940,8 @@ def test_master_read_errors_keep_the_pod_facts_and_make_the_result_partial(answe
     assert env["outputs"]["release"]["pods"]["count"] == 1
     m = env["outputs"]["master"]["members"][0]
     assert m["queried"] is False and m["isLeader"] is None
-    assert m["healthz"] is None  # no failure here is the process answering "unhealthy"
+    # only the workload's own 500 is it answering "unhealthy"; no other failure is
+    assert m["healthz"] == ("unhealthy" if answer == UPSTREAM["500"] else None)
     assert (
         m["notQueriedReason"] == code
     )  # the member says why: the error code of its failed status read
@@ -1328,12 +1517,12 @@ def s3_run(
         dry_run=dry_run,
         now=NOW,
     ) as tc:
-        calls = stub_commands(tc, stubs)
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        install_proxy(tc, calls, stubs, gateway)
         base = tc.ctx.run
 
         def run_(argv, cwd=None, timeout=None, env=None, *, inherit_env=True, check=None):
             if argv[:3] in (
-                ["kubectl", "get", "--raw"],
                 ["kubectl", "replace", "--raw"],
                 ["kubectl", "delete", "--raw"],
             ):
@@ -1682,6 +1871,8 @@ PROXY_VERBS = {"get": "get", "replace": "update", "delete": "delete"}
 def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs."""
     argv = list(argv)
+    if argv[0] == "k8s_proxy_get":  # ctx.k8s_proxy_get(ns, "pods", ...): pods/proxy get
+        return {("", "pods/proxy", "get")}
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
         if a in VALUE_FLAGS:
