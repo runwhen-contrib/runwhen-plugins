@@ -3,8 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/nope
-now: '2026-11-04T01:16:14.425Z'
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/keyvaults/nope
+now: '2026-11-04T02:20:21.214Z'
 calls:
 - argv:
   - az
@@ -12,6 +12,8 @@ calls:
   - show
   - --name
   - nope
+  - -g
+  - rg-orders-dev
   - --subscription
   - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
   - --output
@@ -19,7 +21,9 @@ calls:
   rc: 1
   stdout: ''
   stderr: |
-    ERROR: The Vault 'nope' not found within subscription.
+    ERROR: (ResourceNotFound) The Resource 'Microsoft.KeyVault/vaults/nope' under resource group 'rg-orders-dev' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+    Code: ResourceNotFound
+    Message: The Resource 'Microsoft.KeyVault/vaults/nope' under resource group 'rg-orders-dev' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
 expect:
   status: failed
   errorCodes:

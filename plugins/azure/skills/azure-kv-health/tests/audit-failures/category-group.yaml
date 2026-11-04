@@ -1,0 +1,276 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/keyvaults/kv-orders-dev
+now: '2026-11-04T02:20:12.676Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - kv-orders-dev
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev",
+      "location": "westeurope",
+      "name": "kv-orders-dev",
+      "properties": {
+        "accessPolicies": [],
+        "createMode": null,
+        "enablePurgeProtection": null,
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "enabledForDeployment": false,
+        "enabledForDiskEncryption": false,
+        "enabledForTemplateDeployment": false,
+        "hsmPoolResourceId": null,
+        "networkAcls": null,
+        "privateEndpointConnections": null,
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Enabled",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "softDeleteRetentionInDays": 7,
+        "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+        "vaultUri": "https://kv-orders-dev.vault.azure.net/"
+      },
+      "resourceGroup": "rg-orders-dev",
+      "systemData": null,
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.KeyVault/vaults"
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - diagnostic-settings
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "eventHubAuthorizationRuleId": null,
+        "eventHubName": null,
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev/providers/microsoft.insights/diagnosticSettings/kv-audit",
+        "logAnalyticsDestinationType": null,
+        "logs": [
+          {
+            "category": null,
+            "categoryGroup": "allLogs",
+            "enabled": true,
+            "retentionPolicy": {
+              "days": 0,
+              "enabled": false
+            }
+          }
+        ],
+        "marketplacePartnerId": null,
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": false,
+            "retentionPolicy": {
+              "days": 0,
+              "enabled": false
+            },
+            "timeGrain": null
+          }
+        ],
+        "name": "kv-audit",
+        "resourceGroup": "rg-orders-dev",
+        "serviceBusRuleId": null,
+        "storageAccountId": null,
+        "type": "Microsoft.Insights/diagnosticSettings",
+        "workspaceId": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-observability/providers/Microsoft.OperationalInsights/workspaces/law-central"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - cloud
+  - show
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "endpoints": {
+        "activeDirectory": "https://login.microsoftonline.com",
+        "activeDirectoryDataLakeResourceId": "https://datalake.azure.net/",
+        "activeDirectoryGraphResourceId": "https://graph.windows.net/",
+        "activeDirectoryResourceId": "https://management.core.windows.net/",
+        "appInsightsResourceId": "https://api.applicationinsights.io",
+        "appInsightsTelemetryChannelResourceId": "https://dc.applicationinsights.azure.com/v2/track",
+        "appServiceResourceId": "https://appservice.azure.com",
+        "attestationResourceId": "https://attest.azure.net",
+        "azmirrorStorageAccountResourceId": null,
+        "batchResourceId": "https://batch.core.windows.net/",
+        "gallery": "https://gallery.azure.com/",
+        "logAnalyticsResourceId": "https://api.loganalytics.io",
+        "management": "https://management.core.windows.net/",
+        "mediaResourceId": "https://rest.media.azure.net",
+        "microsoftGraphResourceId": "https://graph.microsoft.com/",
+        "ossrdbmsResourceId": "https://ossrdbms-aad.database.windows.net",
+        "portal": "https://portal.azure.com",
+        "resourceManager": "https://management.azure.com/",
+        "sqlManagement": "https://management.core.windows.net:8443/",
+        "synapseAnalyticsResourceId": "https://dev.azuresynapse.net",
+        "vmImageAliasDoc": "https://azcliprod.blob.core.windows.net/cli/vm/aliases.json"
+      },
+      "isActive": true,
+      "name": "AzureCloud",
+      "profile": "latest",
+      "suffixes": {
+        "acrLoginServerEndpoint": ".azurecr.io",
+        "attestationEndpoint": ".attest.azure.net",
+        "azureDatalakeAnalyticsCatalogAndJobEndpoint": "azuredatalakeanalytics.net",
+        "azureDatalakeStoreFileSystemEndpoint": "azuredatalakestore.net",
+        "keyvaultDns": ".vault.azure.net",
+        "mariadbServerEndpoint": ".mariadb.database.azure.com",
+        "mhsmDns": ".managedhsm.azure.net",
+        "mysqlServerEndpoint": ".mysql.database.azure.com",
+        "postgresqlServerEndpoint": ".postgres.database.azure.com",
+        "sqlServerHostname": ".database.windows.net",
+        "storageEndpoint": "core.windows.net",
+        "storageSyncEndpoint": "afs.azure.net",
+        "synapseAnalyticsEndpoint": ".dev.azuresynapse.net"
+      }
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - log-analytics
+  - workspace
+  - show
+  - --ids
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-observability/providers/Microsoft.OperationalInsights/workspaces/law-central
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "createdDate": "2024-03-02T08:00:00.0000000Z",
+      "customerId": "0b6c2f1e-3d4a-4e5f-9a7b-1c2d3e4f5a6b",
+      "etag": "\"0x8DE1B2C3D4E5F60\"",
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-observability/providers/Microsoft.OperationalInsights/workspaces/law-central",
+      "location": "westeurope",
+      "name": "law-central",
+      "provisioningState": "Succeeded",
+      "publicNetworkAccessForIngestion": "Enabled",
+      "publicNetworkAccessForQuery": "Enabled",
+      "resourceGroup": "rg-observability",
+      "retentionInDays": 30,
+      "sku": {
+        "name": "PerGB2018"
+      },
+      "type": "Microsoft.OperationalInsights/workspaces"
+    }
+  stderr: ''
+- argv:
+  - az
+  - rest
+  - --method
+  - post
+  - --url
+  - https://api.loganalytics.io/v1/workspaces/0b6c2f1e-3d4a-4e5f-9a7b-1c2d3e4f5a6b/query
+  - --resource
+  - https://api.loganalytics.io
+  - --body
+  - '{"query":"AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.KEYVAULT\" and ResourceId =~
+    \"/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev\"\n|
+    where Category == \"AuditEvent\" and toint(httpStatusCode_d) >= 400\n| summarize failures = count(),
+    firstSeen = min(TimeGenerated), lastSeen = max(TimeGenerated) by OperationName, httpStatusCode = toint(httpStatusCode_d)\n|
+    order by failures desc\n| take 51","timespan":"2026-11-03T02:20:12Z/2026-11-04T02:20:12Z"}'
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "tables": [
+        {
+          "name": "PrimaryResult",
+          "columns": [
+            {
+              "name": "OperationName",
+              "type": "string"
+            },
+            {
+              "name": "httpStatusCode",
+              "type": "int"
+            },
+            {
+              "name": "failures",
+              "type": "long"
+            },
+            {
+              "name": "firstSeen",
+              "type": "datetime"
+            },
+            {
+              "name": "lastSeen",
+              "type": "datetime"
+            }
+          ],
+          "rows": [
+            [
+              "SecretGet",
+              403,
+              41,
+              "2026-11-03T21:02:11.4Z",
+              "2026-11-04T00:11:50.9Z"
+            ],
+            [
+              "SecretList",
+              429,
+              7,
+              "2026-11-03T14:20:03.1Z",
+              "2026-11-03T15:58:40.0Z"
+            ],
+            [
+              "KeyGet",
+              404,
+              2,
+              "2026-11-03T09:00:00.0Z",
+              "2026-11-03T09:00:05.0Z"
+            ]
+          ]
+        }
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    audit:
+      auditLoggingToWorkspace: true
+      table: AzureDiagnostics
+      workspacesQueried: 1
+      failureCount: 50
+      diagnosticSettings:
+        $containsWhere:
+          name: kv-audit
+          auditEvent: true
+          table: AzureDiagnostics

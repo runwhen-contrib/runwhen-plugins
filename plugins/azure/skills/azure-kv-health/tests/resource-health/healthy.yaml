@@ -3,8 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/kv-orders-prod
-now: '2026-11-04T01:15:36.005Z'
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/keyvaults/kv-orders-prod
+now: '2026-11-04T02:19:31.795Z'
 calls:
 - argv:
   - az
@@ -12,6 +12,8 @@ calls:
   - show
   - --name
   - kv-orders-prod
+  - -g
+  - rg-orders-prod
   - --subscription
   - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
   - --output
@@ -44,16 +46,19 @@ calls:
         },
         "privateEndpointConnections": [
           {
+            "etag": null,
             "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/privateEndpointConnections/pe-orders",
-            "name": "pe-orders",
-            "properties": {
-              "privateLinkServiceConnectionState": {
-                "status": "Approved"
-              },
-              "provisioningState": "Succeeded"
+            "privateEndpoint": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/privateEndpoints/pe-orders",
+              "resourceGroup": "rg-orders-prod"
             },
-            "resourceGroup": "rg-orders-prod",
-            "type": "Microsoft.KeyVault/Vaults/PrivateEndpointConnections"
+            "privateLinkServiceConnectionState": {
+              "actionsRequired": "None",
+              "description": "Auto-Approved",
+              "status": "Approved"
+            },
+            "provisioningState": "Succeeded",
+            "resourceGroup": "rg-orders-prod"
           }
         ],
         "provisioningState": "Succeeded",
@@ -81,7 +86,7 @@ calls:
   - --method
   - get
   - --url
-  - https://management.azure.com/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01
   - --output
   - json
   rc: 0

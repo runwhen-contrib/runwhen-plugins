@@ -3,8 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/kv-orders-prod
-now: '2026-11-04T01:19:24.838Z'
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/keyvaults/kv-orders-prod
+now: '2026-11-04T02:20:04.509Z'
 calls:
 - argv:
   - az
@@ -12,6 +12,8 @@ calls:
   - show
   - --name
   - kv-orders-prod
+  - -g
+  - rg-orders-prod
   - --subscription
   - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
   - --output
@@ -44,16 +46,19 @@ calls:
         },
         "privateEndpointConnections": [
           {
+            "etag": null,
             "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/privateEndpointConnections/pe-orders",
-            "name": "pe-orders",
-            "properties": {
-              "privateLinkServiceConnectionState": {
-                "status": "Approved"
-              },
-              "provisioningState": "Succeeded"
+            "privateEndpoint": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/privateEndpoints/pe-orders",
+              "resourceGroup": "rg-orders-prod"
             },
-            "resourceGroup": "rg-orders-prod",
-            "type": "Microsoft.KeyVault/Vaults/PrivateEndpointConnections"
+            "privateLinkServiceConnectionState": {
+              "actionsRequired": "None",
+              "description": "Auto-Approved",
+              "status": "Approved"
+            },
+            "provisioningState": "Succeeded",
+            "resourceGroup": "rg-orders-prod"
           }
         ],
         "provisioningState": "Succeeded",
@@ -137,6 +142,58 @@ calls:
   stderr: ''
 - argv:
   - az
+  - cloud
+  - show
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "endpoints": {
+        "activeDirectory": "https://login.microsoftonline.com",
+        "activeDirectoryDataLakeResourceId": "https://datalake.azure.net/",
+        "activeDirectoryGraphResourceId": "https://graph.windows.net/",
+        "activeDirectoryResourceId": "https://management.core.windows.net/",
+        "appInsightsResourceId": "https://api.applicationinsights.io",
+        "appInsightsTelemetryChannelResourceId": "https://dc.applicationinsights.azure.com/v2/track",
+        "appServiceResourceId": "https://appservice.azure.com",
+        "attestationResourceId": "https://attest.azure.net",
+        "azmirrorStorageAccountResourceId": null,
+        "batchResourceId": "https://batch.core.windows.net/",
+        "gallery": "https://gallery.azure.com/",
+        "logAnalyticsResourceId": "https://api.loganalytics.io",
+        "management": "https://management.core.windows.net/",
+        "mediaResourceId": "https://rest.media.azure.net",
+        "microsoftGraphResourceId": "https://graph.microsoft.com/",
+        "ossrdbmsResourceId": "https://ossrdbms-aad.database.windows.net",
+        "portal": "https://portal.azure.com",
+        "resourceManager": "https://management.azure.com/",
+        "sqlManagement": "https://management.core.windows.net:8443/",
+        "synapseAnalyticsResourceId": "https://dev.azuresynapse.net",
+        "vmImageAliasDoc": "https://azcliprod.blob.core.windows.net/cli/vm/aliases.json"
+      },
+      "isActive": true,
+      "name": "AzureCloud",
+      "profile": "latest",
+      "suffixes": {
+        "acrLoginServerEndpoint": ".azurecr.io",
+        "attestationEndpoint": ".attest.azure.net",
+        "azureDatalakeAnalyticsCatalogAndJobEndpoint": "azuredatalakeanalytics.net",
+        "azureDatalakeStoreFileSystemEndpoint": "azuredatalakestore.net",
+        "keyvaultDns": ".vault.azure.net",
+        "mariadbServerEndpoint": ".mariadb.database.azure.com",
+        "mhsmDns": ".managedhsm.azure.net",
+        "mysqlServerEndpoint": ".mysql.database.azure.com",
+        "postgresqlServerEndpoint": ".postgres.database.azure.com",
+        "sqlServerHostname": ".database.windows.net",
+        "storageEndpoint": "core.windows.net",
+        "storageSyncEndpoint": "afs.azure.net",
+        "synapseAnalyticsEndpoint": ".dev.azuresynapse.net"
+      }
+    }
+  stderr: ''
+- argv:
+  - az
   - monitor
   - log-analytics
   - workspace
@@ -176,10 +233,10 @@ calls:
   - https://api.loganalytics.io
   - --body
   - '{"query":"AzureDiagnostics\n| where ResourceProvider == \"MICROSOFT.KEYVAULT\" and ResourceId =~
-    \"/SUBSCRIPTIONS/4B1D1F7E-6F0A-4C5E-9A43-0C8A2D9E5B71/RESOURCEGROUPS/RG-ORDERS-PROD/PROVIDERS/MICROSOFT.KEYVAULT/VAULTS/KV-ORDERS-PROD\"\n|
+    \"/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod\"\n|
     where Category == \"AuditEvent\" and toint(httpStatusCode_d) >= 400\n| summarize failures = count(),
     firstSeen = min(TimeGenerated), lastSeen = max(TimeGenerated) by OperationName, httpStatusCode = toint(httpStatusCode_d)\n|
-    order by failures desc\n| take 50","timespan":"2026-11-03T01:19:24Z/2026-11-04T01:19:24Z"}'
+    order by failures desc\n| take 51","timespan":"2026-11-03T02:20:04Z/2026-11-04T02:20:04Z"}'
   - --output
   - json
   rc: 0
