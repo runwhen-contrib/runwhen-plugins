@@ -77,7 +77,7 @@
         "lambda",
         "get-function-configuration",
         "--function-name",
-        "orders-api",
+        "arn:aws:lambda:eu-west-1:123456789012:function:orders-api",
         "--query",
         "{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size, Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason, LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason: LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount: length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup: LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode, EnvironmentErrorMessage: Environment.Error.Message}",
         "--region",
@@ -192,6 +192,32 @@
       "doc": "https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html",
       "rc": 0,
       "stdout": "cloudwatch-duration.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cloudwatch",
+        "get-metric-statistics",
+        "--namespace",
+        "AWS/Lambda",
+        "--metric-name",
+        "ConcurrentExecutions",
+        "--dimensions",
+        "Name=FunctionName,Value=orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--period",
+        "300",
+        "--statistics",
+        "Maximum",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html",
+      "rc": 0,
+      "stdout": "cloudwatch-concurrent-executions.json",
       "stderr": ""
     },
     {

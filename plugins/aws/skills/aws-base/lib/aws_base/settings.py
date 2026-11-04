@@ -16,4 +16,12 @@ def read_settings(settings):
         raise RwError("invalid_input", "setting regions names at most 40 regions")
     for region in regions:
         check_region(region)
-    return SimpleNamespace(max_items=max_items, regions=list(dict.fromkeys(regions)))
+    default_region = settings.default_region
+    if not isinstance(default_region, str) or not default_region:
+        raise RwError("invalid_input", "setting defaultRegion must be a region name")
+    check_region(default_region)
+    return SimpleNamespace(
+        max_items=max_items,
+        regions=list(dict.fromkeys(regions)),
+        default_region=default_region,
+    )

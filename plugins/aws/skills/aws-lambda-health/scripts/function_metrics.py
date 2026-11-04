@@ -7,18 +7,17 @@ from aws_lambda_health.target import lambda_target, read_settings, read_since
 def main(ctx, since="1h"):
     seconds = read_since(since)
     st = read_settings(ctx.settings)
-    region, name = lambda_target(ctx.resource)
-    # the function itself first: CloudWatch answers a function that does not exist with no
-    # datapoints, which would read as "never invoked". A missing function is not_found here.
-    config = read_config(ctx, region, name)
+    target = lambda_target(ctx.resource)
+    # the function itself first, by its full ARN: CloudWatch answers a function that does not
+    # exist with no datapoints, which would read as "never invoked". A missing function is
+    # not_found here, and so is one of another account than the target.
+    config = read_config(ctx, target)
     start, end = mx.window(ctx.now(), seconds)
     period = mx.period_for(seconds)
     points, failures = {}, []
     for metric, statistics in mx.METRICS:
         try:
-            points[metric] = mx.read_metric(
-                ctx, region, name, metric, statistics, start, end, period
-            )
+            points[metric] = mx.read_metric(ctx, target, metric, statistics, start, end, period)
         except RwError as exc:
             points[metric] = None
             failures.append((metric, exc))

@@ -7,41 +7,61 @@ docs: https://docs.runwhen.com/integrations/aws
 # --- what tools read (D38, D45) ---------------------------------------------
 # The AWS SDK environment: the aws CLI (and every SDK) reads these variables, so a task script
 # never handles a key (it never reads or prints them). Env only: an auth plan materializes either
-# env or one file (auth-plan.schema.json, maxProperties 1). AWS_SESSION_TOKEN is written only when
-# the credential has one (temporary credentials). Static keys, an assumed role's credentials and the
-# ambient identity of IRSA or an instance profile all end as this type; for the ambient identity
-# the credentials are not written at all and the CLI finds them itself. AWS_REGION is the region
-# for account-level calls (STS, EC2 DescribeRegions); a skill's tasks always pass --region from
-# their target, so the variable never decides which region a resource task reads.
+# env or one file (auth-plan.schema.json, maxProperties 1). A credential type materializes SECRETS
+# AND PATHS ONLY, never an id or a region: every materialized value is redacted from all task
+# output, so a region such as eu-west-1 would vanish from every ARN a task prints. The region is
+# therefore not part of this type: every task call passes --region from its target, and the calls
+# that have no target (sts, ec2 describe-regions) pass the aws-base `defaultRegion` setting.
+# - AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN: the keys of the access-key method
+#   and of an assumed role's temporary credentials (the session token only for temporary ones).
+# - AWS_CONFIG_FILE, AWS_SHARED_CREDENTIALS_FILE: paths of empty files, written by the
+#   cloud-identity method, which has no key to write: the ambient identity of IRSA, Pod Identity or
+#   an instance profile is found by the CLI itself, and the empty files keep any profile or SSO
+#   configuration of the executor from taking over.
 credentialTypes:
   aws/sdk:
     title: AWS SDK environment
-    description: "The environment the aws CLI reads: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN (optional) and AWS_REGION."
+    description: "The environment the aws CLI reads: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN (optional), or for the ambient identity the paths AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE. No region: tasks pass --region."
     materialize:
-      env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION]
+      env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_CONFIG_FILE, AWS_SHARED_CREDENTIALS_FILE]
 
 # --- how a credential reference becomes that type (D67) -----------------------
 # Each method is self-contained: it accepts its own reference kinds, has its own
-# inputs, and produces the type. No method depends on another connection. Both are script
+# inputs, and produces the type. No method depends on another connection. All are script
 # methods (run in the aws runtime before the task): a native passthrough could copy the keys but
-# not add the region input or refuse a key that would break the env file.
+# not refuse a key that would break the env file, check the ambient identity or call STS.
+# Auth scripts read only RW_AUTH_REF_DIR, RW_AUTH_OUT_ENV, RW_AUTH_OUT_ERROR and
+# RW_AUTH_INPUT_<NAME> (the SDK strips every other RW_* variable; an input roleArn arrives as
+# RW_AUTH_INPUT_ROLE_ARN).
+# The access-key reference convention (keys AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally
+# AWS_SESSION_TOKEN, accepted as the content token aws-access-key) is shared with the kubernetes
+# plugin's eks method: one Secret serves both.
 authMethods:
   access-key:
     title: Access key
-    description: "An IAM user's or a role session's keys from a Secret, Vault or a file; the reference supplies AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN, the input supplies the default region."
+    description: "An IAM user's or a role session's keys from a Secret, Vault or a file; the reference supplies AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN."
     produces: aws/sdk
     accepts: [aws-access-key]                # reference content token: matches on any storage kind (call F1)
     script: auth/access_key.py               # relative to this file: integration/auth/ (F7); reference keys are the standard variable names
-    inputs:
-      region: { type: string, default: us-east-1, description: "Default region for account-level calls (AWS_REGION), for example eu-west-1; resource tasks use the region of their target" }
   cloud-identity:
     title: Ambient identity
-    description: "The identity the runner or executor already runs as (IRSA web identity, EKS Pod Identity, an instance profile); nothing is read from a reference, the input supplies the default region."
+    description: "The identity the executor already runs as: an IRSA web identity (AWS_WEB_IDENTITY_TOKEN_FILE and AWS_ROLE_ARN), EKS Pod Identity (AWS_CONTAINER_CREDENTIALS_FULL_URI) or, with allowInstanceProfile, an instance profile. Nothing is read from a reference; a missing identity fails the connection with invalid_input naming what is missing."
     produces: aws/sdk
     accepts: [cloud-identity]
     script: auth/cloud_identity.py
     inputs:
-      region: { type: string, default: us-east-1, description: "Default region for account-level calls (AWS_REGION), for example eu-west-1; resource tasks use the region of their target" }
+      allowInstanceProfile: { type: boolean, default: false, description: "Use the instance profile when neither IRSA nor a container credential endpoint is configured; without it that case is refused" }
+  assume-role:
+    title: Assume an IAM role
+    description: "Temporary credentials of an IAM role, from aws sts assume-role with either an access key reference or the executor's ambient identity as the base. The three credential values go straight to the environment, never to a command line or a log."
+    produces: aws/sdk
+    accepts: [aws-access-key, cloud-identity]
+    script: auth/assume_role.py
+    inputs:
+      roleArn: { type: string, required: true, description: "ARN of the role to assume, for example arn:aws:iam::123456789012:role/rw-read" }
+      externalId: { type: string, description: "The role's ExternalId condition, when its trust policy has one" }
+      sessionName: { type: string, default: runwhen, description: "Role session name (2 to 64 characters), shown in CloudTrail" }
+      allowInstanceProfile: { type: boolean, default: false, description: "With an ambient base: use the instance profile when neither IRSA nor a container credential endpoint is configured" }
 
 # --- what a task may declare and a connection verifies (CD3) ----------------
 permissions:

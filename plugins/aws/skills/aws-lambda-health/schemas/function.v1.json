@@ -13,7 +13,7 @@
     "timeoutSeconds": {"type": ["integer", "null"]},
     "ephemeralStorageMb": {"type": ["integer", "null"]},
     "architectures": {"type": "array", "maxItems": 50, "items": {"type": "string"}},
-    "state": {"type": ["string", "null"], "description": "Pending, Active, Inactive or Failed"},
+    "state": {"type": ["string", "null"], "description": "Pending, Active, Inactive, Failed, Deactivating, Deactivated, ActiveNonInvocable or Deleting"},
     "stateReasonCode": {"type": ["string", "null"]},
     "stateReason": {"type": ["string", "null"], "maxLength": 1024},
     "lastUpdateStatus": {"type": ["string", "null"], "description": "InProgress, Successful or Failed"},
@@ -35,7 +35,44 @@
     },
     "deadLetterTargetArn": {"type": ["string", "null"]},
     "tracingMode": {"type": ["string", "null"]},
-    "logGroup": {"type": "string", "description": "The CloudWatch log group the function writes to"},
+    "logGroup": {"type": "string", "description": "The CloudWatch log group the function writes to: its configured one (which several functions can share) or /aws/lambda/<name>"},
+    "reservedConcurrency": {
+      "type": ["object", "null"],
+      "properties": {
+        "configured": {"type": "boolean", "description": "false: no reserved concurrency, the function draws from the account's unreserved pool"},
+        "executions": {"type": ["integer", "null"], "description": "Reserved concurrent executions; 0 throttles every invocation; null when not configured"}
+      },
+      "required": ["configured", "executions"],
+      "additionalProperties": false,
+      "description": "null when the read failed (a scoped reservedConcurrency error); never null for 'none set'"
+    },
+    "provisionedConcurrency": {
+      "type": ["object", "null"],
+      "properties": {
+        "configs": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "qualifier": {"type": ["string", "null"], "description": "The alias or version the configuration is on (provisioned concurrency cannot be set on $LATEST)"},
+              "requested": {"type": ["integer", "null"]},
+              "allocated": {"type": ["integer", "null"]},
+              "available": {"type": ["integer", "null"]},
+              "status": {"type": ["string", "null"], "description": "IN_PROGRESS, READY or FAILED"},
+              "statusReason": {"type": ["string", "null"], "maxLength": 1024}
+            },
+            "required": ["qualifier", "requested", "allocated", "available", "status", "statusReason"],
+            "additionalProperties": false
+          }
+        },
+        "count": {"type": "integer"},
+        "truncated": {"type": "boolean", "description": "More than 50 configurations exist"}
+      },
+      "required": ["configs", "count", "truncated"],
+      "additionalProperties": false,
+      "description": "null when the read failed (a scoped provisionedConcurrency error); an empty list means none is configured"
+    },
     "logFormat": {"type": ["string", "null"]},
     "environmentError": {
       "type": ["object", "null"],
@@ -54,7 +91,8 @@
     "ephemeralStorageMb", "architectures", "state", "stateReasonCode", "stateReason",
     "lastUpdateStatus", "lastUpdateStatusReasonCode", "lastUpdateStatusReason", "lastModified",
     "codeSizeBytes", "version", "layerCount", "vpc", "deadLetterTargetArn", "tracingMode",
-    "logGroup", "logFormat", "environmentError", "textTruncated"
+    "logGroup", "reservedConcurrency", "provisionedConcurrency", "logFormat", "environmentError",
+    "textTruncated"
   ],
   "additionalProperties": false
 }

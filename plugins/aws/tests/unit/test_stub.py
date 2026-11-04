@@ -62,7 +62,11 @@ def test_every_call_names_the_doc_page_its_shape_follows_and_its_files_exist(dir
             assert call["stdout"] and not call["stderr"]
             path = directory / call["stdout"]
             assert path.is_file(), path
-            json.loads(path.read_text())  # what the CLI prints with --output json
+            text = path.read_text()
+            if (
+                text.strip()
+            ):  # the CLI prints nothing for an empty response (get-function-concurrency)
+                json.loads(text)  # what the CLI prints with --output json
         else:
             assert not call["stdout"]
             assert call["stderr"].startswith("\naws: [ERROR]: ") or "stub" in call["stderr"]
@@ -170,20 +174,86 @@ def test_the_log_file_records_each_normalised_argv(tmp_path):
     assert lines == [["sts", "get-caller-identity", "--region", "us-east-1"], ["s3", "ls"]]
 
 
-def test_the_rw_prefixed_names_are_aliases_for_direct_use():
-    env = {"PATH": os.environ["PATH"], "RW_STUB_SCENARIO": "healthy"}
+def test_the_stub_refuses_to_run_without_aws_stub_scenario_and_ignores_the_rw_name():
+    # the runner strips RW_*, so an RW_ name would work by hand and fail under rwtask: not accepted
+    for env in (
+        {"PATH": os.environ["PATH"]},
+        {"PATH": os.environ["PATH"], "RW_STUB_SCENARIO": "healthy"},
+        {"PATH": os.environ["PATH"], "AWS_STUB_SCENARIO": ""},
+    ):
+        done = subprocess.run(
+            [str(AWS), "sts", "get-caller-identity", "--region", "us-east-1"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 2 and done.stdout == ""
+        assert "AWS_STUB_SCENARIO is not set: refusing to run" in done.stderr
     done = subprocess.run(
-        [str(AWS), "sts", "get-caller-identity", "--region", "us-east-1"],
-        env=env,
-        capture_output=True,
-        text=True,
+        [str(AWS), "--version"], env={"PATH": os.environ["PATH"]}, capture_output=True, text=True
     )
-    assert done.returncode == 0 and "123456789012" in done.stdout
-    env["AWS_STUB_SCENARIO"] = "forbidden"  # the AWS_ name wins
-    done = subprocess.run(
-        [str(AWS), "ec2", "describe-regions", "--region", "us-east-1"],
-        env=env,
-        capture_output=True,
-        text=True,
+    assert done.returncode == 2  # not even --version: a run without a scenario is a mistake
+
+
+# --- record.sh: recording always goes through the harness -----------------------------------------------
+
+RECORD = STUB / "record.sh"
+
+
+def run_record(tmp_path, *args, env=None):
+    """record.sh with `rwtask` replaced by a script that prints what the harness set up."""
+    fake = tmp_path / "rwtask"
+    fake.write_text(
+        "#!/bin/sh\n"
+        'echo "aws=$(command -v aws)"\n'
+        'echo "scenario=$AWS_STUB_SCENARIO"\n'
+        "echo \"aws_vars=$(env | sed -n 's/^\\(AWS_[A-Z_]*\\)=.*/\\1/p' | sort | tr '\\n' ' ')\"\n"
+        'echo "args=$*"\n'
     )
-    assert done.returncode == 254
+    fake.chmod(0o755)
+    base = {"PATH": os.environ["PATH"], "RWTASK": str(fake), **(env or {})}
+    return subprocess.run([str(RECORD), *args], env=base, capture_output=True, text=True)
+
+
+def test_record_sh_puts_the_stub_first_names_the_scenario_and_drops_ambient_aws_variables(tmp_path):
+    done = run_record(
+        tmp_path,
+        "aws-lambda-health/function-config",
+        "healthy",
+        "healthy",
+        "aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api",
+        env={
+            "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
+            "AWS_PROFILE": "prod",
+            "AWS_ENDPOINT_URL": "http://elsewhere",
+        },
+    )
+    assert done.returncode == 0, done.stderr
+    lines = dict(line.split("=", 1) for line in done.stdout.splitlines())
+    assert lines["aws"] == str(STUB / "bin" / "aws")
+    assert lines["scenario"] == "healthy"
+    assert lines["aws_vars"].split() == ["AWS_STUB_SCENARIO"]  # nothing else of the caller's AWS_*
+    args = lines["args"]
+    assert args.startswith("test aws-lambda-health/function-config --plugin-dir ")
+    assert "--record --force --scenario healthy --resource aws/accounts/123456789012" in args
+
+
+def test_record_sh_takes_the_fixture_name_apart_from_the_stub_scenario(tmp_path):
+    done = run_record(
+        tmp_path, "aws-lambda-health/function-metrics", "idle", "no-log-group", "aws/x"
+    )
+    lines = dict(line.split("=", 1) for line in done.stdout.splitlines())
+    assert lines["scenario"] == "no-log-group" and "--scenario idle " in lines["args"]
+
+
+def test_record_sh_refuses_an_unknown_scenario_and_missing_arguments(tmp_path):
+    done = run_record(tmp_path, "aws-lambda-health/function-config", "x", "no-such", "aws/x")
+    assert done.returncode == 2 and "no stub scenario 'no-such'" in done.stderr
+    done = run_record(tmp_path, "aws-lambda-health/function-config")
+    assert done.returncode == 2 and done.stdout == ""
+
+
+def test_there_is_no_rwtask_record_without_the_harness_in_the_docs():
+    text = (STUB / "README.md").read_text()
+    assert "record.sh" in text and "verify.sh" in text
+    assert "RW_STUB_SCENARIO" not in text.replace("not `RW_STUB_SCENARIO`", "")

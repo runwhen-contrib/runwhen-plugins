@@ -13,10 +13,12 @@
       "required": ["start", "end", "seconds"],
       "additionalProperties": false
     },
-    "periodSeconds": {"type": "integer", "description": "The CloudWatch period of each datapoint"},
-    "invocations": {"type": ["number", "null"], "description": "Sum of Invocations; 0 with no datapoints; null when the call failed"},
-    "errors": {"type": ["number", "null"], "description": "Sum of Errors (invocations that raised, timed out or crashed); null when the call failed"},
-    "throttles": {"type": ["number", "null"], "description": "Sum of Throttles; null when the call failed"},
+    "periodSeconds": {"type": "integer", "description": "The CloudWatch period of each datapoint: 300 up to a 3-day window, 3600 above. The window is not aligned to the period, so the first datapoint can cover less than a full period (a partial first bucket) and the last is still filling"},
+    "hasData": {"type": ["boolean", "null"], "description": "Invocations has datapoints in the window; false: CloudWatch has nothing for the function (not invoked, or the metrics are not in yet); null when the Invocations call failed"},
+    "idle": {"type": ["boolean", "null"], "description": "invocations is 0 (no datapoints, or none counted): the function ran nothing in the window; null when the Invocations call failed. An idle function says nothing about errors"},
+    "invocations": {"type": ["number", "null"], "description": "Sum of Invocations; 0 with no datapoints (hasData false); null when the call failed. Throttled calls are not invocations"},
+    "errors": {"type": ["number", "null"], "description": "Sum of Errors (invocations that raised, timed out or crashed); 0 with no Errors datapoints only when Invocations has datapoints; null when the call failed or when there was no data at all"},
+    "throttles": {"type": ["number", "null"], "description": "Sum of Throttles; its own datapoints when it has them, else 0 only when Invocations has datapoints; null when the call failed or when there was no data at all"},
     "errorRate": {"type": ["number", "null"], "description": "errors / invocations; null when there were no invocations or a count is unknown"},
     "duration": {
       "type": ["object", "null"],
@@ -29,6 +31,7 @@
       "additionalProperties": false,
       "description": "null when the Duration call failed"
     },
+    "concurrentExecutionsMax": {"type": ["number", "null"], "description": "Highest ConcurrentExecutions (Maximum) in the window; null with no datapoints or when the call failed"},
     "timeoutSeconds": {"type": ["integer", "null"], "description": "The function's configured timeout"},
     "datapoints": {
       "type": "object",
@@ -36,20 +39,21 @@
         "Invocations": {"type": ["integer", "null"]},
         "Errors": {"type": ["integer", "null"]},
         "Throttles": {"type": ["integer", "null"]},
-        "Duration": {"type": ["integer", "null"]}
+        "Duration": {"type": ["integer", "null"]},
+        "ConcurrentExecutions": {"type": ["integer", "null"]}
       },
-      "required": ["Invocations", "Errors", "Throttles", "Duration"],
+      "required": ["Invocations", "Errors", "Throttles", "Duration", "ConcurrentExecutions"],
       "additionalProperties": false,
       "description": "Datapoints CloudWatch returned per metric; 0 means no data in the window (a function that was not invoked publishes none); null means the call failed"
     },
-    "errorRateAboveThreshold": {"type": ["boolean", "null"], "description": "errorRate >= the errorRateThreshold setting; null when the numbers were not read"},
-    "throttlesAboveThreshold": {"type": ["boolean", "null"], "description": "throttles >= the throttleThreshold setting; null when not read"},
-    "durationNearTimeout": {"type": ["boolean", "null"], "description": "The longest invocation reached durationTimeoutRatio of the function's timeout; null when not read"}
+    "errorRateAboveThreshold": {"type": ["boolean", "null"], "description": "errorRate > the errorRateThreshold setting (strictly: equal is not above); null when the rate is unknown, which includes any window with no invocations"},
+    "throttlesAboveThreshold": {"type": ["boolean", "null"], "description": "throttles >= the throttleThreshold setting; null when throttles is null"},
+    "durationNearTimeout": {"type": ["boolean", "null"], "description": "The longest invocation reached durationTimeoutRatio of the function's timeout; null when there was no Duration data or the call failed"}
   },
   "required": [
-    "window", "periodSeconds", "invocations", "errors", "throttles", "errorRate", "duration",
-    "timeoutSeconds", "datapoints", "errorRateAboveThreshold", "throttlesAboveThreshold",
-    "durationNearTimeout"
+    "window", "periodSeconds", "hasData", "idle", "invocations", "errors", "throttles", "errorRate",
+    "duration", "concurrentExecutionsMax", "timeoutSeconds", "datapoints", "errorRateAboveThreshold",
+    "throttlesAboveThreshold", "durationNearTimeout"
   ],
   "additionalProperties": false
 }

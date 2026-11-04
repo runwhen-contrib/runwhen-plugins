@@ -5,9 +5,10 @@ Put `tests/stub/bin` first on PATH and name a scenario:
 
     PATH=plugins/aws/tests/stub/bin:$PATH AWS_STUB_SCENARIO=healthy aws sts get-caller-identity ...
 
-The scenario comes from `AWS_STUB_SCENARIO`. `RW_STUB_SCENARIO` is accepted as an alias for direct
-use, but the real runner (`rwtask run` / `rwtask test --record`) strips every `RW_*` variable from
-the environment of the task it starts, so only the `AWS_` name reaches the stub there.
+The scenario comes from `AWS_STUB_SCENARIO` and from nowhere else: the real runner (`rwtask run` /
+`rwtask test --record`) strips every `RW_*` variable from the environment of the task it starts, so
+only an `AWS_` name reaches the stub there. With the variable unset the stub refuses to run (exit 2)
+instead of guessing a scenario; `tests/stub/record.sh` is the way to record, it always names one.
 
 The call is looked up in `scenarios/<scenario>/calls.yaml` by its argv and answered with the canned
 stdout file, stderr text and exit code recorded there. An argv that is not in the scenario exits 2
@@ -55,8 +56,13 @@ def fail(message, code=2):
 
 
 def main(argv):
-    scenario = os.environ.get("AWS_STUB_SCENARIO") or os.environ.get("RW_STUB_SCENARIO") or ""
-    if not scenario or "/" in scenario or scenario.startswith("."):
+    scenario = os.environ.get("AWS_STUB_SCENARIO") or ""
+    if not scenario:
+        return fail(
+            "AWS_STUB_SCENARIO is not set: refusing to run. Name a directory under "
+            "tests/stub/scenarios (tests/stub/record.sh does)"
+        )
+    if "/" in scenario or scenario.startswith("."):
         return fail("AWS_STUB_SCENARIO must name a directory under tests/stub/scenarios")
     directory = SCENARIOS / scenario
     calls_file = directory / "calls.yaml"
@@ -67,7 +73,7 @@ def main(argv):
         sys.stdout.write("aws-cli/2.39.3 Python/3.14.8 Linux/stub exe/stub\n")
         return 0
     calls = json.loads(calls_file.read_text(encoding="utf-8"))["calls"]
-    log = os.environ.get("AWS_STUB_LOG") or os.environ.get("RW_STUB_LOG")
+    log = os.environ.get("AWS_STUB_LOG")
     if log:  # tests read the argv list of every call, in order
         with open(log, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(wanted) + "\n")

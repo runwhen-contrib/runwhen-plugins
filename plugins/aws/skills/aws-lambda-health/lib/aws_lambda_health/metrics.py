@@ -1,10 +1,23 @@
 """function-metrics: the Lambda CloudWatch metrics of one function over a look-back window.
 
-Four get-metric-statistics calls (AWS/Lambda Invocations, Errors, Throttles, Duration) over the
-same window. One call that fails (throttled, forbidden) leaves its metrics null and is reported by
-the caller as an error scoped to the metric; the others stand. A metric with no datapoints is not
-zero: Lambda publishes a metric only while the function is invoked, so `datapoints` is reported
-beside every value."""
+Five get-metric-statistics calls (AWS/Lambda Invocations, Errors, Throttles, Duration,
+ConcurrentExecutions) over the same window. One call that fails (throttled, forbidden) leaves its
+metrics null and is reported by the caller as an error scoped to the metric; the others stand.
+
+No data is not health. Lambda publishes a metric only while the function is invoked, so a window
+with no Invocations datapoints says nothing about errors: `invocations` is 0 with `hasData: false`
+and `idle: true`, and errors, throttles, the error rate and every threshold boolean are null (not
+0, not false). Only when Invocations has datapoints does a metric with none of its own (Errors,
+Throttles) count as 0; a metric that has datapoints of its own is always reported (a function
+throttled completely has Throttles datapoints and no Invocations, because throttled calls are not
+counted as invocations). The dimension is the function's plain name: CloudWatch publishes AWS/Lambda
+metrics under `FunctionName=<name>`, an ARN there matches nothing and would read as no data; the
+function's existence in the target account is checked first through its ARN (config.read_config).
+
+Periods: 300 s up to a 3-day window, 3600 s above (GetMetricStatistics returns at most 1440
+datapoints). The window is `[now - since, now]` and is not aligned to the period, so the first
+datapoint can cover less than a full period (a partial first bucket) and the last is still
+filling: the totals are of the window, a single datapoint is not a full period of load."""
 
 from datetime import timedelta, timezone
 
@@ -18,6 +31,7 @@ METRICS = (
     ("Errors", ("Sum",)),
     ("Throttles", ("Sum",)),
     ("Duration", ("Average", "Maximum", "SampleCount")),
+    ("ConcurrentExecutions", ("Maximum",)),
 )
 MAX_FIVE_MINUTE_SECONDS = 3 * 86400  # up to here 5-minute periods (864 datapoints at most)
 
@@ -38,8 +52,9 @@ def iso(moment):
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def read_metric(ctx, region, function, metric, statistics, start, end, period):
-    """The datapoints of one metric: a list of dicts as CloudWatch returns them."""
+def read_metric(ctx, target, metric, statistics, start, end, period):
+    """The datapoints of one metric of the function `target`: a list of dicts as CloudWatch
+    returns them. The dimension is the function name (see the module docstring)."""
     doc = aws_json(
         ctx,
         [
@@ -50,7 +65,7 @@ def read_metric(ctx, region, function, metric, statistics, start, end, period):
             "--metric-name",
             metric,
             "--dimensions",
-            f"Name=FunctionName,Value={function}",
+            f"Name=FunctionName,Value={target.name}",
             "--start-time",
             iso(start),
             "--end-time",
@@ -60,7 +75,7 @@ def read_metric(ctx, region, function, metric, statistics, start, end, period):
             "--statistics",
             *statistics,
         ],
-        region=region,
+        region=target.region,
     )
     points = doc.get("Datapoints") if isinstance(doc, dict) else None
     if not isinstance(points, list):
@@ -93,28 +108,41 @@ def duration_facts(points):
     }
 
 
+def count_of(points, has_data):
+    """The sum of a count metric: None when its call failed; its own total when it has
+    datapoints; otherwise 0 only when Invocations has datapoints (the function ran and the metric
+    was not published, which is 0) and None when it does not (nothing is known)."""
+    if points is None:
+        return None
+    if points:
+        return total(points)
+    return 0 if has_data else None
+
+
 def summarize(points_by_metric, start, end, period, timeout_seconds, st):
     """The `metrics` output from the datapoints of each metric (None: that call failed).
 
-    The booleans are the threshold crossings the settings define: errorRateAboveThreshold,
-    throttlesAboveThreshold, durationNearTimeout. A boolean is null when the numbers it needs
-    were not read."""
+    The booleans are the threshold crossings the settings define: errorRateAboveThreshold
+    (rate > errorRateThreshold), throttlesAboveThreshold (throttles >= throttleThreshold) and
+    durationNearTimeout. A boolean is null when the numbers it needs were not read or there is
+    nothing to compare (no invocations), never false by default."""
     inv_points = points_by_metric.get("Invocations")
-    err_points = points_by_metric.get("Errors")
-    thr_points = points_by_metric.get("Throttles")
-    dur_points = points_by_metric.get("Duration")
+    has_data = None if inv_points is None else bool(inv_points)
     invocations = None if inv_points is None else total(inv_points)
-    errors = None if err_points is None else total(err_points)
-    throttles = None if thr_points is None else total(thr_points)
+    errors = count_of(points_by_metric.get("Errors"), has_data)
+    throttles = count_of(points_by_metric.get("Throttles"), has_data)
+    dur_points = points_by_metric.get("Duration")
     duration = None if dur_points is None else duration_facts(dur_points)
+    conc_points = points_by_metric.get("ConcurrentExecutions")
+    concurrent_max = (
+        round(max(p.get("Maximum") or 0 for p in conc_points), 2) if conc_points else None
+    )
     rate = None
     if invocations and errors is not None:
         rate = round(errors / invocations, 4)
     near_timeout = None
     if duration is not None and duration["maxMs"] is not None and timeout_seconds:
         near_timeout = duration["maxMs"] >= st.duration_timeout_ratio * timeout_seconds * 1000
-    elif duration is not None and duration["maxMs"] is None:
-        near_timeout = False
     return {
         "window": {
             "start": iso(start),
@@ -122,20 +150,19 @@ def summarize(points_by_metric, start, end, period, timeout_seconds, st):
             "seconds": int((end - start).total_seconds()),
         },
         "periodSeconds": period,
+        "hasData": has_data,
+        "idle": None if invocations is None else invocations == 0,
         "invocations": invocations,
         "errors": errors,
         "throttles": throttles,
         "errorRate": rate,
         "duration": duration,
+        "concurrentExecutionsMax": _number(concurrent_max) if concurrent_max is not None else None,
         "timeoutSeconds": timeout_seconds,
         "datapoints": {
             name: (None if pts is None else len(pts)) for name, pts in points_by_metric.items()
         },
-        "errorRateAboveThreshold": (
-            None
-            if errors is None or invocations is None
-            else (rate is not None and rate >= st.error_rate_threshold)
-        ),
+        "errorRateAboveThreshold": None if rate is None else rate > st.error_rate_threshold,
         "throttlesAboveThreshold": None
         if throttles is None
         else throttles >= st.throttle_threshold,

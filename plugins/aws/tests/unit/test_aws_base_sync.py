@@ -110,11 +110,12 @@ def test_with_the_credential_it_opens_sends_the_batches_and_commits(
     }
     assert http.requests[0][1]["Authorization"] == "Bearer tok-SECRET"
     assert [i["identity"]["chain"][-1]["type"] for i in http.requests[1][2]["items"]] == [
-        "account", "region", "lambda-function", "lambda-function",
+        "account", "region", "lambda-function", "lambda-function", "region",
     ]  # fmt: skip
     commit = http.requests[2][2]
     assert [(p["type"], p["status"]) for p in commit["partitions"]] == [
         ("region", "complete"),
+        ("lambda-function", "complete"),
         ("lambda-function", "complete"),
     ]
     assert json.loads(run.files["sync.json"])["commit"]["summary"] == commit["summary"]
@@ -177,3 +178,29 @@ def test_discovers_timeout_covers_its_calls_and_its_push():
     doc = yaml.safe_load((PLUGIN / "skills" / "aws-base" / "tasks.yaml").read_text())
     task = next(t for t in doc["tasks"] if t["name"] == "discover")
     assert task["timeout"] == f"{budget.TASK_BUDGET}s"
+
+
+def test_a_rejected_function_item_fails_exactly_its_own_regions_partition(
+    run_script, fake_aws, monkeypatch, tmp_path
+):
+    # items: account(0) eu-west-1(1) orders-api(2) report-batch(3) us-east-1(4) thumbnailer(5)
+    http = Http(rejected=[{"index": 2, "code": "parent_missing"}])
+    credential_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(sync, "default_open", http)
+    answer(fake_aws, {"us-east-1": listing("thumbnailer", region="us-east-1")})
+    env_ = discover(run_script).envelope
+    commit = http.requests[-1][2]
+    by_region = {
+        p["parentPath"].rsplit("/", 1)[-1]: p
+        for p in commit["partitions"]
+        if p["type"] == "lambda-function"
+    }
+    # the region that holds the rejected item is failed (nothing under it is swept); the other
+    # region and the region partition itself stand
+    assert by_region["eu-west-1"]["status"] == "failed"
+    assert "parent_missing" in by_region["eu-west-1"]["reason"]
+    assert "count" not in by_region["eu-west-1"]
+    assert by_region["us-east-1"]["status"] == "complete" and by_region["us-east-1"]["count"] == 1
+    assert [p["status"] for p in commit["partitions"] if p["type"] == "region"] == ["complete"]
+    assert env_["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env_["errors"]] == [("internal", "sync")]

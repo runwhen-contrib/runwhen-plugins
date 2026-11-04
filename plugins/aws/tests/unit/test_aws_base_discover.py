@@ -56,7 +56,8 @@ def answer(fake, by_region=None, regions=("eu-west-1", "us-east-1")):
 
 @pytest.fixture(autouse=True)
 def home(monkeypatch):
-    monkeypatch.delenv("AWS_REGION", raising=False)
+    # AWS_REGION is not part of the credential (it is not materialized) and is never read
+    monkeypatch.setenv("AWS_REGION", "ap-northeast-1")
     monkeypatch.delenv("RW_SYNC_CREDENTIAL", raising=False)
 
 
@@ -85,7 +86,7 @@ def test_a_healthy_account_is_ok_with_account_regions_and_a_sync(run_script, fak
         "total": 2,
         "omitted": 0,
     }
-    assert out["summary"]["counts"] == {"account": 1, "region": 1, "lambda-function": 2}
+    assert out["summary"]["counts"] == {"account": 1, "region": 2, "lambda-function": 2}
     assert out["summary"]["root"] == {"canonicalKey": {"name": "accountId", "value": ACCT}}
     assert validate("rw.discovery.summary.v1", out["summary"]) == []
 
@@ -106,24 +107,32 @@ def test_the_sync_artifact_is_a_valid_rw_discovery_v1_document(run_script, fake_
         [("account", "123456789012"), ("region", "eu-west-1")],
         [("account", "123456789012"), ("region", "eu-west-1"), ("lambda-function", "orders-api")],
         [("account", "123456789012"), ("region", "eu-west-1"), ("lambda-function", "report-batch")],
-    ]  # us-east-1 has no function and was read fine: not reported
+        [("account", "123456789012"), ("region", "us-east-1")],
+    ]  # us-east-1 has no function and was read fine: still a region item
     assert items[0]["providerUid"] == ACCT
     assert items[2]["providerUid"] == f"arn:aws:lambda:eu-west-1:{ACCT}:function:orders-api"
     assert (
         items[2]["document"]["runtime"] == "python3.12" and items[2]["status"]["state"] == "Active"
     )
+    # every region that was read is a region item with its own function partition, count 0 included
     assert sync["commit"]["partitions"] == [
         {
             "type": "region",
             "parentPath": "aws/accounts/123456789012",
             "status": "complete",
-            "count": 1,
+            "count": 2,
         },
         {
             "type": "lambda-function",
             "parentPath": "aws/accounts/123456789012/regions/eu-west-1",
             "status": "complete",
             "count": 2,
+        },
+        {
+            "type": "lambda-function",
+            "parentPath": "aws/accounts/123456789012/regions/us-east-1",
+            "status": "complete",
+            "count": 0,
         },
     ]
     assert sync["commit"]["summary"]["root"]["canonicalKey"]["value"] == ACCT
@@ -163,15 +172,19 @@ def test_a_region_the_credential_cannot_list_is_forbidden_and_the_others_stand(
     env = run.envelope
     assert env["status"] == "partial"
     assert [(e["code"], e.get("scope")) for e in env["errors"]] == [
-        ("permission_denied", "ap-south-1")
+        ("permission_denied", "regions")
     ]
+    assert (
+        "ap-south-1" in env["errors"][0]["message"]
+        and "regions setting" in env["errors"][0]["message"]
+    )
     assert env["outputs"]["regions"]["items"][0] == {
         "name": "ap-south-1",
         "status": "forbidden",
         "functions": None,
     }
     summary = env["outputs"]["summary"]
-    assert summary["partitions"] == {"complete": 2, "failed": 0, "forbidden": 1, "excluded": 0}
+    assert summary["partitions"] == {"complete": 3, "failed": 0, "forbidden": 1, "excluded": 0}
     assert validate("rw.discovery.summary.v1", summary) == []
     sync = json.loads(run.files["sync.json"])
     assert validate("rw.discovery.v1", sync) == []
@@ -191,7 +204,9 @@ def test_a_region_the_credential_cannot_list_is_forbidden_and_the_others_stand(
         for i in b["items"]
         if i["identity"]["chain"][-1]["type"] == "region"
     ]
-    assert [i["identity"]["chain"][-1]["name"] for i in region_items] == ["ap-south-1", "eu-west-1"]
+    assert [i["identity"]["chain"][-1]["name"] for i in region_items] == [
+        "ap-south-1", "eu-west-1", "us-east-1",
+    ]  # fmt: skip
     assert region_items[0]["status"] == {"discovery": "forbidden"}
 
 
@@ -285,14 +300,28 @@ def test_a_bad_region_in_the_setting_is_invalid_input_before_any_call(run_script
     assert fake_aws.calls == []
 
 
-def test_the_home_region_is_the_credentials_region(run_script, fake_aws, monkeypatch):
-    monkeypatch.setenv("AWS_REGION", "ap-southeast-2")
+def test_the_account_level_calls_use_the_default_region_setting_not_the_environment(
+    run_script, fake_aws
+):
     answer(fake_aws)
     run = discover(run_script)
-    assert run.envelope["outputs"]["account"]["homeRegion"] == "ap-southeast-2"
+    assert run.envelope["outputs"]["account"]["homeRegion"] == "us-east-1"
+    assert {c["region"] for c in fake_aws.calls if c["words"][0] in ("sts", "ec2")} == {"us-east-1"}
+    fake_aws.calls.clear()
+    fake_aws.handlers.clear()
+    answer(fake_aws)
+    run = discover(run_script, settings={"defaultRegion": "eusc-de-east-1"})
+    assert run.envelope["outputs"]["account"]["homeRegion"] == "eusc-de-east-1"
     assert {c["region"] for c in fake_aws.calls if c["words"][0] in ("sts", "ec2")} == {
-        "ap-southeast-2"
+        "eusc-de-east-1"
     }
+
+
+@pytest.mark.parametrize("bad", ["us_east_1", "", "US-EAST-1", "us-east-1; rm"])
+def test_a_bad_default_region_is_invalid_input_before_any_call(run_script, fake_aws, bad):
+    env = discover(run_script, settings={"defaultRegion": bad}).envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["invalid_input"]
+    assert fake_aws.calls == []
 
 
 def test_regions_beyond_max_items_are_counted_and_still_synced(run_script, fake_aws):
@@ -315,25 +344,52 @@ def test_over_500_items_go_in_ordered_batches_of_at_most_500(run_script, fake_aw
                 "--starting-token", token, region="eu-west-1", body=second)  # fmt: skip
     answer(fake_aws, {"eu-west-1": first})
     sync = json.loads(discover(run_script).files["sync.json"])
-    assert [len(b["items"]) for b in sync["batches"]] == [500, 500, 302]
+    assert [len(b["items"]) for b in sync["batches"]] == [500, 500, 303]
     assert [b["seq"] for b in sync["batches"]] == [1, 2, 3]
     assert validate("rw.discovery.v1", sync) == []
 
 
-def test_an_account_with_no_functions_still_syncs_the_account(run_script, fake_aws):
+def test_an_account_with_no_functions_syncs_its_regions_and_sweeps_what_was_there(
+    run_script, fake_aws
+):
     answer(fake_aws, {"eu-west-1": listing()})
     run = discover(run_script)
     assert run.envelope["status"] == "ok"
     sync = json.loads(run.files["sync.json"])
-    assert [len(b["items"]) for b in sync["batches"]] == [1]
+    assert [len(b["items"]) for b in sync["batches"]] == [3]  # the account and its two regions
     assert sync["commit"]["partitions"] == [
         {
             "type": "region",
             "parentPath": "aws/accounts/123456789012",
             "status": "complete",
+            "count": 2,
+        },
+        {
+            "type": "lambda-function",
+            "parentPath": "aws/accounts/123456789012/regions/eu-west-1",
+            "status": "complete",
             "count": 0,
-        }
-    ]
+        },
+        {
+            "type": "lambda-function",
+            "parentPath": "aws/accounts/123456789012/regions/us-east-1",
+            "status": "complete",
+            "count": 0,
+        },
+    ]  # a complete partition of count 0: functions an earlier run found there are swept
+
+
+def test_a_failed_or_forbidden_region_keeps_a_partition_that_sweeps_nothing(run_script, fake_aws):
+    fake_aws.on("lambda", "list-functions", region="ap-south-1", rc=254, stderr=DENIED)
+    fake_aws.on("lambda", "list-functions", region="eu-west-1", rc=254, stderr=THROTTLED)
+    answer(fake_aws, regions=("ap-south-1", "eu-west-1", "us-east-1"))
+    sync = json.loads(discover(run_script).files["sync.json"])
+    status = {
+        p["parentPath"].rsplit("/", 1)[-1]: p["status"]
+        for p in sync["commit"]["partitions"]
+        if p["type"] == "lambda-function"
+    }
+    assert status == {"ap-south-1": "forbidden", "eu-west-1": "failed", "us-east-1": "complete"}
 
 
 @pytest.mark.parametrize(
@@ -360,7 +416,7 @@ def test_discover_against_the_stub_healthy(run_with_stub):
     assert run.envelope["status"] == "ok", run.envelope["errors"]
     assert run.envelope["outputs"]["summary"]["counts"] == {
         "account": 1,
-        "region": 1,
+        "region": 3,
         "lambda-function": 2,
     }
 
@@ -395,11 +451,10 @@ def test_discover_declares_exactly_the_iam_actions_its_calls_need(run_script, fa
     discover(run_script)
     needed = {iam_action(c["words"]) for c in fake_aws.calls} - {None}
     task = next(t for t in tasks_doc()["tasks"] if t["name"] == "discover")
-    assert (
-        {p["action"] for p in task["permissions"]}
-        == needed
-        == {"ec2:DescribeRegions", "lambda:ListFunctions"}
-    )
+    # ec2:DescribeRegions is needed only while the regions setting is empty: see
+    # test_describe_regions_is_needed_only_without_the_regions_setting
+    assert {p["action"] for p in task["permissions"]} == needed - {"ec2:DescribeRegions"}
+    assert needed == {"ec2:DescribeRegions", "lambda:ListFunctions"}
 
 
 def test_the_entry_points_name_tasks_that_exist():
@@ -456,3 +511,90 @@ def test_the_account_and_region_outputs_fit_their_schemas(run_script, fake_aws):
             (PLUGIN / "skills" / "aws-base" / "schemas" / f"{name}.v1.json").read_text()
         )
         jsonschema.validate(out[name], schema)
+
+
+# --- the credential is the target's, M5 --------------------------------------------------------------
+
+
+def test_a_credential_for_another_account_than_the_target_fails_before_any_region_is_read(
+    run_script, fake_aws
+):
+    other = {"path": "aws/accounts/210987654321", "type": "aws/account", "name": "210987654321"}
+    answer(fake_aws)
+    env = run_script("aws-base", "discover", resource=other).envelope
+    assert env["status"] == "failed" and env["outputs"] == {}
+    assert [e["code"] for e in env["errors"]] == ["permission_denied"]
+    assert (
+        env["errors"][0]["message"]
+        == "credential is for account 123456789012, target is 210987654321"
+    )
+    assert fake_aws.words() == [["sts", "get-caller-identity"]]  # no region, no sync
+
+
+def test_a_target_named_by_an_alias_cannot_be_compared_and_is_let_through(run_script, fake_aws):
+    alias = {"path": "aws/accounts/prod", "type": "aws/account", "name": "prod"}
+    answer(fake_aws)
+    env = run_script("aws-base", "discover", resource=alias).envelope
+    assert env["status"] == "ok"
+
+
+# --- the read deadline, many denied regions, ec2:DescribeRegions only when needed -------------------
+
+
+def test_the_region_loop_has_a_deadline_and_the_unread_regions_are_failed_not_empty(
+    run_script, fake_aws, monkeypatch
+):
+    monkeypatch.setattr(dc, "READ_BUDGET", 0)
+    answer(fake_aws)
+    run = discover(run_script)
+    env = run.envelope
+    assert env["status"] == "partial"
+    assert {(e["code"], e["scope"]) for e in env["errors"]} == {
+        ("timeout", "eu-west-1"), ("timeout", "us-east-1"),
+    }  # fmt: skip
+    assert [w for w in fake_aws.words() if w[1] == "list-functions"] == []
+    assert {r["status"] for r in env["outputs"]["regions"]["items"]} == {"failed"}
+
+
+def test_each_region_call_gets_at_most_what_is_left_of_the_read_budget(
+    run_script, fake_aws, monkeypatch
+):
+    monkeypatch.setattr(dc, "READ_BUDGET", 20)
+    answer(fake_aws)
+    discover(run_script)
+    timeouts = [c["timeout"] for c in fake_aws.calls if c["words"][1] == "list-functions"]
+    assert timeouts and all(0 < t <= 20 for t in timeouts)
+
+
+def test_many_denied_regions_are_one_error_that_lists_them(run_script, fake_aws):
+    names = ("ap-south-1", "ap-southeast-1", "eu-north-1", "eu-west-1", "us-east-1")
+    for region in names[:4]:
+        fake_aws.on("lambda", "list-functions", region=region, rc=254, stderr=DENIED)
+    answer(fake_aws, regions=names)
+    env = discover(run_script).envelope
+    assert env["status"] == "partial" and len(env["errors"]) == 1
+    error = env["errors"][0]
+    assert (error["code"], error["scope"]) == ("permission_denied", "regions")
+    assert (
+        all(name in error["message"] for name in names[:4]) and "us-east-1" not in error["message"]
+    )
+    assert "4 region(s)" in error["message"]
+    assert env["outputs"]["summary"]["partitions"]["forbidden"] == 4
+    assert [e["scope"] for e in env["outputs"]["summary"]["errors"]] == ["regions"]
+
+
+def test_describe_regions_is_needed_only_without_the_regions_setting(run_script, fake_aws):
+    task = next(t for t in tasks_doc()["tasks"] if t["name"] == "discover")
+    declared = {p["action"] for p in task["permissions"]}
+    answer(fake_aws)
+    discover(run_script)
+    all_regions = {iam_action(c["words"]) for c in fake_aws.calls} - {None}
+    fake_aws.calls.clear()
+    discover(run_script, settings={"regions": ["eu-west-1"]})
+    narrowed = {iam_action(c["words"]) for c in fake_aws.calls} - {None}
+    # a static list cannot say "when": ec2:DescribeRegions is a conditional note, not declared
+    assert all_regions - narrowed == {"ec2:DescribeRegions"}
+    assert declared == narrowed == {"lambda:ListFunctions"}
+    assert "ec2:DescribeRegions" in task["description"] or "ec2:DescribeRegions" in json.dumps(
+        tasks_doc()["settings"]["regions"]
+    )

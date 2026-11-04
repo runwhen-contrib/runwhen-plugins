@@ -77,6 +77,8 @@ class FakeAws:
                 rc, out, err = handler["answers"][0]
                 if len(handler["answers"]) > 1:
                     handler["answers"].pop(0)
+                if rc == "timeout":  # what ctx.run raises when the call outlives its timeout
+                    raise subprocess.TimeoutExpired(argv, timeout)
                 return subprocess.CompletedProcess(argv, rc, out, err)
         raise AssertionError(f"no fake answer for aws {' '.join(words)} --region {region}")
 
@@ -109,7 +111,7 @@ def run_script(fake_aws):
 
 
 DEFAULT_SETTINGS = {
-    "aws-base": {"maxItems": 200, "regions": []},
+    "aws-base": {"maxItems": 200, "regions": [], "defaultRegion": "us-east-1"},
     "aws-lambda-health": {
         "maxItems": 200,
         "maxLogEvents": 50,
@@ -120,14 +122,30 @@ DEFAULT_SETTINGS = {
     },
 }
 
+# `aws <service>` -> the IAM service prefix (`aws s3api` is s3; the rest are their own prefix)
 IAM_PREFIX = {
     "lambda": "lambda",
     "ec2": "ec2",
     "cloudwatch": "cloudwatch",
     "logs": "logs",
     "sts": "sts",
+    "s3": "s3",
+    "s3api": "s3",
+    "sqs": "sqs",
+    "eks": "eks",
+    "ce": "ce",
+    "elasticache": "elasticache",
 }
 NEEDS_NO_PERMISSION = {("sts", "get-caller-identity")}
+# an operation whose IAM action is not its CamelCased name
+IAM_ACTION = {
+    ("s3api", "list-buckets"): "s3:ListAllMyBuckets",
+    ("s3api", "head-bucket"): "s3:ListBucket",
+    ("s3api", "head-object"): "s3:GetObject",
+    ("s3api", "list-objects"): "s3:ListBucket",
+    ("s3api", "list-objects-v2"): "s3:ListBucket",
+    ("s3api", "list-object-versions"): "s3:ListBucketVersions",
+}
 
 
 def iam_action(words):
@@ -135,6 +153,8 @@ def iam_action(words):
     service, operation = words[0], words[1]
     if (service, operation) in NEEDS_NO_PERMISSION:
         return None
+    if (service, operation) in IAM_ACTION:
+        return IAM_ACTION[service, operation]
     return f"{IAM_PREFIX[service]}:{''.join(p.capitalize() for p in operation.split('-'))}"
 
 

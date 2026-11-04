@@ -6,20 +6,30 @@ answers each call from canned files under `scenarios/`. The plugin is **stub-rec
 against a real account when a credential exists (plan Appendix C5).
 
 ```
-# record one fixture (from the repo root; AWS_REGION unset so the home region is us-east-1)
-PATH=$PWD/plugins/aws/tests/stub/bin:$PATH AWS_STUB_SCENARIO=healthy \
-  rwtask test aws-lambda-health/function-config --plugin-dir plugins/aws --record --scenario healthy \
-  --resource aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
+# record one fixture, always through the harness (from the repo root)
+plugins/aws/tests/stub/record.sh aws-lambda-health/function-config healthy healthy \
+  aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
+#                                   <task>                       <fixture> <scenario> <resource>
 
 # replay: the stub is not needed (replay uses the recorded calls)
 rwtask test aws-lambda-health --plugin-dir plugins/aws
+
+# check the canned CLI output against the pinned CLI in the runtime image (needs docker)
+plugins/aws/tests/stub/verify/verify.sh
 ```
+
+`record.sh` is the only way to record: it puts `bin` first on PATH, names the scenario in
+`AWS_STUB_SCENARIO`, drops every other `AWS_*` variable of the caller (so no real account, profile or
+endpoint reaches a recording), refuses to start unless `aws` resolves to the stub, and passes
+`--record --force`. A recording starts with a minimal `expect` (status and error codes); add the
+`expect.outputs` that matter after it. Never run a bare `rwtask test --record` here.
 
 ## How a call is answered
 
 The scenario is named by `AWS_STUB_SCENARIO`, not `RW_STUB_SCENARIO`: the real runner strips every
 `RW_*` variable from the task it starts, so a `RW_` name never reaches the stub under `rwtask run`
-or `rwtask test --record` (the stub still accepts `RW_STUB_SCENARIO` as an alias for direct use).
+or `rwtask test --record`. The stub accepts no alias: with `AWS_STUB_SCENARIO` unset (or empty) it
+refuses to run and exits 2, so a recording can never silently use a default scenario.
 
 `bin/aws` (python3 -I, standard library only) normalises the argv, finds it in
 `scenarios/$AWS_STUB_SCENARIO/calls.yaml` and prints the canned `stdout` file and `stderr` text and
@@ -52,23 +62,34 @@ us-east-1; the function of the health skill is `orders-api` in eu-west-1.
 
 | Scenario | What it models |
 | --- | --- |
-| `healthy` | Two functions in eu-west-1, the others empty; `orders-api` Active on python3.12, invoked, no errors, no matching log events |
-| `broken` | `orders-api` on python3.8 with failed last update, KMS env error, 8% errors, throttles, durations at the timeout; 50 error events (credential-looking text, a 1200-character line) with a `NextToken` |
+| `healthy` | Two functions in eu-west-1, the others empty; `orders-api` Active on python3.12, invoked, no errors, no reserved concurrency, no matching log events |
+| `broken` | `orders-api` on python3.8 with failed last update, KMS env error, reserved concurrency 5 and a FAILED provisioned config on alias `live`, 8% errors, throttles, durations at the timeout; 50 error events (credential-looking text, a 1200-character line) with a `NextToken` |
 | `forbidden` | sts works; ec2 `UnauthorizedOperation`, lambda `AccessDeniedException` |
 | `not-found` | `get-function-configuration` of `nope`: `ResourceNotFoundException` |
-| `no-log-group` | `report-batch` exists, has never run: no datapoints, `ResourceNotFoundException` for the log group |
+| `no-log-group` | `report-batch` exists, has never run: no datapoints (idle, not healthy), `ResourceNotFoundException` for the log group |
 | `logs-forbidden` | configuration readable, `logs:FilterLogEvents` denied |
 | `throttled` | `TooManyRequestsException` / `Throttling` / `ThrottlingException` after `(reached max retries: 2)` for one region, one metric and the logs |
 | `expired` | `ExpiredToken` (STS) / `ExpiredTokenException` |
 | `partial` | an SCP denies `lambda:ListFunctions` in ap-south-1 (explicit deny wording) |
 | `paged` | the eu-west-1 function list takes two pages (`NextToken` then `--starting-token`) |
 
-## Where the error text comes from
+## Where the canned output comes from (plan C7)
 
-The stderr of the failure scenarios is the text of aws CLI **2.39.3**, captured from the pinned
-runtime image against a local HTTP endpoint that answered with the real error bodies: a blank line,
-`aws: [ERROR]: An error occurred (<Code>) when calling the <Operation> operation: <message>`, exit
-code 254; `(reached max retries: 2)` after the operation when the CLI gave up retrying a throttle;
-rc 253 `Unable to locate credentials` and rc 255 `Could not connect to the endpoint URL` are
-exercised by the unit tests. The IAM wording of `<message>` follows
+Canned output is the pinned CLI's, not typed from memory. `verify/verify.sh` runs aws CLI
+**2.39.3** in the runtime image (`rwp-runtime-aws:dev`, as uid 65532 on a read-only root, no network
+but loopback) against a fake HTTP endpoint that answers in each service's own wire protocol
+(Lambda rest-json, Logs json 1.1, CloudWatch json 1.0, STS query, EC2 ec2), once for every call of
+every scenario. It turns each canned file back into the API response its `--query` projection comes
+from (adding what the projection must drop, such as a function's environment variables) and
+compares what the CLI prints with the file: the key order, padding, `null`s, number formatting, and
+for failures the stderr text and exit code. `verify.sh --write` replaces a file with the CLI's
+output. It found that `ec2 describe-regions` prints `OptInStatus, RegionName, Endpoint` (not the
+documented order) and that the CLI prints **nothing** for an empty `get-function-concurrency`
+response (`lambda-get-function-concurrency.json` in `healthy` is an empty file on purpose). Only the
+`paged` scenario's `list-functions` answers are skipped: their `NextToken` is the CLI's own
+encoding of its page state. Failure stderr is a blank line, `aws: [ERROR]: An error occurred
+(<Code>) when calling the <Operation> operation: <message>`, exit code 254, with `(reached max
+retries: 2)` after the operation when the CLI gave up retrying a throttle; rc 253 `Unable to locate
+credentials` and rc 255 `Could not connect to the endpoint URL` are exercised by the unit tests.
+The IAM wording of `<message>` follows
 https://docs.aws.amazon.com/IAM/latest/UserGuide/troubleshoot_access-denied.html.

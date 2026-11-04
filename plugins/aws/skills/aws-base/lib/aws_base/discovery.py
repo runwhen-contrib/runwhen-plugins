@@ -4,22 +4,21 @@ rw.discovery.v1 sync.
 The aws calls return plain facts; `build_sync` turns them into the recorded sync (open, item
 batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync").
 
-Region is a type (integrations/aws types.yaml). A region is reported when it holds at least one
-function, or when it could not be read: a region that is forbidden (an SCP) or failed keeps its
-region item, so a later complete sweep does not delete what an earlier run found there, and its
-function partition says `forbidden` or `failed` instead of `complete`."""
+Region is a type (integrations/aws types.yaml). Every region that was tried is a region
+item with its own function partition: `complete` (also with count 0, so functions an earlier run
+found there are swept when they are gone), or `forbidden` / `failed` when it could not be read, in
+which case nothing under it is swept."""
 
-import os
 import time
 
-from .awscli import aws_json, aws_paged, check_region
+from .awscli import DEFAULT_TIMEOUT, aws_json, aws_paged, check_region
 from .errors import RwError
 
 PLATFORM = "aws"
 SOURCE = "aws-base/discover"
 BATCH = 500  # items per batch (rw.discovery.v1 itemsBatch)
 CANONICAL_KEY = "accountId"
-DEFAULT_REGION = "us-east-1"
+READ_BUDGET = 420  # seconds the region loop may take; the rest of the task's 600s is for the push
 
 # One projection per call, so no response carries more than the fields below: list-functions
 # also returns each function's Environment variables, which this task never needs or keeps.
@@ -43,12 +42,6 @@ def target_name(resource):
     return str(resource["name"])
 
 
-def home_region(environ=None):
-    """The region for account-level calls: the connection's AWS_REGION, else us-east-1."""
-    value = (os.environ if environ is None else environ).get("AWS_REGION") or DEFAULT_REGION
-    return check_region(value)
-
-
 def read_identity(ctx, region):
     """{accountId, callerArn} from sts get-caller-identity (it needs no IAM permission, so a
     failure here is the credential: expired, invalid, missing)."""
@@ -58,6 +51,17 @@ def read_identity(ctx, region):
         raise RwError("internal", "sts get-caller-identity returned no 12-digit account id")
     arn = doc.get("Arn")
     return {"accountId": account, "callerArn": arn if isinstance(arn, str) else None}
+
+
+def check_target_account(name, identity):
+    """The credential must be the target's: an aws/account is named by its 12-digit id, and a
+    credential for another account would otherwise sync that account's functions under this
+    root. A name that is not an account id (an alias) cannot be compared and is let through."""
+    if name.isdigit() and len(name) == 12 and name != identity["accountId"]:
+        raise RwError(
+            "permission_denied",
+            f"credential is for account {identity['accountId']}, target is {name}",
+        )
 
 
 def enabled_regions(ctx, region):
@@ -89,7 +93,7 @@ def function_facts(row):
     }
 
 
-def read_region(ctx, region):
+def read_region(ctx, region, timeout=None):
     """The functions of one region: {name, status, functions[], error?}. A region the caller
     cannot read is `forbidden` (permission_denied) or `failed` (anything else), with the error;
     it does not stop the other regions."""
@@ -99,6 +103,7 @@ def read_region(ctx, region):
             ["lambda", "list-functions", "--query", FUNCTIONS_QUERY],
             region=region,
             items_key="Functions",
+            timeout=timeout,
         )
     except RwError as exc:
         status = "forbidden" if exc.code == "permission_denied" else "failed"
@@ -142,23 +147,18 @@ def region_listing(scans, limit):
     return {"items": items, "total": total, "omitted": omitted}
 
 
-def reported(scans):
-    """The scans that become region items: those with functions and those that could not be read."""
-    return [s for s in scans if s["functions"] or s["status"] != "ok"]
-
-
 def partitions(path, scans, regions_complete):
-    """What a full sync of the account sweeps: its regions, and each reported region's functions."""
-    shown = reported(scans)
+    """What a full sync of the account sweeps: its regions, and the functions of every region that
+    was tried (an `ok` region with no function is a complete partition of count 0)."""
     out = [
         {
             "type": "region",
             "parentPath": path,
             "status": "complete" if regions_complete else "excluded",
-            "count": len(shown),
+            "count": len(scans),
         }
     ]
-    for scan in shown:
+    for scan in scans:
         part = {
             "type": "lambda-function",
             "parentPath": f"{path}/regions/{scan['name']}",
@@ -196,7 +196,7 @@ def build_sync(path, name, identity, scans, regions_complete, summary):
             "document": {"accountId": identity["accountId"]},
         }
     ]
-    for scan in reported(scans):
+    for scan in scans:
         region = {"type": "region", "name": scan["name"]}
         item = {
             "identity": {"platform": PLATFORM, "chain": [root, region]},
@@ -243,15 +243,51 @@ def build_sync(path, name, identity, scans, regions_complete, summary):
     }
 
 
+def denied_regions_error(scans):
+    """One permission_denied error for every region the credential may not list (an SCP, a
+    permission boundary, a policy that names regions), or None. Listing them in one error keeps
+    the run's error list short; each region's own partition still says `forbidden`."""
+    names = [s["name"] for s in scans if s["status"] == "forbidden"]
+    if not names:
+        return None
+    shown = ", ".join(names[:40]) + (f" and {len(names) - 40} more" if len(names) > 40 else "")
+    return {
+        "code": "permission_denied",
+        "message": (
+            f"lambda:ListFunctions is denied in {len(names)} region(s): {shown}. A service control "
+            "policy or the credential's policy forbids them; set the regions setting to the "
+            "regions you use to stop reading these"
+        ),
+        "scope": "regions",
+    }
+
+
+def unread(region):
+    """The scan of a region the loop ran out of time for: failed, never reported as empty."""
+    return {
+        "name": region,
+        "status": "failed",
+        "functions": [],
+        "error": {
+            "code": "timeout",
+            "message": f"{region}: not read, the {READ_BUDGET}s budget for reading regions is used up",
+            "scope": region,
+        },
+    }
+
+
 def discover(ctx, settings):
     """Run discovery on the account this task targets; returns the task's outputs and the sync
-    document. A credential that sts rejects, or a region list that cannot be read, raises. A
-    region that cannot be read is a ctx.error scoped to it and discovery goes on."""
+    document. A credential that sts rejects (or that is for another account than the target), or
+    a region list that cannot be read, raises. A region that cannot be read is reported and
+    discovery goes on: the forbidden ones as one error listing them, the others each scoped to
+    their region."""
     started = time.monotonic()
     name = target_name(ctx.resource)
     path = ctx.resource["path"]
-    home = home_region()
+    home = settings.default_region
     identity = read_identity(ctx, home)
+    check_target_account(name, identity)
 
     if settings.regions:
         regions = [{"name": check_region(r), "optInStatus": None} for r in settings.regions]
@@ -261,20 +297,24 @@ def discover(ctx, settings):
         regions_complete = True
     scans = []
     for region in regions:
-        scan = read_region(ctx, region["name"])
+        left = READ_BUDGET - (time.monotonic() - started)
+        if left < 1:
+            scan = unread(region["name"])  # a per-resource loop has a deadline
+        else:
+            scan = read_region(ctx, region["name"], timeout=min(DEFAULT_TIMEOUT, left))
         scan["optInStatus"] = region["optInStatus"]
         scans.append(scan)
-    errors = [s["error"] for s in scans if s["status"] != "ok"]
+    denied = denied_regions_error(scans)
+    errors = ([denied] if denied else []) + [s["error"] for s in scans if s["status"] == "failed"]
     for error in errors:
         ctx.error(error["code"], error["message"], scope=error["scope"])
 
-    shown = reported(scans)
     parts = partitions(path, scans, regions_complete)
     summary = summarize(
         {
             "account": 1,
-            "region": len(shown),
-            "lambda-function": sum(len(s["functions"]) for s in shown),
+            "region": len(scans),
+            "lambda-function": sum(len(s["functions"]) for s in scans),
         },
         parts,
         errors,

@@ -11,8 +11,9 @@ import pytest
 import yaml
 from aws_lambda_health import logs as lg
 from aws_lambda_health import metrics as mx
-from aws_lambda_health.config import CONFIG_QUERY
+from aws_lambda_health.config import CONFIG_QUERY, PROVISIONED_QUERY
 from aws_lambda_health.logtext import MAX_TEXT_CHARS, clip, redact
+from aws_lambda_health.target import lambda_target
 from conftest import FUNCTION, PLUGIN, iam_action
 
 SKILL = PLUGIN / "skills" / "aws-lambda-health"
@@ -75,6 +76,20 @@ def config(**kw):
     return {**base, **kw}
 
 
+def concurrency(fake, reserved=None, provisioned=(), then=None):
+    """Answers the two concurrency reads of function-config (the CLI's output after --query)."""
+    fake.on(
+        "lambda",
+        "get-function-concurrency",
+        body={} if reserved is None else {"ReservedConcurrentExecutions": reserved},
+    )
+    fake.on(
+        "lambda",
+        "list-provisioned-concurrency-configs",
+        body={"ProvisionedConcurrencyConfigs": list(provisioned), "NextToken": None},
+    )
+
+
 def points(metric, rows):
     return {
         "Label": metric,
@@ -94,6 +109,9 @@ def metrics_for(fake, region=REGION, name="orders-api", **overrides):
                 {"SampleCount": 100.0, "Average": 100.0, "Maximum": 500.0},
                 {"SampleCount": 300.0, "Average": 200.0, "Maximum": 900.0},
             ],
+        ),
+        "ConcurrentExecutions": points(
+            "ConcurrentExecutions", [{"Maximum": 7.0}, {"Maximum": 12.0}]
         ),
     }
     for metric, body in bodies.items():
@@ -123,6 +141,9 @@ def events(n, message="[ERROR] boom {i}", start=1730678400000):
     ]
 
 
+ARN = f"arn:aws:lambda:{REGION}:{ACCT}:function:orders-api"
+
+
 def run(run_script, script, **kw):
     return run_script(
         "aws-lambda-health", script, resource=kw.pop("resource", FUNCTION), now=NOW, **kw
@@ -134,6 +155,7 @@ def run(run_script, script, **kw):
 
 def test_function_config_reports_what_lambda_says_as_plain_facts(run_script, fake_aws):
     fake_aws.on("lambda", "get-function-configuration", body=config())
+    concurrency(fake_aws)
     out = run(run_script, "function_config").envelope
     assert out["status"] == "ok" and out["errors"] == []
     fn = out["outputs"]["function"]
@@ -146,21 +168,27 @@ def test_function_config_reports_what_lambda_says_as_plain_facts(run_script, fak
         and fn["logGroup"] == "/aws/lambda/orders-api"
     )
     assert fn["memoryMb"] == 256 and fn["timeoutSeconds"] == 30 and fn["architectures"] == ["arm64"]
-    # one call, narrowed, for the function's own region
+    # the configuration narrowed, then the two concurrency reads: every call by the function's full
+    # ARN (built from the target's account, region and name) and for the function's own region
     assert fake_aws.words() == [
+        ["lambda", "get-function-configuration", "--function-name", ARN, "--query", CONFIG_QUERY],
+        ["lambda", "get-function-concurrency", "--function-name", ARN],
         [
             "lambda",
-            "get-function-configuration",
+            "list-provisioned-concurrency-configs",
             "--function-name",
-            "orders-api",
+            ARN,
             "--query",
-            CONFIG_QUERY,
-        ]
+            PROVISIONED_QUERY,
+            "--max-items",
+            "50",
+        ],
     ]
-    assert fake_aws.calls[0]["region"] == REGION
+    assert {c["region"] for c in fake_aws.calls} == {REGION}
 
 
 def test_function_config_reports_a_broken_function(run_script, fake_aws):
+    concurrency(fake_aws)
     fake_aws.on(
         "lambda",
         "get-function-configuration",
@@ -199,6 +227,7 @@ def test_function_config_never_asks_for_or_returns_environment_variables(run_scr
     leaky = config()
     leaky["Environment"] = {"Variables": {"DB_PASSWORD": "hunter2"}}
     fake_aws.on("lambda", "get-function-configuration", body=leaky)
+    concurrency(fake_aws)
     shown = json.dumps(run(run_script, "function_config").envelope)
     assert "hunter2" not in shown and "DB_PASSWORD" not in shown
 
@@ -206,6 +235,7 @@ def test_function_config_never_asks_for_or_returns_environment_variables(run_scr
 def test_function_config_cuts_long_reasons_to_1024_and_scrubs_them(run_script, fake_aws):
     reason = "password=hunter2 " + "x" * 3000
     fake_aws.on("lambda", "get-function-configuration", body=config(StateReason=reason))
+    concurrency(fake_aws)
     fn = run(run_script, "function_config").envelope["outputs"]["function"]
     assert len(fn["stateReason"]) == 1024 and fn["stateReason"].endswith("...")
     assert "hunter2" not in fn["stateReason"] and fn["textTruncated"] is True
@@ -271,9 +301,11 @@ def test_a_target_that_is_not_a_lambda_function_is_invalid_input_before_any_call
 
 def test_the_region_comes_from_the_path_when_the_resource_has_no_region_field(run_script, fake_aws):
     fake_aws.on("lambda", "get-function-configuration", body=config())
-    resource = {k: v for k, v in FUNCTION.items() if k != "region"}
+    concurrency(fake_aws)
+    resource = {k: v for k, v in FUNCTION.items() if k not in ("region", "account")}
     assert run(run_script, "function_config", resource=resource).envelope["status"] == "ok"
     assert fake_aws.calls[0]["region"] == REGION
+    assert fake_aws.words()[0][3] == ARN  # the account too comes from the path
 
 
 # --- function-metrics --------------------------------------------------------------------------------
@@ -292,7 +324,10 @@ def test_function_metrics_sums_the_datapoints_and_weights_the_average(run_script
         "sampleCount": 400,
     }  # (100*100+300*200)/400
     assert m["errorRate"] == 0.0 and m["timeoutSeconds"] == 30
-    assert m["datapoints"] == {"Invocations": 2, "Errors": 2, "Throttles": 1, "Duration": 2}
+    assert m["datapoints"] == {
+        "Invocations": 2, "Errors": 2, "Throttles": 1, "Duration": 2, "ConcurrentExecutions": 2,
+    }  # fmt: skip
+    assert (m["hasData"], m["idle"], m["concurrentExecutionsMax"]) == (True, False, 12)
     assert (
         m["errorRateAboveThreshold"],
         m["throttlesAboveThreshold"],
@@ -311,7 +346,7 @@ def test_the_window_comes_from_the_runs_clock_and_the_since_input(run_script, fa
     metrics_for(fake_aws)
     run(run_script, "function_metrics", since="6h")
     calls = [c["words"] for c in fake_aws.calls if c["words"][0] == "cloudwatch"]
-    assert len(calls) == 4
+    assert len(calls) == 5
     for words in calls:
         assert words[words.index("--start-time") + 1] == "2026-11-04T06:00:00Z"
         assert words[words.index("--end-time") + 1] == "2026-11-04T12:00:00Z"
@@ -326,6 +361,7 @@ def test_the_window_comes_from_the_runs_clock_and_the_since_input(run_script, fa
     assert (
         stats["Duration"] == ["Average", "Maximum", "SampleCount"] and stats["Errors"][0] == "Sum"
     )
+    assert stats["ConcurrentExecutions"][0] == "Maximum"
 
 
 def test_a_long_window_uses_hourly_periods_to_stay_under_the_datapoint_limit():
@@ -365,6 +401,7 @@ def test_function_metrics_reports_a_broken_function_and_the_threshold_booleans(
         m["throttlesAboveThreshold"],
         m["durationNearTimeout"],
     ) == (True, True, True)
+    assert (m["hasData"], m["idle"]) == (True, False)
 
 
 def test_the_thresholds_are_settings(run_script, fake_aws):
@@ -399,14 +436,105 @@ def test_the_thresholds_are_settings(run_script, fake_aws):
     ) == (True, False, True)
 
 
-def test_a_function_with_no_datapoints_is_not_reported_as_healthy_zero(run_script, fake_aws):
+EMPTY = (0, json.dumps({"Label": "x", "Datapoints": []}), "")
+ALL_EMPTY = {
+    m: EMPTY for m in ("Invocations", "Errors", "Throttles", "Duration", "ConcurrentExecutions")
+}
+
+
+def test_a_window_with_no_invocation_datapoints_is_idle_and_says_nothing_about_errors(
+    run_script, fake_aws
+):
     fake_aws.on("lambda", "get-function-configuration", body=config())
-    empty = (0, json.dumps({"Label": "x", "Datapoints": []}), "")
-    metrics_for(fake_aws, Invocations=empty, Errors=empty, Throttles=empty, Duration=empty)
+    metrics_for(fake_aws, **ALL_EMPTY)
     m = run(run_script, "function_metrics").envelope["outputs"]["metrics"]
-    assert m["datapoints"] == {"Invocations": 0, "Errors": 0, "Throttles": 0, "Duration": 0}
-    assert m["invocations"] == 0 and m["errorRate"] is None and m["duration"]["maxMs"] is None
-    assert m["errorRateAboveThreshold"] is False and m["durationNearTimeout"] is False
+    assert m["datapoints"] == dict.fromkeys(
+        ("Invocations", "Errors", "Throttles", "Duration", "ConcurrentExecutions"), 0
+    )
+    assert (m["invocations"], m["hasData"], m["idle"]) == (0, False, True)
+    # no data is not "no errors": every number and every verdict that needs data is null
+    assert (m["errors"], m["throttles"], m["errorRate"]) == (None, None, None)
+    assert (m["errorRateAboveThreshold"], m["throttlesAboveThreshold"]) == (None, None)
+    assert m["durationNearTimeout"] is None and m["duration"]["maxMs"] is None
+    assert m["concurrentExecutionsMax"] is None
+
+
+def test_a_metric_without_datapoints_counts_as_zero_only_when_invocations_has_datapoints(
+    run_script, fake_aws
+):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    # the function ran (Invocations has data); Lambda published no Errors or Throttles series
+    metrics_for(fake_aws, Errors=EMPTY, Throttles=EMPTY)
+    m = run(run_script, "function_metrics").envelope["outputs"]["metrics"]
+    assert (m["hasData"], m["idle"], m["errors"], m["throttles"]) == (True, False, 0, 0)
+    assert (m["errorRateAboveThreshold"], m["throttlesAboveThreshold"]) == (False, False)
+
+
+def test_a_function_throttled_completely_reports_its_throttles_though_it_has_no_invocations(
+    run_script, fake_aws
+):
+    # throttled calls are not invocations: reserved concurrency 0 leaves Throttles and no Invocations
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    metrics_for(
+        fake_aws,
+        **{**ALL_EMPTY, "Throttles": (0, json.dumps(points("Throttles", [{"Sum": 40.0}])), "")},
+    )
+    m = run(run_script, "function_metrics").envelope["outputs"]["metrics"]
+    assert (m["hasData"], m["idle"], m["throttles"], m["throttlesAboveThreshold"]) == (
+        False, True, 40, True,
+    )  # fmt: skip
+    assert m["errors"] is None and m["errorRateAboveThreshold"] is None
+
+
+def test_when_the_invocations_call_fails_nothing_is_claimed_about_data_or_idleness(
+    run_script, fake_aws
+):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    slow = (254, "", err("Throttling", "GetMetricStatistics", "Rate exceeded", retries=2))
+    metrics_for(fake_aws, Invocations=slow, Throttles=EMPTY)
+    run_ = run(run_script, "function_metrics")
+    m = run_.envelope["outputs"]["metrics"]
+    assert (m["invocations"], m["hasData"], m["idle"]) == (None, None, None)
+    assert m["throttles"] is None and m["errorRate"] is None  # Throttles is empty and unproven
+    assert m["errors"] == 0  # Errors has its own datapoints
+
+
+def test_the_error_rate_threshold_is_exclusive(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    for errors, expected in ((5.0, False), (6.0, True)):  # 5/100 = 0.05 is not above 0.05
+        metrics_for(
+            fake_aws,
+            Invocations=(0, json.dumps(points("Invocations", [{"Sum": 100.0}])), ""),
+            Errors=(0, json.dumps(points("Errors", [{"Sum": errors}])), ""),
+        )
+        m = run(run_script, "function_metrics").envelope["outputs"]["metrics"]
+        assert m["errorRateAboveThreshold"] is expected
+        fake_aws.handlers.clear()
+        fake_aws.on("lambda", "get-function-configuration", body=config())
+
+
+def test_the_metric_dimension_is_the_function_name_not_the_arn(run_script, fake_aws):
+    # CloudWatch publishes AWS/Lambda under FunctionName=<name>; an ARN matches nothing
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    metrics_for(fake_aws)
+    run(run_script, "function_metrics")
+    assert fake_aws.words()[0][3] == ARN
+    for words in [w for w in fake_aws.words() if w[0] == "cloudwatch"]:
+        assert words[words.index("--dimensions") + 1] == "Name=FunctionName,Value=orders-api"
+
+
+def test_concurrent_executions_is_its_own_scoped_failure(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    denied = (254, "", err("AccessDeniedException", "GetMetricStatistics", "not authorized"))
+    metrics_for(fake_aws, ConcurrentExecutions=denied)
+    env = run(run_script, "function_metrics").envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [
+        ("permission_denied", "ConcurrentExecutions")
+    ]
+    m = env["outputs"]["metrics"]
+    assert m["concurrentExecutionsMax"] is None and m["datapoints"]["ConcurrentExecutions"] is None
+    assert m["invocations"] == 400
 
 
 def test_a_missing_function_is_not_found_not_idle(run_script, fake_aws):
@@ -441,7 +569,11 @@ def test_when_every_metric_call_fails_the_task_fails_with_the_first_error(run_sc
             "not authorized to perform: cloudwatch:GetMetricStatistics",
         ),
     )
-    metrics_for(fake_aws, Invocations=denied, Errors=denied, Throttles=denied, Duration=denied)
+    metrics_for(
+        fake_aws,
+        Invocations=denied, Errors=denied, Throttles=denied, Duration=denied,
+        ConcurrentExecutions=denied,
+    )  # fmt: skip
     env = run(run_script, "function_metrics").envelope
     assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["permission_denied"]
     assert env["outputs"] == {}
@@ -689,6 +821,7 @@ def test_the_tasks_are_read_only_aws_tasks_with_the_credential_and_defaults():
 
 def run_all_tasks(run_script, fake_aws):
     fake_aws.on("lambda", "get-function-configuration", body=config())
+    concurrency(fake_aws)
     metrics_for(fake_aws)
     logs_answer(fake_aws, events(2))
     calls = {}
@@ -705,7 +838,9 @@ def test_each_task_declares_exactly_the_iam_actions_its_calls_need(run_script, f
         needed = {iam_action(c["words"]) for c in calls[task["name"].replace("-", "_")]} - {None}
         assert {p["action"] for p in task["permissions"]} == needed, task["name"]
     assert {a for c in calls.values() for a in {iam_action(x["words"]) for x in c}} == {
-        "lambda:GetFunctionConfiguration", "cloudwatch:GetMetricStatistics", "logs:FilterLogEvents",
+        "lambda:GetFunctionConfiguration", "lambda:GetFunctionConcurrency",
+        "lambda:ListProvisionedConcurrencyConfigs", "cloudwatch:GetMetricStatistics",
+        "logs:FilterLogEvents",
     }  # fmt: skip
 
 
@@ -798,6 +933,7 @@ def test_the_broken_scenario_shows_what_the_tasks_detect(run_with_stub):
         "outputs"
     ]["metrics"]
     assert (m["invocations"], m["errors"], m["throttles"]) == (5400, 410, 37)
+    assert m["hasData"] is True and m["idle"] is False and m["concurrentExecutionsMax"] > 0
     assert (
         m["errorRateAboveThreshold"] is True
         and m["throttlesAboveThreshold"] is True
@@ -828,7 +964,8 @@ def test_the_stub_failure_scenarios(run_with_stub):
     m = run_with_stub("aws-lambda-health", "function_metrics", resource=other).envelope["outputs"][
         "metrics"
     ]
-    assert m["invocations"] == 0 and m["datapoints"]["Invocations"] == 0  # idle, and said so
+    # idle, and said so: no data is neither healthy nor an error count of 0
+    assert (m["invocations"], m["hasData"], m["idle"], m["errors"]) == (0, False, True, None)
     run_with_stub.use("logs-forbidden")
     env = run_with_stub("aws-lambda-health", "function_errors", resource=resource).envelope
     assert env["status"] == "partial" and [(e["code"], e["scope"]) for e in env["errors"]] == [
@@ -844,3 +981,284 @@ def test_the_stub_failure_scenarios(run_with_stub):
     run_with_stub.use("expired")
     env = run_with_stub("aws-lambda-health", "function_config", resource=resource).envelope
     assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["permission_denied"]
+
+
+# --- the function ARN, M5 -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("script", ["function_config", "function_metrics", "function_errors"])
+def test_every_task_passes_the_full_arn_built_from_the_target_never_the_credentials_account(
+    run_script, fake_aws, script
+):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    concurrency(fake_aws)
+    metrics_for(fake_aws)
+    logs_answer(fake_aws, events(1))
+    run(run_script, script)
+    named = [w[w.index("--function-name") + 1] for w in fake_aws.words() if "--function-name" in w]
+    assert named and set(named) == {ARN}
+    assert not [w for w in fake_aws.words() if w[0] == "sts"]  # the target decides, not sts
+
+
+@pytest.mark.parametrize(
+    "region,partition",
+    [
+        ("eu-west-1", "aws"),
+        ("us-gov-west-1", "aws-us-gov"),
+        ("cn-north-1", "aws-cn"),
+        ("us-iso-east-1", "aws-iso"),
+        ("eusc-de-east-1", "aws-eusc"),
+    ],
+)
+def test_the_arn_partition_follows_the_region(region, partition):
+    resource = {**FUNCTION, "region": region}
+    target = lambda_target(resource)
+    assert target.arn == f"arn:{partition}:lambda:{region}:{ACCT}:function:orders-api"
+    assert (target.region, target.name, target.account) == (region, "orders-api", ACCT)
+
+
+@pytest.mark.parametrize("account", ["12345", "12345678901a", "", "1234567890123"])
+def test_a_target_without_a_12_digit_account_is_invalid_input_before_any_call(
+    run_script, fake_aws, account
+):
+    resource = {**FUNCTION, "account": account, "path": "aws/functions/orders-api"}
+    env = run(run_script, "function_config", resource=resource).envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["invalid_input"]
+    assert fake_aws.calls == []
+
+
+# --- concurrency, minor 7 ------------------------------------------------------------------------------
+
+
+def provisioned(qualifier="live", **kw):
+    return {
+        "FunctionArn": f"{ARN}:{qualifier}",
+        "Requested": 10,
+        "Available": 10,
+        "Allocated": 10,
+        "Status": "READY",
+        "StatusReason": None,
+        **kw,
+    }
+
+
+def test_function_config_reports_reserved_and_provisioned_concurrency(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    concurrency(
+        fake_aws,
+        reserved=0,
+        provisioned=[
+            provisioned("live"),
+            provisioned("v7", Available=0, Allocated=0, Status="FAILED", StatusReason="x" * 3000),
+        ],
+    )
+    fn = run(run_script, "function_config").envelope["outputs"]["function"]
+    # a reserved concurrency of 0 throttles every call: configured, and zero
+    assert fn["reservedConcurrency"] == {"configured": True, "executions": 0}
+    pc = fn["provisionedConcurrency"]
+    assert (pc["count"], pc["truncated"]) == (2, False)
+    assert pc["configs"][0] == {
+        "qualifier": "live", "requested": 10, "allocated": 10, "available": 10,
+        "status": "READY", "statusReason": None,
+    }  # fmt: skip
+    assert pc["configs"][1]["status"] == "FAILED" and len(pc["configs"][1]["statusReason"]) == 1024
+
+
+def test_no_reserved_concurrency_is_configured_false_not_null(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    concurrency(fake_aws)  # the CLI prints {} for a function with none
+    fn = run(run_script, "function_config").envelope["outputs"]["function"]
+    assert fn["reservedConcurrency"] == {"configured": False, "executions": None}
+    assert fn["provisionedConcurrency"] == {"configs": [], "count": 0, "truncated": False}
+
+
+def test_the_cli_prints_nothing_for_a_function_with_no_reserved_concurrency(run_script, fake_aws):
+    # verified against the pinned CLI (tests/stub/verify): an empty response has an empty stdout
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    fake_aws.on("lambda", "get-function-concurrency", stdout="")
+    fake_aws.on(
+        "lambda",
+        "list-provisioned-concurrency-configs",
+        body={"ProvisionedConcurrencyConfigs": [], "NextToken": None},
+    )
+    fn = run(run_script, "function_config").envelope["outputs"]["function"]
+    assert fn["reservedConcurrency"] == {"configured": False, "executions": None}
+
+
+def test_a_forbidden_concurrency_read_is_a_scoped_error_and_the_configuration_stands(
+    run_script, fake_aws
+):
+    denied = err("AccessDeniedException", "GetFunctionConcurrency", "not authorized")
+    throttled = err("TooManyRequestsException", "ListProvisionedConcurrencyConfigs", "x", retries=2)
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    fake_aws.on("lambda", "get-function-concurrency", rc=254, stderr=denied)
+    fake_aws.on("lambda", "list-provisioned-concurrency-configs", rc=254, stderr=throttled)
+    env = run(run_script, "function_config").envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [
+        ("permission_denied", "reservedConcurrency"),
+        ("rate_limited", "provisionedConcurrency"),
+    ]
+    fn = env["outputs"]["function"]
+    assert fn["reservedConcurrency"] is None and fn["provisionedConcurrency"] is None  # not read
+    assert fn["runtime"] == "python3.12"
+
+
+def test_provisioned_concurrency_is_cut_at_50_and_says_so(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    fake_aws.on("lambda", "get-function-concurrency", body={})
+    fake_aws.on(
+        "lambda",
+        "list-provisioned-concurrency-configs",
+        body={
+            "ProvisionedConcurrencyConfigs": [provisioned(f"v{i}") for i in range(50)],
+            "NextToken": "more",
+        },
+    )
+    pc = run(run_script, "function_config").envelope["outputs"]["function"][
+        "provisionedConcurrency"
+    ]
+    assert (pc["count"], pc["truncated"]) == (50, True)
+
+
+# --- function-errors: a timed out page, a leading dash, minor 6 -----------------------------------------
+
+
+def test_a_page_that_times_out_keeps_the_matches_already_found(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    page = json.dumps({"events": events(3), "NextToken": "t1"})
+    fake_aws.on(*LOGS, stdout=page, then=[("timeout", "", "")])
+    env = run(run_script, "function_errors").envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("timeout", "logs")]
+    assert "3 matching events" in env["errors"][0]["message"]
+    logs = env["outputs"]["logs"]
+    assert (logs["matched"], logs["truncated"], logs["logGroupFound"]) == (3, True, True)
+
+
+def test_a_first_page_that_times_out_has_nothing_to_keep_and_fails_the_task(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    fake_aws.on(*LOGS, rc="timeout")
+    env = run(run_script, "function_errors").envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["timeout"]
+
+
+def test_a_page_that_is_throttled_after_matches_still_fails_the_task(run_script, fake_aws):
+    # only a timeout keeps the partial list; a throttle is retried by the next run
+    fake_aws.on("lambda", "get-function-configuration", body=config())
+    page = json.dumps({"events": events(3), "NextToken": "t1"})
+    fake_aws.on(*LOGS, stdout=page, then=[(254, "", THROTTLED)])
+    env = run(run_script, "function_errors").envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["rate_limited"]
+
+
+@pytest.mark.parametrize("pattern", ["-ERROR", "--profile", "-"])
+def test_a_pattern_that_starts_with_a_dash_is_invalid_input_before_any_call(
+    run_script, fake_aws, pattern
+):
+    env = run(run_script, "function_errors", settings={"errorPattern": pattern}).envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["invalid_input"]
+    assert "'-'" in env["errors"][0]["message"] and fake_aws.calls == []
+
+
+def test_a_log_group_that_starts_with_a_dash_is_refused_before_the_logs_call(run_script, fake_aws):
+    fake_aws.on("lambda", "get-function-configuration", body=config(LogGroup="-x"))
+    env = run(run_script, "function_errors").envelope
+    assert env["status"] == "failed" and [e["code"] for e in env["errors"]] == ["invalid_input"]
+    assert [w[0] for w in fake_aws.words()] == ["lambda"]
+
+
+# --- the scrub, M4: one test per shape --------------------------------------------------------------------
+
+SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+
+@pytest.mark.parametrize(
+    "text,gone",
+    [
+        # quotes around keys and values: a Python dict repr and JSON with a spaced colon
+        ("{'password': 'hunter2'}", "hunter2"),
+        ("""{'api_key':'sk-123456'}""", "sk-123456"),
+        ('{"token" : "abcdef123"}', "abcdef123"),
+        ("""{'aws_secret_access_key': 'wJalrXUtnFEMI/K7MDENG'}""", "wJalrXUtnFEMI"),
+        ("""{"AWS_SESSION_TOKEN": "IQoJb3JpZ2luX2VjEXAMPLE"}""", "IQoJb3JpZ2luX2VjEXAMPLE"),
+        ("""password = 'hunter2'""", "hunter2"),
+    ],
+)
+def test_redact_handles_quoted_keys_and_values(text, gone):
+    assert gone not in redact(text) and "[REDACTED]" in redact(text)
+
+
+def test_redact_scrubs_a_connection_string_with_a_password():
+    out = redact("connect to postgres://admin:s3cr3tPw@db.internal:5432/orders failed")
+    assert "s3cr3tPw" not in out and "admin" not in out
+    assert out == "connect to postgres://[REDACTED]@db.internal:5432/orders failed"
+    # no password, no userinfo: a plain URL is untouched
+    assert (
+        redact("GET https://api.example.com:8443/v1/x") == "GET https://api.example.com:8443/v1/x"
+    )
+
+
+def test_redact_scrubs_a_jwt():
+    jwt = (
+        "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ."
+        "eyJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6ZGVmYXVsdDpyZWFkZXIifQ."
+        "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    )
+    out = redact(f"id token {jwt} rejected")
+    assert "eyJ" not in out and out == "id token [REDACTED] rejected"
+
+
+@pytest.mark.parametrize(
+    "text,gone",
+    [
+        (
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20261104/eu-west-1/"
+            "lambda/aws4_request, SignedHeaders=host;x-amz-date, "
+            "Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7",
+            "5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7",
+        ),
+        (
+            "GET https://b.s3.amazonaws.com/k?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature="
+            "5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7&X-Amz-Expires=60",
+            "5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7",
+        ),
+    ],
+)
+def test_redact_scrubs_a_sigv4_signature(text, gone):
+    out = redact(text)
+    assert gone not in out and "Signature=[REDACTED]" in out
+    assert "X-Amz-Expires=60" in out or "SignedHeaders=host;x-amz-date" in out  # the rest stays
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"aws_secret_access_key {SECRET_KEY}",  # no = or : between the name and the value
+        f"aws secret: {SECRET_KEY} (rotated)",
+        f"AWS_SECRET -> {SECRET_KEY}",
+        f"AKIAIOSFODNN7EXAMPLE, {SECRET_KEY}",  # a CSV row of an access key
+        f"AKIAIOSFODNN7EXAMPLE {SECRET_KEY}",
+    ],
+)
+def test_redact_scrubs_a_bare_40_character_secret_key_beside_its_name_or_key_id(text):
+    out = redact(text)
+    assert SECRET_KEY not in out and "wJalr" not in out and "[REDACTED]" in out
+
+
+def test_redact_leaves_a_40_character_value_that_is_not_beside_a_secret_name_alone():
+    sha = "da39a3ee5e6b4b0d3255bfef95601890afd80709"  # a git sha
+    assert redact(f"deployed commit {sha}") == f"deployed commit {sha}"
+
+
+def test_redact_scrubs_a_printed_python_environ():
+    line = (
+        "ctx = environ({'PATH': '/usr/bin', 'AWS_ACCESS_KEY_ID': 'ASIAIOSFODNN7EXAMPLE', "
+        "'DB_URL': 'x', 'LAMBDA_TASK_ROOT': '/var/task'}) in handler"
+    )
+    out = redact(line)
+    assert out == "ctx = environ({[REDACTED]}) in handler"
+    # a line cut before its closing "})" is redacted to the end of the line
+    cut = redact("environ({'PATH': '/usr/bin', 'AWS_SECRET_ACCESS_KEY': 'abc\nnext line")
+    assert cut.startswith("environ({[REDACTED]})") and "abc" not in cut
+    assert cut.endswith("next line")

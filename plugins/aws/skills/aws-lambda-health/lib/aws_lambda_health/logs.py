@@ -1,7 +1,15 @@
 """function-errors: the log events of one function that match the error pattern.
 
 CloudWatch Logs filter-log-events returns the oldest matches first, so a result cut at
-`maxLogEvents` shows the start of the window and says `truncated`; narrow `since` to see the end."""
+`maxLogEvents` shows the start of the window and says `truncated`; narrow `since` to see the end.
+
+The log group is the one in the function's logging configuration, else `/aws/lambda/<name>`. A
+custom group can be shared by several functions (advanced logging controls); the search is of the
+whole group, so a shared group's matches can belong to other functions: the log stream name
+(`YYYY/MM/DD/<function>[version]<instance>` in a custom group) says whose they are.
+
+A page call that times out after earlier pages found matches keeps those matches: the result is
+the events read so far, marked truncated, with a timeout error scoped `logs` (the caller adds it)."""
 
 from datetime import datetime, timezone
 
@@ -25,7 +33,25 @@ def millis(moment):
 
 
 def read_events(ctx, region, log_group, start, end, pattern, limit):
-    """(raw events, truncated) matching `pattern` in the window, at most `limit` of them."""
+    """(raw events, truncated, timeout) matching `pattern` in the window, at most `limit` of them.
+    `timeout` is None, or the RwError of a page call that timed out after earlier pages had
+    matches: the events are then the matches found so far and `truncated` is True. Any other
+    failure raises."""
+    # a value that starts with "-" would be read by the CLI as an option, not as the value
+    for what, value in (("log group name", log_group), ("errorPattern", pattern)):
+        if value.startswith("-"):
+            raise RwError("invalid_input", f"the {what} must not start with '-'")
+    try:
+        events, truncated = _read(ctx, region, log_group, start, end, pattern, limit)
+    except RwError as exc:
+        partial = getattr(exc, "partial", None)
+        if exc.code == "timeout" and partial:
+            return partial, True, exc
+        raise
+    return events, truncated, None
+
+
+def _read(ctx, region, log_group, start, end, pattern, limit):
     return aws_paged(
         ctx,
         [

@@ -8,15 +8,15 @@ from aws_lambda_health.target import lambda_target, read_settings, read_since
 def main(ctx, since="1h"):
     seconds = read_since(since)
     st = read_settings(ctx.settings)
-    region, name = lambda_target(ctx.resource)
+    target = lambda_target(ctx.resource)
     # the function first: its configuration names its log group, and a function that does not
     # exist is not_found here instead of looking like a log group with no errors
-    group = log_group(read_config(ctx, region, name), name)
+    group = log_group(read_config(ctx, target), target.name)
     pattern = st.error_pattern or lg.DEFAULT_PATTERN
     start, end = window(ctx.now(), seconds)
     try:
-        events, truncated = lg.read_events(
-            ctx, region, group, start, end, pattern, st.max_log_events
+        events, truncated, timed_out = lg.read_events(
+            ctx, target.region, group, start, end, pattern, st.max_log_events
         )
     except RwError as exc:
         # the function exists; its log group is missing (never invoked, or deleted) or unreadable
@@ -34,4 +34,11 @@ def main(ctx, since="1h"):
                 False,
             )
         }
+    if timed_out:
+        # a later page timed out: the matches found so far stand, and the list says it is cut
+        ctx.error(
+            "timeout",
+            f"{timed_out.message}; the {len(events)} matching events read before it are returned",
+            scope="logs",
+        )
     return {"logs": lg.log_facts(group, True, start, end, pattern, events, truncated)}

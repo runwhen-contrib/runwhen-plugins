@@ -46,8 +46,10 @@ MAX_PAGES = 100  # pages aws_paged follows before it gives up and reports trunca
 
 _DURATION = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m|h|d)")
 _UNITS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
-# us-east-1, eu-central-2, ap-southeast-4, us-gov-west-1, cn-north-1, us-iso-east-1
-_REGION = re.compile(r"[a-z]{2}(?:-[a-z]+)+-[0-9]{1,2}")
+# The one region pattern of the plugin. Accepts us-east-1, eu-central-2, ap-southeast-4,
+# us-gov-west-1, cn-north-1, us-iso-east-1 and the sovereign cloud's eusc-de-east-1 (a 2 to 4 letter
+# geography prefix).
+_REGION = re.compile(r"[a-z]{2,4}(?:-[a-z]+)+-[0-9]{1,2}")
 
 
 def parse_duration(value, name="duration"):
@@ -83,7 +85,8 @@ _PERMISSION = frozenset(
     ExpiredTokenException RequestExpired InvalidClientTokenId UnrecognizedClientException
     InvalidAccessKeyId SignatureDoesNotMatch IncompleteSignature MissingAuthenticationToken
     InvalidSignatureException InvalidToken TokenRefreshRequired OptInRequired
-    SubscriptionRequiredException NoCredentials PartialCredentials""".split()
+    SubscriptionRequiredException NoCredentials PartialCredentials InvalidIdentityToken
+    IDPCommunicationError RegionDisabledException""".split()
 )
 _NOT_FOUND = frozenset(
     """ResourceNotFoundException ResourceNotFound NoSuchEntity NoSuchBucket NoSuchKey
@@ -116,7 +119,13 @@ _TEXT_RULES = (
     ),
     (
         "permission_denied",
-        re.compile(r"unable to locate credentials|is not authorized to perform", re.I),
+        re.compile(
+            r"unable to locate credentials|is not authorized to perform"
+            # IRSA / web identity: STS refuses the pod's token (the code is also matched above)
+            r"|not authorized to perform:? sts:assumerolewithwebidentity"
+            r"|error when retrieving credentials from assume-role-with-web-identity",
+            re.I,
+        ),
     ),
     (
         "invalid_input",
@@ -239,7 +248,8 @@ def aws_paged(ctx, args, *, region, items_key, limit=None, page_size=1000, timeo
     MAX_PAGES pages; with `limit` the read stops once `limit` items are in hand. `truncated` is
     True when the service said there was more (a non-null NextToken) that was not read, so a
     list cut at `limit` or at MAX_PAGES is never presented as complete. A document without the
-    `NextToken` key (a query that dropped it) or without `items_key` raises internal."""
+    `NextToken` key (a query that dropped it) or without `items_key` raises internal. A page call
+    that fails raises its RwError with `.partial`, the list of items the earlier pages returned."""
     items = []
     token = None
     for _page in range(MAX_PAGES):
@@ -247,7 +257,11 @@ def aws_paged(ctx, args, *, region, items_key, limit=None, page_size=1000, timeo
         call = [*args, "--max-items", want]
         if token is not None:
             call += ["--starting-token", token]
-        doc = aws_json(ctx, call, region=region, timeout=timeout)
+        try:
+            doc = aws_json(ctx, call, region=region, timeout=timeout)
+        except RwError as exc:
+            exc.partial = items  # the items earlier pages returned, for a caller that can use them
+            raise
         if not isinstance(doc, dict) or items_key not in doc or "NextToken" not in doc:
             raise RwError(
                 "internal",
