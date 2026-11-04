@@ -225,6 +225,7 @@ EXPECTED = {
     "idle": ("ok", []),
     "partial-metrics": ("partial", ["rate_limited"]),
     "leaky": ("ok", []),
+    "functions-deleted": ("ok", []),
     "buckets-denied": ("partial", ["permission_denied"]),
     "functions-denied": ("partial", ["permission_denied"]),
     "functions-disabled": ("partial", ["dependency"]),
@@ -251,7 +252,7 @@ def test_each_fixture_expects_what_its_name_says_and_asserts_its_outputs(path):
 READ_ONLY_GCLOUD = {
     ("storage", "buckets", "list"), ("storage", "buckets", "describe"),
     ("storage", "buckets", "get-iam-policy"), ("storage", "du"), ("projects", "describe"),
-    ("auth", "print-access-token"), ("functions", "list"), ("functions", "describe"),
+    ("auth", "print-access-token"), ("functions", "list"), ("functions", "describe"), ("functions", "regions", "list"),
     ("builds", "describe"), ("logging", "read"),
 }  # fmt: skip
 

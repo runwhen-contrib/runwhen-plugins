@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: gcp/projects/shop-prod-1234
-now: '2026-11-04T04:59:08.043Z'
+now: '2026-11-04T05:10:14.953Z'
 calls:
 - argv:
   - gcloud
@@ -348,6 +348,59 @@ calls:
     WARNING: The following regions were fully or partially unreachable for query: projects/shop-prod-1234/locations/asia-east1, projects/shop-prod-1234/locations/southamerica-east1
     This could be due to permission setup. Additional informationcan be found in: https://cloud.google.com/functions/docs/troubleshooting
     WARNING: The following regions were fully or partially unreachable for query: projects/shop-prod-1234/locations/asia-east1, projects/shop-prod-1234/locations/southamerica-east1This could be due to permission setup. Additional informationcan be found in: https://cloud.google.com/functions/docs/troubleshooting
+- argv:
+  - gcloud
+  - functions
+  - regions
+  - list
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    [
+      {
+        "locationId": "europe-west1",
+        "name": "projects/shop-prod-1234/locations/europe-west1"
+      },
+      {
+        "locationId": "us-central1",
+        "name": "projects/shop-prod-1234/locations/us-central1"
+      },
+      {
+        "locationId": "us-east1",
+        "name": "projects/shop-prod-1234/locations/us-east1"
+      }
+    ]
+  stderr: ''
+- argv:
+  - gcloud
+  - functions
+  - regions
+  - list
+  - --project=shop-prod-1234
+  - --gen2
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    [
+      {
+        "locationId": "europe-west1",
+        "name": "projects/shop-prod-1234/locations/europe-west1"
+      },
+      {
+        "locationId": "us-central1",
+        "name": "projects/shop-prod-1234/locations/us-central1"
+      },
+      {
+        "locationId": "us-east1",
+        "name": "projects/shop-prod-1234/locations/us-east1"
+      }
+    ]
+  stderr: ''
 expect:
   status: partial
   errorCodes:

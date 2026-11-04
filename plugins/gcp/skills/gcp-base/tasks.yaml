@@ -7,7 +7,7 @@ settings:
 tasks:
   - name: discover
     title: Discover project, buckets and functions
-    description: Reads the project, lists its Cloud Storage buckets (name, location, storage class, creation time) and its Cloud Functions, 1st and 2nd generation (id, region, generation, state, runtime, update time), as facts and as an rw.discovery.v1 sync (project -> bucket; project -> region -> cloud-function, one partition per type and region). Each type is read on its own - a list that fails is an error scoped to it, a partition that is not complete and read false, and the run is partial; only when both lists fail does the task fail. A functions list that skipped regions is reported and those regions' partitions are failed. Reports the project id as the root's canonical key. Read-only.
+    description: Reads the project, lists its Cloud Storage buckets (name, location, storage class, creation time) and its Cloud Functions, 1st and 2nd generation (id, region, generation, state, runtime, update time), as facts and as an rw.discovery.v1 sync (project -> bucket; project -> region -> cloud-function, one partition per type and region). Each type is read on its own - a list that fails is an error scoped to it, a partition that is not complete and read false, and the run is partial; only when both lists fail does the task fail. A functions list that skipped regions is reported and those regions' partitions are failed; a region that was read and holds no function is a complete partition of 0 (swept). Every gcloud call is clamped to what is left of the task budget. Reports the project id as the root's canonical key. Read-only.
     script: scripts/discover.py
     tags: [discovery, inventory]
     readOnly: true

@@ -413,6 +413,8 @@ class World:
         self.functions, self.faults = functions, faults or {}
         self.unreachable = []
         self.logs = logs  # whether the functions have ERROR entries (a healthy world has none)
+        # the regions the Cloud Functions locations API lists; None: those of the default world
+        self.regions = None
 
     def fault(self, route, sub=None):
         """The (status, body) route `route` answers with, or None. A fault may differ by sub-route
@@ -468,11 +470,11 @@ class Handler(BaseHTTPRequestHandler):
         path, query = url.path, urllib.parse.parse_qs(url.query)
         parts = [p for p in path.split("/") if p]
         # /v1/projects/P/locations: the regions the v1 API serves (gcloud filters its list by them)
-        if parts[:1] == ["v1"] and parts[-1] == "locations":
+        if parts[:1] in (["v1"], ["v2"]) and parts[-1] == "locations":
             fault = w.fault("functions", "locations")
             if fault:
                 return self.reply(*fault)
-            regions = ["europe-west1", "us-central1", "us-east1"]
+            regions = w.regions or ["europe-west1", "us-central1", "us-east1"]
             return self.reply(
                 200,
                 {
@@ -582,6 +584,7 @@ def gcloud(args, as_json=True, credentialed=True):
 
 
 FILES = {
+    "regions": f"{SDK}/surface/functions/regions/list.py (v1 locations; --gen2: v2 locations)",
     "describe": f"{SDK}/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)",
     "list": f'{SDK}/surface/functions/list.py (2nd gen from the v2 API with filter environment="GEN_2", 1st gen from v1; unreachable regions are only warned about)',
     "build": f"{SDK}/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)",
@@ -589,6 +592,7 @@ FILES = {
     "token": "surface/auth/print_access_token.py",
 }
 REST = {
+    "regions": "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations/list",
     "describe": "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get",
     "list": "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/list",
     "build": "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get",
@@ -658,6 +662,18 @@ class Scenario:
     # -- the plugin's calls ------------------------------------------------------------------
     def list_call(self):
         self.gcloud_call("list", ["functions", "list", f"--project={P}"], "functions-list.json")
+
+    def regions_calls(self):
+        """`functions regions list` (v1 locations) and `--gen2` (v2 locations): discover reads the
+        regions that exist, to sweep an empty one."""
+        self.gcloud_call(
+            "regions", ["functions", "regions", "list", f"--project={P}"], "regions-v1.json"
+        )
+        self.gcloud_call(
+            "regions",
+            ["functions", "regions", "list", f"--project={P}", "--gen2"],
+            "regions-v2.json",
+        )
 
     def describe_call(self, fn):
         _, region, name = stublib_name(fn)
@@ -768,10 +784,17 @@ def append_functions_list(name, world, unauthenticated=False):
     path = os.path.join(directory, "calls.yaml")
     text = open(path, encoding="utf-8").read()
     header = [line for line in text.splitlines() if line.startswith("#")]
-    calls = [c for c in stublib.parse_calls(text) if c["argv"][:2] != ["functions", "list"]]
+    calls = [
+        c
+        for c in stublib.parse_calls(text)
+        if c["argv"][:2] != ["functions", "list"]
+        and c["argv"][:3] != ["functions", "regions", "list"]
+    ]
     sc = Scenario(name, world, new=False, header=header, unauthenticated=unauthenticated)
     sc.calls = calls
     sc.list_call()
+    if "functions" not in world.faults and not unauthenticated:  # read only after a good list
+        sc.regions_calls()
     sc.save()
 
 
@@ -796,6 +819,8 @@ def discover_scenario(name, world, buckets_from="healthy"):
             )
     sc.calls = [c for _, c in calls]
     sc.list_call()
+    if "functions" not in world.faults:
+        sc.regions_calls()
     sc.save()
 
 
@@ -919,6 +944,10 @@ def main():
     unreachable.unreachable = ["asia-east1", "southamerica-east1"]
     discover_scenario("functions-discover-unreachable", unreachable)
     discover_scenario("functions-discover-split", World(SPLIT))
+    # the last function of europe-north1 was deleted: the region is listed, empty and swept
+    deleted = World(HEALTHY)
+    deleted.regions = ["europe-north1", "europe-west1", "us-central1", "us-east1"]
+    discover_scenario("functions-discover-deleted", deleted)
     # the bucket list is denied and the functions list works: the other half of discover stands
     discover_scenario("functions-discover-buckets-denied", World(BROKEN), buckets_from="forbidden")
 

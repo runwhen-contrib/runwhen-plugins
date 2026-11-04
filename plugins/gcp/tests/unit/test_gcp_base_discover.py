@@ -19,6 +19,8 @@ P = "shop-prod-1234"
 LIST = ["storage", "buckets", "list", f"--project={P}", "--raw", f"--billing-project={P}"]
 DESCRIBE = ["projects", "describe", P, f"--billing-project={P}"]
 FLIST = ["functions", "list", f"--project={P}", f"--billing-project={P}"]
+REGIONS = ["functions", "regions", "list", f"--project={P}", f"--billing-project={P}"]
+REGIONS2 = ["functions", "regions", "list", f"--project={P}", "--gen2", f"--billing-project={P}"]
 CRED = {
     "apiBaseUrl": "https://papi.example",
     "token": "tok-SECRET",
@@ -132,12 +134,10 @@ def test_the_outputs_fit_their_schemas_and_the_sync_fits_the_contract(run_script
     assert labelled["labels"] == {"env": "prod", "team": "web"}
 
 
-def test_the_calls_are_the_three_read_only_gcloud_commands_with_the_credential_env(
-    run_script, stub_run
-):
+def test_the_calls_are_the_read_only_gcloud_commands_with_the_credential_env(run_script, stub_run):
     stub = stub_run("healthy")
     discover(run_script, stub)
-    assert stub.asked() == [LIST, DESCRIBE, FLIST]
+    assert stub.asked() == [LIST, DESCRIBE, FLIST, REGIONS, REGIONS2]
     assert all(c["timeout"] == 60.0 for c in stub.log)
     # every call is billed to the project and runs with the ambient credentials neutralised
     for call in stub.log:
@@ -363,7 +363,11 @@ def test_one_id_in_two_regions_is_two_functions(run_script, stub_run):
     assert validate("rw.discovery.v1", document) == []
 
 
-def test_an_empty_functions_list_is_complete_partitions_of_zero(run_script, stub_run):
+def test_an_empty_functions_list_sweeps_every_region_that_was_read_and_is_empty(
+    run_script, stub_run
+):
+    """Every function of the project was deleted: the regions Cloud Functions serves are read, so
+    each gets a region item and a complete count-0 partition, and what was in it is swept."""
     stub = stub_run("healthy")
     stub.set(FLIST, stdout="[]\n")
     run = discover(run_script, stub)
@@ -374,9 +378,96 @@ def test_an_empty_functions_list_is_complete_partitions_of_zero(run_script, stub
         "type": "region",
         "parentPath": f"gcp/projects/{P}",
         "status": "complete",
-        "count": 0,
+        "count": 3,
     }
-    assert len(parts) == 2  # no region, no per-region partition
+    assert [(p["parentPath"].rsplit("/", 1)[-1], p["status"], p["count"]) for p in parts[2:]] == [
+        ("europe-west1", "complete", 0), ("us-central1", "complete", 0), ("us-east1", "complete", 0),
+    ]  # fmt: skip
+
+
+def test_a_region_whose_last_function_was_deleted_is_swept(run_script, stub_run):
+    run = discover(run_script, stub_run("functions-discover-deleted"))
+    assert run.envelope["status"] == "ok" and run.envelope["errors"] == []
+    document = json.loads(run.files["sync.json"])
+    parts = {
+        (p["type"], p["parentPath"].rsplit("/", 1)[-1]): p for p in document["commit"]["partitions"]
+    }
+    empty = parts[("cloud-function", "europe-north1")]
+    assert (empty["status"], empty["count"]) == ("complete", 0)  # the sweep of what it held before
+    assert parts[("region", P)]["count"] == 4
+    assert parts[("cloud-function", "us-central1")]["count"] == 1
+    regions = [
+        i["identity"]["chain"][-1]["name"]
+        for b in document["batches"]
+        for i in b["items"]
+        if i["identity"]["chain"][-1]["type"] == "region"
+    ]
+    assert regions == ["europe-north1", "europe-west1", "us-central1", "us-east1"]
+    assert run.envelope["outputs"]["summary"]["counts"]["region"] == 4
+    assert validate("rw.discovery.v1", document) == []
+
+
+def test_a_region_list_that_cannot_be_read_leaves_the_region_partition_failed(run_script, stub_run):
+    stub = stub_run("healthy")
+    stub.set(
+        REGIONS,
+        rc=1,
+        stderr="ERROR: (gcloud.functions.regions.list) PERMISSION_DENIED: Permission 'cloudfunctions.locations.list' denied\n",
+    )
+    run = discover(run_script, stub)
+    env = run.envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("permission_denied", "functions")]
+    parts = {
+        (p["type"], p["parentPath"].rsplit("/", 1)[-1]): p
+        for p in json.loads(run.files["sync.json"])["commit"]["partitions"]
+    }
+    region = parts[("region", P)]
+    assert region["status"] == "failed" and region["reason"].startswith(
+        "region list: ERROR:"
+    )  # the set is unknown
+    assert (
+        parts[("cloud-function", "us-central1")]["status"] == "complete"
+    )  # what was listed stands
+    assert len([k for k in parts if k[0] == "cloud-function"]) == 3  # no empty region is guessed
+
+
+def test_an_unreachable_region_stays_failed_even_when_the_region_list_names_it(
+    run_script, stub_run
+):
+    stub = stub_run("functions-discover-unreachable")
+    rows = json.loads((stub.directory / "regions-v1.json").read_text())
+    rows.append({"locationId": "asia-east1", "name": f"projects/{P}/locations/asia-east1"})
+    stub.set(REGIONS, stdout=json.dumps(rows))
+    run = discover(run_script, stub)
+    parts = {
+        (p["type"], p["parentPath"].rsplit("/", 1)[-1]): p
+        for p in json.loads(run.files["sync.json"])["commit"]["partitions"]
+    }
+    assert parts[("cloud-function", "asia-east1")]["status"] == "failed"
+    assert "count" not in parts[("cloud-function", "asia-east1")]
+
+
+def test_the_bucket_and_project_reads_are_clamped_to_the_remaining_budget(
+    run_script, stub_run, monkeypatch
+):
+    from gcp_base import budget
+
+    monkeypatch.setattr(budget, "TASK_BUDGET", budget.MARGIN + 25)  # 25s left for the three reads
+    stub = stub_run("healthy")
+    run = discover(run_script, stub)
+    assert run.envelope["status"] == "ok"
+    assert stub.log and all(c["timeout"] <= 25.0 for c in stub.log), [
+        c["timeout"] for c in stub.log
+    ]
+    # with nothing left no call starts and the task fails with timeout, not with a hung gcloud
+    monkeypatch.setattr(budget, "TASK_BUDGET", budget.MARGIN)
+    stub = stub_run("healthy")
+    run = discover(run_script, stub)
+    assert run.envelope["status"] == "failed" and [e["code"] for e in run.envelope["errors"]] == [
+        "timeout"
+    ]
+    assert stub.log == []
 
 
 @pytest.mark.parametrize("stdout", ["", "{}", "[1]", '[{"name": "nope"}]'])

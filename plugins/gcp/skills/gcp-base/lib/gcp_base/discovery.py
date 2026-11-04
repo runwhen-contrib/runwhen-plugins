@@ -13,7 +13,15 @@ that holds a function or was unreachable, and one cloud-function partition per r
 import time
 
 from .errors import RwError
-from .fnlist import UNKNOWN_REGION, generation, list_functions, parse_name, state
+from .fnlist import (
+    UNKNOWN_REGION,
+    clamp,
+    generation,
+    list_functions,
+    list_regions,
+    parse_name,
+    state,
+)
 from .gcloud import gcloud_json, target_path
 
 PLATFORM = "gcp"
@@ -78,7 +86,7 @@ def project_facts(row):
     return None
 
 
-def read_project(ctx, project, errors, timeout):
+def read_project(ctx, project, errors, timeout, deadline=None):
     """The project's facts, or the identifier alone with the reason appended to `errors` when the
     project resource cannot be had for a reason that leaves the rest useful: this identity may not
     read it, the API is disabled, the call was throttled, or the project is gone (the bucket list
@@ -90,7 +98,7 @@ def read_project(ctx, project, errors, timeout):
         return {"projectId": project, **NO_FACTS}
 
     try:
-        row = gcloud_json(ctx, "projects", "describe", project, timeout=timeout)
+        row = gcloud_json(ctx, "projects", "describe", project, timeout=clamp(timeout, deadline))
     except RwError as exc:
         if exc.code not in PARTIAL_PROJECT:
             raise
@@ -113,6 +121,8 @@ class Read:
 
     def __init__(self, rows=None, exc=None, unreachable=()):
         self.rows, self.exc, self.unreachable = rows, exc, list(unreachable)
+        self.listed = None  # functions only: every region Cloud Functions serves (None: not read)
+        self.listed_exc = None  # ... or why it could not be read
 
     @property
     def ok(self):
@@ -161,10 +171,13 @@ def listing(read, facts, limit, **extra):
 
 
 def regions_of(functions):
-    """The regions of the sync: those with a function, and those gcloud could not reach (named by
-    their own name; the `unknown` placeholder is no region)."""
+    """The regions of the sync: those with a function, those gcloud could not reach (named by
+    their own name; the `unknown` placeholder is no region) and every other region Cloud Functions
+    serves (read, and empty: its partition is complete with a count of 0, so what was in it
+    before is swept)."""
     names = {parse_name(r)[1] for r in functions.rows or []}
     names |= {r for r in functions.unreachable if r != UNKNOWN_REGION}
+    names |= set(functions.listed or [])
     return sorted(names)
 
 
@@ -196,6 +209,9 @@ def partitions_of(path, buckets, functions):
     if unknown:
         out.append({"type": "region", "parentPath": path, "status": "failed",
                     "reason": "gcloud could not reach some regions and did not name them"})  # fmt: skip
+    elif functions.listed is None:  # the regions Cloud Functions serves are unknown: not complete
+        out.append({"type": "region", "parentPath": path, "status": "failed",
+                    "reason": f"region list: {functions.listed_exc.message}"[:4096]})  # fmt: skip
     else:
         out.append(
             {"type": "region", "parentPath": path, "status": "complete", "count": len(regions)}
@@ -333,9 +349,21 @@ def discover(ctx, max_items, timeout, deadline=None):
     project = target_project(ctx.resource)
     path = ctx.resource["path"]
     errors = []
-    buckets = attempt(read_buckets, ctx, project, timeout)
-    project_facts = read_project(ctx, project, errors, timeout)
+    buckets = attempt(lambda: read_buckets(ctx, project, clamp(timeout, deadline)))
+    project_facts = read_project(ctx, project, errors, timeout, deadline)
     functions = attempt(lambda: list_functions(ctx, project, timeout=timeout, deadline=deadline))
+    if functions.ok:  # the regions that exist, so an empty one is swept and not just forgotten
+        try:
+            functions.listed = list_regions(ctx, project, timeout=timeout, deadline=deadline)
+        except RwError as exc:
+            functions.listed_exc = exc
+            errors.append(
+                {
+                    "code": exc.code,
+                    "message": f"functions: region list: {exc.message}",
+                    "scope": "functions",
+                }
+            )
     if not buckets.ok and not functions.ok:
         raise buckets.exc
     if not buckets.ok:

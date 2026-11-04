@@ -171,6 +171,33 @@ def list_functions(ctx, project, *, timeout=None, deadline=None):
     return rows, unreachable_regions(err)
 
 
+def list_regions(ctx, project, *, timeout=None, deadline=None):
+    """The regions Cloud Functions serves for the project, sorted: the union of `functions regions
+    list` (the v1 API's locations, 1st gen) and `functions regions list --gen2` (the v2 API's),
+    both needing only `cloudfunctions.locations.list`, which `functions list` asks for too. A
+    region in it with no function is a region that was read and is empty, which is what lets
+    discovery sweep a region whose last function was deleted. A failure raises."""
+    found = set()
+    for extra in ([], ["--gen2"]):
+        rows, _ = json_call(
+            ctx,
+            ["functions", "regions", "list", f"--project={project}", *extra],
+            project,
+            timeout=timeout,
+            deadline=deadline,
+        )
+        if not isinstance(rows, list):
+            raise RwError("internal", "gcloud returned no region list")
+        for row in rows:
+            name = row.get("locationId") if isinstance(row, dict) else None
+            if not name and isinstance(row, dict) and isinstance(row.get("name"), str):
+                name = row["name"].rsplit("/", 1)[-1]
+            if not valid_region(name):
+                raise RwError("internal", "gcloud returned a region without a usable name")
+            found.add(name)
+    return sorted(found)
+
+
 def describe_function(ctx, project, region, name, *, timeout=None, deadline=None):
     """One function's row, in its generation's format (gcloud picks the generation). A function
     that does not exist is `not_found`."""
