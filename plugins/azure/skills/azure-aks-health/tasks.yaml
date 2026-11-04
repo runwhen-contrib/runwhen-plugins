@@ -1,0 +1,127 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: azure@1              # ships az (runtimes/azure)
+defaults: { credentials: azure/cli, timeout: 150s }   # two az commands at commandTimeout fit; a task with more says so
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  commandTimeout: { type: duration, default: 60s, description: "How long one az command may run before it is stopped (timeout)" }
+  metricInterval: { type: enum, enum: [PT1M, PT5M, PT15M, PT30M, PT1H, PT6H, PT12H, P1D], default: PT1H, description: "Grain of the Azure Monitor metrics (ISO 8601); the window is cut into intervals of this size" }
+  cpuThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node CPU usage percentage above which an interval counts as over the threshold (average and busiest node are counted separately)" }
+  memoryThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node memory working set percentage above which an interval counts as over the threshold" }
+  diskThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node disk usage percentage above which an interval counts as over the threshold" }
+  activityScanLimit: { type: integer, default: 500, min: 1, max: 5000, description: "Most failed activity-log events read for the cluster's resource group; the log is read by group, so this bounds the work, and a cut is reported" }
+tasks:
+  - name: resource-health
+    title: Azure Resource Health of the cluster
+    description: >-
+      Reads Azure's own availability verdict for the cluster (Microsoft.ResourceHealth
+      availabilityStatuses/current): the state (Available, Degraded, Unavailable, Unknown), Azure's
+      summary and detailed status, the reason type and chronicity, when it occurred and was reported,
+      and how many service-impacting events Azure lists. Does not register the resource provider; if
+      the subscription has not registered Microsoft.ResourceHealth the run fails with dependency.
+      Read-only.
+    script: scripts/resource_health.py
+    tags: [health, availability, platform]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.ContainerService/managedClusters/read }        # az aks show: the cluster's resource id
+      - { action: Microsoft.ResourceHealth/availabilityStatuses/read }
+    outputs:
+      health: { schema: ./schemas/health.v1.json, description: "Availability state, Azure's summary and detailed status, reason, times and the number of service-impacting events" }
+  - name: cluster-status
+    title: Provisioning, power state, version and access settings
+    description: >-
+      Reads the cluster's provisioning state (and whether it is still changing), power state
+      (Running or Stopped), Kubernetes version (the requested and the current one) and support plan,
+      SKU tier, node resource group, API server access (private cluster, how many authorized IP
+      ranges), local accounts, Entra and Azure RBAC integration, identity type, network plugin, policy
+      and outbound type, auto-upgrade channels, OIDC issuer and workload identity, container insights
+      and managed Prometheus, and the diagnostic settings (how many, whether one reaches Log
+      Analytics, the log categories switched on). Facts only. Diagnostic settings that cannot be
+      read leave `diagnostics` null with their own error and the rest stands. Read-only.
+    script: scripts/cluster_status.py
+    tags: [config, health, security]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.ContainerService/managedClusters/read }
+      - { action: Microsoft.Insights/diagnosticSettings/read }
+    outputs:
+      cluster: { schema: ./schemas/cluster.v1.json, description: "Provisioning and power state, version, access, network and monitoring settings, diagnostic settings" }
+  - name: node-pools
+    title: "Node pools: count, state and autoscaler bounds"
+    description: >-
+      Lists the cluster's node pools (az aks nodepool list) with, for each, the node count,
+      provisioning state (and whether it is still changing), power state, mode (System or User),
+      VM size, OS, Spot or Regular priority, whether the autoscaler is on with its minimum and
+      maximum and whether the count sits at either bound, the requested and the current Kubernetes
+      version (and whether they differ), node image version, zones and max surge. Also the cluster's
+      own provisioning and power state, the totals, and the names of pools that failed or are not
+      running. Read-only.
+    script: scripts/node_pools.py
+    tags: [config, health, capacity]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.ContainerService/managedClusters/read }
+      - { action: Microsoft.ContainerService/managedClusters/agentPools/read }
+    outputs:
+      nodePools: { schema: ./schemas/node-pools.v1.json, description: "Each pool's count, states, autoscaler bounds and versions (cut to maxItems), the totals, and the failed and not-running pool names" }
+  - name: version-support
+    title: Kubernetes version support and available upgrades
+    description: >-
+      Compares the cluster's Kubernetes version with the minor versions AKS offers in the cluster's
+      region (az aks get-versions): whether the cluster's minor is among them, whether it is a
+      preview, its support plans (for example long-term support), the newest patch of that minor and
+      whether the cluster's exact version is still offered, the default and newest stable minors and
+      how many stable minors are newer. Also the control plane upgrades AKS offers the cluster (az
+      aks get-upgrades). AKS publishes no end-of-support date through the API, so none is reported.
+      One of the two reads that fails leaves its part null with its own error and the other stands.
+      Read-only.
+    script: scripts/version_support.py
+    tags: [version, upgrade, lifecycle]
+    readOnly: true
+    timeout: 240s                                  # three az commands of commandTimeout
+    permissions:
+      - { action: Microsoft.ContainerService/managedClusters/read }
+      - { action: Microsoft.ContainerService/locations/kubernetesVersions/read }
+      - { action: Microsoft.ContainerService/managedClusters/upgradeProfiles/read }
+    outputs:
+      version: { schema: ./schemas/version.v1.json, description: "The cluster's version against the offered minors, and the upgrades AKS offers" }
+  - name: activity-failures
+    title: Failed operations in the Activity Log
+    description: >-
+      Reads the failed operations of the cluster's resource group in the Azure Activity Log over the
+      window and keeps those about the cluster or something under it (a node pool), grouped by
+      operation, target, level, sub-status and error code, with the count, first and last time and
+      the error message Azure recorded (cut to 1024 characters). Reports how many events it read,
+      how many belonged to other resources, and whether the read stopped at activityScanLimit (then
+      the cluster's list may be incomplete). The caller of an operation is not read. Read-only.
+    script: scripts/activity_failures.py
+    tags: [activity, audit, changes]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.ContainerService/managedClusters/read }
+      - { action: Microsoft.Insights/eventtypes/management/values/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      activity: { schema: ./schemas/activity.v1.json, description: "Failed operations on the cluster and its node pools over the window, grouped, with the read's bounds" }
+  - name: node-metrics
+    title: Node CPU, memory and disk from Azure Monitor
+    description: >-
+      Reads the cluster's node_cpu_usage_percentage, node_memory_working_set_percentage and
+      node_disk_usage_percentage platform metrics over the window that ends at the run's reference
+      time, average and busiest node per interval. For each it reports the intervals with and without
+      a value, the lowest, highest and last average, the highest peak, the newest 50 intervals and
+      how many intervals have an average or a peak above the setting's threshold. An interval with no
+      value is counted, never read as healthy. One metric that cannot be read is reported with its
+      own error and the others stand. Read-only.
+    script: scripts/node_metrics.py
+    tags: [metrics, capacity, performance]
+    readOnly: true
+    timeout: 300s                                  # four az commands of commandTimeout
+    permissions:
+      - { action: Microsoft.ContainerService/managedClusters/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      metrics: { schema: ./schemas/metrics.v1.json, description: "CPU, memory and disk per interval over the window with counts of intervals over the thresholds" }

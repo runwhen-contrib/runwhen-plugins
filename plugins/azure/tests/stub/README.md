@@ -100,3 +100,32 @@ They are representative, not recordings of a real account: re-record against a r
 when a credential exists (parked). Dates in the item lists (`expires`) are chosen around 2026-11-04,
 the day of the first recording: re-recording on another day changes which items are expired or
 expiring.
+
+## azure-aks-health: clusters, scenarios and how its answers were captured
+
+The scenarios above also answer the commands of `azure-aks-health` and of `azure-base/discover`'s
+cluster listing, for two AKS clusters: `aks-orders-prod` (`rg-orders-prod`, eastus: healthy) and
+`aks-orders-dev` (`rg-orders-dev`, westeurope: broken). Their files are `aks-*.json` next to the
+scenario's other files, and their calls sit in a marked block at the top of each `calls.yaml`
+(`# --- azure-aks-health ... ---`; the stub drops `#` lines).
+
+| scenario | target cluster | what it shows |
+| --- | --- | --- |
+| `healthy` | `aks-orders-prod` | Succeeded, Running, a supported minor with an upgrade offered, two autoscaled pools inside their bounds, diagnostic settings to Log Analytics, calm node metrics; a failed storage account write in the group (not the cluster's); the three per-group cluster listings of discover |
+| `broken` | `aks-orders-dev` | provisioningState Failed, Resource Health Degraded, a minor AKS no longer offers, the `apps` pool at its autoscaler maximum and on an older version, the `batch` Spot pool Failed, no diagnostic settings, an API server open to everyone, failed cluster and node pool writes in the Activity Log (one id spelled in capitals, one for a cluster whose name starts like this one's), CPU and memory above 80%, a disk interval with no value |
+| `stopped` | `aks-orders-dev` | power state Stopped, pools Stopped, every Azure Monitor interval without a value |
+| `monitor-forbidden` | `aks-orders-dev` | the cluster reads, but diagnostic settings, the Activity Log and metrics are AuthorizationFailed |
+| `forbidden`, `throttled`, `not-found` | `aks-orders-dev`, `aks-orders-dev`, `nope` | `az aks show` is AuthorizationFailed, TooManyRequests, ResourceNotFound |
+| `group-forbidden` | (discover) | the cluster listings of all three groups succeed while `rg-orders-dev`'s vaults are refused: a group's two partitions are independent |
+
+**These answers are the pinned az's own, not typed.** `capture/capture_aks.sh` runs the real az 2.92.0
+inside the `azure@1` image with `--network none` (`capture/fake_az.py` replaces only sign-in and the HTTP
+layer), against the ARM REST bodies Microsoft documents for each operation (`capture/aks_world.py`: the
+reference page is each call's `source`). So the key spellings (`enableRbac`, `authorizedIpRanges`,
+`typePropertiesType`, `dnsServiceIp`), the nulls, the added `resourceGroup`, the sorted keys, the
+`aggregation` and `--select` handling and the `ERROR:` texts and exit codes (`not found` is exit 3) are what
+the CLI prints. `capture/splice_aks.py` copies the files into the scenarios and the calls into each
+`calls.yaml`; run it again after changing the world. What is *not* verified is the content of the bodies
+themselves (the values are invented, shaped after the reference pages), nor what a real subscription
+returns (`served.json` of a capture lists the REST requests az made, with the api-version, so a request
+the real service would refuse shows there).

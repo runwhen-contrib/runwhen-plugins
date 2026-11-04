@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An AKS cluster's Kubernetes version against what AKS offers",
+  "type": "object",
+  "properties": {
+    "cluster": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "kubernetesVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "currentKubernetesVersion": {
+      "type": "string"
+    },
+    "minor": {
+      "type": "string",
+      "description": "major.minor of currentKubernetesVersion"
+    },
+    "supportPlan": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "minorSupported": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The cluster's minor is among those AKS offers in its region. Null when the offered list could not be read"
+    },
+    "minorIsPreview": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "minorSupportPlans": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "description": "Support plans AKS lists for the cluster's minor"
+    },
+    "latestPatchOfMinor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "patchOffered": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The cluster's exact version is still offered (a retired patch is not listed)"
+    },
+    "defaultMinor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "latestStableMinor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "minorsBehind": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Stable minors newer than the cluster's"
+    },
+    "supportedMinors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "isPreview": {
+            "type": "boolean"
+          },
+          "supportPlans": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "description": "KubernetesOfficial, AKSLongTermSupport"
+          }
+        },
+        "required": [
+          "version",
+          "isDefault",
+          "isPreview",
+          "supportPlans"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50,
+      "description": "The minors AKS offers, newest first, at most 50"
+    },
+    "upgrades": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean",
+          "description": "AKS offers at least one control plane upgrade"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "isPreview": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "version",
+              "isPreview"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "Upgrade targets, oldest first, at most 50"
+        },
+        "versionsOmitted": {
+          "type": "integer"
+        },
+        "latest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latestStable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "versions",
+        "versionsOmitted",
+        "latest",
+        "latestStable"
+      ],
+      "additionalProperties": false,
+      "description": "Null when the upgrade profile could not be read (the run is partial, error scoped upgrades)"
+    }
+  },
+  "required": [
+    "cluster",
+    "location",
+    "kubernetesVersion",
+    "currentKubernetesVersion",
+    "minor",
+    "supportPlan",
+    "minorSupported",
+    "minorIsPreview",
+    "minorSupportPlans",
+    "latestPatchOfMinor",
+    "patchOffered",
+    "defaultMinor",
+    "latestStableMinor",
+    "minorsBehind",
+    "supportedMinors",
+    "upgrades"
+  ],
+  "additionalProperties": false
+}

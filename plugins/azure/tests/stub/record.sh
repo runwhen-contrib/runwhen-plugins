@@ -32,8 +32,9 @@ SUB=4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
 GONE=00000000-0000-4000-8000-00000000dead
 
 # skill/task  ->  the fixtures (stub scenarios) recorded for it. A fixture's stub scenario has the
-# fixture's name. The target: healthy is kv-orders-prod, not-found is a vault that does not exist,
-# anything else is kv-orders-dev (discover targets the subscription).
+# fixture's name. The target: healthy is kv-orders-prod (azure-aks-health: aks-orders-prod), not-found
+# is a vault (a cluster) that does not exist, anything else is kv-orders-dev (aks-orders-dev); discover
+# targets the subscription.
 manifest=(
   "azure-base/discover:healthy forbidden throttled not-found group-forbidden"
   "azure-kv-health/resource-health:healthy broken forbidden throttled not-found"
@@ -42,6 +43,12 @@ manifest=(
   "azure-kv-health/expiring-items:healthy broken forbidden throttled not-found data-plane-forbidden secrets-forbidden"
   "azure-kv-health/audit-failures:healthy broken forbidden throttled not-found no-diagnostics category-group dedicated"
   "azure-kv-health/performance:healthy broken forbidden throttled not-found"
+  "azure-aks-health/resource-health:healthy broken forbidden throttled not-found"
+  "azure-aks-health/cluster-status:healthy broken forbidden throttled not-found stopped monitor-forbidden"
+  "azure-aks-health/node-pools:healthy broken forbidden throttled not-found stopped"
+  "azure-aks-health/version-support:healthy broken forbidden throttled not-found"
+  "azure-aks-health/activity-failures:healthy broken forbidden throttled not-found monitor-forbidden"
+  "azure-aks-health/node-metrics:healthy broken forbidden throttled not-found stopped monitor-forbidden"
 )
 
 resource_for() {   # task fixture
@@ -50,6 +57,16 @@ resource_for() {   # task fixture
     if [ "$fixture" = "not-found" ]; then echo "azure/subscriptions/$GONE"; else echo "azure/subscriptions/$SUB"; fi
     return
   fi
+  case "$task" in
+    azure-aks-health/*)
+      case "$fixture" in
+        healthy)   vault=aks-orders-prod; group=rg-orders-prod ;;
+        not-found) vault=nope;            group=rg-orders-dev ;;
+        *)         vault=aks-orders-dev;  group=rg-orders-dev ;;
+      esac
+      echo "azure/subscriptions/$SUB/resourcegroups/$group/aks-clusters/$vault"
+      return ;;
+  esac
   case "$fixture" in
     healthy)   vault=kv-orders-prod; group=rg-orders-prod ;;
     not-found) vault=nope;           group=rg-orders-dev ;;
@@ -127,7 +144,7 @@ done
 
 # --- replay with the stub off the PATH ---------------------------------------------------------------
 clean_path="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$stub_bin" | paste -sd: -)"
-for skill in azure-base azure-kv-health; do
+for skill in azure-base azure-kv-health azure-aks-health; do
   env -u AZURE_STUB_SCENARIO -u AZ_STUB_SCENARIO PATH="$clean_path" \
     "$rwtask" test "$skill" --plugin-dir "plugins/azure"
 done
