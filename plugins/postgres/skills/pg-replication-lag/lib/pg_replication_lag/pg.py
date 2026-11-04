@@ -3,7 +3,7 @@
 This file is shared by every postgres skill. Skills do not import each other (a task sees
 only its own skill's lib/), so each skill carries a verbatim copy of `errors.py` and `pg.py`
 in its own `lib/<skill_snake>/`; they import only `.errors`, so the copy needs no edit. A test
-(tests/unit/test_pg_copies.py) fails when a copy drifts from `pg_base`'s.
+(the plugin unit test test_pg_copies.py) fails when a copy drifts from `pg_base`'s.
 
     from pg_base.pg import psql_json            # in another skill: from <skill_snake>.pg import ...
 
