@@ -1411,3 +1411,48 @@ def test_a_refused_connection_from_kubectl_is_unreachable():
         )
         == "unreachable"
     )
+
+
+def _item(platform, *chain):
+    return {"identity": {"platform": platform, "chain": [{"type": t, "name": n} for t, n in chain]}}
+
+
+@pytest.mark.parametrize(
+    "item, parent_path",
+    [
+        # namespaced kubernetes object: partition per (type, namespace)
+        (
+            _item("kubernetes", ("cluster", "c"), ("namespace", "ns"), ("deployment", "web")),
+            "kubernetes/clusters/c/namespaces/ns",
+        ),
+        # cluster-scoped kubernetes object: partition under the cluster
+        (_item("kubernetes", ("cluster", "c"), ("node", "n1")), "kubernetes/clusters/c"),
+        # two levels (postgres instance -> database)
+        (_item("postgres", ("instance", "i"), ("database", "orders")), "postgres/instances/i"),
+        # three levels with no namespace (aws account -> region -> function)
+        (
+            _item("aws", ("account", "123"), ("region", "eu-west-1"), ("lambda-function", "f")),
+            "aws/accounts/123/regions/eu-west-1",
+        ),
+    ],
+)
+def test_a_rejected_item_fails_exactly_its_own_partition_for_any_integration_shape(
+    item, parent_path
+):
+    t = item["identity"]["chain"][-1]["type"]
+    other = parent_path.rsplit("/", 1)[0] + "/other"
+    partitions = [
+        {"type": t, "status": "complete", "parentPath": parent_path, "count": 3},
+        {"type": t, "status": "complete", "parentPath": other, "count": 2},
+    ]
+    out = sync.fail_rejected(partitions, [(*sync._key(item), {"code": "parent_missing"})])
+    assert [p["status"] for p in out] == ["failed", "complete"]
+    assert "count" not in out[0] and "parent_missing" in out[0]["reason"]
+    short = sync.fail_rejected(partitions, [], {sync._key(item): "batch not accounted for"})
+    assert [p["status"] for p in short] == ["failed", "complete"]
+
+
+def test_a_partition_without_parent_path_is_never_matched():
+    partitions = [{"type": "deployment", "status": "forbidden"}]
+    item = _item("kubernetes", ("cluster", "c"), ("namespace", "ns"), ("deployment", "web"))
+    assert sync.fail_rejected(partitions, [(*sync._key(item), {})]) == partitions
