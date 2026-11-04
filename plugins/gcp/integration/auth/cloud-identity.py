@@ -8,18 +8,30 @@ a file, so the script writes a small marker to $RW_AUTH_OUT_FILE:
 
     {"type": "runwhen_cloud_identity", "serviceAccountEmail": "<email>"}
 
-and gcp-base's gcloud helper (`gcp_base/gcloud.py`) blanks CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
-for the gcloud child process when it sees that marker. The marker holds no secret.
+and gcp-base's gcloud helper (`gcp_base/gcloud.py`) sees that marker, blanks
+CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE for the gcloud child process and leaves the metadata check
+on. The marker holds no secret, and no project id or region: the project of a task is its
+`ctx.resource`, never an environment variable this script produces.
 
-What the script does before writing it: validates the `project` input, then asks the metadata
-server for the default service account's e-mail ($GCE_METADATA_HOST, default
-metadata.google.internal, the variable Google's own libraries read). That proves the identity
-exists, so a missing one fails the task run here, with a code, instead of as a gcloud error in the
-middle of a task.
+What the script does before writing it:
+1. validates the `project` input (and `serviceAccount`, when given);
+2. asks the metadata server for the default service account's e-mail. The server is
+   $GCE_METADATA_ROOT, else $GCE_METADATA_HOST, else metadata.google.internal (the variables
+   gcloud and Google's libraries read); it is asked without any HTTP proxy (the same
+   ProxyHandler({}) gcloud uses), so a proxy in the pod's environment cannot answer for it;
+3. if `serviceAccount` is set, compares it to that e-mail: a connection that names the identity
+   it expects fails here, with permission_denied, when the pod runs as another one;
+4. asks for a token (.../service-accounts/default/token) and throws it away: it proves that
+   minting works, so a pod whose identity exists but cannot mint fails the task run here, with a
+   code, instead of as a gcloud error in the middle of a task. The token is never logged,
+   written or returned.
 
 Reference: nothing. $RW_AUTH_REF_DIR is not read (a cloud-identity reference carries no material).
-On a failure it writes one `{code, message}` JSON line to $RW_AUTH_OUT_ERROR and exits 1. No
-message contains more than the code, the host and the HTTP status.
+The only RW_* names read are the ones the executor hands an auth script: RW_AUTH_INPUT_<NAME>
+(camelCase to SCREAMING_SNAKE: `serviceAccount` is RW_AUTH_INPUT_SERVICE_ACCOUNT),
+RW_AUTH_OUT_FILE and RW_AUTH_OUT_ERROR. On a failure it writes one `{code, message}` JSON line to
+$RW_AUTH_OUT_ERROR and exits 1. No message contains more than the code, the host and the HTTP
+status.
 """
 
 import json
@@ -32,8 +44,10 @@ import urllib.request
 MARKER_TYPE = "runwhen_cloud_identity"
 DEFAULT_METADATA_HOST = "metadata.google.internal"
 EMAIL_PATH = "/computeMetadata/v1/instance/service-accounts/default/email"
+TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts/default/token"
 TIMEOUT = 5
 MAX_EMAIL = 254
+MAX_TOKEN_REPLY = 16 * 1024
 # 6 to 30 characters: lowercase letters, digits and hyphens, starting with a letter, not ending
 # with a hyphen (https://cloud.google.com/resource-manager/docs/creating-managing-projects).
 PROJECT_RE = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]")
@@ -66,23 +80,44 @@ def read_project(env):
     return value
 
 
+def read_service_account(env):
+    """The `serviceAccount` input (the identity the connection expects), or None when not given."""
+    value = env.get("RW_AUTH_INPUT_SERVICE_ACCOUNT")
+    if value is None or value == "":
+        return None
+    if (
+        any(c in value for c in "\r\n\x00")
+        or len(value) > MAX_EMAIL
+        or not EMAIL_RE.fullmatch(value)
+    ):
+        raise AuthError("invalid_input", "input serviceAccount must be a service account e-mail")
+    return value
+
+
 def metadata_host(env):
-    host = env.get("GCE_METADATA_HOST") or DEFAULT_METADATA_HOST
+    host = env.get("GCE_METADATA_ROOT") or env.get("GCE_METADATA_HOST") or DEFAULT_METADATA_HOST
     if not HOST_RE.fullmatch(host):
-        raise AuthError("invalid_input", "GCE_METADATA_HOST must be a host name or host:port")
+        raise AuthError(
+            "invalid_input",
+            "GCE_METADATA_ROOT / GCE_METADATA_HOST must be a host name or host:port",
+        )
     return host
 
 
-def read_service_account_email(host, opener=None):
-    """The default service account's e-mail from the metadata server; AuthError otherwise."""
-    request = urllib.request.Request(
-        f"http://{host}{EMAIL_PATH}", headers={"Metadata-Flavor": "Google"}
-    )
-    open_ = opener or urllib.request.build_opener(_NoRedirect).open
+def default_opener():
+    """An opener that uses no proxy (a metadata server is never behind one) and follows no
+    redirect."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect).open
+
+
+def get(host, path, opener=None, limit=MAX_EMAIL + 2):
+    """The first `limit` bytes of the metadata server's answer to GET `path`; AuthError otherwise."""
+    request = urllib.request.Request(f"http://{host}{path}", headers={"Metadata-Flavor": "Google"})
+    open_ = opener or default_opener()
     try:
         with open_(request, timeout=TIMEOUT) as response:
             flavor = response.headers.get("Metadata-Flavor")
-            body = response.read(MAX_EMAIL + 2)
+            body = response.read(limit)
     except urllib.error.HTTPError as exc:
         status = exc.code
         if status == 404:
@@ -102,6 +137,12 @@ def read_service_account_email(host, opener=None):
         ) from None
     if flavor != "Google":
         raise AuthError("unreachable", f"{host} answered, but it is not a Google metadata server")
+    return body
+
+
+def read_service_account_email(host, opener=None):
+    """The default service account's e-mail from the metadata server; AuthError otherwise."""
+    body = get(host, EMAIL_PATH, opener)
     try:
         email = body.decode("ascii").strip()
     except UnicodeDecodeError:
@@ -109,6 +150,21 @@ def read_service_account_email(host, opener=None):
     if len(email) > MAX_EMAIL or not EMAIL_RE.fullmatch(email):
         raise AuthError("internal", "the metadata server returned no service account e-mail")
     return email
+
+
+def probe_token(host, opener=None):
+    """Proves the default service account can mint an access token. The token is read only to
+    check its shape and is dropped; nothing of it is returned or printed."""
+    body = get(host, TOKEN_PATH, opener, limit=MAX_TOKEN_REPLY)
+    try:
+        doc = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        doc = None
+    token = doc.get("access_token") if isinstance(doc, dict) else None
+    if not isinstance(token, str) or not token.strip():
+        raise AuthError(
+            "internal", f"the metadata server at {host} returned no access token for the identity"
+        )
 
 
 def marker(email):
@@ -119,7 +175,16 @@ def main(env=None, opener=None):
     env = os.environ if env is None else env
     try:
         read_project(env)
-        email = read_service_account_email(metadata_host(env), opener)
+        expected = read_service_account(env)
+        host = metadata_host(env)
+        email = read_service_account_email(host, opener)
+        if expected is not None and expected.lower() != email.lower():
+            raise AuthError(
+                "permission_denied",
+                "the pod's identity is not the service account the connection expects "
+                "(serviceAccount)",
+            )
+        probe_token(host, opener)
         out = env.get("RW_AUTH_OUT_FILE")
         if not out:
             raise AuthError("internal", "RW_AUTH_OUT_FILE is not set")

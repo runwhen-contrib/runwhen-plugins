@@ -1,107 +1,15 @@
 #!/usr/bin/env -S python3 -I
-"""A stand-in for the gcloud CLI that answers from canned scenarios. It never contacts Google.
+"""A stand-in for gcloud that answers from canned scenarios (tests/stub/scenarios). It never contacts
+Google. Run it through ../harness.py; see ../README.md and ../stublib.py."""
 
-    GCP_STUB_SCENARIO=<name> gcloud storage buckets list --project=p --format=json
-
-looks the argv (without the program name) up in scenarios/<name>/calls.yaml and prints the
-recorded stdout file, the recorded stderr and exits with the recorded rc. An argv that is not in
-the file exits 2 with a message that names it, so a test that drifted from its scenario fails
-loudly instead of getting an empty answer. See ../README.md; run it through ../harness.py.
-
-Python 3 standard library only (the calls file is a strict subset of YAML that json can read).
-"""
-
-import json
+import importlib.util
 import os
 import sys
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-SCENARIOS = os.path.join(os.path.dirname(HERE), "scenarios")
-# gcloud flags that change the output encoding or the prompting but not the question asked
-NOISE = {"--format=json", "--quiet", "-q"}
-CONFIG_PREFIX = "gcp-stub-config-"  # harness.py names the throwaway CLOUDSDK_CONFIG this way
-REQUIRED = ("source", "argv")
-
-
-def fail(message, rc=2):
-    sys.stderr.write(f"gcloud (stub): {message}\n")
-    sys.exit(rc)
-
-
-def normalise(argv):
-    """argv without the output-format and prompt flags: `--format=json`, `--format json`,
-    `--quiet`, `-q`. Nothing is sorted: flag order is part of the question."""
-    out, skip = [], False
-    for index, arg in enumerate(argv):
-        if skip:
-            skip = False
-        elif arg == "--format" and argv[index + 1 : index + 2] == ["json"]:
-            skip = True
-        elif arg not in NOISE:
-            out.append(arg)
-    return out
-
-
-def parse_calls(text):
-    """calls.yaml: a list of `- key: value` entries whose values are JSON (strings in double
-    quotes, argv a JSON array on one line); `#` lines and blank lines are skipped. This is valid
-    YAML too (tests/unit/test_stub_harness.py loads it with a real YAML parser to prove it)."""
-    calls, current = [], None
-    for number, line in enumerate(text.splitlines(), 1):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        body = line[2:] if line.startswith("- ") else line[2:] if line.startswith("  ") else None
-        if body is None:
-            fail(f"calls.yaml line {number}: expected '- key: value' or '  key: value'")
-        if line.startswith("- "):
-            current = {}
-            calls.append(current)
-        if current is None:
-            fail(f"calls.yaml line {number}: a key before the first '- '")
-        key, sep, value = body.partition(": ")
-        if not sep:
-            fail(f"calls.yaml line {number}: expected 'key: <json>'")
-        try:
-            current[key.strip()] = json.loads(value)
-        except ValueError:
-            fail(f"calls.yaml line {number}: the value of {key.strip()} is not JSON")
-    return calls
-
-
-def main(argv):
-    config = os.environ.get("CLOUDSDK_CONFIG", "")
-    if not (os.path.basename(config).startswith(CONFIG_PREFIX) and os.path.isdir(config)):
-        fail(
-            "refusing to run: CLOUDSDK_CONFIG is not the throwaway directory of harness.py. "
-            "Run through plugins/gcp/tests/stub/harness.py so no real gcloud account can be used."
-        )
-    scenario = os.environ.get("GCP_STUB_SCENARIO", "")
-    if not scenario or "/" in scenario or scenario.startswith("."):
-        fail("GCP_STUB_SCENARIO is not set to a scenario name")
-    directory = os.path.join(SCENARIOS, scenario)
-    path = os.path.join(directory, "calls.yaml")
-    if not os.path.isfile(path):
-        fail(f"no scenario {scenario!r}: there is no {path}")
-    with open(path, encoding="utf-8") as handle:
-        calls = parse_calls(handle.read())
-    asked = normalise(argv)
-    for call in calls:
-        missing = [k for k in REQUIRED if k not in call]
-        if missing:
-            fail(f"scenario {scenario}: a call lacks {', '.join(missing)}")
-        if call["argv"] == asked:
-            stdout_file = call.get("stdout")
-            if stdout_file:
-                with open(os.path.join(directory, stdout_file), "rb") as handle:
-                    sys.stdout.buffer.write(handle.read())
-                sys.stdout.buffer.flush()
-            sys.stderr.write(call.get("stderr", ""))
-            sys.exit(int(call.get("rc", 0)))
-    fail(
-        f"scenario {scenario}: no canned answer for argv {json.dumps(asked)}. "
-        f"Add the call to {path} (and a cited JSON file) or fix the task's argv."
-    )
-
+spec = importlib.util.spec_from_file_location("stublib", os.path.join(os.path.dirname(HERE), "stublib.py"))
+stublib = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stublib)
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    stublib.serve("gcloud", sys.argv[1:])

@@ -18,11 +18,15 @@ PLUGIN = Path(__file__).parents[2]  # plugins/gcp
 SKILLS = PLUGIN / "skills"
 STUB = PLUGIN / "tests" / "stub" / "scenarios"
 
-# The stub's invented identities. A fixture that mentions any other project, number or e-mail was
-# not recorded from the stub.
-PROJECTS = {"shop-prod-1234", "no-such-project-1"}
-PROJECT_NUMBERS = {"123456789012", "987654321098"}
-EMAIL_DOMAINS = {"shop-prod-1234.iam.gserviceaccount.com", "example.com"}
+# The stub's invented identities (tests/stub/identities.json: the one list, also read by the stubs).
+# A fixture that mentions any other project, number, e-mail domain, bucket or token was not
+# recorded from the stub.
+IDENTITIES = json.loads((PLUGIN / "tests" / "stub" / "identities.json").read_text())
+PROJECTS = set(IDENTITIES["projects"])
+PROJECT_NUMBERS = set(IDENTITIES["projectNumbers"])
+EMAIL_DOMAINS = set(IDENTITIES["emailDomains"])
+BUCKETS = set(IDENTITIES["buckets"])
+FAKE_TOKEN = IDENTITIES["fakeToken"]
 
 SECRET_PATTERNS = {
     "PEM private key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
@@ -40,7 +44,12 @@ SECRET_PATTERNS = {
 # also long digit runs and are not project numbers)
 NUMBER = re.compile(r"(?i)(?:projectnumber\W+|project_number:|projects/)(\d{6,})")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
-PROJECT_ARG = re.compile(r"(?:--project=|projects/|^)([a-z][a-z0-9-]{4,28}[a-z0-9])$")
+# any `projects/<id>` (a resource name, a KMS key, a consumer) and `--project=<id>`
+PROJECT_TOKEN = re.compile(
+    r"(?:(?<![\w/.-])projects/|/v[13]/projects/|--project=)([a-z][a-z0-9-]{4,28}[a-z0-9])(?![a-z0-9-])"
+)
+# a bucket in a `gs://` URL
+GS_URL = re.compile(r"gs://([a-z0-9][a-z0-9._-]{1,220}[a-z0-9])")
 
 
 def fixtures():
@@ -61,7 +70,35 @@ def text_problems(text):
         problems.append(f"e-mail at {domain}")
     for number in sorted({m.group(1) for m in NUMBER.finditer(text)} - PROJECT_NUMBERS):
         problems.append(f"project number {number}")
+    for project in sorted({m.group(1) for m in PROJECT_TOKEN.finditer(text)} - PROJECTS):
+        problems.append(f"project {project}")
+    for bucket in sorted({m.group(1) for m in GS_URL.finditer(text)} - BUCKETS):
+        problems.append(f"bucket {bucket}")
+    for token in sorted(set(re.findall(r"fake-access-token\S*", text)) - {FAKE_TOKEN}):
+        problems.append(f"token {token}")
+    if "127.0.0.1" in text or "BaseHTTP" in text:
+        problems.append("the address or banner of the capture's local server")
     return problems
+
+
+def bucket_names_in(stdout):
+    """The bucket names a recorded or canned stdout names: `gs://` URLs (du lines, URLs in error
+    text) and, in JSON, a bucket resource's `name` and a `bucket`/`bucket_name` field."""
+    names = {m.group(1) for m in GS_URL.finditer(stdout)}
+    try:
+        stack = [json.loads(stdout)]
+    except ValueError:
+        return names
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("kind") == "storage#bucket" and isinstance(node.get("name"), str):
+                names.add(node["name"])
+            names |= {node[k] for k in ("bucket", "bucket_name") if isinstance(node.get(k), str)}
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return names
 
 
 def test_the_scan_covers_fixtures_of_both_skills_and_the_stub_data():
@@ -96,7 +133,58 @@ def test_the_scanner_finds_each_kind_of_leak():
     assert text_problems("rw-reader@shop-prod-1234.iam.gserviceaccount.com 123456789012") == []
 
 
+def test_the_scanner_finds_other_identities_buckets_and_tokens():
+    assert "project some-real-project-9" in text_problems("--project=some-real-project-9")
+    assert "project some-real-project-9" in text_problems(
+        "projects/some-real-project-9/locations/us"
+    )
+    assert "bucket real-customer-data" in text_problems("ERROR: gs://real-customer-data not found")
+    assert "token fake-access-token-other" in text_problems("fake-access-token-other")
+    assert (
+        text_problems(f"--project=shop-prod-1234 gs://nope projects/{'123456789012'} {FAKE_TOKEN}")
+        == []
+    )
+    assert bucket_names_in("1649267441664gs://shop-archive\n") == {"shop-archive"}
+    resource = {"kind": "storage#bucket", "name": "real-bucket", "acl": [{"bucket": "real-bucket"}]}
+    assert bucket_names_in(json.dumps([resource])) == {"real-bucket"}
+    series = {"timeSeries": [{"resource": {"labels": {"bucket_name": "other-bucket"}}}]}
+    assert bucket_names_in(json.dumps(series)) == {"other-bucket"}
+    assert bucket_names_in('{"name": "roles/storage.admin"}') == set()  # not a bucket
+
+
+def test_the_stdout_of_every_recorded_call_and_canned_file_names_only_the_stubs_buckets():
+    seen = set()
+    for path in fixtures():
+        for call in yaml.safe_load(path.read_text())["calls"]:
+            bad = bucket_names_in(call["stdout"]) - BUCKETS
+            assert not bad, f"{relative(path)}: {sorted(bad)}"
+            seen |= bucket_names_in(call["stdout"])
+    for path in stub_files():
+        if path.suffix in (".json", ".txt"):
+            bad = bucket_names_in(path.read_text()) - BUCKETS
+            assert not bad, f"{relative(path)}: {sorted(bad)}"
+    assert seen, "the scan found no bucket name at all: it is looking in the wrong place"
+
+
+def test_every_projects_token_in_a_recorded_call_is_a_stub_project():
+    seen = set()
+    for path in fixtures() + stub_files():
+        found = {m.group(1) for m in PROJECT_TOKEN.finditer(path.read_text())}
+        assert found <= PROJECTS, f"{relative(path)}: {sorted(found - PROJECTS)}"
+        seen |= found
+    assert seen == PROJECTS
+
+
 # ---- what each fixture must be ------------------------------------------------------------------
+
+BASE_SCENARIOS = {"healthy", "broken", "forbidden", "throttled", "api-disabled"}
+# A missing project answers 403 (the existence is hidden), so a project-level "not-found" is no real
+# answer: the skills that read a project have no not-found fixture; the bucket tasks have one
+# (a bucket that does not exist is a real 404).
+REQUIRED = {
+    "gcp-base": BASE_SCENARIOS | {"unauthenticated", "project-denied"},
+    "gcp-bucket-health": BASE_SCENARIOS | {"not-found"},
+}
 
 
 def tasks():
@@ -108,9 +196,9 @@ def tasks():
 
 
 @pytest.mark.parametrize("skill, task", tasks())
-def test_every_task_has_the_four_scenarios_of_the_fixture_brief_plus_throttled(skill, task):
+def test_every_task_has_its_required_scenarios(skill, task):
     names = {p.stem for p in (SKILLS / skill / "tests" / task).glob("*.yaml")}
-    assert {"healthy", "broken", "forbidden", "not-found", "throttled"} <= names
+    assert REQUIRED[skill] <= names, REQUIRED[skill] - names
     # and every task of the skill has a directory of fixtures
     declared = {
         t["name"] for t in yaml.safe_load((SKILLS / skill / "tasks.yaml").read_text())["tasks"]
@@ -123,7 +211,11 @@ EXPECTED = {
     "not-found": ("failed", ["not_found"]),
     "throttled": ("failed", ["rate_limited"]),
     "unauthenticated": ("failed", ["permission_denied"]),
-    "partial-iam": ("partial", ["permission_denied"]),
+    "api-disabled": ("failed", ["dependency"]),
+    "project-denied": ("partial", ["permission_denied"]),
+    "partial-throttled": ("partial", ["rate_limited"]),
+    "monitoring-disabled": ("failed", ["dependency"]),
+    "du-fallback": ("ok", []),
     "healthy": ("ok", []),
     "broken": ("ok", []),
 }
@@ -140,18 +232,33 @@ def test_each_fixture_expects_what_its_name_says_and_asserts_its_outputs(path):
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT[\d:.]+Z", doc["now"])  # replays at the recorded time
 
 
+READ_ONLY_GCLOUD = {
+    ("storage", "buckets", "list"), ("storage", "buckets", "describe"),
+    ("storage", "buckets", "get-iam-policy"), ("storage", "du"), ("projects", "describe"),
+    ("auth", "print-access-token"),
+}  # fmt: skip
+
+
 @pytest.mark.parametrize("path", fixtures(), ids=relative)
-def test_every_recorded_call_is_a_read_only_gcloud_call_against_the_stub_projects(path):
+def test_every_recorded_call_is_a_read_only_call_against_the_stub_projects(path):
     doc = yaml.safe_load(path.read_text())
     assert doc["resource"].split("/")[2] in PROJECTS
     for call in doc["calls"]:
         argv = call["argv"]
-        assert argv[0] == "gcloud" and argv[-1] == "--quiet", argv
-        assert argv[1:3] in (["storage", "buckets"], ["storage", "du"], ["projects", "describe"])
-        assert argv[3 if argv[1] == "storage" and argv[2] == "buckets" else 2] not in (
-            "create", "delete", "update", "add-iam-policy-binding", "remove-iam-policy-binding",
-        )  # fmt: skip
-        assert not any("token" in a.lower() or a.startswith("--impersonate") for a in argv)
+        if argv[0] == "curl":
+            assert argv[1:6] == ["-sS", "--fail-with-body", "--max-redirs", "0", "-H"]
+            assert argv[6].startswith("@") and not argv[6].startswith("@/"), (
+                "a relative header file"
+            )
+            assert argv[7].startswith("https://monitoring.googleapis.com/v3/projects/")
+            assert FAKE_TOKEN not in " ".join(argv) and "Bearer" not in " ".join(argv)
+            assert "-X" not in argv and "--data" not in argv and "-d" not in argv
+            assert argv[7].split("?")[0].endswith("/timeSeries")  # the one read-only endpoint
+        else:
+            assert argv[0] == "gcloud" and argv[-1] == "--quiet", argv
+            assert any(tuple(argv[1 : 1 + n]) in READ_ONLY_GCLOUD for n in (2, 3)), argv
+            assert f"--billing-project={doc['resource'].split('/')[2]}" in argv
+            assert not any(a.startswith(("--impersonate", "--access-token")) for a in argv)
         for arg in argv:
             if arg.startswith("--project="):
                 assert arg.split("=", 1)[1] in PROJECTS
@@ -159,14 +266,11 @@ def test_every_recorded_call_is_a_read_only_gcloud_call_against_the_stub_project
             json.loads(call["stdout"])
 
 
-def test_the_recordings_were_made_with_the_stub_not_a_real_account():
-    # the one place a real project id or number would show is a recorded argv or stdout; the scan
-    # above refuses it. Here: nothing in the fixtures names a bucket the stub does not have.
-    stub_buckets = set()
-    for scenario in STUB.iterdir():
-        stub_buckets |= {p.name[7:-5] for p in scenario.glob("bucket-*.json")}
-    used = set()
-    for path in fixtures():
-        for call in yaml.safe_load(path.read_text())["calls"]:
-            used |= {a[5:] for a in call["argv"] if a.startswith("gs://")}
-    assert used and used <= stub_buckets | {"nope"}
+def test_the_recorded_error_messages_name_no_server_of_the_capture():
+    for path in fixtures() + stub_files():
+        text = path.read_text()
+        assert (
+            "127.0.0.1" not in text
+            and "BaseHTTP" not in text
+            and "CLOUDSDK_AUTH_ACCESS_TOKEN" not in text
+        ), path

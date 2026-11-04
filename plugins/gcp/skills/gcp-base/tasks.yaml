@@ -15,7 +15,9 @@ tasks:
     credentials: [gcp/adc, runwhen/sync]           # runwhen/sync is platform-minted per run by the lease, not a connection
     permissions:
       - { permission: storage.buckets.list }               # the bucket list; without it discover fails with permission_denied
+      - { permission: storage.buckets.getIamPolicy }       # gcloud storage buckets list always asks for the FULL projection (ACLs, IAM settings), which the JSON API gates on this permission
       - { permission: resourcemanager.projects.get }       # the project's number, name and state; without it the run is partial and the project id alone is reported
+      - { permission: serviceusage.services.use }          # every call carries --billing-project=<the project>
     outputs:
       summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-step errors and root.canonicalKey (projectId)" }
       project: { schema: ./schemas/project.v1.json, description: "Project id, number, display name and lifecycle state" }

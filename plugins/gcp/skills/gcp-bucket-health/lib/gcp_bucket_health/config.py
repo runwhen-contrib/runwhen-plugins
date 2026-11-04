@@ -1,6 +1,7 @@
-"""bucket-config: a bucket's settings as facts, from the API's own bucket resource."""
+"""bucket-config: a bucket's settings as facts, from the API's own bucket resource (the rows of
+one `buckets list`, or one `buckets describe`: no call per bucket)."""
 
-from .buckets import describe, listing, per_bucket, select
+from .buckets import listing, per_bucket, select, totals_of
 
 TEXT = 1024
 MAX_LABELS = 50
@@ -65,11 +66,9 @@ def bucket_config(row):
 
 
 def run(ctx, st):
-    project, names, total, single = select(ctx, st.max_items, st.command_timeout)
-    entries = per_bucket(
-        ctx,
-        names,
-        single,
-        lambda name: bucket_config(describe(ctx, name, st.command_timeout)),
-    )
-    return {"buckets": listing(entries, total, len(names))}
+    project, rows, total, single = select(ctx, st.max_items, st.command_timeout)
+    entries = per_bucket(ctx, rows, single, bucket_config)
+    return {
+        "buckets": listing(entries, total, len(rows)),
+        "totals": totals_of(entries, total, len(rows)),
+    }

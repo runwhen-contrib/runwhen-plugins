@@ -16,6 +16,8 @@ from runwhen_capability.contracts import validate
 
 SKILL = PLUGIN / "skills" / "gcp-base"
 P = "shop-prod-1234"
+LIST = ["storage", "buckets", "list", f"--project={P}", "--raw", f"--billing-project={P}"]
+DESCRIBE = ["projects", "describe", P, f"--billing-project={P}"]
 CRED = {
     "apiBaseUrl": "https://papi.example",
     "token": "tok-SECRET",
@@ -39,19 +41,19 @@ def test_a_healthy_project_is_listed_with_its_facts_and_canonical_key(run_script
         "projectNumber": "123456789012",
         "displayName": "Shop Production",
         "lifecycleState": "ACTIVE",
-    }
+    }  # Resource Manager v1, which `gcloud projects describe` reads today
     assert [b["name"] for b in out["buckets"]["items"]] == [
         "shop-assets",
-        "shop-logs",
         "shop-backups",
+        "shop-logs",
     ]
     assert (out["buckets"]["total"], out["buckets"]["omitted"]) == (3, 0)
-    assert out["buckets"]["items"][2] == {
+    assert out["buckets"]["items"][1] == {
         "name": "shop-backups",
         "location": "US",
         "locationType": "multi-region",
         "storageClass": "COLDLINE",
-        "created": "2025-03-14T09:21:05.123Z",
+        "created": "2025-03-14T09:21:05.123000+00:00",  # gcloud's own rendering of timeCreated
     }
     summary = out["summary"]
     assert summary["counts"] == {"project": 1, "bucket": 3}
@@ -86,11 +88,15 @@ def test_the_calls_are_the_two_read_only_gcloud_commands_with_the_credential_env
 ):
     stub = stub_run("healthy")
     discover(run_script, stub)
-    assert stub.asked() == [
-        ["storage", "buckets", "list", f"--project={P}", "--raw"],
-        ["projects", "describe", P],
-    ]
+    assert stub.asked() == [LIST, DESCRIBE]
     assert all(c["timeout"] == 60.0 for c in stub.log)
+    # every call is billed to the project and runs with the ambient credentials neutralised
+    for call in stub.log:
+        assert f"--billing-project={P}" in call["argv"]
+        assert (
+            call["env"]["CLOUDSDK_AUTH_ACCESS_TOKEN"] == ""
+            and call["env"]["CLOUDSDK_CORE_ACCOUNT"] == ""
+        )
 
 
 def test_max_items_cuts_the_listing_but_not_the_sync(run_script, stub_run):
@@ -116,13 +122,7 @@ def test_a_bad_command_timeout_is_invalid_input(run_script, stub_run):
 def test_a_project_the_identity_may_not_read_still_lists_its_buckets_partially(
     run_script, stub_run
 ):
-    stub = stub_run("healthy")
-    stub.set(
-        ["projects", "describe", P],
-        rc=1,
-        stderr=f"ERROR: (gcloud.projects.describe) [x] does not have permission to access projects instance [{P}]: The caller does not have permission\n",
-    )
-    run = discover(run_script, stub)
+    run = discover(run_script, stub_run("project-denied"))
     env = run.envelope
     assert env["status"] == "partial"
     assert [(e["code"], e["scope"]) for e in env["errors"]] == [("permission_denied", "project")]
@@ -132,7 +132,7 @@ def test_a_project_the_identity_may_not_read_still_lists_its_buckets_partially(
         "displayName": None,
         "lifecycleState": None,
     }
-    assert env["outputs"]["buckets"]["total"] == 3
+    assert env["outputs"]["buckets"]["total"] == 6
     assert env["outputs"]["summary"]["root"]["canonicalKey"]["value"] == P
     assert [e["scope"] for e in env["outputs"]["summary"]["errors"]] == ["project"]
     document = json.loads(run.files["sync.json"])
@@ -146,7 +146,7 @@ def test_a_project_the_identity_may_not_read_still_lists_its_buckets_partially(
         ("forbidden", P, "permission_denied"),
         ("unauthenticated", P, "permission_denied"),
         ("throttled", P, "rate_limited"),
-        ("not-found", "no-such-project-1", "not_found"),
+        ("api-disabled", P, "dependency"),
     ],
 )
 def test_a_failed_listing_fails_the_task_with_the_classified_code(
@@ -168,7 +168,7 @@ def test_discover_refuses_a_bucket_target(run_script, stub_run):
 
 def test_an_empty_project_has_an_empty_list_and_a_complete_partition(run_script, stub_run):
     stub = stub_run("healthy")
-    stub.set(["storage", "buckets", "list", f"--project={P}", "--raw"], stdout="[]\n")
+    stub.set(LIST, stdout="[]\n")
     run = discover(run_script, stub)
     out = run.envelope["outputs"]
     assert out["buckets"] == {"items": [], "total": 0, "omitted": 0}
@@ -178,9 +178,103 @@ def test_an_empty_project_has_an_empty_list_and_a_complete_partition(run_script,
 @pytest.mark.parametrize("stdout", ["", "{}", '[{"location": "US"}]', "[1]"])
 def test_a_listing_that_is_not_a_list_of_named_buckets_is_an_error(run_script, stub_run, stdout):
     stub = stub_run("healthy")
-    stub.set(["storage", "buckets", "list", f"--project={P}", "--raw"], stdout=stdout)
+    stub.set(LIST, stdout=stdout)
     run = discover(run_script, stub)
     assert run.envelope["status"] == "failed" and run.envelope["errors"][0]["code"] == "internal"
+
+
+# ---- the project resource: partial for the reasons that leave the buckets useful ---------------
+
+
+def project_error(command_text, rc=1):
+    return {"rc": rc, "stderr": f"ERROR: (gcloud.projects.describe) {command_text}\n"}
+
+
+@pytest.mark.parametrize(
+    "stderr, code",
+    [
+        ("HTTPError 403: The caller does not have permission", "permission_denied"),
+        ("HTTPError 403: Cloud Resource Manager API has not been used in project 1 before or it is disabled. SERVICE_DISABLED", "dependency"),
+        ("RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests'", "rate_limited"),
+        ("Project 'shop-prod-1234' not found or deleted.", "not_found"),
+    ],
+)  # fmt: skip
+def test_a_project_describe_that_cannot_be_had_leaves_the_buckets_and_a_scoped_error(
+    run_script, stub_run, stderr, code
+):
+    stub = stub_run("healthy")
+    stub.set(DESCRIBE, **project_error(stderr))
+    run = discover(run_script, stub)
+    env = run.envelope
+    assert env["status"] == "partial" and env["outputs"]["buckets"]["total"] == 3
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [(code, "project")]
+    assert env["outputs"]["project"]["projectNumber"] is None
+    assert [e["scope"] for e in env["outputs"]["summary"]["errors"]] == ["project"]
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "something odd happened",
+        "HTTPError 400: Invalid argument",
+        "Failed to establish a new connection",
+    ],
+)
+def test_any_other_project_failure_still_fails_the_task(run_script, stub_run, stderr):
+    stub = stub_run("healthy")
+    stub.set(DESCRIBE, **project_error(stderr))
+    assert discover(run_script, stub).envelope["status"] == "failed"
+
+
+V1 = {
+    "projectNumber": "123456789012",
+    "projectId": P,
+    "name": "Shop Production",
+    "lifecycleState": "ACTIVE",
+}
+V3 = {
+    "name": "projects/123456789012",
+    "projectId": P,
+    "displayName": "Shop Production",
+    "state": "ACTIVE",
+}
+FACTS = {
+    "projectId": P,
+    "projectNumber": "123456789012",
+    "displayName": "Shop Production",
+    "lifecycleState": "ACTIVE",
+}
+
+
+@pytest.mark.parametrize("row", [V1, V3], ids=["v1", "v3"])
+def test_both_resource_manager_shapes_are_read(run_script, stub_run, row):
+    stub = stub_run("healthy")
+    stub.set(DESCRIBE, stdout=json.dumps(row))
+    env = discover(run_script, stub).envelope
+    assert env["status"] == "ok" and env["outputs"]["project"] == FACTS
+
+
+@pytest.mark.parametrize("row", [{}, {"projectId": P, "labels": {}}, {"name": "projects/1"}, []])
+def test_a_project_of_an_unknown_shape_is_a_scoped_error_never_silent_nulls(
+    run_script, stub_run, row
+):
+    stub = stub_run("healthy")
+    stub.set(DESCRIBE, stdout=json.dumps(row))
+    env = discover(run_script, stub).envelope
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("internal", "project")]
+    assert "unknown shape" in env["errors"][0]["message"]
+    assert (
+        env["outputs"]["project"]["projectNumber"] is None
+        and env["outputs"]["buckets"]["total"] == 3
+    )
+
+
+def test_the_project_facts_of_the_real_gcloud_output_are_v1(stub_run):
+    stub = stub_run("healthy")
+    assert dc.project_facts(json.loads((stub.directory / "project.json").read_text())) == (
+        "123456789012", "Shop Production", "ACTIVE",
+    )  # fmt: skip
 
 
 # ---- the push ---------------------------------------------------------------------------------
@@ -300,7 +394,9 @@ def test_discover_declares_the_sync_credential_the_permissions_and_a_budget():
     assert task["credentials"] == ["gcp/adc", "runwhen/sync"] and task["readOnly"] is True
     assert task["permissions"] == [
         {"permission": "storage.buckets.list"},
+        {"permission": "storage.buckets.getIamPolicy"},  # the list asks for the FULL projection
         {"permission": "resourcemanager.projects.get"},
+        {"permission": "serviceusage.services.use"},  # --billing-project on every call
     ]
     assert task["timeout"] == f"{budget.TASK_BUDGET}s"
 

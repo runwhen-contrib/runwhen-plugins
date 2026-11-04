@@ -1,83 +1,74 @@
-# gcloud answers for the 'throttled' scenario. Synthetic: project shop-prod-1234, buckets and
-# members are invented. Each entry's `source` is the reference its answer follows; every
-# value is JSON (see ../../README.md).
-- argv: ["projects", "describe", "shop-prod-1234"]
+# Canned answers of scenario 'throttled', written by tests/stub/capture/capture.sh from the real
+# gcloud 592.0.0 in the runtime image (see ../../README.md). Project, buckets and members are invented.
+# Every value is one line of JSON.
+- argv: ["projects", "describe", "shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.projects.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "list", "--project=shop-prod-1234", "--raw"]
+  stderr: "ERROR: (gcloud.projects.describe) HttpError accessing <https://cloudresourcemanager.googleapis.com/v1/projects/shop-prod-1234?alt=json>: response: <{'server': 'ESF', 'date': 'Wed, 04 Nov 2026 00:00:00 GMT', 'content-type': 'application/json; charset=UTF-8', 'content-length': '487', 'status': 429}>, content <{\"error\": {\"code\": 429, \"status\": \"RESOURCE_EXHAUSTED\", \"message\": \"Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'cloudresourcemanager.googleapis.com' for consumer 'project_number:123456789012'.\", \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"reason\": \"RATE_LIMIT_EXCEEDED\", \"domain\": \"googleapis.com\", \"metadata\": {\"consumer\": \"projects/123456789012\", \"service\": \"cloudresourcemanager.googleapis.com\"}}]}}>\nThis may be due to network connectivity issues. Please check your network settings, and the status of the service you are trying to reach.\n"
+  source: "https://cloud.google.com/resource-manager/reference/rest/v1/projects/get"
+  cli_source: "gcloud 592.0.0: surface/projects/describe.py and googlecloudsdk/api_lib/cloudresourcemanager/projects_api.py (Resource Manager v1)"
+- argv: ["storage", "buckets", "list", "--project=shop-prod-1234", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
+  stdout: "buckets-list.json"
   stderr: "ERROR: (gcloud.storage.buckets.list) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "describe", "gs://shop-assets", "--raw"]
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/list.py (FULL projection)"
+- argv: ["storage", "buckets", "describe", "gs://shop-assets", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-assets"]
+  stderr: "ERROR: (gcloud.storage.buckets.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-assets", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "du", "--summarize", "gs://shop-assets"]
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"
+- argv: ["storage", "buckets", "describe", "gs://shop-backups", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "describe", "gs://shop-logs", "--raw"]
+  stderr: "ERROR: (gcloud.storage.buckets.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-backups", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-logs"]
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"
+- argv: ["storage", "buckets", "describe", "gs://shop-logs", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "du", "--summarize", "gs://shop-logs"]
+  stderr: "ERROR: (gcloud.storage.buckets.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-logs", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "describe", "gs://shop-backups", "--raw"]
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"
+- argv: ["storage", "buckets", "describe", "gs://shop-public-assets", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-backups"]
+  stderr: "ERROR: (gcloud.storage.buckets.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-public-assets", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "du", "--summarize", "gs://shop-backups"]
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"
+- argv: ["storage", "buckets", "describe", "gs://shop-legacy", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "describe", "gs://shop-public-assets", "--raw"]
+  stderr: "ERROR: (gcloud.storage.buckets.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-legacy", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-public-assets"]
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"
+- argv: ["storage", "buckets", "describe", "gs://shop-archive", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "du", "--summarize", "gs://shop-public-assets"]
+  stderr: "ERROR: (gcloud.storage.buckets.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-archive", "--billing-project=shop-prod-1234"]
   rc: 1
-  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "describe", "gs://shop-legacy", "--raw"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-legacy"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "du", "--summarize", "gs://shop-legacy"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "describe", "gs://shop-archive", "--raw"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-archive"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
-- argv: ["storage", "du", "--summarize", "gs://shop-archive"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
-  source: "https://cloud.google.com/storage/quotas"
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"

@@ -1,5 +1,5 @@
-import importlib.machinery
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -49,54 +49,78 @@ def load_script(name, skill):
 
 
 def stub_module():
-    loader = importlib.machinery.SourceFileLoader("gcloud_stub", str(STUB / "bin" / "gcloud"))
-    spec = importlib.util.spec_from_loader("gcloud_stub", loader)
+    """The stubs' shared module (tests/stub/stublib.py)."""
+    spec = importlib.util.spec_from_file_location("stublib", STUB / "stublib.py")
     module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
+    spec.loader.exec_module(module)
     return module
 
 
 class StubRun:
-    """Stands in for ctx.run: answers gcloud from a scenario of the stub (the same canned data a
-    fixture is recorded from), exactly as the stub would, plus per-test overrides.
+    """Stands in for ctx.run: answers gcloud and curl from a scenario of the stub (the same canned
+    data a fixture is recorded from), exactly as the stubs would, plus per-test overrides.
 
-    Like the SDK's ctx.run under v13 it would raise on a non-zero exit, but gcloud_json must ask
-    for check=False and classify itself, so a call that does not pass check=False fails here."""
+    Like the SDK's ctx.run under v13 it would raise on a non-zero exit, but the plugin must ask
+    for check=False and classify itself, so a call that does not pass check=False fails here. A
+    curl call must pass its credential as a header file in ctx.workdir (never on argv): the file
+    is read at call time and must hold only the stub's fake token."""
 
-    def __init__(self, scenario):
+    def __init__(self, scenario, workdir=None):
         self.scenario = scenario
         self.stub = stub_module()
         directory = STUB / "scenarios" / scenario
         self.directory = directory
         self.calls = self.stub.parse_calls((directory / "calls.yaml").read_text())
-        self.log = []  # {"argv", "asked", "env", "timeout"}
+        self.log = []  # {"argv", "asked", "env", "timeout", "tool"}
         self.overrides = []
+        self.headers = []  # the header file of each curl call, as it was when curl ran
+        self.workdir = workdir
 
-    def set(self, asked, rc=0, stdout="", stderr=""):
+    def set(self, asked, rc=0, stdout="", stderr="", tool="gcloud"):
         """Answer the (normalised) argv `asked` with this, ahead of the scenario."""
-        self.overrides.append((list(asked), rc, stdout, stderr))
+        self.overrides.append((tool, list(asked), rc, stdout, stderr))
         return self
 
-    def asked(self):
-        return [c["asked"] for c in self.log]
+    def asked(self, tool="gcloud"):
+        return [c["asked"] for c in self.log if c["tool"] == tool]
 
     def __call__(self, argv, cwd=None, timeout=None, env=None, *, inherit_env=True, check=None):
-        assert check is False, "gcloud_json must pass check=False and classify the exit itself"
-        assert argv[0] == "gcloud" and argv[-1] == "--quiet", argv
-        asked = self.stub.normalise(argv[1:])
-        self.log.append({"argv": list(argv), "asked": asked, "env": env, "timeout": timeout})
-        for expected, rc, stdout, stderr in self.overrides:
-            if expected == asked:
+        assert check is False, "the plugin must pass check=False and classify the exit itself"
+        tool = argv[0]
+        assert tool in ("gcloud", "curl"), argv
+        if tool == "gcloud":
+            assert argv[-1] == "--quiet", argv
+        else:
+            self.check_header(argv, cwd)
+        asked = self.stub.normalise(tool, argv[1:])
+        self.log.append(
+            {"argv": list(argv), "asked": asked, "env": env, "timeout": timeout, "tool": tool}
+        )
+        for kind, expected, rc, stdout, stderr in self.overrides:
+            if (kind, expected) == (tool, asked):
                 return subprocess.CompletedProcess(argv, rc, stdout, stderr)
         for call in self.calls:
-            if call["argv"] == asked:
+            if call.get("tool", "gcloud") == tool and call["argv"] == asked:
                 stdout = ""
                 if call.get("stdout"):
                     stdout = (self.directory / call["stdout"]).read_text()
                 return subprocess.CompletedProcess(
                     argv, call.get("rc", 0), stdout, call.get("stderr", "")
                 )
-        raise AssertionError(f"scenario {self.scenario} has no answer for {asked}")
+        raise AssertionError(f"scenario {self.scenario} has no answer for {tool} {asked}")
+
+    def check_header(self, argv, cwd):
+        refs = [
+            a[1:] for i, a in enumerate(argv) if i and argv[i - 1] == "-H" and a.startswith("@")
+        ]
+        assert len(refs) == 1, f"curl must pass its credential as -H @<file>: {argv}"
+        path = Path(cwd or self.workdir) / refs[0]
+        assert path.stat().st_mode & 0o777 == 0o600, "the header file must be mode 0600"
+        text = path.read_text()
+        token = json.loads((STUB / "identities.json").read_text())["fakeToken"]
+        assert f"Authorization: Bearer {token}\n" in text
+        assert not any(token in a for a in argv), "the token is on the command line"
+        self.headers.append(text)
 
 
 @pytest.fixture
@@ -117,9 +141,13 @@ def run_script():
         main = load_script(script, skill).main
         with make_context(resource=resource, settings={**SETTINGS, **(settings or {})}) as tc:
             tc.ctx.run = stub
+            stub.workdir = tc.ctx.workdir
             envelope = run_main(main, tc, **inputs)
             files = {p.name: p.read_text() for p in Path(tc.out_dir).iterdir()}
-            return SimpleNamespace(envelope=envelope, errors=list(tc.errors), files=files)
+            left = sorted(p.name for p in Path(tc.ctx.workdir).iterdir() if p.name.startswith("."))
+            return SimpleNamespace(
+                envelope=envelope, errors=list(tc.errors), files=files, workdir_dotfiles=left
+            )
 
     return run
 

@@ -2,6 +2,8 @@
 exercised through gcp-base's copy (the others are tested to be identical in test_gcp_copies.py)."""
 
 import json
+import os
+import stat
 import subprocess
 
 import pytest
@@ -129,11 +131,13 @@ def test_a_secret_that_slips_into_stderr_is_scrubbed(leak):
 
 
 class Ctx:
-    """The smallest ctx: .run only."""
+    """The smallest ctx: .run, .workdir and the target."""
 
-    def __init__(self, result=None, raises=None):
+    def __init__(self, result=None, raises=None, workdir=None, resource=None):
         self.calls = []
         self.result, self.raises = result, raises
+        self.workdir = workdir
+        self.resource = resource
 
     def run(self, argv, cwd=None, timeout=None, env=None, *, inherit_env=True, check=None):
         self.calls.append({"argv": argv, "timeout": timeout, "env": env, "check": check})
@@ -146,8 +150,15 @@ def done(stdout="", stderr="", rc=0):
     return subprocess.CompletedProcess([], rc, stdout, stderr)
 
 
-def test_gcloud_json_builds_the_argv_and_returns_the_parsed_value():
-    ctx = Ctx(done('[{"name": "a"}]'))
+PROJECT_TARGET = {"type": "gcp/project", "path": "gcp/projects/shop-prod-1234"}
+
+
+def ctx_for(tmp_path, result=None, resource=None, **kwargs):
+    return Ctx(result, workdir=tmp_path, resource=resource, **kwargs)
+
+
+def test_gcloud_json_builds_the_argv_and_returns_the_parsed_value(tmp_path):
+    ctx = ctx_for(tmp_path, done('[{"name": "a"}]'))
     assert gcloud.gcloud_json(ctx, "storage", "buckets", "list", "--project=p", "--raw") == [
         {"name": "a"}
     ]
@@ -158,32 +169,49 @@ def test_gcloud_json_builds_the_argv_and_returns_the_parsed_value():
     assert call["check"] is False and call["timeout"] == 60.0
 
 
-def test_gcloud_text_has_no_format_flag():
-    ctx = Ctx(done("12  gs://b/\n"))
+def test_every_call_is_billed_to_the_targets_project(tmp_path):
+    ctx = ctx_for(tmp_path, done("[]"), resource=PROJECT_TARGET)
+    gcloud.gcloud_json(ctx, "storage", "buckets", "list", "--project=shop-prod-1234", "--raw")
+    gcloud.gcloud_text(ctx, "auth", "print-access-token")
+    bucket = {"type": "gcp/bucket", "path": "gcp/projects/shop-prod-1234/buckets/b1x"}
+    other = ctx_for(tmp_path, done("12  gs://b1x\n"), resource=bucket)
+    gcloud.gcloud_text(other, "storage", "du", "--summarize", "gs://b1x")
+    for call in ctx.calls + other.calls:
+        assert "--billing-project=shop-prod-1234" in call["argv"]
+        assert call["argv"][-1] == "--quiet"
+    assert other.calls[0]["argv"] == [
+        "gcloud", "storage", "du", "--summarize", "gs://b1x", "--billing-project=shop-prod-1234", "--quiet",
+    ]  # fmt: skip
+
+
+def test_gcloud_text_has_no_format_flag(tmp_path):
+    ctx = ctx_for(tmp_path, done("12  gs://b/\n"))
     assert gcloud.gcloud_text(ctx, "storage", "du", "--summarize", "gs://b") == "12  gs://b/\n"
     assert ctx.calls[0]["argv"] == ["gcloud", "storage", "du", "--summarize", "gs://b", "--quiet"]
 
 
-def test_a_non_zero_exit_raises_with_the_classified_code_and_the_stderr_line():
-    ctx = Ctx(done(stderr="ERROR: (gcloud.x) HTTPError 429: slow down", rc=1))
+def test_a_non_zero_exit_raises_with_the_classified_code_and_the_stderr_line(tmp_path):
+    ctx = ctx_for(tmp_path, done(stderr="ERROR: (gcloud.x) HTTPError 429: slow down", rc=1))
     with pytest.raises(RwError) as caught:
         gcloud.gcloud_json(ctx, "x")
     assert caught.value.code == "rate_limited" and "HTTPError 429" in caught.value.message
 
 
 @pytest.mark.parametrize("stdout", ["", "  \n", "not json"])
-def test_empty_or_unparsable_output_is_an_internal_error_never_an_empty_result(stdout):
+def test_empty_or_unparsable_output_is_an_internal_error_never_an_empty_result(tmp_path, stdout):
     with pytest.raises(RwError) as caught:
-        gcloud.gcloud_json(Ctx(done(stdout)), "x")
+        gcloud.gcloud_json(ctx_for(tmp_path, done(stdout)), "x")
     assert caught.value.code == "internal"
 
 
-def test_timeouts_and_a_missing_gcloud_are_classified():
+def test_timeouts_and_a_missing_gcloud_are_classified(tmp_path):
     with pytest.raises(RwError) as caught:
-        gcloud.gcloud_json(Ctx(raises=subprocess.TimeoutExpired(["gcloud"], 5)), "x", timeout=5)
+        gcloud.gcloud_json(
+            ctx_for(tmp_path, raises=subprocess.TimeoutExpired(["gcloud"], 5)), "x", timeout=5
+        )
     assert caught.value.code == "timeout"
     with pytest.raises(RwError) as caught:
-        gcloud.gcloud_json(Ctx(raises=FileNotFoundError()), "x")
+        gcloud.gcloud_json(ctx_for(tmp_path, raises=FileNotFoundError()), "x")
     assert caught.value.code == "dependency"
 
 
@@ -195,44 +223,95 @@ def test_durations_accept_the_usual_units_and_reject_the_rest():
         assert caught.value.code == "invalid_input"
 
 
-# ---- the credential file ----------------------------------------------------------------------
+# ---- the credential and the ambient sources ---------------------------------------------------
+
+BLANKED = {
+    "CLOUDSDK_AUTH_ACCESS_TOKEN": "",
+    "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE": "",
+    "CLOUDSDK_CORE_ACCOUNT": "",
+}
 
 
-def test_the_cloud_identity_marker_blanks_the_credential_variable(tmp_path):
+def marker_file(tmp_path):
     marker = tmp_path / "adc.json"
     marker.write_text(json.dumps({"type": gcloud.MARKER_TYPE, "serviceAccountEmail": "a@b.c"}))
-    env = {gcloud.CREDENTIAL_ENV: str(marker)}
-    assert gcloud.credential_env(env) == {gcloud.CREDENTIAL_ENV: ""}
-    ctx = Ctx(done("[]"))
-    import os
-
-    os.environ[gcloud.CREDENTIAL_ENV] = str(marker)
-    try:
-        gcloud.gcloud_json(ctx, "x")
-    finally:
-        del os.environ[gcloud.CREDENTIAL_ENV]
-    assert ctx.calls[0]["env"] == {gcloud.CREDENTIAL_ENV: ""}
+    return marker
 
 
-def test_a_service_account_key_or_no_credential_changes_nothing(tmp_path):
+def test_a_service_account_key_gets_the_ambient_sources_blanked_and_no_metadata_check(tmp_path):
     key = tmp_path / "key.json"
     key.write_text(json.dumps({"type": "service_account", "client_email": "a@b.c"}))
-    assert gcloud.credential_env({gcloud.CREDENTIAL_ENV: str(key)}) == {}
-    assert gcloud.credential_env({}) == {}
-    assert gcloud.credential_env({gcloud.CREDENTIAL_ENV: str(tmp_path / "missing")}) == {}
-    key.write_text("not json")
-    assert gcloud.credential_env({gcloud.CREDENTIAL_ENV: str(key)}) == {}
+    env = gcloud.gcloud_env(Ctx(workdir=tmp_path), {gcloud.CREDENTIAL_ENV: str(key)})
+    config = env.pop("CLOUDSDK_CONFIG")
+    assert env == {**BLANKED, "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false"}
+    assert gcloud.CREDENTIAL_ENV not in env, (
+        "the key's own file override stays as the runner set it"
+    )
+    assert os.path.isdir(config) and os.listdir(config) == []
+    assert os.path.dirname(config) == str(tmp_path), "a fresh directory under ctx.workdir"
+    assert stat.S_IMODE(os.stat(config).st_mode) == 0o700
 
 
-def test_the_credential_file_is_never_echoed(tmp_path, monkeypatch):
+@pytest.mark.parametrize("credential", ["missing", "unreadable-json", "none"])
+def test_no_usable_credential_file_is_neutralised_like_a_key(tmp_path, credential):
+    environ = {}
+    if credential == "missing":
+        environ = {gcloud.CREDENTIAL_ENV: str(tmp_path / "missing")}
+    elif credential == "unreadable-json":
+        (tmp_path / "bad").write_text("not json")
+        environ = {gcloud.CREDENTIAL_ENV: str(tmp_path / "bad")}
+    env = gcloud.gcloud_env(Ctx(workdir=tmp_path), environ)
+    assert {k: env[k] for k in BLANKED} == BLANKED
+    assert env["CLOUDSDK_CORE_CHECK_GCE_METADATA"] == "false"
+
+
+def test_the_cloud_identity_marker_blanks_the_file_and_leaves_the_metadata_server_on(tmp_path):
+    env = gcloud.gcloud_env(
+        Ctx(workdir=tmp_path), {gcloud.CREDENTIAL_ENV: str(marker_file(tmp_path))}
+    )
+    assert env.pop("CLOUDSDK_CONFIG").startswith(str(tmp_path))
+    assert env == {
+        **BLANKED,
+        gcloud.CREDENTIAL_ENV: "",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "true",  # the metadata server IS the credential
+    }
+
+
+def test_a_run_gets_one_fresh_config_dir_and_every_run_a_new_one(tmp_path):
+    first, second = Ctx(workdir=tmp_path), Ctx(workdir=tmp_path)
+    one = gcloud.gcloud_env(first, {})["CLOUDSDK_CONFIG"]
+    assert gcloud.gcloud_env(first, {})["CLOUDSDK_CONFIG"] == one  # one per task run
+    assert gcloud.gcloud_env(second, {})["CLOUDSDK_CONFIG"] != one  # a fresh one per task run
+
+
+def test_every_gcloud_call_runs_with_the_neutralised_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv(gcloud.CREDENTIAL_ENV, str(marker_file(tmp_path)))
+    ctx = ctx_for(tmp_path, done("[]"))
+    gcloud.gcloud_json(ctx, "x")
+    gcloud.gcloud_text(ctx, "auth", "print-access-token")
+    for call in ctx.calls:
+        assert call["env"]["CLOUDSDK_CORE_CHECK_GCE_METADATA"] == "true"
+        assert (
+            call["env"][gcloud.CREDENTIAL_ENV] == "" and call["env"]["CLOUDSDK_CORE_ACCOUNT"] == ""
+        )
+    monkeypatch.delenv(gcloud.CREDENTIAL_ENV)
+    other = ctx_for(tmp_path, done("[]"))
+    gcloud.gcloud_json(other, "x")
+    assert other.calls[0]["env"]["CLOUDSDK_CORE_CHECK_GCE_METADATA"] == "false"
+    assert other.calls[0]["env"]["CLOUDSDK_AUTH_ACCESS_TOKEN"] == ""
+
+
+def test_a_service_account_key_is_neither_changed_nor_echoed(tmp_path, monkeypatch):
     key = tmp_path / "key.json"
     key.write_text(json.dumps({"type": "service_account", "private_key": "SECRET-KEY-BODY"}))
     monkeypatch.setenv(gcloud.CREDENTIAL_ENV, str(key))
-    ctx = Ctx(done(stderr="ERROR: (gcloud.x) HTTPError 403: nope", rc=1))
+    ctx = ctx_for(tmp_path, done(stderr="ERROR: (gcloud.x) HTTPError 403: nope", rc=1))
     with pytest.raises(RwError) as caught:
         gcloud.gcloud_json(ctx, "x")
     assert "SECRET-KEY-BODY" not in caught.value.message
     assert all("SECRET-KEY-BODY" not in " ".join(c["argv"]) for c in ctx.calls)
+    assert all("SECRET-KEY-BODY" not in json.dumps(c["env"]) for c in ctx.calls)
+    assert gcloud.CREDENTIAL_ENV not in ctx.calls[0]["env"]
 
 
 # ---- the target -------------------------------------------------------------------------------
@@ -249,6 +328,20 @@ def test_target_path_reads_a_project_or_a_bucket():
     )
     path = "gcp/projects/shop-prod-1234/buckets/shop.assets_1"
     assert gcloud.target_path(target("gcp/bucket", path)) == ("shop-prod-1234", "shop.assets_1")
+
+
+def test_a_target_without_a_type_gets_it_from_its_path():
+    assert gcloud.target_path({"path": "gcp/projects/shop-prod-1234"}) == ("shop-prod-1234", None)
+    path = "gcp/projects/shop-prod-1234/buckets/b1x"
+    assert gcloud.target_path({"path": path}) == ("shop-prod-1234", "b1x")
+    for bad in (
+        "kubernetes/clusters/k/namespaces/n",
+        "gcp/projects/x",
+        "gcp/projects/shop-prod-1234/x/y/z",
+    ):
+        with pytest.raises(RwError) as caught:
+            gcloud.target_path({"path": bad})
+        assert caught.value.code == "invalid_input"
 
 
 @pytest.mark.parametrize(

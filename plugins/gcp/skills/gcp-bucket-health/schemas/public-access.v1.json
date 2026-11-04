@@ -12,10 +12,11 @@
           "name": {"type": "string"},
           "publicGrant": {
             "type": ["boolean", "null"],
-            "description": "true: the IAM policy or an ACL names allUsers or allAuthenticatedUsers. false: neither does. null: the IAM policy could not be read (an error scoped to the bucket says why) and no ACL grants it"
+            "description": "true: the IAM policy, an ACL or the default object ACL names allUsers or allAuthenticatedUsers. false: neither does. null: the IAM policy could not be read (an error scoped to the bucket says why) and no ACL grants it"
           },
           "publicViaIam": {"type": ["boolean", "null"], "description": "The IAM policy has a public binding; null when the policy could not be read"},
-          "publicViaAcl": {"type": "boolean", "description": "A legacy ACL entry is public. Always false with uniform bucket-level access, where ACLs do not apply"},
+          "publicViaAcl": {"type": "boolean", "description": "A legacy bucket ACL entry is public. Always false with uniform bucket-level access, where ACLs do not apply"},
+          "publicViaDefaultObjectAcl": {"type": "boolean", "description": "The default object ACL (the ACL new objects start with) names a public entity. Always false with uniform bucket-level access"},
           "uniformBucketLevelAccess": {"type": "boolean"},
           "publicAccessPrevention": {"type": ["string", "null"], "description": "enforced or inherited; null when not reported"},
           "blockedByPrevention": {"type": "boolean", "description": "There is a public grant and public access prevention is enforced, which makes the grant ineffective"},
@@ -35,7 +36,17 @@
           },
           "aclEntries": {
             "type": "array",
-            "description": "The legacy ACL entries that name a public entity, at most 50",
+            "description": "The legacy bucket ACL entries that name a public entity, at most 50",
+            "items": {
+              "type": "object",
+              "properties": {"entity": {"enum": ["allUsers", "allAuthenticatedUsers"]}, "role": {"type": ["string", "null"]}},
+              "required": ["entity", "role"],
+              "additionalProperties": false
+            }
+          },
+          "defaultObjectAclEntries": {
+            "type": "array",
+            "description": "The default object ACL entries that name a public entity, at most 50",
             "items": {
               "type": "object",
               "properties": {"entity": {"enum": ["allUsers", "allAuthenticatedUsers"]}, "role": {"type": ["string", "null"]}},
@@ -45,8 +56,9 @@
           }
         },
         "required": [
-          "name", "publicGrant", "publicViaIam", "publicViaAcl", "uniformBucketLevelAccess",
-          "publicAccessPrevention", "blockedByPrevention", "iamBindings", "aclEntries"
+          "name", "publicGrant", "publicViaIam", "publicViaAcl", "publicViaDefaultObjectAcl",
+          "uniformBucketLevelAccess", "publicAccessPrevention", "blockedByPrevention", "iamBindings",
+          "aclEntries", "defaultObjectAclEntries"
         ],
         "additionalProperties": false
       }

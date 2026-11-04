@@ -1,23 +1,13 @@
-# gcloud answers for the 'not-found' scenario. Synthetic: project shop-prod-1234, buckets and
-# members are invented. Each entry's `source` is the reference its answer follows; every
-# value is JSON (see ../../README.md).
-- argv: ["projects", "describe", "no-such-project-1"]
-  rc: 1
-  stderr: "ERROR: (gcloud.projects.describe) Project 'no-such-project-1' not found or deleted.\n"
-  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
-- argv: ["storage", "buckets", "list", "--project=no-such-project-1", "--raw"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.buckets.list) HTTPError 404: The requested project was not found.\n"
-  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
-- argv: ["storage", "buckets", "describe", "gs://nope", "--raw"]
+# Canned answers of scenario 'not-found', written by tests/stub/capture/capture.sh from the real
+# gcloud 592.0.0 in the runtime image (see ../../README.md). Project, buckets and members are invented.
+# Every value is one line of JSON.
+- argv: ["storage", "buckets", "describe", "gs://nope", "--raw", "--billing-project=shop-prod-1234"]
   rc: 1
   stderr: "ERROR: (gcloud.storage.buckets.describe) gs://nope not found: 404.\n"
-  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
-- argv: ["storage", "buckets", "get-iam-policy", "gs://nope"]
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://nope", "--billing-project=shop-prod-1234"]
   rc: 1
   stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) gs://nope not found: 404.\n"
-  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
-- argv: ["storage", "du", "--summarize", "gs://nope"]
-  rc: 1
-  stderr: "ERROR: (gcloud.storage.du) gs://nope not found: 404.\n"
-  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+  cli_source: "gcloud 592.0.0: surface/storage/buckets/get_iam_policy.py and googlecloudsdk/api_lib/storage/gcs_json/client.py (get_bucket_iam_policy: fields=bindings,etag)"

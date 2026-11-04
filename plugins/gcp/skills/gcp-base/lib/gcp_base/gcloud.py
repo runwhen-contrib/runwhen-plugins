@@ -10,18 +10,30 @@ skill's lib/), so each skill carries a verbatim copy of `errors.py` and `gcloud.
     buckets = gcloud_json(ctx, "storage", "buckets", "list", "--project=shop-prod-1234", "--raw")
     total = gcloud_text(ctx, "storage", "du", "--summarize", "gs://shop-assets")
 
-Every command is `gcloud <args> [--format=json] --quiet`: `--quiet` so that gcloud never stops to
+Every command is `gcloud <args> --billing-project=<project> [--format=json] --quiet`: `--quiet` so that gcloud never stops to
 ask a question (it would offer to enable a disabled API, then wait for an answer that never
 comes). Write flags as `--flag=value`, one token, so an argv is the same on every run (fixtures
 replay by exact argv).
 
 The credential is the `gcp/adc` file named by CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE, which
 gcloud reads itself; this module reads only its `type`, to tell a service-account key from the
-cloud-identity marker (integration/auth/cloud-identity.py), and never prints or returns it. For
-the marker the variable is blanked for the child process, and gcloud then uses the metadata
-server. A failure raises RwError with the D64 code classified from gcloud's stderr (see
-`classify_error`); a secret that slipped into stderr (a key, a bearer token) is scrubbed first.
+cloud-identity marker (integration/auth/cloud-identity.py), and never prints or returns it. A
+failure raises RwError with the D64 code classified from gcloud's stderr (see `classify_error`); a
+secret that slipped into stderr (a key, a bearer token) is scrubbed first.
 
+Ambient credential sources are neutralised for every gcloud child (`gcloud_env`): gcloud takes the
+first of CLOUDSDK_AUTH_ACCESS_TOKEN, auth/access_token_file, the credential file override, the
+active account, so an access token or account left in the runner's environment would silently win
+over the connection's credential. Each child gets the first three blank (gcloud reads a blank
+property as unset), CLOUDSDK_CORE_ACCOUNT blank, CLOUDSDK_CORE_CHECK_GCE_METADATA=false (no
+metadata-server fallback to a pod identity the connection did not choose) and its own empty
+CLOUDSDK_CONFIG under ctx.workdir (no account, property or token cache of an earlier run or of the
+image). For the cloud-identity marker the metadata server IS the credential: the file override is
+blanked, the metadata check is on, and gcloud finds the pod's identity by itself.
+
+Every call also carries `--billing-project=<the target's project>`: user-project billing and quota
+go to the project being inspected, not to whichever project the credential belongs to (this needs
+`serviceusage.services.use` on it, which the tasks declare).
 gcloud storage vs gsutil: this plugin uses `gcloud storage` everywhere. gsutil is the older,
 separate tool, deprecated in favour of `gcloud storage`: it keeps its own credential store
 (~/.boto), has no `--format=json`, and its output and error texts are not the gcloud ones, so one
@@ -33,6 +45,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 
 from .errors import RwError
 
@@ -45,6 +58,11 @@ except ImportError:  # pragma: no cover
 
 
 CREDENTIAL_ENV = "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"
+ACCESS_TOKEN_ENV = "CLOUDSDK_AUTH_ACCESS_TOKEN"
+ACCESS_TOKEN_FILE_ENV = "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE"
+ACCOUNT_ENV = "CLOUDSDK_CORE_ACCOUNT"
+CONFIG_ENV = "CLOUDSDK_CONFIG"
+CHECK_METADATA_ENV = "CLOUDSDK_CORE_CHECK_GCE_METADATA"
 MARKER_TYPE = "runwhen_cloud_identity"  # integration/auth/cloud-identity.py writes it
 DEFAULT_COMMAND_TIMEOUT = "60s"
 MESSAGE_LIMIT = 1024
@@ -79,21 +97,49 @@ def _camel(snake):
     return head + "".join(p.title() for p in rest)
 
 
-def credential_env(environ=None):
-    """The environment overrides for a gcloud child: `{}` normally, and the credential variable
-    blanked (gcloud reads a blank property as unset) when the credential file is the
-    cloud-identity marker, so gcloud falls back to the metadata server."""
+def is_marker(environ=None):
+    """Whether the credential file is the cloud-identity marker (no key: use the metadata
+    server). An unset, unreadable or other file is not."""
     path = (os.environ if environ is None else environ).get(CREDENTIAL_ENV)
     if not path:
-        return {}
+        return False
     try:
         with open(path, "rb") as handle:
             doc = json.loads(handle.read(MAX_CREDENTIAL_BYTES))
     except (OSError, ValueError):
-        return {}  # gcloud reports an unreadable credential in its own words
-    if isinstance(doc, dict) and doc.get("type") == MARKER_TYPE:
-        return {CREDENTIAL_ENV: ""}
-    return {}
+        return False  # gcloud reports an unreadable credential in its own words
+    return isinstance(doc, dict) and doc.get("type") == MARKER_TYPE
+
+
+def config_dir(ctx):
+    """An empty CLOUDSDK_CONFIG for this task run: a new directory (mode 0700) under ctx.workdir,
+    made on first use and kept for the run's later gcloud calls."""
+    made = getattr(ctx, "_gcp_config_dir", None)
+    if made and os.path.isdir(made):
+        return made
+    base = getattr(ctx, "workdir", None) or tempfile.gettempdir()
+    made = tempfile.mkdtemp(prefix="gcloud-config-", dir=os.fspath(base))
+    try:
+        ctx._gcp_config_dir = made
+    except AttributeError:  # a ctx that takes no attributes: a new directory per call
+        pass
+    return made
+
+
+def gcloud_env(ctx, environ=None):
+    """The environment overrides for a gcloud child (merged over the parent's by ctx.run): the
+    ambient credential sources neutralised, see the module docstring."""
+    marker = is_marker(environ)
+    env = {
+        ACCESS_TOKEN_ENV: "",
+        ACCESS_TOKEN_FILE_ENV: "",
+        ACCOUNT_ENV: "",
+        CONFIG_ENV: config_dir(ctx),
+        CHECK_METADATA_ENV: "true" if marker else "false",
+    }
+    if marker:
+        env[CREDENTIAL_ENV] = ""
+    return env
 
 
 # stderr patterns, tried in this order. Rate limits first (a 403 can say rateLimitExceeded), then
@@ -203,15 +249,28 @@ def error_text(stderr):
     return text if len(text) <= MESSAGE_LIMIT else text[: MESSAGE_LIMIT - 3] + "..."
 
 
+def billing_project(ctx):
+    """The project of the run's target (it pays for and is charged quota by every call), or None
+    when the target is not a gcp project or bucket (the task fails on that before any call)."""
+    try:
+        return target_path(getattr(ctx, "resource", None))[0]
+    except RwError:
+        return None
+
+
 def run_gcloud(ctx, args, *, json_output, timeout=None):
-    """stdout of `gcloud <args> [--format=json] --quiet`; a failure raises RwError."""
+    """stdout of `gcloud <args> --billing-project=<project> [--format=json] --quiet`; a failure
+    raises RwError."""
     argv = ["gcloud", *args]
+    project = billing_project(ctx)
+    if project:
+        argv.append(f"--billing-project={project}")
     if json_output:
         argv.append("--format=json")
     argv.append("--quiet")
     seconds = timeout if timeout is not None else parse_duration(DEFAULT_COMMAND_TIMEOUT)
     try:
-        result = ctx.run(argv, timeout=seconds, env=credential_env(), check=False)
+        result = ctx.run(argv, timeout=seconds, env=gcloud_env(ctx), check=False)
     except subprocess.TimeoutExpired:
         raise RwError("timeout", f"gcloud did not finish within {seconds:.0f}s") from None
     except OutputTooLargeError:
@@ -263,10 +322,17 @@ def valid_bucket(name):
 
 def target_path(resource):
     """(project, bucket or None) from the run's target: a `gcp/project` or a `gcp/bucket`, read
-    from its path (`gcp/projects/<id>[/buckets/<name>]`). Anything else is `invalid_input`."""
+    from its path (`gcp/projects/<id>[/buckets/<name>]`). The type is `resource.type`; without it
+    (a target that carries only its path) it is the one the path has the shape of. Anything else
+    is `invalid_input`."""
     resource = resource or {}
     parts = str(resource.get("path", "")).split("/")
     kind = resource.get("type")
+    if not kind:
+        if len(parts) == 3:
+            kind = "gcp/project"
+        elif len(parts) == 5 and parts[3] == "buckets":
+            kind = "gcp/bucket"
     if kind == "gcp/project" and len(parts) == 3 and parts[:2] == ["gcp", "projects"]:
         project, bucket = parts[2], None
     elif (

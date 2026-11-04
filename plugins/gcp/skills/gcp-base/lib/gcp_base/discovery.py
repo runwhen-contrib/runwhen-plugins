@@ -51,29 +51,51 @@ def bucket_fact(row):
     return fact
 
 
+PARTIAL_PROJECT = ("permission_denied", "dependency", "rate_limited", "not_found")
+NO_FACTS = {"projectNumber": None, "displayName": None, "lifecycleState": None}
+
+
+def project_facts(row):
+    """(projectNumber, displayName, lifecycleState) from the project resource, or None for a shape
+    that is neither Resource Manager's v1 (`projectNumber`, `name`, `lifecycleState`, what
+    `gcloud projects describe` prints today) nor v3 (`name` = `projects/<number>`, `displayName`,
+    `state`)."""
+    pick = lambda key: row[key] if isinstance(row.get(key), str) else None  # noqa: E731
+    if "lifecycleState" in row:  # v1
+        return pick("projectNumber"), pick("name"), pick("lifecycleState")
+    if "state" in row or "displayName" in row:  # v3
+        name = pick("name") or ""
+        number = name.split("/", 1)[1] if name.startswith("projects/") else None
+        return number or None, pick("displayName"), pick("state")
+    return None
+
+
 def read_project(ctx, project, errors, timeout):
-    """The project's facts, or the identifier alone with the reason appended to `errors` when this
-    identity may not read the project resource (permission_denied). Any other failure raises."""
+    """The project's facts, or the identifier alone with the reason appended to `errors` when the
+    project resource cannot be had for a reason that leaves the rest useful: this identity may not
+    read it, the API is disabled, the call was throttled, or the project is gone (the bucket list
+    already worked). A response of an unknown shape is an error scoped `project` too, never
+    silent nulls. Any other failure raises."""
+
+    def alone(code, message):
+        errors.append({"code": code, "message": f"project: {message}", "scope": "project"})
+        return {"projectId": project, **NO_FACTS}
+
     try:
         row = gcloud_json(ctx, "projects", "describe", project, timeout=timeout)
     except RwError as exc:
-        if exc.code != "permission_denied":
+        if exc.code not in PARTIAL_PROJECT:
             raise
-        errors.append({"code": exc.code, "message": f"project: {exc.message}", "scope": "project"})
-        return {
-            "projectId": project,
-            "projectNumber": None,
-            "displayName": None,
-            "lifecycleState": None,
-        }
-    if not isinstance(row, dict):
-        raise RwError("internal", "gcloud returned no project")
-    pick = lambda key: row[key] if isinstance(row.get(key), str) else None  # noqa: E731
+        return alone(exc.code, exc.message)
+    facts = project_facts(row) if isinstance(row, dict) else None
+    if facts is None:
+        return alone("internal", "gcloud projects describe returned a resource of an unknown shape")
+    number, name, state = facts
     return {
         "projectId": project,
-        "projectNumber": pick("projectNumber"),
-        "displayName": pick("name"),
-        "lifecycleState": pick("lifecycleState"),
+        "projectNumber": number,
+        "displayName": name,
+        "lifecycleState": state,
     }
 
 

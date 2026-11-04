@@ -19,7 +19,10 @@ bucket the identity may list. The platform also runs it on its own every 15 minu
 `gcp/bucket` resources that the other gcp skills target. It only reads: two gcloud calls,
 `gcloud projects describe` and `gcloud storage buckets list --raw`, with the connection's
 credential (`gcp/adc`: a service-account key, or the pod's own identity through the metadata
-server). The `commandTimeout` setting (default 60s) bounds each call; `discover` has a 600s task
+server), each billed to the project it reads (`--billing-project`, which needs
+`serviceusage.services.use`; an assumption to verify against a real project, parked P18).
+`discover` lists buckets with the FULL projection, so it needs `storage.buckets.getIamPolicy` too.
+The `commandTimeout` setting (default 60s) bounds each call; `discover` has a 600s task
 timeout, which covers the calls and the push to the platform: the push is clamped to what is left
 of the budget (less a 10s margin), and a request that would start with nothing left fails with
 `timeout`.
@@ -38,9 +41,13 @@ of the budget (less a 10s margin), and a request that would start with nothing l
 
 ## How to read the result
 
-- `projectNumber`, `displayName` and `lifecycleState` all null, with a `permission_denied` error
-  scoped `project`: the identity may list buckets but not read the project resource
-  (`resourcemanager.projects.get`). The run is `partial`; the buckets stand.
+- `projectNumber`, `displayName` and `lifecycleState` all null, with an error scoped `project`
+  (`permission_denied`, `dependency`, `rate_limited` or `not_found`): the project resource could
+  not be had although the bucket list worked (the identity lacks `resourcemanager.projects.get`,
+  the Resource Manager API is off, the call was throttled, or the project is gone). The run is
+  `partial`; the buckets stand. A response in a shape this task does not know (neither Resource
+  Manager v1's `lifecycleState`/`name` nor v3's `state`/`displayName`) is an `internal` error
+  scoped `project`, not silent nulls.
 - `buckets.items` empty and `total` 0: the project has no buckets (an identity that may not list
   them fails with `permission_denied`; it never returns an empty list).
 - `buckets.omitted` above zero: the list was cut at `maxItems`; raise the setting, or read the
@@ -70,6 +77,7 @@ of the budget (less a 10s margin), and a request that would start with nothing l
 
 ## Tests
 
-The plugin's fixtures are recorded against a gcloud stub with canned answers
-(`plugins/gcp/tests/stub/`), not a Google account: no ring has a GCP credential. The answers
-follow the REST reference shapes; re-record against a real project when a credential exists.
+The plugin's fixtures are recorded against a gcloud/curl stub with canned answers
+(`plugins/gcp/tests/stub/`), not a Google account: no ring has a GCP credential. The answers are
+what the pinned gcloud (592.0.0) itself printed against a local fake of the REST APIs; re-record
+against a real project when a credential exists.

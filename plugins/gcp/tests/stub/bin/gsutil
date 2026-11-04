@@ -1,6 +1,8 @@
 #!/bin/sh
-# gsutil is deprecated in favour of `gcloud storage`, which the gcp plugin uses everywhere. This
-# guard sits first on PATH next to the gcloud stub so that a task that reaches for gsutil never
-# runs the real one (which would read ~/.boto and the real account): it fails with rc 2.
+# gsutil is deprecated in favour of `gcloud storage`, which the gcp plugin uses everywhere (and the
+# runtime image does not ship it). This guard sits first on PATH next to the stubs so that a task
+# that reaches for gsutil never runs the real one (which would read ~/.boto and the real account):
+# it fails with rc 2. To use gsutil in a future skill, add it to the image on purpose and replay it
+# with `rwtask test --shim gsutil` (see ../README.md).
 echo "gsutil (stub): the gcp plugin uses 'gcloud storage', not gsutil; refusing to run the real one." >&2
 exit 2
