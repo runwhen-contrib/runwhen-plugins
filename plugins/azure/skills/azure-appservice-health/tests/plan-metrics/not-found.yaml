@@ -1,0 +1,25 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/app-service-plans/nope
+now: '2026-11-04T05:00:04.452Z'
+calls:
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Web/serverfarms/nope?api-version=2024-04-01
+  - --output
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: Not Found({"error":{"code":"ResourceNotFound","message":"The Resource 'Microsoft.Web/serverfarms/nope' under resource group 'rg-orders-dev' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix"}})
+expect:
+  status: failed
+  errorCodes:
+  - not_found

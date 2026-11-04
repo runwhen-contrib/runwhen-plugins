@@ -1,0 +1,82 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/app-service-plans/plan-orders-dev
+now: '2026-11-04T04:58:09.872Z'
+calls:
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Web/serverfarms/plan-orders-dev?api-version=2024-04-01
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Web/serverfarms/plan-orders-dev",
+      "kind": "app",
+      "location": "West Europe",
+      "name": "plan-orders-dev",
+      "properties": {
+        "adminSiteName": null,
+        "currentNumberOfWorkers": 3,
+        "currentWorkerSize": "Default",
+        "currentWorkerSizeId": 0,
+        "elasticScaleEnabled": false,
+        "geoRegion": "West Europe",
+        "hostingEnvironmentProfile": null,
+        "hyperV": false,
+        "isSpot": false,
+        "isXenon": false,
+        "maximumElasticWorkerCount": 10,
+        "maximumNumberOfWorkers": 10,
+        "name": "plan-orders-dev",
+        "numberOfSites": 2,
+        "numberOfWorkers": 3,
+        "perSiteScaling": false,
+        "provisioningState": "Succeeded",
+        "reserved": false,
+        "resourceGroup": "rg-orders-dev",
+        "serverFarmId": 41873,
+        "status": "Ready",
+        "subscription": "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71",
+        "targetWorkerCount": 0,
+        "targetWorkerSizeId": 0,
+        "webSpace": "rg-orders-dev-WestEuropewebspace",
+        "workerSize": "Default",
+        "workerSizeId": 0,
+        "workerTierName": null,
+        "zoneRedundant": false
+      },
+      "sku": {
+        "capacity": 3,
+        "family": "S",
+        "name": "S2",
+        "size": "S2",
+        "tier": "Standard"
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.Web/serverfarms"
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    planState:
+      planStatus: Ready
+      instanceCount: 3
+      sku:
+        name: S2
+        tier: Standard
+        capacity: 3
+      maximumNumberOfWorkers: 10
+      numberOfSites: 2

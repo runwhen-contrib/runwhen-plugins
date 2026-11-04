@@ -1,0 +1,573 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/app-service-plans/plan-orders-prod
+now: '2026-11-04T04:59:54.880Z'
+calls:
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod?api-version=2024-04-01
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod",
+      "kind": "linux",
+      "location": "East US",
+      "name": "plan-orders-prod",
+      "properties": {
+        "adminSiteName": null,
+        "currentNumberOfWorkers": 2,
+        "currentWorkerSize": "Default",
+        "currentWorkerSizeId": 0,
+        "elasticScaleEnabled": false,
+        "geoRegion": "East US",
+        "hostingEnvironmentProfile": null,
+        "hyperV": false,
+        "isSpot": false,
+        "isXenon": false,
+        "maximumElasticWorkerCount": 30,
+        "maximumNumberOfWorkers": 30,
+        "name": "plan-orders-prod",
+        "numberOfSites": 2,
+        "numberOfWorkers": 2,
+        "perSiteScaling": false,
+        "provisioningState": "Succeeded",
+        "reserved": true,
+        "resourceGroup": "rg-orders-prod",
+        "serverFarmId": 41872,
+        "status": "Ready",
+        "subscription": "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71",
+        "targetWorkerCount": 0,
+        "targetWorkerSizeId": 0,
+        "webSpace": "rg-orders-prod-EastUSwebspace-Linux",
+        "workerSize": "Default",
+        "workerSizeId": 0,
+        "workerTierName": null,
+        "zoneRedundant": false
+      },
+      "sku": {
+        "capacity": 2,
+        "family": "Pv3",
+        "name": "P1v3",
+        "size": "P1v3",
+        "tier": "PremiumV3"
+      },
+      "tags": {
+        "env": "prod",
+        "team": "orders"
+      },
+      "type": "Microsoft.Web/serverfarms"
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - metrics
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod
+  - --metrics
+  - CpuPercentage
+  - --aggregation
+  - Average
+  - Maximum
+  - --interval
+  - PT1H
+  - --start-time
+  - '2026-11-03T04:59:54Z'
+  - --end-time
+  - '2026-11-04T04:59:54Z'
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "cost": 59,
+      "interval": "PT1H",
+      "namespace": "Microsoft.Web/serverfarms",
+      "resourceregion": "eastus",
+      "timespan": "2026-11-03T04:00:00Z/2026-11-04T04:00:00Z",
+      "value": [
+        {
+          "displayDescription": "CPU Percentage",
+          "errorCode": "Success",
+          "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod/providers/Microsoft.Insights/metrics/CpuPercentage",
+          "name": {
+            "localizedValue": "CPU Percentage",
+            "value": "CpuPercentage"
+          },
+          "timeseries": [
+            {
+              "data": [
+                {
+                  "average": 22.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T04:00:00Z"
+                },
+                {
+                  "average": 23.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T05:00:00Z"
+                },
+                {
+                  "average": 24.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T06:00:00Z"
+                },
+                {
+                  "average": 25.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T07:00:00Z"
+                },
+                {
+                  "average": 26.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T08:00:00Z"
+                },
+                {
+                  "average": 22.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T09:00:00Z"
+                },
+                {
+                  "average": 23.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T10:00:00Z"
+                },
+                {
+                  "average": 24.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T11:00:00Z"
+                },
+                {
+                  "average": 25.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T12:00:00Z"
+                },
+                {
+                  "average": 26.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T13:00:00Z"
+                },
+                {
+                  "average": 22.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T14:00:00Z"
+                },
+                {
+                  "average": 23.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T15:00:00Z"
+                },
+                {
+                  "average": 24.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T16:00:00Z"
+                },
+                {
+                  "average": 25.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T17:00:00Z"
+                },
+                {
+                  "average": 26.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T18:00:00Z"
+                },
+                {
+                  "average": 22.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T19:00:00Z"
+                },
+                {
+                  "average": 23.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T20:00:00Z"
+                },
+                {
+                  "average": 24.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T21:00:00Z"
+                },
+                {
+                  "average": 25.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T22:00:00Z"
+                },
+                {
+                  "average": 26.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-03T23:00:00Z"
+                },
+                {
+                  "average": 22.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-04T00:00:00Z"
+                },
+                {
+                  "average": 23.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-04T01:00:00Z"
+                },
+                {
+                  "average": 24.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-04T02:00:00Z"
+                },
+                {
+                  "average": 25.0,
+                  "maximum": 41.0,
+                  "timeStamp": "2026-11-04T03:00:00Z"
+                }
+              ],
+              "metadatavalues": []
+            }
+          ],
+          "type": "Microsoft.Insights/metrics",
+          "unit": "Percent"
+        }
+      ]
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - metrics
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod
+  - --metrics
+  - MemoryPercentage
+  - --aggregation
+  - Average
+  - Maximum
+  - --interval
+  - PT1H
+  - --start-time
+  - '2026-11-03T04:59:54Z'
+  - --end-time
+  - '2026-11-04T04:59:54Z'
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "cost": 59,
+      "interval": "PT1H",
+      "namespace": "Microsoft.Web/serverfarms",
+      "resourceregion": "eastus",
+      "timespan": "2026-11-03T04:00:00Z/2026-11-04T04:00:00Z",
+      "value": [
+        {
+          "displayDescription": "Memory Percentage",
+          "errorCode": "Success",
+          "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod/providers/Microsoft.Insights/metrics/MemoryPercentage",
+          "name": {
+            "localizedValue": "Memory Percentage",
+            "value": "MemoryPercentage"
+          },
+          "timeseries": [
+            {
+              "data": [
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T04:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T05:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T06:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T07:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T08:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T09:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T10:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T11:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T12:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T13:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T14:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T15:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T16:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T17:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T18:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T19:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T20:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T21:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T22:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-03T23:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-04T00:00:00Z"
+                },
+                {
+                  "average": 46.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-04T01:00:00Z"
+                },
+                {
+                  "average": 47.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-04T02:00:00Z"
+                },
+                {
+                  "average": 48.0,
+                  "maximum": 52.0,
+                  "timeStamp": "2026-11-04T03:00:00Z"
+                }
+              ],
+              "metadatavalues": []
+            }
+          ],
+          "type": "Microsoft.Insights/metrics",
+          "unit": "Percent"
+        }
+      ]
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - metrics
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod
+  - --metrics
+  - DiskQueueLength
+  - --aggregation
+  - Average
+  - --interval
+  - PT1H
+  - --start-time
+  - '2026-11-03T04:59:54Z'
+  - --end-time
+  - '2026-11-04T04:59:54Z'
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "cost": 59,
+      "interval": "PT1H",
+      "namespace": "Microsoft.Web/serverfarms",
+      "resourceregion": "eastus",
+      "timespan": "2026-11-03T04:00:00Z/2026-11-04T04:00:00Z",
+      "value": [
+        {
+          "displayDescription": "Disk Queue Length",
+          "errorCode": "Success",
+          "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod/providers/Microsoft.Insights/metrics/DiskQueueLength",
+          "name": {
+            "localizedValue": "Disk Queue Length",
+            "value": "DiskQueueLength"
+          },
+          "timeseries": [
+            {
+              "data": [
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T04:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T05:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T06:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T07:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T08:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T09:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T10:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T11:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T12:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T13:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T14:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T15:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T16:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T17:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T18:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T19:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T20:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T21:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T22:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-03T23:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-04T00:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-04T01:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-04T02:00:00Z"
+                },
+                {
+                  "average": 0.1,
+                  "timeStamp": "2026-11-04T03:00:00Z"
+                }
+              ],
+              "metadatavalues": []
+            }
+          ],
+          "type": "Microsoft.Insights/metrics",
+          "unit": "Count"
+        }
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    planMetrics:
+      plan: plan-orders-prod
+      cpu:
+        crossed: false
+        crossings: 0
+      memory:
+        crossed: false
+      diskQueue:
+        crossed: false
