@@ -4,7 +4,8 @@ namespace of the kind-rw-plugins scenario (plugins/kubernetes/tests/kind/scenari
 Deployment whose ingester never heartbeats (its ring member is UNHEALTHY and /ready is 503).
 Ring token lists in the data are cut to three entries. The scripts run through the SDK's test
 context (`ctx.run` raises on a non-zero exit like the real runner; `stub_commands` matches the
-exact kubectl argv, so an unexpected call fails)."""
+exact kubectl argv, so an unexpected call fails). The pod proxy reads go through
+`ctx.k8s_proxy_get`, stood in for by `proxy_fake.ProxyFake`."""
 
 import importlib.util
 import json
@@ -16,6 +17,7 @@ import pytest
 import yaml
 from k8s_loki_health import fetch, k8s, proxy, ready, ring
 from k8s_loki_health.errors import RwError
+from proxy_fake import ProxyFake, api_error, cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-loki-health"
@@ -31,10 +33,10 @@ FORBIDDEN = (
     'in API group "" in the namespace "rw-loki"'
 )
 UNREACHABLE = "Error from server (ServiceUnavailable): error trying to reach service: dial tcp 10.244.0.5:3100: connect: connection refused"
-UNAVAILABLE = (
-    "Error from server (ServiceUnavailable): the server is currently unable to handle the request"
-)
-NO_ROUTE = "Error from server (NotFound): the server could not find the requested resource"
+NOT_READY = "Ingester not ready: waiting for 15s after being ready"
+# what a test writes as (rc, stdout, stderr): a backend 503 / 404, or an API-server error
+UNAVAILABLE = (1, "", "backend 503")
+NO_ROUTE = (1, "", "backend 404")
 RING_PATHS = ("/ring", "/distributor/ring", "/compactor/ring")
 
 
@@ -56,14 +58,19 @@ def script(name):
     return module.main
 
 
-def raw(pod, path, scheme="http", port=3100):
-    return (
-        "kubectl",
-        "get",
-        "--raw",
-        f"/api/v1/namespaces/{NS}/pods/{scheme}:{pod}:{port}/proxy{path}",
-        "--request-timeout=30s",
-    )
+def served_as(answer):
+    """The ctx.k8s_proxy_get answer for a test's (rc, stdout, stderr): a body for 0, a backend
+    503 / 404 for UNAVAILABLE / NO_ROUTE, else the API-server error the stderr names."""
+    if isinstance(answer, (dict, str)):
+        return answer
+    rc, out, err = answer
+    if rc == 0:
+        return out
+    if answer == UNAVAILABLE:
+        return reply(503, NOT_READY)
+    if answer == NO_ROUTE:
+        return reply(404, "404 page not found")
+    return api_error(err, k8s.classify)
 
 
 TARGETS = {
@@ -89,7 +96,7 @@ HEALTHY_REPLIES = {
     "/compactor/ring": (0, json.dumps(load("compactor-ring.json")), ""),
 }
 STALE_REPLIES = {
-    "/ready": (1, "", UNAVAILABLE),
+    "/ready": UNAVAILABLE,
     "/ring": (0, json.dumps(load("ring-stale.json")), ""),
     "/distributor/ring": (0, json.dumps(load("ring-stale.json")), ""),
     "/compactor/ring": (0, json.dumps(load("ring-stale.json")), ""),
@@ -97,12 +104,12 @@ STALE_REPLIES = {
 
 
 def stubs(name="loki", fail=None, replies=None, pods=None, scheme="http", port=3100):
-    """kubectl answers for a run on workload `name`. `fail` maps 'workload' or 'pods' to stderr;
+    """(kubectl answers, proxied answers) for a run on workload `name`. `fail` maps 'workload' or 'pods' to stderr;
     `replies` overrides a path's (rc, stdout, stderr) for every pod, or for one pod as
     (pod, path)."""
     fail, replies = fail or {}, replies or {}
     rtype, noun, selector, pods_file, workload_file = TARGETS[name]
-    out = {}
+    out, served = {}, {}
     workload_argv = ("kubectl", "-n", NS, "get", noun, name, "-o", "json")
     out[workload_argv] = (
         (1, "", fail["workload"])
@@ -117,10 +124,12 @@ def stubs(name="loki", fail=None, replies=None, pods=None, scheme="http", port=3
         pod_name = pod["metadata"]["name"]
         for path, default in base.items():
             reply = replies.get((pod_name, path), replies.get(path, default))
-            out[raw(pod_name, path, scheme, port)] = (
-                (1, "", fail["proxy"]) if "proxy" in fail else reply
-            )
-    return out
+            answer = (1, "", fail["proxy"]) if "proxy" in fail else reply
+            served[(pod_name, scheme, port, path)] = served_as(answer)
+    return out, served
+
+
+LAST = {}  # the proxied requests of the last run()
 
 
 def run(task, name="loki", now=CAPTURED, res=None, settings=None, inputs=None, **kw):
@@ -135,11 +144,14 @@ def run(task, name="loki", now=CAPTURED, res=None, settings=None, inputs=None, *
     }
     inputs = inputs or {}
     with make_context(resource=resource, settings=settings or SETTINGS, now=now) as tc:
-        table = stubs(
+        table, served = stubs(
             name, scheme=inputs.get("scheme", "http"), port=inputs.get("port", 3100), **kw
         )
+        fake = ProxyFake(lambda r: served[(r["name"], r["scheme"], r["port"], r["path"])])
         calls = stub_commands(tc, table)
+        tc.ctx.k8s_proxy_get = fake
         env = run_main(script(task), tc, **inputs)
+    LAST["proxy"] = fake.requests
     return env, calls
 
 
@@ -166,14 +178,15 @@ def ring_of(env, path):
 def test_ready_reply_is_never_true_for_unexpected_text():
     assert ready.ready_reply(proxy.Reply(200, "ready\n"), "w") == (True, "ready")
     assert ready.ready_reply(proxy.Reply(503, ""), "w") == (False, None)
-    for reply in (
+    assert ready.ready_reply(proxy.Reply(503, NOT_READY + "\n"), "w") == (False, NOT_READY)
+    for bad in (
         proxy.Reply(200, "<html>Sign in</html>"),
         proxy.Reply(200, "Ingester not ready"),
         proxy.Reply(200, ""),
         proxy.Reply(404, ""),
     ):
         with pytest.raises(RwError):
-            ready.ready_reply(reply, "w")
+            ready.ready_reply(bad, "w")
 
 
 def test_ring_members_rejects_what_is_not_ring_json():
@@ -232,26 +245,83 @@ def test_classify():
     assert k8s.classify(1, 'Error from server (NotFound): pods "x" not found') == "not_found"
 
 
-class FakeRun:
-    def __init__(self, rc, out="", err=""):
-        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
-
-    def run(self, argv, check=True, **_):
-        return self.result
+class FakeProxyCtx:
+    def __init__(self, answer):
+        self.k8s_proxy_get = ProxyFake(answer)
 
 
-def test_proxy_get_tells_the_statuses_apart():
-    assert proxy.proxy_get(FakeRun(0, "ok"), "/x") == proxy.Reply(200, "ok")
-    assert proxy.proxy_get(FakeRun(1, "", NO_ROUTE), "/x").status == 404
-    assert proxy.proxy_get(FakeRun(1, "", UNAVAILABLE), "/x").status == 503
+def ask(answer, path="/x"):
+    return proxy.proxy_get(FakeProxyCtx(answer), "ns", "loki-0", "http", 3100, path)
+
+
+def test_proxy_get_returns_the_backends_own_status_and_body():
+    assert ask("ok") == proxy.Reply(200, "ok")
+    assert ask(reply(404, "404 page not found")) == proxy.Reply(404, "404 page not found")
+    assert ask(reply(503, NOT_READY)) == proxy.Reply(503, NOT_READY)
+
+
+def test_proxy_get_asks_the_pod_proxy_with_scheme_port_path_and_timeout():
+    ctx = FakeProxyCtx("ok")
+    proxy.proxy_get(ctx, "ns", "loki-0", "https", 8080, "/ready", 7)
+    assert ctx.k8s_proxy_get.requests == [
+        {
+            "namespace": "ns",
+            "kind": "pods",
+            "name": "loki-0",
+            "port": 8080,
+            "path": "/ready",
+            "scheme": "https",
+            "timeout": 7,
+        }
+    ]
+
+
+def test_proxy_get_raises_what_the_api_server_answers_itself():
     for stderr, code in (
         (UNREACHABLE, "unreachable"),
         (FORBIDDEN.format(r="pods/proxy", v="get"), "permission_denied"),
         ('Error from server (NotFound): pods "x" not found', "not_found"),
     ):
         with pytest.raises(RwError) as exc:
-            proxy.proxy_get(FakeRun(1, "", stderr), "/x")
+            ask(api_error(stderr, k8s.classify))
         assert exc.value.code == code
+
+
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location; the skill reports the host and asks nothing more."""
+    ctx = FakeProxyCtx(cross_host_redirect("sso.example.invalid"))
+    got = proxy.proxy_get(ctx, "ns", "loki-0", "http", 3100, "/ready")
+    assert got.status == 302 and got.redirect_dropped == "sso.example.invalid"
+    assert len(ctx.k8s_proxy_get.requests) == 1
+    for call in (lambda: ready.ready_reply(got, "/ready"), lambda: ring.ring_members(got, "/ring")):
+        with pytest.raises(RwError) as exc:
+            call()
+        assert exc.value.code == "dependency"
+        assert "off cluster to sso.example.invalid (not followed)" in exc.value.message
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = FakeProxyCtx(
+        lambda r: reply(301, "", location="/loki/ready") if r["path"] == "/ready" else "ready"
+    )
+    assert proxy.proxy_get(ctx, "ns", "loki-0", "http", 3100, "/ready").body == "ready"
+    assert ctx.k8s_proxy_get.paths() == ["/ready", "/loki/ready"]
+    loop = FakeProxyCtx(lambda r: reply(302, "", location="/again"))
+    assert proxy.proxy_get(loop, "ns", "loki-0", "http", 3100, "/a").status == 302
+    assert len(loop.k8s_proxy_get.requests) == 2
+
+
+def test_a_cross_host_redirect_through_the_ready_task_is_an_error_and_asks_once():
+    env, _ = run("ready", replies={"/ready": cross_host_redirect("sso.example.invalid")})
+    assert env["status"] == "failed" and codes(env) == [("dependency", "pod/loki-0")]
+    assert "sso.example.invalid" in env["errors"][0]["message"]
+    assert len(LAST["proxy"]) == 1
+
+
+def test_a_cut_body_is_internal_never_a_partial_parse():
+    with pytest.raises(RwError) as exc:
+        ask(reply(200, '{"shards": [', truncated=True))
+    assert exc.value.code == "internal" and exc.value.hint
 
 
 # ------------------------------------------------------------ scripts: ready ----
@@ -271,7 +341,9 @@ def test_ready_healthy_statefulset():
     assert (out["readyCount"], out["notReadyCount"]) == (1, 0)
     [pod] = out["pods"]
     assert (pod["ready"], pod["httpStatus"], pod["body"], pod["port"]) == (True, 200, "ready", 3100)
-    assert raw("loki-0", "/ready") in calls
+    assert [(r["name"], r["path"], r["scheme"], r["port"]) for r in LAST["proxy"]] == [
+        ("loki-0", "/ready", "http", 3100)
+    ]
 
 
 def test_ready_503_is_not_ready_not_an_error_even_though_the_pod_is_ready_for_kubernetes():
@@ -280,6 +352,7 @@ def test_ready_503_is_not_ready_not_an_error_even_though_the_pod_is_ready_for_ku
     check_schemas("ready", env)
     [pod] = env["outputs"]["ready"]["pods"]
     assert pod["ready"] is False and pod["httpStatus"] == 503 and pod["podReady"] is True
+    assert pod["body"] == NOT_READY  # the reason Loki gives, which `kubectl get --raw` dropped
     assert env["outputs"]["ready"]["notReadyCount"] == 1
 
 
@@ -311,7 +384,7 @@ def test_ready_pending_pod_is_listed_and_not_asked_and_no_pods_is_a_fact():
     env, calls = run("ready", pods=[pod])
     [row] = env["outputs"]["ready"]["pods"]
     assert row["queried"] is False and row["ready"] is None
-    assert not [c for c in calls if "--raw" in c]
+    assert not [c for c in calls if "--raw" in c] and LAST["proxy"] == []
     env, _ = run("ready", pods=[])
     assert env["status"] == "ok"
     assert (
@@ -323,7 +396,7 @@ def test_ready_pending_pod_is_listed_and_not_asked_and_no_pods_is_a_fact():
 def test_ready_inputs_choose_the_port_and_scheme():
     env, calls = run("ready", inputs={"port": 8080, "scheme": "https"})
     assert env["status"] == "ok"
-    assert raw("loki-0", "/ready", "https", 8080) in calls
+    assert [(r["scheme"], r["port"]) for r in LAST["proxy"]] == [("https", 8080)]
 
 
 # ------------------------------------------------------------ scripts: ring ----
@@ -420,8 +493,8 @@ def test_ring_members_by_state_and_ordering():
 def test_ring_unserved_paths_are_facts():
     """A pod of a microservices install serves its own component's ring; the others are 404."""
     replies = {
-        "/distributor/ring": (1, "", NO_ROUTE),
-        "/compactor/ring": (1, "", NO_ROUTE),
+        "/distributor/ring": NO_ROUTE,
+        "/compactor/ring": NO_ROUTE,
     }
     env, _ = run("ring", replies=replies)
     assert env["status"] == "ok" and env["errors"] == []
@@ -434,7 +507,7 @@ def test_ring_unserved_paths_are_facts():
 
 
 def test_ring_no_path_served_by_any_pod_is_a_dependency_error():
-    replies = {p: (1, "", NO_ROUTE) for p in RING_PATHS}
+    replies = {p: NO_ROUTE for p in RING_PATHS}
     env, _ = run("ring", replies=replies)
     assert env["status"] == "partial" and codes(env) == [("dependency", "rings")]
     assert (
@@ -449,7 +522,7 @@ def test_ring_the_next_pod_serves_a_path_the_first_does_not():
     second = json.loads(json.dumps(load("pods_loki.json")["items"][0]))
     second["metadata"]["name"] = "loki-1"
     pods = [load("pods_loki.json")["items"][0], second]
-    env, _ = run("ring", pods=pods, replies={("loki-0", "/compactor/ring"): (1, "", NO_ROUTE)})
+    env, _ = run("ring", pods=pods, replies={("loki-0", "/compactor/ring"): NO_ROUTE})
     r = ring_of(env, "/compactor/ring")
     assert r["served"] is True and r["viewedFrom"] == "loki-1" and r["unservedBy"] == ["loki-0"]
 
@@ -461,6 +534,83 @@ def test_ring_html_page_is_an_error_never_an_empty_ring():
     assert env["status"] == "failed" and codes(env) == [("internal", "pod/loki-0")]
     assert env["outputs"] == {}
     assert "HTML" in env["errors"][0]["message"]
+
+
+def test_ring_html_page_of_a_real_loki_is_read_into_the_same_members():
+    """`ctx.k8s_proxy_get` sends `Accept: */*`, and Loki then serves the ring as HTML (the helper
+    cannot ask for JSON): the table is read, heartbeat placed from its "(01:27:30)" on the day of
+    the page's own clock."""
+    got = ring.ring_members(proxy.Reply(200, load("ring.html")), "w")
+    members, server_now = got
+    assert server_now == "2026-11-04T01:27:38Z"
+    [m] = members
+    assert (m["id"], m["state"], m["address"], m["token_count"]) == (
+        "loki-0",
+        "ACTIVE",
+        "10.244.0.5:9095",
+        128,
+    )
+    assert (m["timestamp"], m["registered_timestamp"]) == (
+        "2026-11-04T01:27:30Z",
+        "2026-11-04T01:24:00Z",
+    )
+    unparsed = []
+    view = ring.member_view(m, at(server_now), unparsed)
+    assert unparsed == [] and view["heartbeatAgeSeconds"] == 8.0
+    assert (view["tokenCount"], view["zone"], view["readOnly"]) == (128, None, False)
+
+
+def test_ring_html_page_with_an_unhealthy_member_keeps_the_state_and_the_old_heartbeat():
+    members, server_now = ring.ring_members(proxy.Reply(200, load("ring-stale.html")), "w")
+    view = ring.member_view(members[0], at(server_now), [])
+    assert view["state"] == "UNHEALTHY" and view["heartbeatAgeSeconds"] == 218.0
+
+
+def test_ring_html_heartbeat_before_midnight_belongs_to_the_day_before():
+    page = (
+        load("ring.html")
+        .replace("2026-11-04 01:27:38", "2026-11-04 00:00:05")
+        .replace("(01:27:30)", "(23:59:58)")
+    )
+    members, _ = ring.ring_members(proxy.Reply(200, page), "w")
+    assert members[0]["timestamp"] == "2026-11-03T23:59:58Z"
+
+
+def test_ring_html_in_another_zone_is_placed_in_utc():
+    page = (
+        load("ring.html")
+        .replace("&#43;0000", "&#43;0200")
+        .replace("01:27:38", "03:27:38")
+        .replace("(01:27:30)", "(03:27:30)")
+    )
+    members, server_now = ring.ring_members(proxy.Reply(200, page), "w")
+    assert (
+        members[0]["timestamp"] == "2026-11-04T01:27:30Z" and server_now == "2026-11-04T01:27:38Z"
+    )
+
+
+def test_ring_html_unparseable_heartbeat_is_reported_through_the_unparsed_list():
+    page = load("ring.html").replace("8s ago (01:27:30)", "8s ago")
+    members, server_now = ring.ring_members(proxy.Reply(200, page), "w")
+    unparsed = []
+    view = ring.member_view(members[0], at(server_now), unparsed)
+    assert view["lastHeartbeat"] is None and unparsed[0][:2] == ("loki-0", "timestamp")
+
+
+def test_ring_html_that_is_not_a_ring_table_is_an_error():
+    for body in ("<html><table><tr><th>Name</th></tr><tr><td>x</td></tr></table></html>", "<html>"):
+        with pytest.raises(RwError) as exc:
+            ring.ring_members(proxy.Reply(200, body), "w")
+        assert exc.value.code == "internal"
+
+
+def test_ring_task_reads_the_html_pages_the_helper_gets():
+    page = load("ring.html")
+    env, _ = run("ring", replies={p: page for p in RING_PATHS})
+    assert env["status"] == "ok" and env["errors"] == [], env["errors"]
+    check_schemas("ring", env)
+    r = ring_of(env, "/ring")
+    assert r["served"] is True and r["byState"] == {"ACTIVE": 1} and r["memberCount"] == 1
 
 
 def test_ring_a_failing_path_is_served_null_and_the_rest_survives():
@@ -476,7 +626,7 @@ def test_ring_errors_are_one_per_pod_and_code():
     second["metadata"]["name"] = "loki-1"
     pods = [load("pods_loki.json")["items"][0], second]
     replies = {("loki-1", p): (1, "", UNREACHABLE) for p in RING_PATHS}
-    replies.update({("loki-0", p): (1, "", NO_ROUTE) for p in RING_PATHS})
+    replies.update({("loki-0", p): NO_ROUTE for p in RING_PATHS})
     env, _ = run("ring", pods=pods, replies=replies)
     assert env["status"] == "partial" and codes(env) == [("unreachable", "pod/loki-1")]
     assert all(ring_of(env, p)["served"] is None for p in RING_PATHS)
@@ -542,8 +692,8 @@ def test_the_type_falls_back_to_the_plural_of_the_path():
 
 
 class Clocked:
-    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock and answer
-    through `answer(index, argv)` -> (returncode, stdout, stderr)."""
+    """A ctx whose `k8s_proxy_get` calls each take `step` seconds of a fake clock and answer
+    through `answer(index, request)` -> a test's (returncode, stdout, stderr)."""
 
     def __init__(self, answer, step=30):
         self.now = 0.0
@@ -555,19 +705,20 @@ class Clocked:
     def clock(self):
         return self.now
 
-    def run(self, argv, check=True, **_):
-        self.calls.append(list(argv))
-        rc, out, err = self.answer(len(self.calls) - 1, argv)
-        self.now += self.step
-        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        def answer(request):
+            self.calls.append(request)
+            out = served_as(self.answer(len(self.calls) - 1, request))
+            self.now += self.step
+            return out
+
+        return ProxyFake(answer)(namespace, kind, name, port, path, scheme=scheme, timeout=timeout)
 
     def error(self, code, message, scope=None, **_):
         self.errors.append((code, scope, message))
 
 
-CLIENT_TIMEOUT = (
-    "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)"
-)
+CLIENT_TIMEOUT = (1, "", "net/http: request canceled (Client.Timeout exceeded)")
 WORKLOAD = {
     "kind": "StatefulSet",
     "metadata": {"name": "loki", "namespace": NS},
@@ -589,7 +740,7 @@ def test_ready_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
     out = ready.view(ctx, WORKLOAD, loki_pods(6), "http", None, 200, budget)
     # 0s, 30s, 60s, 90s: four asks; the fourth is limited to what is left of the 100s
     assert out["readyCount"] == 4
-    assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
+    assert [c["timeout"] for c in ctx.calls] == [30, 30, 30, 10]
     assert [(c, s) for c, s, _ in ctx.errors] == [
         ("timeout", "pod/loki-4"),
         ("timeout", "pod/loki-5"),
@@ -599,7 +750,7 @@ def test_ready_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
 
 
 def test_ready_three_consecutive_timeouts_stop_asking():
-    ctx = Clocked(lambda i, argv: (0, "ready\n", "") if i == 0 else (1, "", CLIENT_TIMEOUT), step=1)
+    ctx = Clocked(lambda i, argv: (0, "ready\n", "") if i == 0 else CLIENT_TIMEOUT, step=1)
     budget = fetch.Budget(clock=ctx.clock)
     out = ready.view(ctx, WORKLOAD, loki_pods(6), "http", None, 200, budget)
     assert len(ctx.calls) == 4 and out["readyCount"] == 1
@@ -621,7 +772,7 @@ def test_ring_the_deadline_leaves_the_remaining_paths_served_null_with_a_timeout
 
 
 def test_ring_three_consecutive_timeouts_stop_asking_the_path():
-    ctx = Clocked(lambda i, argv: (1, "", NO_ROUTE) if i == 0 else (1, "", CLIENT_TIMEOUT), step=1)
+    ctx = Clocked(lambda i, argv: NO_ROUTE if i == 0 else CLIENT_TIMEOUT, step=1)
     budget = fetch.Budget(clock=ctx.clock)
     out = ring.collect(ctx, WORKLOAD, loki_pods(6), "http", None, ["/ring"], CAPTURED, 200, budget)
     assert len(ctx.calls) == 4  # a 404, three timeouts, then no more asks
@@ -642,10 +793,7 @@ VALUE_FLAGS = {"-n", "-o", "-l"}
 def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs. Raises on anything it
     does not know, so a script that issues a new call has to extend this."""
-    if "--raw" in argv:
-        path = argv[argv.index("--raw") + 1]
-        assert "/pods/" in path and "/proxy/" in path, path
-        return {("", "pods/proxy", "get")}
+    assert "--raw" not in argv, argv  # pod proxy reads go through ctx.k8s_proxy_get (S17)
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
         if a in VALUE_FLAGS:
@@ -676,6 +824,7 @@ def test_declared_permissions_are_exactly_what_the_scripts_call(task):
         _, calls = run(task, name)
         for argv in calls:
             needed |= rbac_needs(list(argv))
+        needed |= {("", f"{r['kind']}/proxy", "get") for r in LAST["proxy"]}
     assert needed == granted(task), (
         f"{task}: calls {sorted(needed)}, declares {sorted(granted(task))}"
     )
@@ -688,15 +837,8 @@ def test_rbac_needs_maps_the_verbs():
     assert rbac_needs(["kubectl", "-n", "x", "get", "pods", "-l", "a=b", "-o", "json"]) == {
         ("", "pods", "list")
     }
-    assert rbac_needs(
-        [
-            "kubectl",
-            "get",
-            "--raw",
-            "/api/v1/namespaces/n/pods/http:p:3100/proxy/ready",
-            "--request-timeout=30s",
-        ]
-    ) == {("", "pods/proxy", "get")}
+    with pytest.raises(AssertionError):  # S17: a proxied read through kubectl get --raw
+        rbac_needs(["kubectl", "get", "--raw", "/api/v1/namespaces/n/pods/p:3100/proxy/ready"])
     with pytest.raises(AssertionError):
         rbac_needs(["kubectl", "delete", "pods", "p"])
 

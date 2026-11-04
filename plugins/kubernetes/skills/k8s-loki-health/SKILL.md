@@ -26,8 +26,7 @@ Loki. Start with `ready`; if a pod is not ready or log pushes fail, `ring` shows
 member that should serve is ACTIVE with a recent heartbeat.
 
 Both tasks reach each pod over HTTP through the API server's pod proxy
-(`kubectl get --raw /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/ready`): no exec,
-no port-forward, no secret read. That needs `get` on the workload, `list` on `pods` and `get`
+(`ctx.k8s_proxy_get`, which never follows a redirect): no exec, no port-forward, no secret read. That needs `get` on the workload, `list` on `pods` and `get`
 on `pods/proxy` in its namespace. The pods are the workload's own selector. The port is the
 `port` input, else the container port named `http-metrics` or `http`, else 3100; `scheme`
 defaults to `http`.
@@ -47,21 +46,26 @@ defaults to `http`.
 
 Outputs are facts, not verdicts.
 
-- **`ready: false` has no reason here.** Loki's 503 body ("Ingester not ready: waiting for 15s
-  after being ready", "Some services are not Running") does not come back through the proxy.
-  Use `ring` for the ring state and `kubernetes:k8s-workload-logs/recent-logs` for the pod's
-  log. An ingester answers 503 for about `min_ready_duration` (15s by default) after it starts,
-  so a pod that just started reads `ready: false` and is normal. An API server that is itself
-  overloaded also answers 503, which reads as not ready here. A 403 from the backend (an auth
-  proxy in front of Loki) surfaces as `permission_denied` on `pods/proxy`, like a missing RBAC
-  grant.
+- **`ready: false` carries Loki's reason.** A 503 puts its body in `body` ("Ingester not ready:
+  waiting for 15s after being ready", "Some services are not Running"). Use `ring` for the ring
+  state and `kubernetes:k8s-workload-logs/recent-logs` for the pod's log. An ingester answers 503
+  for about `min_ready_duration` (15s by default) after it starts, so a pod that just started
+  reads `ready: false` and is normal. An API server that cannot reach the pod or is overloaded is
+  an error (`unreachable`), never `ready: false`. A 401/403 from Loki itself (an auth proxy in
+  front) is a `dependency` error naming the status, not `permission_denied` (that is the API
+  server refusing `pods/proxy`). A redirect to another path of the same pod is followed once; a
+  redirect to another host (an SSO login) is never followed and is a `dependency` error naming
+  the host.
 - **A reply that is not the expected one is an error, never ready.** A 200 page that is not
   "ready", a ring page that is HTML, JSON without `shards`, a pod that cannot be reached: each is
   an error scoped `pod/<name>`, and the field stays `null`. When no pod answers at all the task
   fails. Ring JSON was verified on Loki 3.x; an older Loki whose ring page only answers HTML
   gives an `internal` error that says so. The ring page answers JSON only when the request asks for
-  it; `kubectl get --raw` sends an Accept header that does, and the skill depends on that: a
-  different client would get the HTML page.
+  it, and `ctx.k8s_proxy_get` sends `Accept: */*`, so the page arrives as HTML and the skill reads
+  its table (JSON is read too, when a page is JSON). The HTML gives the same members, but the
+  heartbeat is the page's "(HH:MM:SS)" placed on the day of the page's own "Current time", so
+  `lastHeartbeat` has second resolution and a page without that time of day gives
+  `lastHeartbeat: null` with an `internal` error.
 - **`served: false` is a fact.** In microservices mode a pod serves the ring of its own component
   (a distributor serves `/distributor/ring`; an ingester `/ring`; a compactor
   `/compactor/ring`); the others answer 404. In single-binary mode (`target=all`) all three are

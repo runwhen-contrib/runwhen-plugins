@@ -4,6 +4,7 @@ import re
 
 from k8s_loki_health.common import MESSAGE_LIMIT, cap, truncate
 from k8s_loki_health.errors import RwError
+from k8s_loki_health.proxy import status_error
 from k8s_loki_health.fetch import (
     Budget,
     fetch_one,
@@ -17,14 +18,14 @@ _READY = re.compile(r"\bready\b")
 
 
 def ready_reply(reply, what):
-    """(ready, body) from a /ready reply: a 200 whose text says ready is True; a 503 is False
-    (Loki answers 503 while a component is not ready; the proxy does not pass its text on); a
+    """(ready, body) from a /ready reply: a 200 whose text says ready is True; a 503 is False with
+    its body, the reason Loki gives ("Ingester not ready: waiting for 15s after being ready"); a
     200 with other text (an auth page, an HTML error) or any other status is an error, and never
     reads as ready."""
     if reply.status == 503:
-        return False, None
+        return False, reply.body.strip() or None
     if reply.status != 200:
-        raise RwError("dependency", f"{what} answered HTTP {reply.status}")
+        raise status_error(reply, what)
     text = reply.body.strip()
     if _READY.search(text.lower()) and "not ready" not in text.lower():
         return True, text
