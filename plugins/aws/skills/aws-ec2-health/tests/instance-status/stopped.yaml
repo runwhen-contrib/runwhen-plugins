@@ -1,0 +1,84 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/ec2-instances/i-0c0ffee0123456789
+now: '2026-11-04T03:41:37.524Z'
+calls:
+- argv:
+  - aws
+  - ec2
+  - describe-instance-status
+  - --instance-ids
+  - i-0c0ffee0123456789
+  - --include-all-instances
+  - --query
+  - '{InstanceStatuses: InstanceStatuses[].{InstanceId: InstanceId, AvailabilityZone: AvailabilityZone,
+    State: InstanceState.Name, StateCode: InstanceState.Code, SystemStatus: SystemStatus, InstanceStatus:
+    InstanceStatus, AttachedEbsStatus: AttachedEbsStatus, Events: Events[].{InstanceEventId: InstanceEventId,
+    Code: Code, Description: Description, NotBefore: NotBefore, NotAfter: NotAfter, NotBeforeDeadline:
+    NotBeforeDeadline}}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "InstanceStatuses": [
+            {
+                "InstanceId": "i-0c0ffee0123456789",
+                "AvailabilityZone": "eu-west-1a",
+                "State": "stopped",
+                "StateCode": 80,
+                "SystemStatus": {
+                    "Details": [
+                        {
+                            "Name": "reachability",
+                            "Status": "insufficient-data"
+                        }
+                    ],
+                    "Status": "not-applicable"
+                },
+                "InstanceStatus": {
+                    "Details": [
+                        {
+                            "Name": "reachability",
+                            "Status": "insufficient-data"
+                        }
+                    ],
+                    "Status": "not-applicable"
+                },
+                "AttachedEbsStatus": {
+                    "Details": [
+                        {
+                            "Name": "reachability",
+                            "Status": "insufficient-data"
+                        }
+                    ],
+                    "Status": "not-applicable"
+                },
+                "Events": []
+            }
+        ],
+        "NextToken": null
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    checks:
+      id: i-0c0ffee0123456789
+      state:
+        name: stopped
+        code: 80
+      checksApply: false
+      systemStatusImpaired: null
+      instanceStatusImpaired: null
+      attachedEbsStatusImpaired: null
+      hasPendingEvents: false

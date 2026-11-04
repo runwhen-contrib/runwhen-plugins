@@ -195,6 +195,8 @@ def test_the_planted_values_are_only_in_the_broken_log_recording():
         "skills/aws-lambda-health/tests/function-errors/broken.yaml",
         "tests/stub/scenarios/broken/logs-filter-log-events.json",
         # the broken instance's tags: the output withholds both values
+        "skills/aws-ec2-health/tests/instance-config/broken.yaml",
+        "skills/aws-ec2-health/tests/instance-metrics/broken.yaml",  # reads the instance first
         "tests/stub/scenarios/ec2-broken/ec2-describe-instances-i-0b7c1d2e3f4a5b6c7.json",
     }
 
@@ -208,6 +210,19 @@ def test_every_health_task_has_the_four_standard_scenarios(task):
         p.stem for p in (PLUGIN / "skills" / "aws-lambda-health" / "tests" / task).glob("*.yaml")
     }
     assert STANDARD <= names
+
+
+@pytest.mark.parametrize("task", ["instance-config", "instance-status", "instance-metrics"])
+def test_every_ec2_task_has_the_four_standard_scenarios_and_a_stopped_instance(task):
+    names = {p.stem for p in (PLUGIN / "skills" / "aws-ec2-health" / "tests" / task).glob("*.yaml")}
+    assert STANDARD | {"stopped"} <= names
+
+
+def test_the_ec2_scenarios_that_degrade_have_their_fixtures():
+    base = PLUGIN / "skills" / "aws-ec2-health" / "tests"
+    assert (base / "instance-metrics" / "throttled.yaml").is_file()
+    assert (base / "instance-metrics" / "metrics-forbidden.yaml").is_file()
+    assert (base / "instance-status" / "throttled.yaml").is_file()
 
 
 def test_discover_has_its_scenarios_and_every_failure_kind_the_brief_names():
