@@ -15,7 +15,6 @@ from k8s_seaweedfs_health.fetch import get_text, load_release, pod_port
 from k8s_seaweedfs_health.k8s import MESSAGE_LIMIT, ProxyError, proxy_delete, proxy_put
 
 DEFAULT_BUCKET = "runwhen-s3-check"
-BODY_FILE = "s3-check-body"
 BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 PLAN = ("put-object", "get-object", "delete-object", "confirm-deleted")
 
@@ -142,7 +141,6 @@ class Probe:
 
     def put(self, path, body):
         timeout = self.budget.timeout(DELETE_RESERVE)  # raises before anything is sent
-        (self.ctx.workdir / BODY_FILE).write_text(body)
         self.object_attempted = True
         try:
             return proxy_put(
@@ -151,7 +149,7 @@ class Probe:
                 self.name,
                 self.port,
                 path,
-                BODY_FILE,
+                body,
                 self.scheme,
                 timeout=timeout,
             )

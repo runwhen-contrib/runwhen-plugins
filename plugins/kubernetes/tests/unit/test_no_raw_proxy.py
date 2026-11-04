@@ -1,17 +1,21 @@
-"""Repo guard for security finding S17: no skill reads a backend through `kubectl get --raw` on a
+"""Repo guard for security finding S17: no skill reaches a backend through `kubectl ... --raw` on a
 pod or Service proxy path.
 
 `kubectl get --raw /api/v1/namespaces/<ns>/{pods,services}/<name>:<port>/proxy/...` follows a
 backend's 301/302/307 and, for an absolute Location on another host, re-sends the runner's bearer
-token there. Skills read a proxied backend with `ctx.k8s_proxy_get`, which never follows a redirect.
+token there. The write verbs leak the same way: lane A (kind) found that `kubectl replace|create|
+delete --raw` follow a 302 as a GET carrying the bearer token, and `delete --raw` also follows a 307
+as a DELETE carrying it. Skills read a proxied backend with `ctx.k8s_proxy_get` and write to one with
+`ctx.k8s_proxy_request`, which never follow a redirect. There is no exception.
 
 The check reads the string constants of every skill's `lib/` and `scripts/` Python, as one set per
 skill (a skill builds the path in one module and passes it to `--raw` in another); docstrings and
-comments are not code and are skipped, and an f-string counts as one string. A skill that has
-`--raw` and a proxy path (`/namespaces/` ... `/proxy`) among them is a violation. `--raw /version`-
-style paths of the API server itself (k8s-base) have no proxy path and pass. One exception is
-listed, because the helper only reads: k8s-seaweedfs-health's s3-check PUTs and DELETEs through
-`kubectl replace|delete --raw`; the guard holds that skill to those two verbs.
+comments are not code and are skipped, and an f-string counts as one string. A skill is a violation
+when it has any of
+  - a proxy path (`/proxy/`, or `/namespaces/` ... `/proxy`) among its strings,
+  - `--raw` and a proxy path among them (the original S17 rule), or
+  - a list literal holding `--raw` and one of the verbs replace, create, delete or patch.
+`--raw /version`-style paths of the API server itself (k8s-base) have no proxy path and pass.
 """
 
 import ast
@@ -21,8 +25,9 @@ import pytest
 
 PLUGIN = Path(__file__).parents[2]
 SKILLS = PLUGIN / "skills"
-# skill -> the kubectl verbs it may pass with `--raw` and a proxy path (writes: the helper reads only)
-WRITE_ONLY = {"k8s-seaweedfs-health": {"replace", "delete"}}
+# the kubectl verbs that must never carry `--raw` (they follow a redirect with the bearer token)
+WRITE_VERBS = {"replace", "create", "delete", "patch"}
+KUBECTL_VERBS = {"get", "apply", *WRITE_VERBS}
 
 
 def skill_files():
@@ -73,18 +78,19 @@ def strings(tree):
 
 
 def raw_verbs(tree):
-    """The verb (the constant after `kubectl`) of each list literal that holds `--raw`."""
+    """The kubectl verbs (get, replace, create, delete, patch, apply) of each list literal that holds
+    `--raw`, however the rest of the argv is spelled."""
     verbs = []
     for node in ast.walk(tree):
         if isinstance(node, ast.List):
             items = [e.value if isinstance(e, ast.Constant) else None for e in node.elts]
             if "--raw" in items:
-                verbs.append(items[1] if len(items) > 1 and items[0] == "kubectl" else None)
+                verbs += [i for i in items if i in KUBECTL_VERBS]
     return verbs
 
 
 def is_proxy_path(text):
-    return "/namespaces/" in text and "/proxy" in text
+    return "/proxy/" in text or ("/namespaces/" in text and "/proxy" in text)
 
 
 def violations(*sources):
@@ -97,13 +103,15 @@ def violations(*sources):
     return "--raw" in found, any(is_proxy_path(t) for t in found), verbs
 
 
-def offending(skill, files):
+def offending(files):
+    """Why the skill's files violate S17 (a list of reasons), or None."""
     has_raw, has_proxy, verbs = violations(*(f.read_text() for f in files))
-    if not (has_raw and has_proxy):
-        return None
-    if skill in WRITE_ONLY and verbs and set(verbs) <= WRITE_ONLY[skill]:
-        return None
-    return verbs
+    reasons = []
+    if has_proxy:
+        reasons.append("a proxy path")
+    if set(verbs) & WRITE_VERBS:
+        reasons.append(f"`kubectl {'|'.join(sorted(set(verbs) & WRITE_VERBS))} --raw`")
+    return reasons or None
 
 
 def test_there_are_skills_to_scan():
@@ -111,12 +119,18 @@ def test_there_are_skills_to_scan():
 
 
 @pytest.mark.parametrize("skill", sorted(skill_files()))
-def test_no_skill_reads_a_backend_through_kubectl_get_raw_on_a_proxy_path(skill):
-    verbs = offending(skill, skill_files()[skill])
-    assert verbs is None, (
-        f"{skill} passes `--raw` with a proxy path (verbs {verbs}): read the backend with "
-        "ctx.k8s_proxy_get, which never follows a redirect (S17)"
+def test_no_skill_reaches_a_backend_through_kubectl_raw_or_a_proxy_path(skill):
+    reasons = offending(skill_files()[skill])
+    assert reasons is None, (
+        f"{skill} has {', '.join(reasons or [])}: read a backend with ctx.k8s_proxy_get and write to "
+        "one with ctx.k8s_proxy_request, which never follow a redirect (S17)"
     )
+
+
+def test_s3_check_no_longer_needs_an_exception():
+    files = skill_files()["k8s-seaweedfs-health"]
+    assert violations(*(f.read_text() for f in files))[:2] == (False, False)
+    assert any("k8s_proxy_request" in f.read_text() for f in files)
 
 
 def test_the_api_server_paths_of_k8s_base_are_allowed():
@@ -124,7 +138,7 @@ def test_the_api_server_paths_of_k8s_base_are_allowed():
     assert violations(source) == (True, False, ["get"])
     files = skill_files()["k8s-base"]
     assert any('"--raw"' in f.read_text() for f in files)  # it does use --raw, for /version
-    assert offending("k8s-base", files) is None
+    assert offending(files) is None
 
 
 @pytest.mark.parametrize(
@@ -142,18 +156,28 @@ def test_the_guard_catches_a_raw_proxy_path(sources):
     assert has_raw and has_proxy
 
 
+@pytest.mark.parametrize("verb", sorted(WRITE_VERBS))
+def test_the_guard_catches_a_write_verb_with_raw_even_without_a_visible_path(verb):
+    """Lane A's kind finding: `kubectl replace|create|delete --raw` follow a 302 as a GET carrying the
+    bearer token, and `delete --raw` a 307 as a DELETE carrying it."""
+    for source in (
+        f'argv = ["kubectl", "{verb}", "--raw", path, "-f", "body"]',
+        f'argv = ["kubectl", "-n", ns, "{verb}", "--raw", path]',
+    ):
+        verbs = violations(source)[2]
+        assert verb in verbs and set(verbs) & WRITE_VERBS
+
+
+def test_the_guard_catches_any_proxy_path_even_without_raw():
+    for text in ("/api/v1/namespaces/n/pods/p:80/proxy/x", "/api/v1/namespaces/n/pods/p/proxy"):
+        assert violations(f'p = "{text}"')[:2] == (False, True)
+    assert violations('p = "/proxy/x"')[:2] == (False, True)
+
+
 def test_docstrings_and_comments_that_mention_it_are_not_code():
     source = (
-        '"""Not `kubectl get --raw` on /namespaces/n/pods/p/proxy/ paths."""\n'
+        '"""Not `kubectl replace --raw` on /namespaces/n/pods/p/proxy/ paths."""\n'
         "# --raw /namespaces/n/pods/p/proxy/\n"
         "x = 1\n"
     )
-    assert violations(source)[:2] == (False, False)
-
-
-def test_the_write_exception_is_still_needed_and_is_only_replace_and_delete():
-    for skill, allowed in WRITE_ONLY.items():
-        has_raw, has_proxy, verbs = violations(*(f.read_text() for f in skill_files()[skill]))
-        assert has_raw and has_proxy, f"{skill} no longer needs its exception: remove it"
-        assert verbs and set(verbs) <= allowed, verbs
-        assert "get" not in verbs
+    assert violations(source) == (False, False, [])
