@@ -42,6 +42,7 @@ def test_the_scenarios_this_plugin_records_exist():
         "no-diagnostics",
         "forbidden",
         "data-plane-forbidden",
+        "secrets-forbidden",
         "not-found",
         "throttled",
     }

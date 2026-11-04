@@ -49,6 +49,7 @@ target vault.
 | `no-diagnostics` | `kv-orders-dev` | as `broken`, with no diagnostic settings |
 | `forbidden` | `kv-orders-dev` | no role assignment: `AuthorizationFailed` on every ARM call, `Forbidden` on the data plane |
 | `data-plane-forbidden` | `kv-orders-dev` | the control plane works, the item lists are `Forbidden` (Reader without a Key Vault data role) |
+| `secrets-forbidden` | `kv-orders-dev` | as `broken`, but listing secrets is `Forbidden`: the other kinds can still be read |
 | `not-found` | `nope` | `The Vault 'nope' not found within subscription.` and an unknown subscription |
 | `throttled` | `kv-orders-dev` | ARM `TooManyRequests` on every call |
 
