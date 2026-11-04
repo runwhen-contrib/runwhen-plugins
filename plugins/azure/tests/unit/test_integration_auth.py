@@ -369,7 +369,10 @@ def test_a_subscription_the_identity_cannot_see_is_permission_denied(tmp_path, f
 
 
 def test_a_missing_az_is_a_dependency_error(tmp_path):
-    r = run_script(tmp_path, tmp_path / "nowhere")
+    # PATH holds only an empty dir: CI runners ship a real az in /usr/bin
+    nowhere = tmp_path / "nowhere"
+    nowhere.mkdir()
+    r = run_script(tmp_path, nowhere, extra_env={"PATH": str(nowhere)})
     assert r.code == 1 and r.error["code"] == "dependency"
 
 
