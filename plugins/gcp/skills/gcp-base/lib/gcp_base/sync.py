@@ -187,24 +187,31 @@ class SyncClient:
 
 
 def _key(item):
-    """(type, namespace or None) of the partition an item belongs to."""
+    """(type, parent chain names) of the partition an item belongs to. Works for any integration:
+    a partition's parentPath is `<platform>/<plural>/<name>/...`, the item's parent is every chain
+    entry but its own."""
     chain = item["identity"]["chain"]
-    return chain[-1]["type"], chain[1]["name"] if len(chain) > 2 else None
+    return chain[-1]["type"], tuple(e["name"] for e in chain[:-1])
+
+
+def _path_names(path):
+    """The names in a resource path (`<platform>/<plural>/<name>/<plural>/<name>...`), or None
+    for a partition without a parentPath (never complete, so it never needs marking)."""
+    return tuple(path.split("/")[2::2]) if path else None
 
 
 def fail_rejected(partitions, rejected, short=None):
     """partitions with every complete one that had a rejected item, or an item in a batch the
     platform did not account for, marked failed."""
     reasons = {
-        (t, ns): f"items rejected: {entry.get('code', 'rejected')}" for t, ns, entry in rejected
+        (t, parent): f"items rejected: {entry.get('code', 'rejected')}"
+        for t, parent, entry in rejected
     }
     for key, why in (short or {}).items():
         reasons.setdefault(key, why)
     out = []
     for p in partitions:
-        path = p.get("parentPath", "")
-        ns = path.split("/namespaces/", 1)[1] if "/namespaces/" in path else None
-        reason = reasons.get((p["type"], ns))
+        reason = reasons.get((p["type"], _path_names(p.get("parentPath", ""))))
         if reason and p["status"] == "complete":
             p = {k: v for k, v in p.items() if k != "count"}
             p.update(status="failed", reason=reason)
