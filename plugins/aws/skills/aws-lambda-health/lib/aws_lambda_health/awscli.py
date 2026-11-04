@@ -3,7 +3,7 @@
 This file is shared by every aws skill. Skills do not import each other (a task sees only its own
 skill's lib/), so each skill carries a verbatim copy of `errors.py` and `awscli.py` in its own
 `lib/<skill_snake>/`; they import only `.errors`, so the copy needs no edit. A test
-(tests/unit/test_aws_copies.py) fails when a copy drifts from `aws_base`'s.
+(the plugin unit test test_aws_copies.py) fails when a copy drifts from `aws_base`'s.
 
     from aws_base.awscli import aws_json, aws_paged     # in another skill: from <skill_snake>.awscli import ...
 
