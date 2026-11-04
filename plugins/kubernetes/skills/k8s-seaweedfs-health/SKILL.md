@@ -37,10 +37,9 @@ pod serves S3 when its component is `s3`, or when its command or args enable it:
 
 All HTTP goes through the API server's pod proxy, so the identity needs `pods/proxy` `get` (and
 `update`, `delete` for `s3-check`) plus `list` on pods in the namespace. The reads (every GET) use
-`ctx.k8s_proxy_get`, which returns the workload's own status and never follows a redirect. The
-`s3-check` PUT and DELETE are `kubectl replace|delete --raw`, because that helper only reads: for those
-two requests the API server prints **no body for a non-2xx answer**, a failure shows only as its
-status, and a redirect from the gateway would still be followed.
+`ctx.k8s_proxy_get`; the `s3-check` PUT and DELETE use `ctx.k8s_proxy_request`. Both return the
+workload's own status and body (a 403, 404 or 503 is data) and never follow a redirect: a redirect to
+another host is reported as a `dependency` error naming the host, and no request is re-sent.
 
 ## What each task tells you
 

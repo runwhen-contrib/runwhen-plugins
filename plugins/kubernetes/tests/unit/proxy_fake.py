@@ -26,13 +26,15 @@ def cross_host_redirect(host="example.invalid", status=302):
 class ProxyFake:
     """`answer(request)` returns a reply dict, a body string (a 200), or an exception to raise (or
     `answer` is one such value, given for every request). A request is {namespace, kind, name,
-    port, path, scheme, timeout}."""
+    port, path, scheme, timeout}, plus `headers` when the call passed some."""
 
     def __init__(self, answer):
         self.answer = answer if callable(answer) else (lambda request: answer)
         self.requests = []
 
-    def __call__(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+    def __call__(
+        self, namespace, kind, name, port, path, *, headers=None, scheme="http", timeout=30
+    ):
         request = {
             "namespace": namespace,
             "kind": kind,
@@ -42,6 +44,8 @@ class ProxyFake:
             "scheme": scheme,
             "timeout": timeout,
         }
+        if headers is not None:
+            request["headers"] = dict(headers)
         self.requests.append(request)
         out = self.answer(request)
         if isinstance(out, Exception):

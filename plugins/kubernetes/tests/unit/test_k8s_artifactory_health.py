@@ -65,10 +65,12 @@ CODE_OK = '{"code":"OK"}'
 # the Services of each workload, with the proxy port each is asked on per port kind
 SERVICES_OF = {
     "artifactory": {
-        "artifactory": {"artifactory": 8081, "router": "http-router"},
+        "artifactory": {"artifactory": "http-artifactory", "router": "http-router"},
         "artifactory-numeric": {"artifactory": 80},
     },
-    "artifactory-broken": {"artifactory-broken": {"artifactory": 8081, "router": "http-router"}},
+    "artifactory-broken": {
+        "artifactory-broken": {"artifactory": "http-artifactory", "router": "http-router"}
+    },
 }
 
 
@@ -294,8 +296,8 @@ def test_healthy_every_pod_and_service_endpoint_is_ok():
     assert (pod_of(env)["artifactoryPort"], pod_of(env)["routerPort"]) == (8081, 8082)
     check_schema(env)
     # the Service is asked on its own port names: the ones whose targetPort is the pod's port
-    # a Service port name longer than the helper's 15 characters (`http-artifactory`) is asked by number
-    assert raw("services", "artifactory", 8081, LIVENESS) in calls
+    # including a name over 15 characters (`http-artifactory`: Service port names go up to 63)
+    assert raw("services", "artifactory", "http-artifactory", LIVENESS) in calls
     assert raw("services", "artifactory", "http-router", ROUTER) in calls
     assert raw("pods", "artifactory-0", 8081, LIVENESS) in calls
     # the router's own liveness and readiness (the chart's probes) are asked on the router port
@@ -839,10 +841,12 @@ def test_port_resolution_and_service_matching():
     long_name = {
         "spec": {"ports": [{"name": "http-artifactory", "port": 8081, "targetPort": 8081}]}
     }
-    assert fetch.service_port_for(long_name, 8081) == (
-        8081,
-        8081,
-    )  # over the helper's 15 characters
+    assert fetch.service_port_for(long_name, 8081) == ("http-artifactory", 8081)  # 16 characters
+    sixty_three = "a" * 63
+    long_63 = {"spec": {"ports": [{"name": sixty_three, "port": 80, "targetPort": 8081}]}}
+    assert fetch.service_port_for(long_63, 8081) == (sixty_three, 80)  # a DNS label's limit
+    unnamed = {"spec": {"ports": [{"port": 80, "targetPort": 8081}]}}
+    assert fetch.service_port_for(unnamed, 8081) == (80, 80)  # no name: the number
 
 
 def test_selector_string():

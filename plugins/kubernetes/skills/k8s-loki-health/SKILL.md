@@ -59,12 +59,11 @@ Outputs are facts, not verdicts.
 - **A reply that is not the expected one is an error, never ready.** A 200 page that is not
   "ready", a ring page that is HTML, JSON without `shards`, a pod that cannot be reached: each is
   an error scoped `pod/<name>`, and the field stays `null`. When no pod answers at all the task
-  fails. Ring JSON was verified on Loki 3.x; an older Loki whose ring page only answers HTML
-  gives an `internal` error that says so. The ring page answers JSON only when the request asks for
-  it, and `ctx.k8s_proxy_get` sends `Accept: */*`, so the page arrives as HTML and the skill reads
-  its table (JSON is read too, when a page is JSON). The HTML gives the same members, but the
-  heartbeat is the page's "(HH:MM:SS)" placed on the day of the page's own "Current time", so
-  `lastHeartbeat` has second resolution and a page without that time of day gives
+  fails. The ring page answers JSON when the request asks for it, so the skill sends
+  `Accept: application/json` and each ring reports `format: json`. A Loki that ignores `Accept` and
+  answers HTML is read from its table as a fallback (`format: html`). The HTML gives the same
+  members, but the heartbeat is the page's "(HH:MM:SS)" placed on the day of the page's own
+  "Current time", so `lastHeartbeat` has second resolution and a page without that time of day gives
   `lastHeartbeat: null` with an `internal` error.
 - **`served: false` is a fact.** In microservices mode a pod serves the ring of its own component
   (a distributor serves `/distributor/ring`; an ingester `/ring`; a compactor
