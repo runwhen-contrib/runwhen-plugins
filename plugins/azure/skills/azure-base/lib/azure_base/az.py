@@ -3,7 +3,7 @@
 This file is shared by every azure skill. Skills do not import each other (a task sees only its
 own skill's lib/), so each skill carries a verbatim copy of `errors.py`, `az.py`, `common.py` and
 `metrics.py` in its own `lib/<skill_snake>/`; they import only each other, so a copy needs no edit.
-A test (tests/unit/test_azure_copies.py) fails when a copy drifts from `azure_base`'s.
+A plugin unit test (test_azure_copies.py) fails when a copy drifts from `azure_base`'s.
 
     from azure_base.az import az_json           # in another skill: from <skill_snake>.az import ...
 
