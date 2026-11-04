@@ -7,11 +7,11 @@
 # kubectl; this runtime does not rely on it).
 #
 # FROM is the same pin as runtimes/kubernetes: the multi-arch INDEX digest of tag
-# v13-plugins-d1c7d04, resolved with
-#   docker buildx imagetools inspect ghcr.io/runwhen-contrib/rw-tasks-codecollection:v13-plugins-d1c7d04
-# on 2026-11-04 (runwhen-capability 6f6031d: contracts-v3). Move it together with the other
+# v13-plugins-m3-7c8bcb2, resolved with
+#   docker buildx imagetools inspect ghcr.io/runwhen-contrib/rw-tasks-codecollection:v13-plugins-m3-7c8bcb2
+# on 2026-11-05 (runwhen-capability b18be9c: contracts-v7). Move it together with the other
 # runtimes, and bump runtime.yaml's version.
-ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:f578706cb6f8d38d2776223618713c1f379c6c92a985ae2d7d2d6ca8122906af
+ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:f2e1de09241d731c9e49fe04c75d9da1cb839f7dc7197a9c627bf07f61851a09
 FROM ${BASE_IMAGE}
 
 # az is a Python application with a few hundred dependencies. It goes into its own virtualenv
