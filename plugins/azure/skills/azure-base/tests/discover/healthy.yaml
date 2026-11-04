@@ -1,0 +1,90 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+now: '2026-11-04T01:16:21.147Z'
+calls:
+- argv:
+  - az
+  - account
+  - show
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "environmentName": "AzureCloud",
+      "homeTenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "id": "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71",
+      "isDefault": true,
+      "managedByTenants": [],
+      "name": "rw-pilot-subscription",
+      "state": "Enabled",
+      "tenantDefaultDomain": "contoso.onmicrosoft.com",
+      "tenantDisplayName": "Contoso",
+      "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "user": {
+        "name": "00000000-0000-4000-8000-0000000000aa",
+        "type": "servicePrincipal"
+      }
+    }
+  stderr: |
+    WARNING: A new Azure CLI version is available. Run `az upgrade` to update.
+- argv:
+  - az
+  - keyvault
+  - list
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev",
+        "location": "westeurope",
+        "name": "kv-orders-dev",
+        "resourceGroup": "rg-orders-dev",
+        "tags": {
+          "env": "dev",
+          "team": "orders"
+        },
+        "type": "Microsoft.KeyVault/vaults"
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod",
+        "location": "eastus",
+        "name": "kv-orders-prod",
+        "resourceGroup": "rg-orders-prod",
+        "tags": {
+          "env": "prod",
+          "team": "orders"
+        },
+        "type": "Microsoft.KeyVault/vaults"
+      }
+    ]
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    subscription:
+      subscriptionId: 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+      displayName: rw-pilot-subscription
+      state: Enabled
+    keyvaults:
+      total: 2
+      omitted: 0
+    summary:
+      counts:
+        subscription: 1
+        keyvault: 2
+      root:
+        canonicalKey:
+          name: subscriptionId
+          value: 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71

@@ -1,0 +1,221 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/kv-orders-dev
+now: '2026-11-04T01:15:57.781Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - kv-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev",
+      "location": "westeurope",
+      "name": "kv-orders-dev",
+      "properties": {
+        "accessPolicies": [],
+        "createMode": null,
+        "enablePurgeProtection": null,
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "enabledForDeployment": false,
+        "enabledForDiskEncryption": false,
+        "enabledForTemplateDeployment": false,
+        "hsmPoolResourceId": null,
+        "networkAcls": null,
+        "privateEndpointConnections": null,
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Enabled",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "softDeleteRetentionInDays": 7,
+        "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+        "vaultUri": "https://kv-orders-dev.vault.azure.net/"
+      },
+      "resourceGroup": "rg-orders-dev",
+      "systemData": null,
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.KeyVault/vaults"
+    }
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - secret
+  - list
+  - --vault-name
+  - kv-orders-dev
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": true,
+          "expires": "2026-10-20T00:00:00+00:00",
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "contentType": null,
+        "id": "https://kv-orders-dev.vault.azure.net/secrets/db-password",
+        "managed": null,
+        "name": "db-password",
+        "tags": {}
+      },
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": true,
+          "expires": "2026-11-18T00:00:00+00:00",
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "contentType": null,
+        "id": "https://kv-orders-dev.vault.azure.net/secrets/smtp-token",
+        "managed": null,
+        "name": "smtp-token",
+        "tags": {}
+      },
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": false,
+          "expires": "2026-11-10T00:00:00+00:00",
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "contentType": null,
+        "id": "https://kv-orders-dev.vault.azure.net/secrets/retired-key",
+        "managed": null,
+        "name": "retired-key",
+        "tags": {}
+      },
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": true,
+          "expires": "2027-05-05T00:00:00+00:00",
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "contentType": null,
+        "id": "https://kv-orders-dev.vault.azure.net/secrets/session-secret",
+        "managed": null,
+        "name": "session-secret",
+        "tags": {}
+      },
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": true,
+          "expires": null,
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "contentType": null,
+        "id": "https://kv-orders-dev.vault.azure.net/secrets/api-key",
+        "managed": null,
+        "name": "api-key",
+        "tags": {}
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - certificate
+  - list
+  - --vault-name
+  - kv-orders-dev
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": true,
+          "expires": "2026-11-12T00:00:00+00:00",
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "id": "https://kv-orders-dev.vault.azure.net/certificates/tls-orders-dev",
+        "name": "tls-orders-dev",
+        "tags": null,
+        "x509Thumbprint": "q1w2e3r4t5y6u7i8o9p0a1s2d3f4g5h6j7k8l9==",
+        "x509ThumbprintHex": "AB12CD34EF56AB12CD34EF56AB12CD34EF56AB12"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - key
+  - list
+  - --vault-name
+  - kv-orders-dev
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "attributes": {
+          "created": "2025-05-01T10:00:00+00:00",
+          "enabled": true,
+          "expires": "2026-11-30T00:00:00+00:00",
+          "notBefore": null,
+          "recoveryLevel": "Recoverable+Purgeable",
+          "recoverableDays": 90,
+          "updated": "2026-01-15T09:30:00+00:00"
+        },
+        "kid": "https://kv-orders-dev.vault.azure.net/keys/signing-key",
+        "managed": null,
+        "name": "signing-key",
+        "tags": null
+      }
+    ]
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    expiry:
+      scanned:
+        secrets: 5
+        certificates: 1
+        keys: 1
+      expired: 1
+      items:
+        total: 5
+        omitted: 0

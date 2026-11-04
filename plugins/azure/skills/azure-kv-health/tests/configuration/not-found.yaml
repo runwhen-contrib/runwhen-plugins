@@ -1,0 +1,26 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/nope
+now: '2026-11-04T01:15:53.688Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - nope
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: The Vault 'nope' not found within subscription.
+expect:
+  status: failed
+  errorCodes:
+  - not_found

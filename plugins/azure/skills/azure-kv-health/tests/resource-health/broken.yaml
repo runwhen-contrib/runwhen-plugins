@@ -1,0 +1,116 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/keyvaults/kv-orders-dev
+now: '2026-11-04T01:15:37.262Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - kv-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev",
+      "location": "westeurope",
+      "name": "kv-orders-dev",
+      "properties": {
+        "accessPolicies": [],
+        "createMode": null,
+        "enablePurgeProtection": null,
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "enabledForDeployment": false,
+        "enabledForDiskEncryption": false,
+        "enabledForTemplateDeployment": false,
+        "hsmPoolResourceId": null,
+        "networkAcls": null,
+        "privateEndpointConnections": null,
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Enabled",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "softDeleteRetentionInDays": 7,
+        "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+        "vaultUri": "https://kv-orders-dev.vault.azure.net/"
+      },
+      "resourceGroup": "rg-orders-dev",
+      "systemData": null,
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.KeyVault/vaults"
+    }
+  stderr: ''
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - https://management.azure.com/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
+      "location": "westeurope",
+      "name": "current",
+      "properties": {
+        "availabilityState": "Degraded",
+        "title": "Degraded",
+        "summary": "We are investigating reduced availability for Key Vault in West Europe. Some requests may fail or take longer than usual.",
+        "detailedStatus": "Reduced availability (platform event 7XQ1-9Z0).",
+        "reasonType": "Unplanned",
+        "context": "Azure initiated",
+        "category": "Unplanned",
+        "reasonChronicity": "Transient",
+        "occurredTime": "2026-11-03T21:40:00Z",
+        "reportedTime": "2026-11-03T21:44:12.1250000Z",
+        "rootCauseAttributionTime": "2026-11-03T21:40:00Z",
+        "healthEventType": "ServiceHealth",
+        "healthEventCause": "PlatformInitiated",
+        "healthEventCategory": "Unplanned",
+        "healthEventId": "7XQ1-9Z0",
+        "serviceImpactingEvents": [
+          {
+            "eventStartTime": "2026-11-03T21:40:00Z",
+            "eventStatusLastModifiedTime": "2026-11-04T00:10:00Z",
+            "correlationId": "8a1b2c3d-0000-4000-8000-000000000001",
+            "status": {
+              "value": "Active"
+            },
+            "incidentProperties": {
+              "title": "Key Vault - West Europe - Reduced availability",
+              "service": "Key Vault",
+              "region": "West Europe",
+              "incidentType": "Incident"
+            }
+          }
+        ]
+      },
+      "type": "Microsoft.ResourceHealth/AvailabilityStatuses"
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    health:
+      vault: kv-orders-dev
+      availabilityState: Degraded
+      healthy: false
+      serviceImpactingEvents: 1
+      reasonType: Unplanned

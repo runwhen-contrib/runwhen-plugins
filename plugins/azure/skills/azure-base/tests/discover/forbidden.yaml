@@ -1,0 +1,53 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+now: '2026-11-04T01:16:22.617Z'
+calls:
+- argv:
+  - az
+  - account
+  - show
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "environmentName": "AzureCloud",
+      "homeTenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "id": "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71",
+      "isDefault": true,
+      "managedByTenants": [],
+      "name": "rw-pilot-subscription",
+      "state": "Enabled",
+      "tenantDefaultDomain": "contoso.onmicrosoft.com",
+      "tenantDisplayName": "Contoso",
+      "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "user": {
+        "name": "00000000-0000-4000-8000-0000000000aa",
+        "type": "servicePrincipal"
+      }
+    }
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - list
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (AuthorizationFailed) The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.KeyVault/vaults/read' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71' or the scope is invalid. If access was recently granted, please refresh your credentials.
+    Code: AuthorizationFailed
+    Message: The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.KeyVault/vaults/read' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71' or the scope is invalid. If access was recently granted, please refresh your credentials.
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied
