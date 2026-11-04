@@ -27,7 +27,7 @@ empty, an alert is silent or a ServiceMonitor you created is not scraped. Start 
 rules evaluate) and `servicemonitor-coverage` (is my ServiceMonitor picked up).
 
 Every task reaches the server over HTTP through the API server's pod proxy
-(`kubectl get --raw /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/...`): no
+(`ctx.k8s_proxy_get`, which never follows a redirect): no
 exec, no port-forward, no secret read. That needs `list` on `pods` and `get` on
 `pods/proxy` in the Prometheus namespace, plus `get` on the `prometheuses` resource.
 The pods are found by the labels the operator sets (`app.kubernetes.io/name=prometheus`,
@@ -92,12 +92,13 @@ Outputs are facts, not verdicts.
   `unreachable` error scoped `pods`, so the result is partial; `replicas: 0` is not an error); a pod that fails is an error
   scoped `pod/<name>` and its fields stay `null`; a reply that is not the expected JSON or text
   (a login page from an auth proxy, a 404 from an old route prefix) is an error, never an
-  empty or healthy answer. `permission_denied` on `pods/proxy` ends the task. Through the
-  proxy a 503 from the server is all that is seen (its text is lost), so `ready: false`
-  carries no reason. An API server that is itself overloaded also answers 503, which reads as
-  `ready: false` here; check the API server before blaming the pod. A 403 from the Prometheus
-  itself (an auth proxy in front) surfaces as `permission_denied` on `pods/proxy`, like a missing
-  RBAC grant.
+  empty or healthy answer. `permission_denied` on `pods/proxy` ends the task. The server's own
+  503 is `ready: false`; an API server that cannot reach the pod or is overloaded is an error
+  (`unreachable`), not `ready: false`. A 401/403 from the Prometheus itself (an auth proxy in
+  front) is a `dependency` error naming the status and the start of its body, not
+  `permission_denied` (that code is the API server's refusal of `pods/proxy`). A redirect to
+  another path of the same pod is followed once; a redirect to another host (an SSO login) is
+  never followed and is a `dependency` error naming the host.
 - **Empty lists.** `targets.unhealthy: []` with `total > 0` means every target is up and fresh.
   `total: 0` means the Prometheus has no active target: nothing is being scraped.
   `rules.groupCount: 0` means no rule file is loaded.
