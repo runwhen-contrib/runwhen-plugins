@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-locked
-now: '2026-11-03T23:50:13.791Z'
+now: '2026-11-04T00:31:13.208Z'
 calls:
 - argv:
   - kubectl
@@ -36,7 +36,7 @@ calls:
   - app.kubernetes.io/instance=jenkins-locked,app.kubernetes.io/name=jenkins
   - -o
   - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
-    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{end}{end}
+    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{"i:"}{.name}{"="}{.image}{"\n"}{"p:"}{.name}{"="}{.readinessProbe.httpGet.path}{"|"}{.readinessProbe.httpGet.port}{"|"}{.readinessProbe.httpGet.scheme}{"\n"}{end}{end}
   rc: 0
   stdout: |
     @
@@ -44,14 +44,16 @@ calls:
     s:metadata.deletionTimestamp=
     s:status.phase=Running
     j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-locked","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-locked-6c6fb4745b","statefulset.kubernetes.io/pod-name":"jenkins-locked-0"}
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:29Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:29Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:29:28Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:02Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:09Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:09Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
+    i:jenkins=python:3.12-alpine
+    p:jenkins=/login|http|HTTP
   stderr: ''
 - argv:
   - kubectl
   - get
   - --raw
-  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-locked-0:8080/proxy/queue/api/json?tree=items[id,blocked,buildable,stuck,inQueueSince,why,task[name]]
+  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-locked-0:8080/proxy/queue/api/json?tree=discoverableItems[id],items[id,blocked,buildable,stuck,inQueueSince,why,task[name,url]]
   - --request-timeout=30s
   rc: 1
   stdout: ''

@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-down
-now: '2026-11-03T23:53:11.540Z'
+now: '2026-11-04T00:30:59.960Z'
 calls:
 - argv:
   - kubectl
@@ -36,7 +36,7 @@ calls:
   - app.kubernetes.io/instance=jenkins-down,app.kubernetes.io/name=jenkins
   - -o
   - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
-    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{end}{end}
+    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{"i:"}{.name}{"="}{.image}{"\n"}{"p:"}{.name}{"="}{.readinessProbe.httpGet.path}{"|"}{.readinessProbe.httpGet.port}{"|"}{.readinessProbe.httpGet.scheme}{"\n"}{end}{end}
   rc: 0
   stdout: |
     @
@@ -44,8 +44,10 @@ calls:
     s:metadata.deletionTimestamp=
     s:status.phase=Running
     j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-down","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-down-854544f4dd","statefulset.kubernetes.io/pod-name":"jenkins-down-0"}
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:50:37Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:50:36Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:50:36Z","message":"containers with unready status: [jenkins]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:50:36Z","message":"containers with unready status: [jenkins]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:50:36Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:03Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","message":"containers with unready status: [jenkins]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","message":"containers with unready status: [jenkins]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
+    i:jenkins=python:3.12-alpine
+    p:jenkins=/login|http|HTTP
   stderr: ''
 - argv:
   - kubectl
@@ -53,23 +55,10 @@ calls:
   - --raw
   - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-down-0:8080/proxy/login
   - --request-timeout=30s
-  - -v=8
   rc: 1
   stdout: ''
-  stderr: "I1104 05:23:12.151418   98201 loader.go:407] Config loaded from file:  /home/user/.kube/config\nI1104 05:23:12.151679   98201 envvar.go:195] \"Feature gate default state\" feature=\"WatchListClient\"\
-    \ enabled=true\nI1104 05:23:12.151686   98201 envvar.go:195] \"Feature gate default state\" feature=\"InOrderInformersBatchProcess\" enabled=true\nI1104 05:23:12.151688   98201 envvar.go:195] \"Feature\
-    \ gate default state\" feature=\"ClientsAllowTLSCacheGC\" enabled=true\nI1104 05:23:12.151690   98201 envvar.go:195] \"Feature gate default state\" feature=\"AtomicFIFO\" enabled=true\nI1104 05:23:12.151692\
-    \   98201 envvar.go:195] \"Feature gate default state\" feature=\"InformerResourceVersion\" enabled=true\nI1104 05:23:12.151694   98201 envvar.go:195] \"Feature gate default state\" feature=\"ClientsAllowCARotation\"\
-    \ enabled=true\nI1104 05:23:12.151695   98201 envvar.go:195] \"Feature gate default state\" feature=\"ClientsPreferCBOR\" enabled=false\nI1104 05:23:12.151697   98201 envvar.go:195] \"Feature gate default\
-    \ state\" feature=\"InOrderInformers\" enabled=true\nI1104 05:23:12.151698   98201 envvar.go:195] \"Feature gate default state\" feature=\"ClientsAllowCBOR\" enabled=false\nI1104 05:23:12.151700   98201\
-    \ envvar.go:195] \"Feature gate default state\" feature=\"UnlockWhileProcessingFIFO\" enabled=true\nI1104 05:23:12.151989   98201 raw.go:84] \"Request Body\" body=\"\"\nI1104 05:23:12.152214   98201\
-    \ round_trippers.go:527] \"Request\" verb=\"GET\" url=\"https://127.0.0.1:6443/api/v1/namespaces/rw-jenkins/pods/http:jenkins-down-0:8080/proxy/login?timeout=30s\" headers=<\n\tAccept: application/json,\
-    \ */*\n\tUser-Agent: kubectl/v1.36.1 (darwin/arm64) kubernetes/7569396\n >\nI1104 05:23:12.156345   98201 round_trippers.go:632] \"Response\" status=\"503 Service Unavailable\" headers=<\n\tAudit-Id:\
-    \ 8796ca7c-f8a1-4c59-8b90-1ec5221ca7cc\n\tCache-Control: no-cache, private\n\tContent-Length: 50\n\tContent-Type: text/plain\n\tDate: Tue, 03 Nov 2026 23:53:12 GMT\n\tServer: BaseHTTP/0.6 Python/3.12.16\n\
-    \tX-Jenkins: 2.462.3\n > milliseconds=4\nI1104 05:23:12.156358   98201 get.go:174] \"Response Body\" body=\"Please wait while Jenkins is getting ready to work\"\nI1104 05:23:12.156410   98201 helpers.go:246]\
-    \ server response object: %s[{\n  \"metadata\": {},\n  \"status\": \"Failure\",\n  \"message\": \"the server is currently unable to handle the request\",\n  \"reason\": \"ServiceUnavailable\",\n  \"\
-    details\": {\n    \"causes\": [\n      {\n        \"reason\": \"UnexpectedServerResponse\",\n        \"message\": \"Please wait while Jenkins is getting ready to work\"\n      }\n    ]\n  },\n  \"code\"\
-    : 503\n}]\nError from server (ServiceUnavailable): the server is currently unable to handle the request\n"
+  stderr: |
+    Error from server (ServiceUnavailable): the server is currently unable to handle the request
 expect:
   status: ok
   errorCodes: []
@@ -83,3 +72,5 @@ expect:
           podReady: false
           httpStatus: 503
           ok: false
+          # the page gave no version: the image tag (the stub's python image) is the fallback
+          versionSource: image-tag

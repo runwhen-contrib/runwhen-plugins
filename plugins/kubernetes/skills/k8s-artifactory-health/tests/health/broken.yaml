@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-artifactory/statefulsets/artifactory-broken
-now: '2026-11-03T23:42:32.092Z'
+now: '2026-11-04T00:30:52.529Z'
 calls:
 - argv:
   - kubectl
@@ -44,7 +44,7 @@ calls:
     s:metadata.deletionTimestamp=
     s:status.phase=Running
     j:metadata.labels={"app":"artifactory","apps.kubernetes.io/pod-index":"0","component":"artifactory","controller-revision-hash":"artifactory-broken-755565778b","release":"artifactory-broken","role":"artifactory","statefulset.kubernetes.io/pod-name":"artifactory-broken-0"}
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:18Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:17Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:17Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:17Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:28:17Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     k:artifactory=[{"containerPort":8082,"name":"http","protocol":"TCP"},{"containerPort":8081,"name":"http-internal","protocol":"TCP"}]
   stderr: ''
 - argv:
@@ -67,6 +67,11 @@ calls:
     s:spec.type=ClusterIP
     j:spec.selector={"app":"artifactory","release":"artifactory-broken","role":"artifactory"}
     j:spec.ports=[{"name":"http-router","port":8082,"protocol":"TCP","targetPort":"http"},{"name":"http-artifactory","port":8081,"protocol":"TCP","targetPort":"http-internal"}]
+    @
+    s:metadata.name=artifactory-numeric
+    s:spec.type=ClusterIP
+    j:spec.selector={"app":"artifactory","release":"artifactory","role":"artifactory"}
+    j:spec.ports=[{"port":80,"protocol":"TCP","targetPort":8081}]
   stderr: ''
 - argv:
   - kubectl
@@ -75,7 +80,7 @@ calls:
   - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8081/proxy/artifactory/api/v1/system/liveness
   - --request-timeout=30s
   rc: 0
-  stdout: OK
+  stdout: '{"code":"OK"}'
   stderr: ''
 - argv:
   - kubectl
@@ -96,6 +101,24 @@ calls:
   rc: 0
   stdout: '{"router":{"node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-broken-0","state":"UNHEALTHY","message":"database
     connection refused"}]}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8082/proxy/router/api/v1/system/liveness
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"code":"OK"}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8082/proxy/router/api/v1/system/readiness
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"code":"OK"}'
   stderr: ''
 - argv:
   - kubectl
@@ -127,21 +150,44 @@ calls:
   stdout: ''
   stderr: |
     Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-router/proxy/router/api/v1/system/liveness
+  - --request-timeout=30s
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-router/proxy/router/api/v1/system/readiness
+  - --request-timeout=30s
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
 expect:
   status: ok
   errorCodes: []
   outputs:
     health:
-      notOkCount: 5
+      notOkCount: 7
       servicesRead: true
       pods:
         $containsWhere:
           name: artifactory-broken-0
           podReady: false
-          liveness: {ok: true, httpStatus: 200}
+          liveness: {ok: true, httpStatus: 200, body: '{"code":"OK"}'}
           readiness: {ok: false, httpStatus: 503}
           router: {ok: false, httpStatus: 200}
+          routerLiveness: {ok: true, httpStatus: 200}
+          routerReadiness: {ok: true, httpStatus: 200}
       services:
         $containsWhere:
           name: artifactory-broken
           readiness: {ok: false, httpStatus: 503, noEndpoints: true}
+          routerLiveness: {ok: false, httpStatus: 503, noEndpoints: true}
