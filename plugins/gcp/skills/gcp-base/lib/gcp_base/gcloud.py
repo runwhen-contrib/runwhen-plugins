@@ -3,7 +3,7 @@
 This file is shared by every gcp skill. Skills do not import each other (a task sees only its own
 skill's lib/), so each skill carries a verbatim copy of `errors.py` and `gcloud.py` in its own
 `lib/<skill_snake>/`; they import only `.errors`, so a copy needs no edit. A test
-(tests/unit/test_gcp_copies.py) fails when a copy drifts from `gcp_base`'s.
+(the plugin unit test test_gcp_copies.py) fails when a copy drifts from `gcp_base`'s.
 
     from gcp_base.gcloud import gcloud_json, gcloud_text        # elsewhere: from <skill_snake>.gcloud
 
