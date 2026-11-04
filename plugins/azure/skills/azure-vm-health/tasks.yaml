@@ -1,0 +1,175 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: azure@1              # ships az (runtimes/azure)
+defaults: { credentials: azure/cli, timeout: 120s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  commandTimeout: { type: duration, default: 60s, description: "How long one az command may run before it is stopped (timeout)" }
+  metricInterval: { type: enum, enum: [PT1M, PT5M, PT15M, PT30M, PT1H, PT6H, PT12H, P1D], default: PT15M, description: "Grain of the Azure Monitor metrics (ISO 8601); the window is cut into intervals of this size" }
+  cpuThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "An interval whose highest Percentage CPU is above this counts as crossing" }
+  availableMemoryFloorMb: { type: number, default: 256, min: 0, max: 10000000, description: "An interval whose lowest Available Memory Bytes is below this many megabytes counts as crossing" }
+  diskUsedPercent: { type: number, default: 85, min: 0, max: 100, description: "run-os-check disk: a filesystem used above this percentage is over the threshold" }
+  memoryUsedPercent: { type: number, default: 90, min: 0, max: 100, description: "run-os-check memory: used memory (total minus MemAvailable) above this percentage is over the threshold" }
+  uptimeDays: { type: number, default: 30, min: 0, max: 36500, description: "run-os-check uptime: an uptime above this many days is over the threshold" }
+  osCheckTimeout: { type: integer, default: 180, min: 10, max: 900, description: "Seconds the run-command invocation of run-os-check may take before it is stopped (timeout)" }
+tasks:
+  - name: instance-view
+    title: Power, provisioning, agent, extensions and boot diagnostics
+    description: >-
+      Reads the virtual machine's instance view (az vm get-instance-view): the power state and the
+      provisioning state, every status Azure reports, the VM agent (version, whether Azure calls it
+      Ready, its statuses), each extension with its status and whether it failed, and whether boot
+      diagnostics are enabled and have a console screenshot and serial log. A section the instance
+      view does not carry (a deallocated VM has no agent report) is null or false, never a healthy
+      reading. Read-only.
+    script: scripts/instance_view.py
+    tags: [health, vm, agent, extensions]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Compute/virtualMachines/read }
+      - { action: Microsoft.Compute/virtualMachines/instanceView/read }
+    outputs:
+      instanceView: { schema: ./schemas/instance-view.v1.json, description: "Power and provisioning state, statuses, VM agent, extensions and boot diagnostics" }
+  - name: resource-health
+    title: Azure Resource Health
+    description: >-
+      Reads Azure's own availability verdict for the virtual machine or scale set (Microsoft.ResourceHealth
+      availabilityStatuses/current): the state (Available, Degraded, Unavailable, Unknown), Azure's
+      summary and detailed status, the reason type and chronicity, when it occurred and was reported,
+      and how many service-impacting events Azure lists. Does not register the resource provider; if the
+      subscription has not registered Microsoft.ResourceHealth the run fails with dependency. Read-only.
+    script: scripts/resource_health.py
+    tags: [health, availability, platform]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Compute/virtualMachines/read }                  # az vm show -g: the resource id (a scale set: virtualMachineScaleSets/read)
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }
+      - { action: Microsoft.ResourceHealth/availabilityStatuses/read }
+    outputs:
+      health: { schema: ./schemas/health.v1.json, description: "Availability state, Azure's summary and detailed status, reason, times and the number of service-impacting events" }
+  - name: metrics
+    title: CPU, available memory, disk and network metrics
+    description: >-
+      Reads Azure Monitor platform metrics of the virtual machine or scale set over the window that
+      ends at the run's reference time, one call per metric: Percentage CPU (average and maximum),
+      Available Memory Bytes (average and minimum; only where Azure publishes a memory reading),
+      Disk Read Bytes, Disk Write Bytes, Network In Total and Network Out Total. For each it reports
+      the intervals with and without a value, min, max, last, the newest 50 intervals, and for CPU
+      and memory how many cross cpuThresholdPercent or availableMemoryFloorMb. A metric with no
+      datapoint is hasData false, never zero or healthy; one that cannot be read is reported with its
+      own error and the others stand. Reads Azure Monitor only, nothing inside the guest. Read-only.
+    script: scripts/resource_metrics.py
+    tags: [metrics, performance, cpu, memory, disk, network]
+    readOnly: true
+    timeout: 360s                                  # up to 6 metric calls of commandTimeout (monitor.py BUDGET is 240s for starting them)
+    permissions:
+      - { action: Microsoft.Compute/virtualMachines/read }
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 6h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      metrics: { schema: ./schemas/metrics.v1.json, description: "Per metric: counts of intervals with and without data, min, max, last, the newest 50 intervals and threshold crossings" }
+  - name: activity-errors
+    title: Critical, error and warning entries in the activity log
+    description: >-
+      Reads the Azure Activity Log for the virtual machine or scale set over the window (az monitor
+      activity-log list, at most 1000 events) and returns the entries at level Critical, Error or
+      Warning, worst level and newest first, with counts per level. Each entry has its time, level,
+      operation, status, sub-status, message (cut to 1024 characters) and correlation id; who did it
+      is not returned. readCapReached says the log held more events than were read. Read-only.
+    script: scripts/activity_errors.py
+    tags: [events, activity-log, audit]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Compute/virtualMachines/read }
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }
+      - { action: Microsoft.Insights/eventtypes/management/values/read, scope: subscription }   # the Activity Log is read per subscription (filtered to the resource)
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      activity: { schema: ./schemas/activity.v1.json, description: "Counts per level and the Critical, Error and Warning entries of the window" }
+  - name: scale-set-config
+    title: Scale set model and configuration
+    description: >-
+      Reads the scale set's model (az vmss show) as facts: provisioning state, orchestration mode,
+      SKU and capacity, zones, upgrade mode and rolling-upgrade limits, automatic OS upgrade and
+      automatic repair settings, overprovisioning, scale-in rules, OS type, the image's marketplace
+      reference, whether a load balancer health probe is set, and the extension names with their
+      versions. The OS profile (admin names, keys), custom data and extension settings are never returned.
+      Read-only.
+    script: scripts/scale_set_config.py
+    tags: [config, vmss]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }
+    outputs:
+      scaleSet: { schema: ./schemas/scale-set.v1.json, description: "Provisioning state, orchestration mode, SKU, policies, image reference and extensions of the scale set" }
+  - name: scale-set-instances
+    title: Instance states, model vs latest, failed instances
+    description: >-
+      Reads the scale set's instance view summary (az vmss get-instance-view) and, for Uniform
+      orchestration, every instance (az vmss list-instances --expand instanceView): provisioning state,
+      power state, whether the latest model is applied, Azure's health state, agent readiness and
+      extensions that failed. Returns counts (failed, model outdated, unhealthy, health unknown) and the
+      instances with something to look at first. A Flexible scale set's instances are ordinary VMs that
+      list-instances does not return: that is reported as an error scoped to instances, never an empty
+      list. If one of the two reads fails the other stands. Read-only.
+    script: scripts/scale_set_instances.py
+    tags: [vmss, instances, rollout]
+    readOnly: true
+    timeout: 360s                                  # three az calls of commandTimeout (scale_set.py LIST_BUDGET is 240s for starting the last)
+    permissions:
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }
+      - { action: Microsoft.Compute/virtualMachineScaleSets/instanceView/read }
+      - { action: Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read }
+      - { action: Microsoft.Compute/virtualMachineScaleSets/virtualMachines/instanceView/read }
+    outputs:
+      instances: { schema: ./schemas/instances.v1.json, description: "Instance view summary, counts and the instances (problem instances first, cut to maxItems)" }
+  - name: autoscale
+    title: Autoscale settings that target the scale set
+    description: >-
+      Lists the Azure Monitor autoscale settings in the scale set's resource group that target it
+      (az monitor autoscale list -g) with, per profile, the minimum, maximum and default capacity, whether
+      the current capacity is at the maximum or minimum, and the rules (metric, operator, threshold,
+      window, direction, change, cooldown). found false means no setting in that group targets the set
+      (autoscale is not configured, or its setting lives in another group). Notification recipients are
+      not returned. Read-only.
+    script: scripts/autoscale.py
+    tags: [vmss, autoscale, capacity]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Compute/virtualMachineScaleSets/read }
+      - { action: Microsoft.Insights/autoscalesettings/read }
+    outputs:
+      autoscale: { schema: ./schemas/autoscale.v1.json, description: "Autoscale settings with profiles, capacity bounds and rules, and the scale set's current capacity" }
+  - name: run-os-check
+    title: Run a fixed read-only diagnostic script inside a Linux VM
+    description: >-
+      Runs one of four fixed, read-only diagnostic scripts shipped with this skill (check: disk, memory,
+      uptime or patches) inside a running Linux VM through the VM agent (az vm run-command invoke, RunShellScript)
+      and returns typed facts from its output: filesystems used against diskUsedPercent, memory used
+      (total minus MemAvailable) against memoryUsedPercent, uptime and load average against uptimeDays,
+      or pending package updates and the age of the package index. The script text is a constant of the
+      skill, never taken from input; its SHA-256 is returned. It never refreshes a package index.
+      Skipped, with the reason, when the VM is not Linux, not running or its agent is not ready. A dry
+      run reads the instance view and reports which script would run, and sends nothing.
+    script: scripts/run_os_check.py
+    tags: [os, guest, disk, memory, uptime, patches]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    timeout: 300s                                  # the instance view (60s) and the invocation (osCheckTimeout, at most 900s: raise this with it)
+    effects:
+      - "Runs a fixed read-only shell script as root inside the VM through the VM agent (Microsoft.Compute/virtualMachines/runCommand/action). The script reads /proc, runs df, or queries the package manager's local database; it writes nothing, installs nothing and refreshes no package index."
+      - "The VM agent runs one run command at a time: the invocation can take tens of seconds and delays any other run command or extension operation on the VM until it ends."
+      - "The invocation is recorded in the Azure Activity Log against the VM and the connection's identity."
+      - "The script's output (disk usage, memory figures, uptime, update counts and package names) travels through Azure's run command service; no file contents, environment or secrets are printed."
+    permissions:
+      - { action: Microsoft.Compute/virtualMachines/read }
+      - { action: Microsoft.Compute/virtualMachines/instanceView/read }
+      - { action: Microsoft.Compute/virtualMachines/runCommand/action }
+    inputs:
+      check: { type: string, enum: [disk, memory, uptime, patches], description: "Which fixed script to run: disk (df), memory (/proc/meminfo), uptime (/proc/uptime, /proc/loadavg) or patches (the package manager's local update list)" }
+    outputs:
+      osCheck: { schema: ./schemas/os-check.v1.json, description: "Which script ran (SHA-256), the invocation's status and the typed facts parsed from its output; executed false for a dry run" }

@@ -1,0 +1,105 @@
+{
+  "automaticRepairsPolicy": {
+    "enabled": true,
+    "gracePeriod": "PT30M",
+    "repairAction": "Replace"
+  },
+  "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-api",
+  "location": "eastus",
+  "name": "vmss-orders-api",
+  "orchestrationMode": "Uniform",
+  "overprovision": false,
+  "platformFaultDomainCount": 1,
+  "provisioningState": "Succeeded",
+  "resourceGroup": "rg-orders-prod",
+  "scaleInPolicy": {
+    "forceDeletion": false,
+    "rules": [
+      "Default"
+    ]
+  },
+  "singlePlacementGroup": false,
+  "sku": {
+    "capacity": 3,
+    "name": "Standard_D2s_v5",
+    "tier": "Standard"
+  },
+  "tags": {
+    "env": "prod",
+    "team": "orders"
+  },
+  "type": "Microsoft.Compute/virtualMachineScaleSets",
+  "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d01",
+  "upgradePolicy": {
+    "automaticOSUpgradePolicy": {
+      "disableAutomaticRollback": false,
+      "enableAutomaticOSUpgrade": false
+    },
+    "mode": "Rolling",
+    "rollingUpgradePolicy": {
+      "maxBatchInstancePercent": 20,
+      "maxUnhealthyInstancePercent": 20,
+      "maxUnhealthyUpgradedInstancePercent": 20,
+      "pauseTimeBetweenBatches": "PT0S"
+    }
+  },
+  "virtualMachineProfile": {
+    "extensionProfile": {
+      "extensions": [
+        {
+          "name": "HealthExtension",
+          "provisioningState": "Succeeded",
+          "settings": {
+            "port": 8080,
+            "protocol": "http",
+            "requestPath": "/healthz"
+          },
+          "type": "ApplicationHealthLinux",
+          "typeHandlerVersion": "1.0"
+        }
+      ]
+    },
+    "networkProfile": {
+      "healthProbe": {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/loadBalancers/lb-orders/probes/http",
+        "resourceGroup": "rg-orders-prod"
+      },
+      "networkInterfaceConfigurations": [
+        {
+          "name": "nic",
+          "primary": true
+        }
+      ]
+    },
+    "osProfile": {
+      "adminUsername": "azureuser",
+      "computerNamePrefix": "ders-api",
+      "linuxConfiguration": {
+        "disablePasswordAuthentication": true
+      },
+      "secrets": []
+    },
+    "storageProfile": {
+      "imageReference": {
+        "offer": "ubuntu-24_04-lts",
+        "publisher": "Canonical",
+        "sku": "server",
+        "version": "latest"
+      },
+      "osDisk": {
+        "caching": "ReadWrite",
+        "createOption": "FromImage",
+        "managedDisk": {
+          "storageAccountType": "Premium_LRS"
+        },
+        "osType": "Linux"
+      }
+    }
+  },
+  "zoneBalance": false,
+  "zones": [
+    "1",
+    "2",
+    "3"
+  ]
+}

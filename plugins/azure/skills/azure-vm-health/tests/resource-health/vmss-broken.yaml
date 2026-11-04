@@ -1,0 +1,166 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/vm-scale-sets/vmss-orders-jobs
+now: '2026-11-04T03:56:26.471Z'
+calls:
+- argv:
+  - az
+  - vmss
+  - show
+  - --name
+  - vmss-orders-jobs
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "automaticRepairsPolicy": {
+        "enabled": false,
+        "gracePeriod": "PT30M",
+        "repairAction": "Replace"
+      },
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs",
+      "location": "westeurope",
+      "name": "vmss-orders-jobs",
+      "orchestrationMode": "Uniform",
+      "overprovision": true,
+      "platformFaultDomainCount": 1,
+      "provisioningState": "Succeeded",
+      "resourceGroup": "rg-orders-dev",
+      "scaleInPolicy": {
+        "forceDeletion": false,
+        "rules": [
+          "Default"
+        ]
+      },
+      "singlePlacementGroup": false,
+      "sku": {
+        "capacity": 5,
+        "name": "Standard_D4s_v5",
+        "tier": "Standard"
+      },
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "uniqueId": "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d02",
+      "upgradePolicy": {
+        "mode": "Manual"
+      },
+      "virtualMachineProfile": {
+        "extensionProfile": {
+          "extensions": [
+            {
+              "name": "CustomScript",
+              "provisioningState": "Succeeded",
+              "type": "CustomScript",
+              "typeHandlerVersion": "2.1"
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaceConfigurations": [
+            {
+              "name": "nic",
+              "primary": true
+            }
+          ]
+        },
+        "osProfile": {
+          "adminUsername": "azureuser",
+          "computerNamePrefix": "ers-jobs",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true
+          },
+          "secrets": []
+        },
+        "storageProfile": {
+          "imageReference": {
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            },
+            "osType": "Linux"
+          }
+        }
+      },
+      "zoneBalance": false,
+      "zones": []
+    }
+  stderr: ''
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-jobs/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
+      "location": "eastus",
+      "name": "current",
+      "properties": {
+        "availabilityState": "Unavailable",
+        "category": "Unplanned",
+        "context": "Azure initiated",
+        "detailedStatus": "The host server was rebooted unexpectedly; the VM is being recovered on another host (event 3QK1-8T0).",
+        "healthEventCategory": "Unplanned",
+        "healthEventCause": "PlatformInitiated",
+        "healthEventId": "3QK1-8T0",
+        "healthEventType": "ServiceHealth",
+        "occurredTime": "2026-11-04T01:30:00Z",
+        "reasonChronicity": "Transient",
+        "reasonType": "Unplanned",
+        "reportedTime": "2026-11-04T01:31:44.2250000Z",
+        "rootCauseAttributionTime": "2026-11-04T01:30:00Z",
+        "serviceImpactingEvents": [
+          {
+            "correlationId": "8a1b2c3d-0000-4000-8000-000000000001",
+            "eventStartTime": "2026-11-04T01:30:00Z",
+            "eventStatusLastModifiedTime": "2026-11-04T02:10:00Z",
+            "incidentProperties": {
+              "incidentType": "Incident",
+              "region": "eastus",
+              "service": "Virtual Machines",
+              "title": "Virtual Machines - Unexpected host reboot"
+            },
+            "status": {
+              "value": "Active"
+            }
+          }
+        ],
+        "summary": "We're sorry, your scale set is unavailable because of an unplanned platform event.",
+        "title": "Unavailable"
+      },
+      "type": "Microsoft.ResourceHealth/AvailabilityStatuses"
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    health:
+      resource: vmss-orders-jobs
+      resourceType: azure/vm-scale-set
+      availabilityState: Unavailable
+      healthy: false
+      reasonType: Unplanned

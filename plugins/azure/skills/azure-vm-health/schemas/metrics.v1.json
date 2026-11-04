@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CPU, available memory, disk and network metrics of a virtual machine or scale set over a look-back window",
+  "type": "object",
+  "properties": {
+    "resource": {
+      "type": "string"
+    },
+    "resourceType": {
+      "enum": [
+        "azure/virtual-machine",
+        "azure/vm-scale-set"
+      ]
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "interval": {
+      "type": "string",
+      "description": "ISO 8601 grain: the metricInterval setting"
+    },
+    "cpuThresholdPercent": {
+      "type": "number"
+    },
+    "availableMemoryFloorBytes": {
+      "type": "integer"
+    },
+    "cpu": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/series"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Percentage CPU: max is the highest interval maximum; threshold, crossings and crossed count intervals whose maximum is above cpuThresholdPercent; null when the metric could not be read"
+    },
+    "availableMemory": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/series"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Available Memory Bytes: aggregation minimum; threshold is the floor in bytes and crossings count intervals whose lowest reading is below it; hasData false when Azure publishes no memory reading for the resource"
+    },
+    "diskRead": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/series"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Disk Read Bytes (total per interval)"
+    },
+    "diskWrite": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/series"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Disk Write Bytes (total per interval)"
+    },
+    "networkIn": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/series"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Network In Total (bytes per interval)"
+    },
+    "networkOut": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/series"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Network Out Total (bytes per interval)"
+    }
+  },
+  "required": [
+    "resource",
+    "resourceType",
+    "windowSeconds",
+    "interval",
+    "cpuThresholdPercent",
+    "availableMemoryFloorBytes",
+    "cpu",
+    "availableMemory",
+    "diskRead",
+    "diskWrite",
+    "networkIn",
+    "networkOut"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "series": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "aggregation": {
+          "type": "string",
+          "description": "The aggregation min, max, last and points report"
+        },
+        "hasData": {
+          "type": "boolean",
+          "description": "At least one interval has a value. False is no data, not a healthy resource"
+        },
+        "grains": {
+          "type": "integer",
+          "description": "Intervals in the window"
+        },
+        "withData": {
+          "type": "integer"
+        },
+        "missing": {
+          "type": "integer",
+          "description": "Intervals without a datapoint"
+        },
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "last": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lastGrainMissing": {
+          "type": "boolean",
+          "description": "The newest interval has no value, so last is an older interval's reading: the metric stopped reporting"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              },
+              "average": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "timestamp",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "The newest 50 intervals that have a value, oldest first; average is beside value where the metric asks for two aggregations"
+        },
+        "pointsOmitted": {
+          "type": "integer",
+          "description": "Intervals with a value that are not in points; min, max and the counts cover them"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "crossings": {
+          "type": "integer"
+        },
+        "crossed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "metric",
+        "unit",
+        "aggregation",
+        "hasData",
+        "grains",
+        "withData",
+        "missing",
+        "min",
+        "max",
+        "last",
+        "lastGrainMissing",
+        "points",
+        "pointsOmitted"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

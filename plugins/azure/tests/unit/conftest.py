@@ -60,6 +60,33 @@ def cluster(name, group=None):
     }
 
 
+VM_GROUP_OF = {
+    "vm-orders-web01": "rg-orders-prod",
+    "vm-orders-batch02": "rg-orders-dev",
+    "vm-platform-legacy": "rg-platform",
+    "vmss-orders-api": "rg-orders-prod",
+    "vmss-orders-jobs": "rg-orders-dev",
+}
+
+
+def compute(name, kind="virtual-machine", group=None):
+    """The target of a virtual machine or scale set run (type `azure/virtual-machine` or
+    `azure/vm-scale-set`), built like `vault`."""
+    group = group or VM_GROUP_OF.get(name, "rg-orders-dev")
+    plural = "virtual-machines" if kind == "virtual-machine" else "vm-scale-sets"
+    return {
+        "path": f"azure/subscriptions/{SUB}/resourcegroups/{group}/{plural}/{name}",
+        "type": f"azure/{kind}",
+        "subscription": SUB,
+        "resourcegroup": group,
+        "name": name,
+    }
+
+
+def scale_set(name, group=None):
+    return compute(name, "vm-scale-set", group)
+
+
 SETTINGS = {
     "maxItems": 200,
     "commandTimeout": "60s",
@@ -73,6 +100,12 @@ SETTINGS = {
     "memoryThresholdPercent": 80,
     "diskThresholdPercent": 80,
     "activityScanLimit": 500,
+    # declared by azure-vm-health only (its cpuThresholdPercent is the one above); harmless elsewhere
+    "availableMemoryFloorMb": 256,
+    "diskUsedPercent": 85,
+    "memoryUsedPercent": 90,
+    "uptimeDays": 30,
+    "osCheckTimeout": 180,
 }
 
 
@@ -142,12 +175,16 @@ def run_script():
         settings=None,
         runner=None,
         now=None,
+        dry_run=False,
         **inputs,
     ):
         main = load_script(script, skill).main
         kwargs = {"now": now} if now is not None else {}
         with make_context(
-            resource=resource, settings={**SETTINGS, **(settings or {})}, **kwargs
+            resource=resource,
+            settings={**SETTINGS, **(settings or {})},
+            dry_run=dry_run,
+            **kwargs,
         ) as tc:
             fake = runner or StubAz(scenario, None)
             tc.ctx.run = fake

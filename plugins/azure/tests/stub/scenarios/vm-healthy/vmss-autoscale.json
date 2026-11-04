@@ -1,0 +1,73 @@
+[
+  {
+    "enabled": true,
+    "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/microsoft.insights/autoscalesettings/as-orders-api",
+    "location": "eastus",
+    "name": "as-orders-api",
+    "notifications": [
+      {
+        "email": {
+          "customEmails": [],
+          "sendToSubscriptionAdministrator": false,
+          "sendToSubscriptionCoAdministrators": false
+        },
+        "operation": "Scale",
+        "webhooks": []
+      }
+    ],
+    "profiles": [
+      {
+        "capacity": {
+          "default": "3",
+          "maximum": "6",
+          "minimum": "2"
+        },
+        "name": "default",
+        "rules": [
+          {
+            "metricTrigger": {
+              "dividePerInstance": false,
+              "metricName": "Percentage CPU",
+              "metricResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-api",
+              "operator": "GreaterThan",
+              "statistic": "Average",
+              "threshold": 70.0,
+              "timeAggregation": "Average",
+              "timeGrain": "PT1M",
+              "timeWindow": "PT5M"
+            },
+            "scaleAction": {
+              "cooldown": "PT5M",
+              "direction": "Increase",
+              "type": "ChangeCount",
+              "value": "1"
+            }
+          },
+          {
+            "metricTrigger": {
+              "dividePerInstance": false,
+              "metricName": "Percentage CPU",
+              "metricResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-api",
+              "operator": "LessThan",
+              "statistic": "Average",
+              "threshold": 25.0,
+              "timeAggregation": "Average",
+              "timeGrain": "PT1M",
+              "timeWindow": "PT10M"
+            },
+            "scaleAction": {
+              "cooldown": "PT10M",
+              "direction": "Decrease",
+              "type": "ChangeCount",
+              "value": "1"
+            }
+          }
+        ]
+      }
+    ],
+    "resourceGroup": "rg-orders-prod",
+    "tags": {},
+    "targetResourceUri": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachineScaleSets/vmss-orders-api",
+    "type": "Microsoft.Insights/autoscaleSettings"
+  }
+]

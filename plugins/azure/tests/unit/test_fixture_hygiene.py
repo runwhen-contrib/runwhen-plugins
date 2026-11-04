@@ -35,6 +35,18 @@ SYNTHETIC_GUIDS = {
     "00000000-0000-4000-8000-0000000000b3",  # its kubelet identity: object id
     "00000000-0000-4000-8000-0000000000b4",  # an Entra group (AKS admin group)
     "00000000-0000-4000-8000-0000000000b5",  # an AKS OIDC issuer id
+    # azure-vm-health (capture/vmworld.py)
+    "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c01",  # vmId of vm-orders-web01
+    "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c02",  # vm-orders-batch02
+    "5e1f0c2a-7b3d-4a9e-8c10-2d4f6a8b0c03",  # vm-platform-legacy
+    "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d01",  # uniqueId of vmss-orders-api
+    "6f2a1d3b-8c4e-4b0f-9d21-3e5a7b9c1d02",  # vmss-orders-jobs
+    *(
+        f"7a3b2e4c-9d5f-4c1a-8e32-4f6b8c0d2e{i:02d}" for i in range(5)
+    ),  # vmId of a scale set instance
+    "8a1b2c3d-0000-4000-8000-000000000002",  # the correlation id of an Activity Log event
+    "0e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",  # eventDataId of an Activity Log event
+    "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",  # operationId of an Activity Log event
 }
 # the names the stub invents (compared without case: ARM does not distinguish them)
 SYNTHETIC_VAULTS = {"kv-orders-dev", "kv-orders-prod", "nope"}
@@ -49,6 +61,18 @@ SYNTHETIC_GROUPS = {
 }
 SYNTHETIC_CLUSTERS = {"aks-orders-dev", "aks-orders-prod", "aks-orders-dev2", "nope"}
 SYNTHETIC_AKS_HOSTS = {"aks-orders-dev-dns-1a2b3c4d", "aks-orders-prod-dns-1a2b3c4d"}
+SYNTHETIC_VMS = {"vm-orders-web01", "vm-orders-batch02", "vm-platform-legacy", "nope"}
+SYNTHETIC_VMSS = {
+    "vmss-orders-api",
+    "vmss-orders-jobs",
+    "vmss-orders-batch",
+    "nope",
+}  # batch: an autoscale target in no group
+SYNTHETIC_STORAGE = {
+    "stordersdiag",
+    "azcliprod",
+}  # azcliprod: Microsoft's own host in `az cloud show`
+AGENT_VERSIONS = {"2.13.1.1"}  # the guest agent's version looks like an IPv4 address
 SYNTHETIC_WORKSPACES = {"law-central"}
 SYNTHETIC_ENDPOINTS = {"pe-orders"}
 SYNTHETIC_EMAILS = set()  # the stub invents none: a principal is a GUID
@@ -75,6 +99,7 @@ LEAKS = [
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 VAULT_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.vault\.azure\.net\b")
+STORAGE_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.blob\.core\.windows\.net\b")
 AKS_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.(?:hcp|privatelink)\.[a-z0-9]+\.azmk8s\.io\b")
 NAME = r"([A-Za-z0-9_.()-]+)"  # a name ends at the first character a resource name cannot hold
 RESOURCE_NAMES = [  # (what, pattern of an ARM id or resource path, the stub's set)
@@ -99,9 +124,23 @@ RESOURCE_NAMES = [  # (what, pattern of an ARM id or resource path, the stub's s
         SYNTHETIC_CLUSTERS,
     ),
     (
-        "Key Vault or AKS cluster",  # `az keyvault show --name` and `az aks show --name`
+        "Key Vault or AKS cluster",  # `az keyvault show --name`, `az aks show --name`, `az vm show --name`
         re.compile(r"(?i)--name\W+" + NAME),
-        SYNTHETIC_VAULTS | SYNTHETIC_CLUSTERS,
+        SYNTHETIC_VAULTS | SYNTHETIC_CLUSTERS | SYNTHETIC_VMS | SYNTHETIC_VMSS,
+    ),
+    (
+        "virtual machine",
+        re.compile(
+            r"(?i)(?:/providers/microsoft\.compute/virtualmachines/|/virtual-machines/)" + NAME
+        ),
+        SYNTHETIC_VMS,
+    ),
+    (
+        "scale set",
+        re.compile(
+            r"(?i)(?:/providers/microsoft\.compute/virtualmachinescalesets/|/vm-scale-sets/)" + NAME
+        ),
+        SYNTHETIC_VMSS,
     ),
     (
         "workspace",
@@ -201,6 +240,8 @@ def foreign(text):
         if email.lower() not in SYNTHETIC_EMAILS:
             out.append(("an e-mail address or UPN", email))
     for ip in IPV4.findall(text):
+        if ip in AGENT_VERSIONS:
+            continue
         try:
             address = ipaddress.ip_address(ip)
         except ValueError:
@@ -210,6 +251,9 @@ def foreign(text):
     for host in VAULT_HOST.findall(text):
         if host.lower() not in SYNTHETIC_VAULTS:
             out.append(("a vault host name", f"{host}.vault.azure.net"))
+    for host in STORAGE_HOST.findall(text):
+        if host.lower() not in SYNTHETIC_STORAGE:
+            out.append(("a storage account host name", f"{host}.blob.core.windows.net"))
     for host in AKS_HOST.findall(text):
         if host.lower() not in SYNTHETIC_AKS_HOSTS:
             out.append(("an AKS API server host name", host))
@@ -285,6 +329,21 @@ def test_the_name_scan_knows_aks_clusters_node_groups_and_api_server_hosts():
     assert foreign("https://pay-dns-9f.hcp.eastus.azmk8s.io:443") == [
         ("an AKS API server host name", "pay-dns-9f")
     ]
+
+
+def test_the_name_scan_knows_virtual_machines_scale_sets_and_storage_hosts():
+    vm = (
+        "/subscriptions/x/resourceGroups/rg-orders-dev/providers/Microsoft.Compute/virtualMachines/"
+    )
+    assert foreign(vm + "vm-orders-web01") == []
+    assert foreign(vm + "payments-db") == [("a virtual machine name", "payments-db")]
+    scale_set = "azure/subscriptions/s/resourcegroups/rg-orders-dev/vm-scale-sets/"
+    assert foreign(scale_set + "vmss-orders-api") == []
+    assert foreign(scale_set + "prod-web") == [("a scale set name", "prod-web")]
+    assert foreign("https://acmeprod.blob.core.windows.net/x") == [
+        ("a storage account host name", "acmeprod.blob.core.windows.net")
+    ]
+    assert foreign('"--name", "vmss-orders-jobs"') == []
 
 
 def secret_flag(arg):

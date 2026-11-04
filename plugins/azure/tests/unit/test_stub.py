@@ -51,6 +51,18 @@ def test_the_scenarios_this_plugin_records_exist():
         "group-forbidden",
         "stopped",
         "monitor-forbidden",
+        # azure-vm-health (rendered by capture/render_vm.py)
+        "vm-healthy",
+        "vm-broken",
+        "vm-guest-broken",
+        "vm-forbidden",
+        "vm-throttled",
+        "vm-not-found",
+        "vm-stopped",
+        "vm-no-data",
+        "vm-instance-view-forbidden",
+        "vm-instances-forbidden",
+        "vm-runcommand-forbidden",
     }
 
 
@@ -356,7 +368,9 @@ def test_record_sh_replays_with_the_stub_off_the_path(recorder):
     done, calls = recorder("azure-base/discover/healthy")
     assert done.returncode == 0, done.stderr
     replays = [c for c in calls if "--record" not in c["argv"]]
-    assert [c["argv"][1] for c in replays] == ["azure-base", "azure-kv-health", "azure-aks-health"]
+    assert [c["argv"][1] for c in replays] == [
+        "azure-base", "azure-kv-health", "azure-aks-health", "azure-vm-health"
+    ]  # fmt: skip
     assert all(not c["stub_on_path"] and c["scenario"] is None for c in replays)
 
 
@@ -380,3 +394,59 @@ def test_record_sh_is_the_only_documented_recording_path():
         if "rwtask test" in line and "--record" in line:
             assert "never" in line, f"README documents a bare recording: {line}"
     assert "AZ_STUB_SCENARIO=" not in readme.replace("`AZ_STUB_SCENARIO` is an alias", "")
+
+
+def test_record_sh_targets_the_vm_and_scale_set_fixtures_and_names_their_scenarios(recorder):
+    done, calls = recorder(
+        "azure-vm-health/instance-view/healthy",
+        "azure-vm-health/instance-view/stopped",
+        "azure-vm-health/metrics/vmss-broken",
+        "azure-vm-health/autoscale/not-found",
+        "azure-vm-health/scale-set-instances/instances-forbidden",
+    )
+    assert done.returncode == 0, done.stderr
+    recorded = [c for c in calls if "--record" in c["argv"]]
+    seen = [
+        (
+            c["argv"][c["argv"].index("--resource") + 1].split("resourcegroups/")[1],
+            c["scenario"],
+        )
+        for c in recorded
+    ]
+    assert seen == [
+        ("rg-orders-prod/virtual-machines/vm-orders-web01", "vm-healthy"),
+        ("rg-platform/virtual-machines/vm-platform-legacy", "vm-stopped"),
+        ("rg-orders-dev/vm-scale-sets/vmss-orders-jobs", "vm-broken"),
+        ("rg-orders-dev/vm-scale-sets/vmss-orders-jobs", "vm-instances-forbidden"),
+        ("rg-orders-dev/vm-scale-sets/nope", "vm-not-found"),
+    ]  # in the order of the recorder's manifest
+
+
+def test_record_sh_records_a_write_fixture_with_its_input_and_flags(recorder):
+    done, calls = recorder(
+        "azure-vm-health/run-os-check/dry-run",
+        "azure-vm-health/run-os-check/disk-broken",
+        "azure-vm-health/run-os-check/runcommand-forbidden",
+    )
+    assert done.returncode == 0, done.stderr
+    recorded = [c for c in calls if "--record" in c["argv"]]
+    broken, dry, forbidden = recorded  # the order of the recorder's manifest
+    assert "--dry-run" in dry["argv"] and "--allow-write" not in dry["argv"]
+    assert dry["argv"][dry["argv"].index("--input") + 1] == "check=disk"
+    assert dry["scenario"] == "vm-healthy"
+    assert "--allow-write" in broken["argv"] and "--dry-run" not in broken["argv"]
+    # the findings come from a VM whose agent is ready, in the scenario that answers the guest scripts
+    assert broken["scenario"] == "vm-guest-broken"
+    assert broken["argv"][broken["argv"].index("--resource") + 1].endswith("/vm-orders-web01")
+    assert forbidden["scenario"] == "vm-runcommand-forbidden"
+    assert forbidden["argv"][forbidden["argv"].index("--resource") + 1].endswith("/vm-orders-web01")
+
+
+def test_the_vm_scenarios_follow_the_naming_the_recorder_uses():
+    names = {s for s in SCENARIOS if s.startswith("vm-")}
+    for row in RECORD.read_text().splitlines():
+        if row.strip().startswith('"azure-vm-health/'):
+            for entry in row.strip().strip('"').partition(":")[2].split():
+                fixture, _, rest = entry.partition("@")[0].partition("=")
+                scenario = "vm-" + (rest or fixture).removeprefix("vmss-")
+                assert scenario in names, f"{entry} -> {scenario}"

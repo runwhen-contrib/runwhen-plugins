@@ -73,6 +73,31 @@ commands of both skills for one target vault.
 | `dedicated` | `kv-orders-dev` | the audit log goes to a resource-specific table (`logAnalyticsDestinationType: Dedicated`), so it is queried in `AZKVAuditLogs`; only the audit calls |
 | `group-forbidden` | (discover) | `rg-orders-dev`'s vaults cannot be listed: a `forbidden` partition and a partial run, the other groups complete |
 
+### azure-vm-health scenarios
+
+Their directories are `vm-<scenario>` (a fixture of a scale-set target is named `vmss-<scenario>`;
+`record.sh` maps both). One scenario answers the VM and the scale-set tasks together: `healthy` is
+`vm-orders-web01` (rg-orders-prod, ready agent) and `vmss-orders-api`, the others
+`vm-orders-batch02` (rg-orders-dev, agent Not Ready, a failed extension, boot diagnostics off) and
+`vmss-orders-jobs`. The guest scripts' answers are in `capture/guest/*.txt`.
+
+| scenario | target | what it shows |
+| --- | --- | --- |
+| `vm-healthy` | web01, api | nothing wrong; the four guest scripts answer with healthy figures |
+| `vm-broken` | batch02, jobs | failed extension and provisioning, Not Ready agent, CPU and memory crossings, error/warning/critical Activity Log entries, Resource Health Unavailable; a scale set with a failed instance, two on an old model, one unhealthy, autoscale at its maximum |
+| `vm-guest-broken` | web01 | the guest scripts answer with findings (a nearly full disk, little memory, 41 days up, 3 pending updates, a reboot required); batch02's agent is not ready, so no script is ever sent to it |
+| `vm-forbidden` | batch02, jobs | `AuthorizationFailed` on every ARM call, naming the action |
+| `vm-throttled` | batch02, jobs | `TooManyRequests` on every call |
+| `vm-not-found` | `nope` | `ResourceNotFound` (az exits 3) |
+| `vm-stopped` | vm-platform-legacy (RG-Platform) | deallocated: no agent report, run-os-check is skipped |
+| `vm-no-data` | batch02 | Azure Monitor datapoints with no value for available memory and disk reads |
+| `vm-instance-view-forbidden` | jobs | the instance view summary is `AuthorizationFailed`, the instance list answers: partial |
+| `vm-instances-forbidden` | jobs | the instance list is `AuthorizationFailed`, the summary answers: partial |
+| `vm-runcommand-forbidden` | web01 | the instance view answers, `runCommand/action` is `AuthorizationFailed` |
+
+The `healthy` and `group-forbidden` scenarios above also answer the virtual machine and scale set
+listings of azure-base/discover (`vm-list-*.json`, `vmss-list-*.json`).
+
 ## Where the shapes and texts come from
 
 Canned CLI output must come from the pinned CLI, not from memory (plan Appendix C7).
@@ -95,6 +120,21 @@ Canned CLI output must come from the pinned CLI, not from memory (plan Appendix 
   `AZKVAuditLogs` (`_ResourceId`, `HttpStatusCode`), per
   https://learn.microsoft.com/azure/azure-monitor/reference/tables/azurediagnostics and
   https://learn.microsoft.com/azure/azure-monitor/reference/tables/azkvauditlogs.
+
+- The azure-vm-health scenarios (`scenarios/vm-*`, and the `vm-list-*`/`vmss-list-*` files of the discover
+  scenarios) were produced by the real az 2.92.0 in the `azure@1` image: `capture/render_vm.py` replaces the
+  CLI's HTTP transport with `capture/vmworld.py`, a synthetic Azure Resource Manager that answers each
+  request with the REST body Microsoft documents (the reference pages are listed in its docstring), and
+  writes what the CLI printed, stderr and exit code included (so az's flattening of `properties`, its
+  `resourceGroup` key, its 403/404/429 wording and exit codes, such as 3 for a resource that is not found,
+  are the CLI's own, and every argv has been parsed by az). Command:
+  `docker run --rm --network none -v "$PWD/plugins/azure:/plugin:ro" -v "$OUT:/out" --entrypoint /opt/az/bin/python rwp-runtime-azure:dev -I /plugin/tests/stub/capture/render_vm.py /out`.
+  The REST bodies themselves, the metric datapoints and the Activity Log entries are representative, not
+  Azure's.
+- The guest scripts' answers (`capture/guest/*.txt`) are what the scripts of `lib/azure_vm_health/guest_scripts.py`
+  print: `patches-*.txt` were produced by running the real script in a debian container against a stand-in
+  `apt-get` (`capture/guest.sh`); `disk-*`, `memory-*` and `uptime-*` have that real format with the
+  container's figures replaced by the scenario's.
 
 They are representative, not recordings of a real account: re-record against a real subscription
 when a credential exists (parked). Dates in the item lists (`expires`) are chosen around 2026-11-04,

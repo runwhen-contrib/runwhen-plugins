@@ -1,0 +1,379 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The result of one fixed diagnostic script run inside a Linux VM",
+  "type": "object",
+  "properties": {
+    "vm": {
+      "type": "string"
+    },
+    "check": {
+      "enum": [
+        "disk",
+        "memory",
+        "uptime",
+        "patches"
+      ]
+    },
+    "osType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "powerState": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scriptSha256": {
+      "type": "string",
+      "description": "SHA-256 of the script text that runs (or would run); it is a constant of the skill"
+    },
+    "scriptLines": {
+      "type": "integer"
+    },
+    "executed": {
+      "type": "boolean",
+      "description": "The script ran in the guest; false for a dry run"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "invocation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "displayStatus": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "level": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "displayStatus",
+            "level"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The run command's own status; null when nothing ran"
+    },
+    "stderr": {
+      "type": "string",
+      "description": "What the script wrote to stderr, cut to 1024 characters"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "disk": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "threshold": {
+              "type": "number"
+            },
+            "filesystems": {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "filesystem": {
+                        "type": "string"
+                      },
+                      "mount": {
+                        "type": "string"
+                      },
+                      "sizeKb": {
+                        "type": "integer"
+                      },
+                      "usedKb": {
+                        "type": "integer"
+                      },
+                      "availableKb": {
+                        "type": "integer"
+                      },
+                      "usedPercent": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "overThreshold": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "filesystem",
+                      "mount",
+                      "sizeKb",
+                      "usedKb",
+                      "availableKb",
+                      "usedPercent",
+                      "overThreshold"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "total": {
+                  "type": "integer",
+                  "description": "Filesystems found"
+                },
+                "omitted": {
+                  "type": "integer",
+                  "description": "Filesystems left out of items by maxItems or the nested limit"
+                }
+              },
+              "required": [
+                "items",
+                "total",
+                "omitted"
+              ],
+              "additionalProperties": false
+            },
+            "overThreshold": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "threshold",
+            "filesystems",
+            "overThreshold"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "check disk: filesystems by used percentage, highest first (df -P -k without tmpfs, devtmpfs, squashfs, overlay)"
+    },
+    "memory": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "threshold": {
+              "type": "number"
+            },
+            "totalKb": {
+              "type": "integer"
+            },
+            "availableKb": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "freeKb": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "cachedKb": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "swapTotalKb": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "swapFreeKb": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "usedPercent": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "(MemTotal - MemAvailable) / MemTotal; null when the kernel reports no MemAvailable"
+            },
+            "overThreshold": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "threshold",
+            "totalKb",
+            "availableKb",
+            "freeKb",
+            "cachedKb",
+            "swapTotalKb",
+            "swapFreeKb",
+            "usedPercent",
+            "overThreshold"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "check memory"
+    },
+    "uptime": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "threshold": {
+              "type": "number"
+            },
+            "seconds": {
+              "type": "integer"
+            },
+            "days": {
+              "type": "number"
+            },
+            "overThreshold": {
+              "type": "boolean"
+            },
+            "load": {
+              "type": "object",
+              "properties": {
+                "one": {
+                  "type": "number"
+                },
+                "five": {
+                  "type": "number"
+                },
+                "fifteen": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "one",
+                "five",
+                "fifteen"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "threshold",
+            "seconds",
+            "days",
+            "overThreshold",
+            "load"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "check uptime"
+    },
+    "patches": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "packageManager": {
+              "type": "string",
+              "description": "apt, dnf, yum or unknown"
+            },
+            "pending": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Packages with an update according to the local package database; null when the manager is unknown (not zero)"
+            },
+            "security": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Of those, the apt simulation lines that name a security pocket; null for other managers"
+            },
+            "packages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 50
+            },
+            "indexAgeSeconds": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Age of the apt package index (never refreshed by the check); null when unknown"
+            },
+            "rebootRequired": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "packageManager",
+            "pending",
+            "security",
+            "packages",
+            "indexAgeSeconds",
+            "rebootRequired"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "check patches: read from the package manager's local database; the index is not refreshed, so the figures are as fresh as it is"
+    }
+  },
+  "required": [
+    "vm",
+    "check",
+    "osType",
+    "powerState",
+    "scriptSha256",
+    "scriptLines",
+    "executed",
+    "dryRun",
+    "invocation",
+    "stderr",
+    "truncated",
+    "disk",
+    "memory",
+    "uptime",
+    "patches"
+  ],
+  "additionalProperties": false
+}
