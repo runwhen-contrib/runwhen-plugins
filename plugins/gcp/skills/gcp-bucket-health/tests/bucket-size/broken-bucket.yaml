@@ -1,0 +1,32 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/buckets/shop-archive
+now: '2026-11-04T01:11:05.324Z'
+calls:
+- argv:
+  - gcloud
+  - storage
+  - du
+  - --summarize
+  - gs://shop-archive
+  - --quiet
+  rc: 0
+  stdout: |
+    1649267441664  gs://shop-archive/
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    totals:
+      examined: 1
+      overThreshold: 1
+    sizes:
+      total: 1
+      items:
+        $containsWhere:
+          name: shop-archive
+          overThreshold: true
