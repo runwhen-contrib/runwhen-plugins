@@ -7,6 +7,7 @@ The S3 write task runs against a small simulator of the gateway behind the pod p
 import copy
 import importlib.util
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -137,6 +138,18 @@ UPSTREAM = {
         "Error from server (ServiceUnavailable): error trying to reach service: dial tcp 10.244.0.9:9999: connect: connection refused",
     ),
     "pod": (1, "", 'Error from server (NotFound): pods "swfs-ok-0" not found'),
+    "400": (1, "", "Error from server (BadRequest): the request is not valid"),
+    "503": (
+        1,
+        "",
+        "Error from server (ServiceUnavailable): the server is currently unable to handle the request",
+    ),
+    "timeout": (
+        1,
+        "",
+        "Error from server (Timeout): request did not complete within requested timeout",
+    ),
+    "429": (1, "", "Error from server (TooManyRequests): slow down"),
 }
 
 
@@ -196,7 +209,16 @@ def codes(errors):
 def test_cluster_view_single_master_has_no_peers():
     v = api.cluster_view(load("cluster_status_ok.json"))
     assert v["isLeader"] is True and v["leader"].endswith(":9333.19333")
-    assert v["peers"] is None and v["peerCount"] is None
+    assert v["peers"] == [] and v["peerCount"] == 0  # a single master reports no Peers
+
+
+def test_cluster_view_of_a_follower_without_isleader_reads_false_and_names_the_leader():
+    # a follower's reply has no IsLeader (the field is omitted), only the leader it follows and the peers
+    v = api.cluster_view({"Leader": "m-0:9333", "Peers": ["m-0:9333", "m-1:9333", "m-2:9333"]})
+    assert v["isLeader"] is False and v["leader"] == "m-0:9333" and v["peerCount"] == 3
+    assert api.cluster_view({"Leader": "m-0:9333"})["peers"] == []
+    # null is as absent
+    assert api.cluster_view({"IsLeader": None, "Leader": "m", "Peers": None})["isLeader"] is False
 
 
 def test_cluster_view_reads_raft_peers_and_rejects_other_shapes():
@@ -445,8 +467,15 @@ def pod_of(component, args=None, phase="Running", ip="10.0.0.1", deleting=False)
         ("filer", ["filer", "-s3"], ["filer", "s3"]),
         ("filer", ["filer", "-s3=true"], ["filer", "s3"]),
         ("s3", None, ["s3"]),
-        ("all-in-one", None, ["master", "volume", "filer", "s3"]),
-        ("seaweedfs-all-in-one", None, ["master", "volume", "filer", "s3"]),
+        ("all-in-one", None, ["master", "volume", "filer"]),  # S3 only with an s3 flag
+        ("all-in-one", ["server", "-filer", "-s3"], ["master", "volume", "filer", "s3"]),
+        ("seaweedfs-all-in-one", ["server", "-s3.port=8333"], ["master", "volume", "filer", "s3"]),
+        ("seaweedfs-all-in-one", None, ["master", "volume", "filer"]),
+        ("filer", ["filer", "--s3"], ["filer", "s3"]),
+        ("filer", ["filer", "-s3.port=8333"], ["filer", "s3"]),
+        ("filer", ["filer", "-s3=false"], ["filer"]),
+        ("filer", ["filer", "-s3.config=/etc/s3.json"], ["filer"]),
+        ("filer", ["filer", "-s3x"], ["filer"]),
         ("admin", None, []),
         ("", None, []),
     ],
@@ -504,7 +533,8 @@ class Done:
         (rbac("pods/proxy"), "permission_denied", "rbac"),
         (UPSTREAM["404"], "dependency", "upstream_missing"),
         (UPSTREAM["pod"], "not_found", "pod_missing"),
-        (UPSTREAM["500"], "internal", "upstream_error"),
+        (UPSTREAM["500"], "internal", "api_error"),
+        (UPSTREAM["400"], "internal", "upstream_error"),
         (UPSTREAM["refused"], "unreachable", "unreachable"),
         (
             (
@@ -532,8 +562,8 @@ class Done:
                 "",
                 "Error from server (ServiceUnavailable): the server is currently unable to handle the request",
             ),
-            "internal",
-            "upstream_error",
+            "unreachable",
+            "api_unavailable",
         ),
         ((1, "", "something else entirely"), "internal", "upstream_error"),
         ((124, "", ""), "timeout", "timeout"),
@@ -602,7 +632,7 @@ def test_cluster_status_of_a_healthy_release(rel):
     assert pod["roles"] == ["master", "volume", "filer", "s3"] and pod["ready"] is True
     m = out["master"]
     assert (m["leaderCount"], m["leaderAgreement"], m["queriedCount"]) == (1, True, 1)
-    assert m["members"][0]["healthz"] == "ok" and m["members"][0]["peers"] is None
+    assert m["members"][0]["healthz"] == "ok" and m["members"][0]["peers"] == []
 
 
 def test_cluster_status_by_namespace_with_two_releases_needs_the_release_input():
@@ -671,20 +701,32 @@ def test_a_pod_that_is_not_running_is_listed_and_not_asked():
 
 
 def test_master_healthz_error_status_is_unhealthy_not_healthy():
-    stubs = release_stubs(
-        "ok",
-        extra={
-            raw(POD["ok"], 9333, "cluster/healthz"): (
-                1,
-                "",
-                "Error from server (ServiceUnavailable): the server is currently unable to handle the request",
-            )
-        },
-    )
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/healthz"): UPSTREAM["400"]})
     env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
     assert (
         env["status"] == "ok" and env["outputs"]["master"]["members"][0]["healthz"] == "unhealthy"
     )
+
+
+@pytest.mark.parametrize(
+    "answer,code",
+    [
+        (UPSTREAM["503"], "unreachable"),
+        (UPSTREAM["500"], "internal"),
+        (UPSTREAM["timeout"], "timeout"),
+        (UPSTREAM["429"], "rate_limited"),
+    ],
+)
+def test_health_endpoint_5xx_timeout_and_429_are_typed_errors_before_unhealthy(answer, code):
+    # kubectl shows a 503/500 the same whether the workload or the API server sent it: an error, not "unhealthy"
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/healthz"): answer})
+    env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
+    assert env["status"] == "partial" and codes(errors) == [(code, f"master/{POD['ok']}/healthz")]
+    assert env["outputs"]["master"]["members"][0]["healthz"] is None
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 8888, "healthz"): answer})
+    env, errors, _ = run("filer_status", sts_resource("ok"), stubs)
+    assert codes(errors) == [(code, f"filer/{POD['ok']}/healthz")]
+    assert env["outputs"]["filer"]["items"][0]["healthz"] is None
 
 
 @pytest.mark.parametrize(
@@ -710,8 +752,10 @@ def test_master_read_errors_keep_the_pod_facts_and_make_the_result_partial(answe
     assert env["outputs"]["release"]["pods"]["count"] == 1
     m = env["outputs"]["master"]["members"][0]
     assert m["queried"] is False and m["isLeader"] is None
-    # a 5xx on healthz is the process answering unhealthy; every other failure is no answer at all
-    assert m["healthz"] == ("unhealthy" if answer == UPSTREAM["500"] else None)
+    assert m["healthz"] is None  # no failure here is the process answering "unhealthy"
+    assert (
+        m["notQueriedReason"] == code
+    )  # the member says why: the error code of its failed status read
 
 
 def test_unexpected_cluster_status_payload_is_an_error_not_a_leaderless_cluster():
@@ -1026,7 +1070,7 @@ def test_filer_health_error_status_is_unhealthy_and_unreadable_root_is_reported(
     stubs = release_stubs(
         "ok",
         extra={
-            raw(POD["ok"], 8888, "healthz"): UPSTREAM["500"],
+            raw(POD["ok"], 8888, "healthz"): UPSTREAM["400"],
             raw(POD["ok"], 8888, "?metadata=true"): ok('{"FullPath": "/x"}'),
         },
     )
@@ -1053,6 +1097,8 @@ def split_pods(*components):
         pod["metadata"]["name"] = f"swfs-ok-{i}"
         pod["metadata"]["labels"]["app.kubernetes.io/component"] = component
         pod["status"]["podIP"] = f"10.244.5.{i + 1}"
+        pod["status"]["podIPs"] = [{"ip": f"10.244.5.{i + 1}"}]
+        pod["spec"]["hostname"] = f"swfs-ok-{i}"
         pod["spec"]["containers"][0]["args"] = [component]  # no -s3: a filer that serves no S3
         pods["items"].append(pod)
     return pods
@@ -1067,6 +1113,8 @@ def test_a_release_without_a_filer_has_no_filer_pods_and_is_not_an_error():
     env, errors, _ = run("filer_status", sts_resource("ok"), stubs)
     assert env["status"] == "ok" and errors == []
     assert env["outputs"]["filer"]["podCount"] == 0 and env["outputs"]["filer"]["items"] == []
+    assert env["outputs"]["filer"]["filerPods"] == 0  # the fact; the task stays ok
+    check_outputs("filer_status", env)
     assert (
         env["outputs"]["volumeServers"]["registeredCount"] == 0
     )  # the topology's node is not swfs-ok-1's IP
@@ -1208,7 +1256,9 @@ def test_buckets_when_the_master_cannot_be_read_fails_or_is_partial_never_empty(
 
 class Gateway:
     """The S3 gateway behind the pod proxy: buckets with objects, anonymous or not, with failures that
-    can be injected per operation. Answers like `kubectl get|replace|delete --raw` (body only on 2xx)."""
+    can be injected per operation (an Exception value is raised, as a timed-out command raises). Answers
+    like `kubectl get|replace|delete --raw` (body only on 2xx). Buckets are never created or deleted by
+    a request: a PUT or DELETE of a bucket path is a test failure."""
 
     def __init__(self, pod, buckets=None, anonymous_write=True, anonymous_list=True, fail=None):
         self.pod, self.buckets = pod, {b: dict(o) for b, o in (buckets or {}).items()}
@@ -1218,52 +1268,60 @@ class Gateway:
             dict(fail or {}),
         )
         self.mutations = []
+        self.requests = []  # (verb, path, timeout)
+        self.cost = {}  # label -> seconds the fake clock advances while it runs
+        self.clock = None
 
-    def run(self, argv, cwd=None, check=None):
+    def run(self, argv, cwd=None, check=None, timeout=None):
         verb, uri = argv[1], argv[3]
         path = uri.split("/proxy/", 1)[1]
         bucket, _, key = path.split("?")[0].partition("/")
         op = {
-            "get": "list" if (not key or "list-type" in path) else "get-object",
+            "get": "list" if (not key or "list-type" in path) else "get",
             "replace": "put",
             "delete": "delete",
         }[verb]
-        op = {"list": "list", "get-object": "get", "put": "put", "delete": "delete"}[op]
-        label = f"{op}-{'object' if key else 'bucket'}" if op != "list" else "list"
+        label = op if op == "list" else f"{op}-object"
+        self.requests.append((verb, path, timeout))
         if op in ("put", "delete"):
+            assert key, f"a request to {op} the bucket {bucket}: s3-check never does that"
             self.mutations.append((op, path))
+        if self.clock is not None:
+            self.clock["t"] += self.cost.get(label, 0)
         if label in self.fail:
-            return self.fail[label]
+            failure = self.fail[label]
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
         if op == "list":
             if not self.anonymous_list:
                 return UPSTREAM["403"]
             return ok(text("s3_list_bucket.xml")) if bucket in self.buckets else UPSTREAM["404"]
         if op in ("put", "delete") and not self.anonymous_write:
             return UPSTREAM["403"]
-        if op == "put" and not key:
-            self.buckets.setdefault(bucket, {})
-            return ok("")
+        if bucket not in self.buckets:
+            return UPSTREAM["404"]
         if op == "put":
             self.buckets[bucket][key] = (Path(cwd) / argv[argv.index("-f") + 1]).read_text()
             return ok("")
         if op == "get":
-            return (
-                ok(self.buckets[bucket][key])
-                if key in self.buckets.get(bucket, {})
-                else UPSTREAM["404"]
-            )
-        if op == "delete":
-            if key:
-                self.buckets.get(bucket, {}).pop(key, None)
-            else:
-                self.buckets.pop(bucket, None)
-            return ok("")
+            return ok(self.buckets[bucket][key]) if key in self.buckets[bucket] else UPSTREAM["404"]
+        self.buckets[bucket].pop(key, None)
+        return ok("")
 
 
 def s3_run(
-    gateway, rel="ok", dry_run=False, extra_stubs=None, resource=None, settings=None, **inputs
+    gateway,
+    rel="ok",
+    dry_run=False,
+    extra_stubs=None,
+    resource=None,
+    settings=None,
+    clock=None,
+    **inputs,
 ):
     stubs = release_stubs(rel, master=False, extra=extra_stubs)
+    gateway.clock = clock
     with make_context(
         resource=resource or sts_resource(rel),
         settings={**SETTINGS, **(settings or {})},
@@ -1280,7 +1338,7 @@ def s3_run(
                 ["kubectl", "delete", "--raw"],
             ):
                 calls.append(tuple(argv))
-                rc, out, err = gateway.run(argv, cwd)
+                rc, out, err = gateway.run(argv, cwd, timeout=timeout)
                 return tc.ctx._finish_run(list(argv), rc, out, err, check)
             return base(
                 argv, cwd=cwd, timeout=timeout, env=env, inherit_env=inherit_env, check=check
@@ -1291,95 +1349,142 @@ def s3_run(
         return env, tc.errors, list(calls), gateway
 
 
-KEY = "runwhen-s3-check/20261103T230000Z.txt"
+BUCKET = "runwhen-s3-check"
+KEY_RE = re.compile(rf"^{BUCKET}/20261103T230000000000Z-[0-9a-f]{{6}}\.txt$")
+MISSING = "bucket runwhen-s3-check does not exist; create it to enable the write check"
 
 
-def test_s3_check_puts_reads_deletes_confirms_and_removes_the_bucket_it_created():
-    env, errors, calls, gw = s3_run(Gateway(POD["ok"]))
+def existing(**objects):
+    return {BUCKET: dict(objects)}
+
+
+def step_names(p):
+    return [s["name"] for s in p["steps"]]
+
+
+def test_s3_check_puts_reads_deletes_and_confirms_in_the_existing_bucket():
+    gw = Gateway(POD["ok"], buckets=existing(**{"mine.txt": "keep"}))
+    env, errors, calls, gw = s3_run(gw)
     assert env["status"] == "ok" and errors == []
     check_outputs("s3_check", env)
     p = env["outputs"]["probe"]
     assert p["passed"] is True and p["contentMatches"] is True and p["anonymousWrite"] is True
-    assert (p["bucketExisted"], p["bucketCreated"], p["cleanedUp"], p["leftBehind"]) == (
-        False,
-        True,
-        True,
-        [],
-    )
-    assert [s["name"] for s in p["steps"]] == [
-        "create-bucket",
-        "put-object",
-        "get-object",
-        "delete-object",
-        "confirm-deleted",
-        "delete-bucket",
-    ]
-    assert all(s["ok"] for s in p["steps"]) and p["key"] == KEY
-    assert gw.buckets == {}  # nothing left behind
-
-
-def test_s3_check_in_an_existing_bucket_touches_only_its_own_object():
-    gw = Gateway(POD["ok"], buckets={"runwhen-s3-check": {"mine.txt": "keep"}})
-    env, errors, _, gw = s3_run(gw)
-    p = env["outputs"]["probe"]
+    assert (p["bucketListing"], p["cleanedUp"], p["leftBehind"]) == ("allowed", True, [])
     assert (
-        env["status"] == "ok"
-        and p["passed"] is True
-        and p["bucketExisted"] is True
-        and p["bucketCreated"] is False
+        p["plan"]
+        == step_names(p)
+        == ["put-object", "get-object", "delete-object", "confirm-deleted"]
     )
-    assert [s["name"] for s in p["steps"]] == [
-        "put-object",
-        "get-object",
-        "delete-object",
-        "confirm-deleted",
-    ]
-    assert gw.buckets == {"runwhen-s3-check": {"mine.txt": "keep"}}
-    assert ("delete", "runwhen-s3-check") not in gw.mutations
+    assert all(s["ok"] for s in p["steps"]) and KEY_RE.match(p["key"])
+    assert gw.buckets == existing(**{"mine.txt": "keep"})  # only its own object came and went
+    # never a bucket path: every mutation is an object under the probe prefix
+    assert [m[0] for m in gw.mutations] == ["put", "delete"]
+    assert all(f"/{p['key']}" in m[1] or m[1].endswith(p["key"]) for m in gw.mutations)
+
+
+def test_s3_check_never_creates_a_bucket_and_skips_when_it_is_absent():
+    for dry in (False, True):
+        env, errors, calls, gw = s3_run(Gateway(POD["ok"]), dry_run=dry)
+        assert env["status"] == "skipped" and errors == [] and env["reason"] == MISSING
+        assert gw.buckets == {} and gw.mutations == []
+        assert not [c for c in calls if c[1] in ("replace", "delete")]
+    other = Gateway(POD["ok"], buckets={"other": {}})
+    env, _, _, gw = s3_run(other, bucket="other")
+    assert env["status"] == "ok" and env["outputs"]["probe"]["bucket"] == "other"
 
 
 def test_s3_check_dry_run_lists_the_bucket_and_mutates_nothing():
-    env, errors, calls, gw = s3_run(Gateway(POD["ok"]), dry_run=True)
+    env, errors, calls, gw = s3_run(Gateway(POD["ok"], buckets=existing()), dry_run=True)
     assert env["status"] == "ok" and env["dryRun"] is True
     check_outputs("s3_check", env)
     p = env["outputs"]["probe"]
-    assert (
-        p["steps"] == []
-        and p["passed"] is None
-        and p["plan"][0] == "create-bucket"
-        and p["bucketExisted"] is False
-    )
+    assert p["steps"] == [] and p["passed"] is None and p["plan"][0] == "put-object"
+    assert p["bucketListing"] == "allowed"
     assert gw.mutations == [] and not [c for c in calls if c[1] in ("replace", "delete")]
 
 
 def test_s3_check_skips_when_the_gateway_refuses_an_anonymous_write_and_writes_nothing():
-    gw = Gateway(POD["ok"], anonymous_write=False)
+    gw = Gateway(POD["ok"], buckets=existing(), anonymous_write=False)
     env, errors, calls, gw = s3_run(gw)
     assert env["status"] == "skipped" and errors == []
     assert "credential" in env["reason"] and "never reads Secrets" in env["reason"]
+    assert gw.buckets == existing()
+    assert [m[0] for m in gw.mutations] == ["put"]  # the one refused request; no cleanup DELETE
+
+
+def test_a_denied_listing_does_not_stop_the_write_check_and_is_reported_apart():
+    # a write-only anonymous identity: the list is 403 but the PUT, GET and DELETE are accepted
+    class WriteOnly(Gateway):
+        def run(self, argv, cwd=None, check=None, timeout=None):
+            if argv[1] == "get" and "list-type" in argv[3]:
+                self.requests.append(("get", argv[3], timeout))
+                return UPSTREAM["403"]
+            return super().run(argv, cwd, check, timeout)
+
+    env, errors, _, gw = s3_run(WriteOnly(POD["ok"], buckets=existing()))
+    p = env["outputs"]["probe"]
+    assert env["status"] == "ok" and errors == [] and p["bucketListing"] == "denied"
+    assert p["passed"] is True and p["anonymousWrite"] is True and gw.buckets == existing()
+
+
+def test_a_denied_listing_and_a_refused_write_skips_and_a_denied_listing_of_a_missing_bucket_skips():
+    env, _, _, gw = s3_run(
+        Gateway(POD["ok"], buckets=existing(), anonymous_list=False, anonymous_write=False)
+    )
+    assert env["status"] == "skipped" and "credential" in env["reason"]
+    assert [m[0] for m in gw.mutations] == ["put"]
+    # list denied, and the PUT finds no such bucket: nothing was written, and the bucket is what is missing
+    env, errors, _, gw = s3_run(Gateway(POD["ok"], anonymous_list=False))
+    assert env["status"] == "skipped" and env["reason"] == MISSING and errors == []
     assert gw.buckets == {}
-    assert [m[0] for m in gw.mutations] == [
-        "put"
-    ]  # the one refused request; no cleanup DELETE followed it
 
 
-def test_s3_check_skips_when_even_listing_needs_credentials():
-    env, errors, calls, gw = s3_run(Gateway(POD["ok"], anonymous_list=False))
-    assert env["status"] == "skipped" and gw.mutations == []
+@pytest.mark.parametrize(
+    "body", ['{"a": 1}', "<html><body>login</body></html>", "<Error><Code>X</Code></Error>", ""]
+)
+def test_a_listing_that_is_not_a_list_bucket_result_is_not_an_s3_endpoint(body):
+    gw = Gateway(POD["ok"], buckets=existing(), fail={"list": ok(body)})
+    env, errors, _, gw = s3_run(gw)
+    assert env["status"] == "failed" and errors[0]["code"] == "internal"
+    assert "not an S3 endpoint" in errors[0]["message"] and gw.mutations == []
 
 
-def test_s3_check_refused_object_write_in_an_existing_bucket_skips_without_cleanup_delete():
-    gw = Gateway(POD["ok"], buckets={"runwhen-s3-check": {}}, anonymous_write=False)
-    env, _, _, gw = s3_run(gw)
-    assert env["status"] == "skipped" and [m[0] for m in gw.mutations] == ["put"]
+def no_s3_flag(pods, command=None):
+    pods = copy.deepcopy(pods)
+    for c in pods["items"][0]["spec"]["containers"]:
+        c["args"] = [a for a in c["args"] if not a.startswith("-s3")]
+        if command:
+            c["command"], c["args"] = command, []
+    return pods
 
 
-def test_s3_check_skips_when_the_release_has_no_s3_pod():
-    pods = copy.deepcopy(PODS["ok"])
-    pods["items"][0]["metadata"]["labels"]["app.kubernetes.io/component"] = "master"
-    env, errors, calls, _ = s3_run(Gateway(POD["ok"]), extra_stubs={get_pods("ok"): ok(pods)})
-    assert env["status"] == "skipped" and "no S3 gateway pod" in env["reason"]
-    assert not [c for c in calls if "--raw" in c]
+def test_s3_check_skips_when_the_release_has_no_s3_gateway_pod():
+    # a filer-only pod, and an all-in-one pod whose args carry no s3 flag
+    filer = copy.deepcopy(PODS["ok"])
+    filer["items"][0]["metadata"]["labels"]["app.kubernetes.io/component"] = "master"
+    for pods in (filer, no_s3_flag(PODS["ok"])):
+        env, errors, calls, _ = s3_run(
+            Gateway(POD["ok"], buckets=existing()), extra_stubs={get_pods("ok"): ok(pods)}
+        )
+        assert env["status"] == "skipped" and "no S3 gateway pod" in env["reason"]
+        assert not [c for c in calls if "--raw" in c]
+
+
+@pytest.mark.parametrize("component", ["filer", "all-in-one"])
+def test_s3_check_finds_a_gateway_enabled_by_a_flag_in_a_shell_form_command(component):
+    pods = no_s3_flag(
+        PODS["ok"],
+        [
+            "/bin/sh",
+            "-ec",
+            "exec weed filer -master=swfs-master:9333 -ip.bind=0.0.0.0 -s3 -s3.config=/x",
+        ],
+    )
+    pods["items"][0]["metadata"]["labels"]["app.kubernetes.io/component"] = component
+    env, errors, _, gw = s3_run(
+        Gateway(POD["ok"], buckets=existing()), extra_stubs={get_pods("ok"): ok(pods)}
+    )
+    assert env["status"] == "ok" and env["outputs"]["probe"]["passed"] is True
 
 
 def test_s3_check_with_the_gateway_pod_not_running_is_unreachable_not_skipped():
@@ -1389,68 +1494,106 @@ def test_s3_check_with_the_gateway_pod_not_running_is_unreachable_not_skipped():
     assert env["status"] == "failed" and errors[0]["code"] == "unreachable"
 
 
-def test_s3_check_a_failing_put_is_a_failed_probe_and_the_cleanup_still_runs():
-    gw = Gateway(POD["ok"], fail={"put-object": UPSTREAM["500"]})
-    env, errors, _, gw = s3_run(gw)
+def test_s3_check_a_failing_put_is_a_partial_result_and_the_delete_still_runs():
+    gw = Gateway(POD["ok"], buckets=existing(), fail={"put-object": UPSTREAM["500"]})
+    env, errors, calls, gw = s3_run(gw)
     p = env["outputs"]["probe"]
-    assert env["status"] == "ok" and p["passed"] is False and p["anonymousWrite"] is None
+    assert env["status"] == "partial" and codes(errors) == [("internal", "s3-check/put-object")]
+    assert p["passed"] is False and p["anonymousWrite"] is None
     steps = {s["name"]: s for s in p["steps"]}
     assert steps["put-object"]["ok"] is False and steps["put-object"]["error"]["code"] == "internal"
-    assert "get-object" not in steps
-    assert "cleanup-delete-object" in steps and steps["delete-bucket"]["ok"] is True
-    assert p["cleanedUp"] is True and gw.buckets == {}
+    assert "get-object" not in steps  # nothing to read back: the delete comes first
+    assert steps["cleanup-delete-object"]["ok"] is True and p["cleanedUp"] is True
+    assert [c[1] for c in calls if "--raw" in c][-2:] == ["replace", "delete"]
 
 
-def test_s3_check_content_mismatch_fails_the_probe():
+def test_s3_check_a_put_that_times_out_is_a_timeout_error_and_the_delete_comes_next():
+    import subprocess
+
+    gw = Gateway(
+        POD["ok"],
+        buckets=existing(),
+        fail={"put-object": subprocess.TimeoutExpired(["kubectl"], 15)},
+    )
+    env, errors, calls, gw = s3_run(gw)
+    p = env["outputs"]["probe"]
+    assert env["status"] == "partial" and codes(errors) == [("timeout", "s3-check/put-object")]
+    assert [r[0] for r in gw.requests] == [
+        "get",
+        "replace",
+        "delete",
+    ]  # list, PUT, then straight to DELETE
+    assert (
+        p["passed"] is False
+        and p["cleanedUp"] is True
+        and step_names(p) == ["put-object", "cleanup-delete-object"]
+    )
+
+
+def test_s3_check_a_failed_read_back_is_an_error_and_the_object_is_still_deleted():
+    gw = Gateway(POD["ok"], buckets=existing(), fail={"get-object": UPSTREAM["500"]})
+    env, errors, _, gw = s3_run(gw)
+    p = env["outputs"]["probe"]
+    assert env["status"] == "partial" and codes(errors)[0] == ("internal", "s3-check/get-object")
+    assert p["passed"] is False and p["contentMatches"] is None and p["anonymousWrite"] is None
+    assert "delete-object" in step_names(p) and gw.buckets == existing()
+
+
+def test_s3_check_content_mismatch_is_an_error_and_not_an_accepted_write():
     class Wrong(Gateway):
-        def run(self, argv, cwd=None, check=None):
+        def run(self, argv, cwd=None, check=None, timeout=None):
             if argv[1] == "get" and "runwhen-s3-check/2026" in argv[3]:
                 return ok("something else")
-            return super().run(argv, cwd)
+            return super().run(argv, cwd, check, timeout)
 
-    env, _, _, gw = s3_run(Wrong(POD["ok"]))
+    env, errors, _, gw = s3_run(Wrong(POD["ok"], buckets=existing()))
     p = env["outputs"]["probe"]
+    assert env["status"] == "partial" and codes(errors)[0] == ("internal", "s3-check/get-object")
     assert p["passed"] is False and p["contentMatches"] is False
+    assert (
+        p["anonymousWrite"] is False
+    )  # a 2xx PUT whose read-back differs is not an accepted write
     assert [s["ok"] for s in p["steps"] if s["name"] == "get-object"] == [False]
-    assert gw.buckets == {}
+    assert gw.buckets == existing()
+
+
+def test_s3_check_a_failed_delete_is_an_error_and_the_leftover_is_named():
+    gw = Gateway(POD["ok"], buckets=existing(), fail={"delete-object": UPSTREAM["500"]})
+    env, errors, _, gw = s3_run(gw)
+    p = env["outputs"]["probe"]
+    assert env["status"] == "partial"
+    assert codes(errors) == [
+        ("internal", "s3-check/delete-object"),
+        ("internal", "s3-check/cleanup"),
+    ]
+    assert p["cleanedUp"] is False and p["passed"] is False and len(p["leftBehind"]) == 1
+    assert p["leftBehind"][0].startswith("runwhen-s3-check/runwhen-s3-check/")
 
 
 def test_s3_check_an_object_that_survives_delete_fails_the_probe():
     class Stubborn(Gateway):
-        def run(self, argv, cwd=None, check=None):
+        def run(self, argv, cwd=None, check=None, timeout=None):
             if argv[1] == "delete" and "runwhen-s3-check/2026" in argv[3]:
                 return ok("")  # claims success, keeps the object
-            return super().run(argv, cwd)
+            return super().run(argv, cwd, check, timeout)
 
-    env, errors, _, gw = s3_run(Stubborn(POD["ok"]))
+    env, errors, _, gw = s3_run(Stubborn(POD["ok"], buckets=existing()))
     p = env["outputs"]["probe"]
     steps = {s["name"]: s for s in p["steps"]}
     assert p["passed"] is False and steps["confirm-deleted"]["ok"] is False
     assert "can still be read" in steps["confirm-deleted"]["error"]["message"]
-
-
-def test_s3_check_cleanup_failure_is_reported_and_leaves_the_paths_named():
-    gw = Gateway(POD["ok"], fail={"delete-bucket": UPSTREAM["500"]})
-    env, errors, _, gw = s3_run(gw)
-    p = env["outputs"]["probe"]
-    assert env["status"] == "partial" and codes(errors) == [("internal", "s3-check/cleanup")]
-    assert (
-        p["cleanedUp"] is False and p["leftBehind"] == ["runwhen-s3-check"] and p["passed"] is False
-    )
+    assert codes(errors) == [("internal", "s3-check/confirm-deleted")]
 
 
 def test_s3_check_rbac_denial_of_the_write_verbs_is_reported_with_permission_denied():
-    gw = Gateway(POD["ok"], fail={"put-bucket": rbac("pods/proxy", "update")})
-    env, errors, _, gw = s3_run(gw)
+    gw = Gateway(POD["ok"], buckets=existing(), fail={"put-object": rbac("pods/proxy", "update")})
+    env, errors, calls, gw = s3_run(gw)
     assert env["status"] == "partial" and codes(errors) == [
-        ("permission_denied", "s3-check/create-bucket")
+        ("permission_denied", "s3-check/put-object")
     ]
     p = env["outputs"]["probe"]
-    assert (
-        p["passed"] is False
-        and p["bucketCreated"] is False
-        and [s["name"] for s in p["steps"]] == ["create-bucket"]
-    )
+    assert p["passed"] is False and step_names(p) == ["put-object"]
+    assert [r[0] for r in gw.requests] == ["get", "replace"]  # nothing could have landed: no DELETE
 
 
 @pytest.mark.parametrize(
@@ -1466,23 +1609,63 @@ def test_s3_check_unreachable_gateway_fails_the_task():
     assert env["status"] == "failed" and errors[0]["code"] == "unreachable"
 
 
-def test_the_probe_key_and_body_come_from_ctx_now():
-    later = datetime(2027, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
-    with make_context(resource=sts_resource("ok"), settings=SETTINGS, now=later) as tc:
-        calls = stub_commands(tc, release_stubs("ok", master=False))
-        gw = Gateway(POD["ok"])
-        base = tc.ctx.run
+def test_the_probe_key_is_replayable_and_the_body_comes_from_ctx_now():
+    from k8s_seaweedfs_health import s3check
 
-        def run_(argv, **kw):
-            if "--raw" in argv:
-                calls.append(tuple(argv))
-                rc, out, err = gw.run(argv, kw.get("cwd"))
-                return tc.ctx._finish_run(list(argv), rc, out, err, kw.get("check"))
-            return base(argv, **kw)
+    later = datetime(2027, 1, 2, 3, 4, 5, 678901, tzinfo=timezone.utc)
+    here = SimpleNamespace(resource=SimpleNamespace(path="kubernetes/clusters/kind/x/y"))
+    key = s3check.object_key(here, later)
+    assert re.fullmatch(r"runwhen-s3-check/20270102T030405678901Z-[0-9a-f]{6}\.txt", key)
+    assert key == s3check.object_key(here, later)  # no randomness: a replay writes the same key
+    other = SimpleNamespace(resource=SimpleNamespace(path="kubernetes/clusters/kind/x/z"))
+    assert s3check.object_key(other, later) != key  # the target is part of the digest
+    assert s3check.object_key(here, later.replace(microsecond=1)) != key
+    assert s3check.object_body(later) == "runwhen s3-check 2027-01-02T03:04:05Z"
 
-        tc.ctx.run = run_
-        env = run_main(script("s3_check"), tc)
-    assert env["outputs"]["probe"]["key"] == "runwhen-s3-check/20270102T030405Z.txt"
+
+def fake_clock(monkeypatch):
+    from k8s_seaweedfs_health import s3check
+
+    state = {"t": 1000.0}
+    monkeypatch.setattr(s3check, "clock", lambda: state["t"])
+    return state
+
+
+def test_each_request_gets_at_most_15s_and_the_run_at_most_50s(monkeypatch):
+    clock = fake_clock(monkeypatch)
+    env, _, _, gw = s3_run(Gateway(POD["ok"], buckets=existing()), clock=clock)
+    assert env["outputs"]["probe"]["passed"] is True
+    # nothing exceeds 15s: list, PUT, read-back, DELETE, confirmation
+    assert [t for *_, t in gw.requests] == [15.0] * 5
+
+
+def test_the_delete_keeps_its_time_when_the_listing_and_the_put_run_long(monkeypatch):
+    clock = fake_clock(monkeypatch)
+    gw = Gateway(POD["ok"], buckets=existing())
+    gw.cost = {"list": 20, "put-object": 20}  # 20s after the list, 40s after the PUT: 10s left
+    env, errors, _, gw = s3_run(gw, clock=clock)
+    p = env["outputs"]["probe"]
+    verbs = [(v, t) for v, _, t in gw.requests]
+    assert verbs[0] == ("get", 15.0) and verbs[1] == (
+        "replace",
+        15.0,
+    )  # 30s left, 15 kept for DELETE
+    # the read-back would leave less than 15s for DELETE: it is not sent, it times out
+    assert [v for v, _ in verbs] == ["get", "replace", "delete", "get"]
+    assert verbs[2] == ("delete", 10.0)
+    assert codes(errors)[0] == ("timeout", "s3-check/get-object")
+    assert p["passed"] is False and p["cleanedUp"] is True
+
+
+def test_a_put_that_would_not_leave_time_for_the_delete_is_not_sent(monkeypatch):
+    clock = fake_clock(monkeypatch)
+    gw = Gateway(POD["ok"], buckets=existing())
+    gw.cost = {"list": 40}  # 10s left: under the 15s kept for the DELETE
+    env, errors, _, gw = s3_run(gw, clock=clock)
+    p = env["outputs"]["probe"]
+    assert [v for v, _, _ in gw.requests] == ["get"]  # only the listing: no PUT, hence no DELETE
+    assert codes(errors) == [("timeout", "s3-check/put-object")]
+    assert p["passed"] is False and p["cleanedUp"] is True and gw.mutations == []
 
 
 # ---------------------------------------------------------------- RBAC / argv ----
@@ -1550,10 +1733,8 @@ def test_declared_permissions_cover_every_kubectl_call_a_read_task_makes(task, r
     assert not missing, f"{task} calls {sorted(missing)} but does not declare them"
 
 
-@pytest.mark.parametrize("flow", ["real", "existing-bucket"])
-def test_declared_permissions_cover_every_kubectl_call_s3_check_makes(flow):
-    gw = Gateway(POD["ok"], buckets={"runwhen-s3-check": {}} if flow == "existing-bucket" else None)
-    env, errors, calls, _ = s3_run(gw)
+def test_declared_permissions_cover_every_kubectl_call_s3_check_makes():
+    env, errors, calls, _ = s3_run(Gateway(POD["ok"], buckets=existing()))
     assert env["status"] == "ok", errors
     needed = needs_of(calls)
     assert {v for _, r, v in needed if r == "pods/proxy"} == {"get", "update", "delete"}
@@ -1616,3 +1797,172 @@ def test_the_scripts_never_read_a_secret_or_configmap():
     for task, resource, stubs in READ_CASES:
         _, _, calls = run(task, resource, stubs)
         assert not [c for c in calls if "secrets" in c or "configmaps" in c]
+
+
+# ------------------------------------------------------------- review fixes ----
+
+
+def test_three_masters_that_all_answer_without_a_leader_report_null_as_a_fact_not_a_failure():
+    pods = copy.deepcopy(PODS["ok"])
+    for i in (1, 2):
+        pod = copy.deepcopy(pods["items"][0])
+        pod["metadata"]["name"] = f"swfs-ok-{i}"
+        pod["status"]["podIP"] = f"10.244.0.{200 + i}"
+        pods["items"].append(pod)
+    peers = ["swfs-ok-0:9333", "swfs-ok-1:9333", "swfs-ok-2:9333"]
+    extra = {get_pods("ok"): ok(pods)}
+    for i in range(3):
+        extra[raw(f"swfs-ok-{i}", 9333, "cluster/status")] = ok({"Peers": peers, "MaxVolumeId": 3})
+        extra[raw(f"swfs-ok-{i}", 9333, "cluster/healthz")] = ok("")
+    env, errors, _ = run("cluster_status", sts_resource("ok"), release_stubs("ok", extra=extra))
+    assert env["status"] == "ok" and errors == []  # not a read failure
+    check_outputs("cluster_status", env)
+    m = env["outputs"]["master"]
+    assert (m["queriedCount"], m["leaderCount"], m["leaders"], m["leaderReported"]) == (
+        3,
+        0,
+        [],
+        False,
+    )
+    assert m["leaderAgreement"] is False
+    assert [(x["queried"], x["isLeader"], x["leader"], x["peerCount"]) for x in m["members"]] == [
+        (True, False, None, 3)
+    ] * 3
+
+
+def test_a_follower_reply_without_isleader_is_a_queried_member():
+    body = {"Leader": "swfs-ok-1:9333", "Peers": ["swfs-ok-0:9333", "swfs-ok-1:9333"]}
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/status"): ok(body)})
+    env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
+    m = env["outputs"]["master"]
+    assert env["status"] == "ok" and errors == [] and m["queriedCount"] == 1
+    assert (m["leaderCount"], m["leaders"], m["members"][0]["isLeader"]) == (
+        0,
+        ["swfs-ok-1:9333"],
+        False,
+    )
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        ["/bin/sh", "-ec", "exec weed filer -master=m:9333 -s3 -s3.config=/x"],
+        ["/bin/sh", "-c", 'weed filer -ip.bind=0.0.0.0 "-s3" -metricsPort=9327'],
+        ["/bin/sh", "-ec", "exec weed filer --s3 -port=8888"],
+        ["/bin/sh", "-ec", "exec weed filer -s3=true"],
+        ["/bin/sh", "-ec", "exec weed filer -s3.port=8333"],
+        ["weed", "filer", "-s3"],
+        ["weed", "filer", "--s3.port=8333"],
+    ],
+)
+def test_an_s3_flag_is_found_in_shell_form_commands(cmd):
+    pod = pod_of("filer")
+    pod["spec"]["containers"][0].update(command=cmd, args=[])
+    assert discovery.roles_of(pod) == ["filer", "s3"]
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        ["/bin/sh", "-ec", "exec weed filer -s3=false"],
+        ["/bin/sh", "-ec", "exec weed filer -s3.config=/x -master=s3:9333"],
+        ["/bin/sh", "-ec", "exec weed filer -port=8888 'unbalanced"],
+        ["weed", "filer", "-s3x"],
+    ],
+)
+def test_text_that_only_mentions_s3_does_not_enable_it(cmd):
+    pod = pod_of("filer")
+    pod["spec"]["containers"][0].update(command=cmd, args=[])
+    assert discovery.roles_of(pod) == ["filer"]
+
+
+def test_a_null_racks_or_datanodes_is_empty_and_an_absent_one_is_an_error():
+    def dir_doc(dcs):
+        return {"Topology": {"Max": 8, "Free": 8, "DataCenters": dcs, "Layouts": None}}
+
+    rack = {"Id": "r1", "DataNodes": None}
+    doc = dir_doc([{"Id": "dc1", "Racks": [rack, {"Id": "r2", "DataNodes": []}]}])
+    slots = api.slots_view(doc, 1, 200)
+    assert slots["dataNodeCount"] == 0 and slots["dataNodes"] == [] and slots["free"] == 8
+    assert api.data_node_hosts(doc) == {}
+    assert api.slots_view(dir_doc([{"Id": "dc1", "Racks": None}]), 1, 200)["dataNodeCount"] == 0
+    for bad in ([{"Id": "dc1"}], [{"Id": "dc1", "Racks": [{"Id": "r"}]}]):
+        with pytest.raises(RwError) as exc:
+            api.slots_view(dir_doc(bad), 1, 200)
+        assert exc.value.code == "internal"
+
+
+def test_a_cluster_with_an_empty_rack_still_reports_through_the_volumes_task():
+    doc = json.loads(text("dir_status_ok.json"))
+    doc["Topology"]["DataCenters"][0]["Racks"].append({"Id": "empty", "DataNodes": None})
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "dir/status"): ok(doc)})
+    env, errors, _ = run("volumes", sts_resource("ok"), stubs)
+    assert env["status"] == "ok" and env["outputs"]["slots"]["dataNodeCount"] == 1
+
+
+def test_layouts_are_read_under_either_spelling():
+    layout = {"collection": "c", "replication": "000", "ttl": "", "writables": [1, 2]}
+    for key in ("Layouts", "layouts"):
+        doc = {"Topology": {"Max": 3, "Free": 3, key: [layout]}}
+        out = api.layouts_view(doc, 200)
+        assert out["count"] == 1 and out["items"][0]["writableCount"] == 2, key
+    with pytest.raises(RwError):
+        api.layouts_view({"Topology": {"Max": 3, "Free": 3}}, 200)
+
+
+def test_bucket_usage_is_live_bytes_size_minus_deleted_and_quota_uses_it():
+    doc = vol_doc(("a:8080", vol(1, "photos", size=1000, deleted=400)), ("b:8080", vol(1, "photos", size=1000, deleted=400)),
+                  ("a:8080", vol(2, "photos", size=500, deleted=0)), ("a:8080", vol(3, "logs", size=100, deleted=100)))  # fmt: skip
+    assert api.collection_bytes(doc) == {"photos": 1100, "logs": 0}  # one replica per volume id
+
+
+@pytest.mark.parametrize(
+    "url,host",
+    [
+        ("10.244.0.111:8080", "10.244.0.111"),
+        ("[fd00::5]:8080", "fd00::5"),
+        ("[::1]:8080", "::1"),
+        ("swfs-volume-0.swfs.ns.svc:8080", "swfs-volume-0.swfs.ns.svc"),
+        ("swfs-ok-0:8080", "swfs-ok-0"),
+    ],
+)
+def test_data_node_hosts_have_no_port_and_no_ipv6_brackets(url, host):
+    assert api.url_host(url) == host
+
+
+def test_registered_matches_on_pod_ip_pod_name_hostname_or_a_dns_name_and_ipv6_brackets():
+    from k8s_seaweedfs_health import filer as filer_mod
+
+    def volume_pod(name, ip, hostname=None, ips=None):
+        pod = pod_of("volume", ip=ip)
+        pod["metadata"]["name"] = name
+        pod["spec"]["hostname"] = hostname
+        pod["status"]["podIPs"] = [{"ip": i} for i in ips or [ip]]
+        return pod
+
+    pods = [
+        volume_pod("v-ip", "10.0.0.1"),
+        volume_pod("v-name", "10.0.0.2"),
+        volume_pod("v-host", "10.0.0.3", hostname="custom-host"),
+        volume_pod("v-dns", "10.0.0.4"),
+        volume_pod("v-six", "fd00::5", ips=["fd00::5"]),
+        volume_pod("v-absent", "10.0.0.9"),
+    ]
+    rel = SimpleNamespace(role_pods=lambda role: (pods, []))
+    nodes = [
+        "10.0.0.1:8080", "v-name:8080", "custom-host:8080", "v-dns.vol.ns.svc.cluster.local:8080",
+        "[fd00::5]:8080", "stranger:8080",
+    ]  # fmt: skip
+    topo = {"Topology": {"Max": 60, "Free": 60, "DataCenters": [{"Id": "dc", "Racks": [{"Id": "r", "DataNodes": [
+        {"Url": u, "Volumes": 1, "Max": 10} for u in nodes]}]}]}}  # fmt: skip
+    out = filer_mod.volume_servers(rel, topo)
+    reg = {i["pod"]: i["registered"] for i in out["items"]}
+    assert reg == {
+        "v-ip": True,
+        "v-name": True,
+        "v-host": True,
+        "v-dns": True,
+        "v-six": True,
+        "v-absent": False,
+    }
+    assert out["registeredCount"] == 5 and out["unmatchedDataNodes"] == ["stranger:8080"]

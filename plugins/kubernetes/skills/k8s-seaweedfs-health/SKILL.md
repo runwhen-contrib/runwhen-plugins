@@ -8,7 +8,8 @@ description: >-
   volume server disk usage, filer health and whether the volume servers are
   registered with the master, per-bucket usage and quota, and whether an
   unauthenticated S3 caller can list buckets. One write task, s3-check, puts,
-  reads and deletes a probe object through the S3 gateway without credentials.
+  reads and deletes a probe object in an existing bucket through the S3 gateway
+  without credentials (it never creates or deletes a bucket).
   HTTP goes through the API server's pod proxy (no port-forward, no exec). Use
   when uploads fail, a volume fills or goes read-only, or storage looks wrong.
 runwhen:
@@ -28,8 +29,11 @@ task that writes.
 Targets: a **StatefulSet** of the release (its `app.kubernetes.io/instance` label names the release)
 or the **namespace** (it must hold one release, or pass `release`). Pods are found by
 `app.kubernetes.io/name=seaweedfs` and the `app.kubernetes.io/component` label (`master`, `volume`,
-`filer`, `s3`; a value containing `all-in-one` is one process serving every role; a `filer` pod run
-with `-s3` also serves S3). Ports are settings (9333, 8080, 8888, 8333).
+`filer`, `s3`; a value containing `all-in-one` is one process serving master, volume and filer). A
+pod serves S3 when its component is `s3`, or when its command or args enable it: `-s3`, `--s3`,
+`-s3=true` or `-s3.port=...`, also inside a shell-form string such as `/bin/sh -ec "exec weed filer
+... -s3 ..."`. An all-in-one or filer pod without such a flag serves no S3. Ports are settings (9333,
+8080, 8888, 8333).
 
 All HTTP goes through `/api/v1/namespaces/<ns>/pods/<pod>:<port>/proxy/...`, so the identity needs
 `pods/proxy` `get` (and `update`, `delete` for `s3-check`) plus `list` on pods in the namespace. The
@@ -40,19 +44,36 @@ SeaweedFS's explanation.
 
 - `cluster-status`: `release.workloads` (desired against ready, images; `unread` names kinds the
   identity may not list) and `release.pods` (roles, phase, ready, restarts, containers with
-  `init: true` for init containers). `master`: per master pod `healthz`, `isLeader`, the `leader` it
-  names and raft `peers` (null on a single master); `leaderCount` (1 is normal) and `leaderAgreement`.
+  `init: true` for init containers). `master`: per master pod `healthz`, `isLeader` (false for a
+  follower, which omits it), the `leader` it names (null when it names none: a fact) and raft `peers`
+  ([] on a single master); `leaderCount` (1 is normal) and `leaderAgreement`. A member whose
+  `/cluster/status` failed is `queried: false` with `notQueriedReason` set to the error code.
 - `volumes`: `slots` (max, free, used, per data node, `belowMinFree`), `layouts` (writable volume ids
   per collection / replication / TTL), `volumes` (read-only volumes, per-collection bytes, `garbageRatio`
   and compaction candidates at `garbageThreshold`), `disk` (each volume server's disks, `belowMinFree`).
-- `filer-status`: per filer pod `healthz` and `rootReadable`; `volumeServers` each volume pod against
-  the master's data nodes (`registered`), and `unmatchedDataNodes`.
-- `buckets`: per collection with volumes: `usedBytes`, filer `quotaState`/`quotaBytes`/`quotaUsedPercent`,
-  `extendedKeys` (names only), `anonymousList` (`allowed`, `denied`, `no_such_bucket`); `gateway.anonymousListBuckets`.
-- `s3-check`: `probe` with the `plan`, each step and its error, `contentMatches`, `anonymousWrite`,
-  `cleanedUp` and `leftBehind`. It sends no credentials and never reads Secrets: a gateway that
-  refuses an anonymous write makes the task `skipped` (reason says so) with nothing written. Dry run
-  lists the bucket (a read) and reports the plan.
+- `filer-status`: per filer pod `healthz` and `rootReadable`; `filer.filerPods: 0` is a release with no
+  filer pod (the task is still `ok`); `volumeServers` each volume pod against the master's data nodes
+  (`registered`: the data node's host is the pod IP, pod name or hostname, IPv6 brackets stripped), and
+  `unmatchedDataNodes`.
+- `buckets`: buckets are approximated by collections that have volumes. Missed: empty buckets (no
+  volume yet), buckets of a filer group (another collection name) and erasure-coded volumes. Per
+  collection: `usedBytes` (live bytes, `Size - DeletedByteCount`, the quota's basis), filer
+  `quotaState`/`quotaBytes`/`quotaUsedPercent`, `extendedKeys` (names only), `anonymousList` (`allowed`,
+  `denied`, `no_such_bucket`); `gateway.anonymousListBuckets`.
+- `s3-check`: one object PUT, read back, DELETEd and confirmed gone in the **existing** `bucket` input
+  (default `runwhen-s3-check`). It never creates or deletes a bucket: a bucket that does not exist makes
+  the task `skipped` ("create it to enable the write check"), as does a release with no S3 gateway pod.
+  `probe`: `bucketListing` (`allowed`, or `denied`: a write-only anonymous identity is possible, so the
+  write is still tried), the `plan`, each step and its error, `contentMatches`, `anonymousWrite`,
+  `passed`, `cleanedUp` and `leftBehind`. `passed` is true only when the PUT, read-back, DELETE and
+  confirmation all worked and nothing is left; false when any of them failed (each also an error with
+  scope `s3-check/<step>`, so the result is `partial`). `anonymousWrite: true` means an unauthenticated
+  write was accepted from the pod network (the API-server proxy strips Authorization) and the read-back
+  matched; it says nothing about clients outside the cluster. It sends no credentials and never reads
+  Secrets: a gateway that refuses an anonymous write makes the task `skipped` with nothing written. The
+  key is `runwhen-s3-check/<time to the microsecond>-<6 hex>.txt`. The first write to a bucket with no
+  volume makes the master grow a batch of volumes that stay (slots taken) after the object is gone. The run is bounded to 50s and always
+  keeps time to DELETE. Dry run lists the bucket (a read) and reports the plan.
 
 ## How to read the result
 
@@ -64,15 +85,18 @@ failed, and the matching error says why. Lists stop at `maxItems`
 
 A master pod that is not Running is listed with `queried: false` and a reason, and when none is
 Running the result is `partial` with an `unreachable` error. A pod that answers a health endpoint
-with an error status is `unhealthy`; any other proxy failure is an error, never `ok`. A release whose
+with another non-2xx status is `unhealthy`; a 5xx (`ServiceUnavailable`, `InternalError`: kubectl cannot
+tell the workload's from the API server's), a timeout, `TooManyRequests` and every other proxy failure
+are errors, never `ok` and never `unhealthy`. A release whose
 masters cannot be asked fails `volumes`, `filer-status` and `buckets` as `unreachable` (they have
 nothing else to report). `leaderCount: 0` while
-masters were queried is a cluster with no leader; `2` or more is split brain. `peers: null` is a
-master that does not report raft peers (a single master); it is not zero peers.
+masters were queried is a cluster with no leader (members then show `leader: null`); `2` or more is
+split brain. `peers: []` is a master that reports no raft peers (a single master).
 
 Normal states that look like failures: a volume that reached the size limit stops taking writes
 without being read-only (it just leaves `writables`); an empty layout list on a fresh install;
-`entryFound: false` for a collection whose bucket was never created in the filer; `quotaState:
+`entryFound: false` for a collection whose bucket was never created in the filer; `filer.filerPods: 0` is a release without a
+filer; `quotaState:
 disabled` is a quota set but not enforced; a `filer` pod without `-s3` serves no S3 (`gateway.podCount: 0`).
 A volume server's disk figures are the filesystem its data dir sits on, not a SeaweedFS quota.
 
@@ -89,4 +113,5 @@ who can reach it. Whether that is intended is for you to say.
   `-volume.max`; a read-only volume can be reopened with `weed shell` `volume.mark -writable`.
 - `volumeServers.registered: false`: the volume server cannot reach the master; check its logs and the
   master address it was started with.
-- `s3-check` skipped: the gateway needs credentials; test with an S3 client that holds them.
+- `s3-check` skipped: the bucket does not exist (create it), or the gateway needs credentials (test with
+  an S3 client that holds them), or the release serves no S3.

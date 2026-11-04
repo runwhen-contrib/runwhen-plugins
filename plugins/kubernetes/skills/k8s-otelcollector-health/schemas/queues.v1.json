@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Collector exporter sending queues",
-  "description": "otelcol_exporter_queue_size against queue_capacity per pod, exporter and data type (traces, metrics, logs; null on a version that does not label the queue by data type). utilizationPercent is size over capacity (null when either is not reported); atOrAboveThreshold compares it with the queueUtilizationPercent setting (thresholdPercent); full is size at or above capacity: new data is refused or dropped by that exporter. Worst first. An exporter without a sending queue (for example debug) has no entry.",
+  "description": "otelcol_exporter_queue_size against queue_capacity per pod, exporter and data type (traces, metrics, logs; null on a version that does not label the queue by data type). utilizationPercent is size over capacity (null when either is not reported); atOrAboveThreshold compares it with the queueUtilizationPercent setting (thresholdPercent); full is size at or above capacity: new data is refused or dropped by that exporter. Worst first. An exporter without a sending queue (for example debug) has no entry. noQueuedExporters is true when no pod reported any exporter queue (count 0): the collector has no exporter with a sending queue, or this version does not export the queue gauges; it is a fact, not a failure.",
   "type": "object",
   "properties": {
     "thresholdPercent": {
@@ -73,11 +73,15 @@
         ],
         "additionalProperties": false
       }
+    },
+    "noQueuedExporters": {
+      "type": "boolean"
     }
   },
   "required": [
     "thresholdPercent",
     "count",
+    "noQueuedExporters",
     "truncated",
     "items"
   ],

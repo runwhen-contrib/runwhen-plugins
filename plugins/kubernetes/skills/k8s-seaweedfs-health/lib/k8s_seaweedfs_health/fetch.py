@@ -15,6 +15,7 @@ from k8s_seaweedfs_health.discovery import (
 from k8s_seaweedfs_health.errors import RwError
 from k8s_seaweedfs_health.k8s import (
     MESSAGE_LIMIT,
+    PROXY_TIMEOUT,
     ProxyError,
     kubectl_json,
     kubectl_json_scoped,
@@ -149,9 +150,15 @@ def pod_port(ctx, role):
     return getattr(ctx.settings, PORT_SETTINGS[role])
 
 
-def get_text(ctx, rel, pod, role, path):
+def get_text(ctx, rel, pod, role, path, timeout=PROXY_TIMEOUT):
     return proxy_get(
-        ctx, rel.namespace, pod["metadata"]["name"], pod_port(ctx, role), path, ctx.settings.scheme
+        ctx,
+        rel.namespace,
+        pod["metadata"]["name"],
+        pod_port(ctx, role),
+        path,
+        ctx.settings.scheme,
+        timeout=timeout,
     )
 
 

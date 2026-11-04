@@ -36,18 +36,24 @@ def ttl_string(ttl):
 
 
 def cluster_view(doc):
-    """Master GET /cluster/status: leadership and raft peers (Peers is absent on a single master)."""
+    """Master GET /cluster/status: leadership and raft peers.
+
+    A follower omits `IsLeader` (the field is `omitempty`), and a single master omits `Peers`:
+    an absent `IsLeader` is false and an absent `Peers` is [].
+    """
     what = "master /cluster/status"
-    is_leader = need(doc, "IsLeader", bool, what)
+    if not isinstance(doc, dict) or not {"IsLeader", "Leader", "Peers", "MaxVolumeId"} & set(doc):
+        raise bad(what, "none of IsLeader, Leader, Peers or MaxVolumeId is there")
+    is_leader = maybe(doc, "IsLeader", bool, what) or False
     leader = maybe(doc, "Leader", str, what)
-    peers = maybe(doc, "Peers", list, what)
-    if peers is not None and not all(isinstance(p, str) for p in peers):
+    peers = maybe(doc, "Peers", list, what) or []
+    if not all(isinstance(p, str) for p in peers):
         raise bad(what, "Peers holds something other than strings")
     return {
         "isLeader": is_leader,
         "leader": leader or None,
-        "peers": nested(peers) if peers is not None else None,
-        "peerCount": len(peers) if peers is not None else None,
+        "peers": nested(peers),
+        "peerCount": len(peers),
         "maxVolumeId": maybe(doc, "MaxVolumeId", int, what),
     }
 
@@ -59,10 +65,17 @@ def _topology(doc, what):
     return topo
 
 
+def _list_or_null(doc, key, what):
+    """doc[key] as a list: Go serializes an empty slice as null, so a null is []; an absent key is an error."""
+    if isinstance(doc, dict) and key in doc and doc[key] is None:
+        return []
+    return need(doc, key, list, what)
+
+
 def _data_nodes(topo, what):
     for dc in topo.get("DataCenters") or []:
-        for rack in need(dc, "Racks", list, what):
-            for node in need(rack, "DataNodes", list, what):
+        for rack in _list_or_null(dc, "Racks", what):
+            for node in _list_or_null(rack, "DataNodes", what):
                 yield dc.get("Id"), rack.get("Id"), node
 
 
@@ -105,10 +118,11 @@ def layouts_view(doc, max_items):
     """Writable volumes per collection / replication / TTL / disk type from master /dir/status."""
     what = "master /dir/status"
     topo = _topology(doc, what)
-    if "Layouts" not in topo:
+    key = "Layouts" if "Layouts" in topo else "layouts"  # the master writes both spellings
+    if key not in topo:
         raise bad(what, "missing 'Layouts'")
     items = []
-    for lay in topo["Layouts"] or []:
+    for lay in topo[key] or []:
         writables = maybe(lay, "writables", list, what) or []
         if not all(isinstance(w, int) and not isinstance(w, bool) for w in writables):
             raise bad(what, "writables holds something other than volume ids")
@@ -244,24 +258,31 @@ def collection_names(doc):
 
 
 def collection_bytes(doc):
-    """{collection: logical bytes} (one replica per volume id) from /vol/status."""
+    """{collection: live bytes, Size - DeletedByteCount} (one replica per volume id) from /vol/status.
+    This is what a bucket quota is measured against."""
     first = {}
     for _, v in ((n, _volume(x)) for n, x in _volume_rows(doc)):
         first.setdefault(v["id"], v)
     out = {}
     for v in first.values():
-        out[v["collection"]] = out.get(v["collection"], 0) + v["size"]
+        out[v["collection"]] = out.get(v["collection"], 0) + max(v["size"] - v["deletedBytes"], 0)
     return out
+
+
+def url_host(url):
+    """The host of a data node Url ('10.0.0.1:8080', '[::1]:8080', 'pod-0.svc:8080'): no port, no IPv6 brackets."""
+    host = url.rsplit(":", 1)[0] if not url.endswith("]") else url
+    return host.strip("[]")
 
 
 def data_node_hosts(doc):
     """{host: {url, volumes, max}} of the data nodes in master /dir/status, keyed by the host part of
-    their Url (the pod IP for a pod-hosted volume server)."""
+    their Url (the pod IP, pod name or hostname for a pod-hosted volume server)."""
     what = "master /dir/status"
     out = {}
     for _, _, node in _data_nodes(_topology(doc, what), what):
         url = need(node, "Url", str, what)
-        out[url.rsplit(":", 1)[0]] = {
+        out[url_host(url)] = {
             "url": url,
             "volumes": need(node, "Volumes", int, what),
             "max": need(node, "Max", int, what),

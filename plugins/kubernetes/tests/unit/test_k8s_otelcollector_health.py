@@ -471,6 +471,33 @@ def test_when_no_pod_can_be_read_the_task_fails_with_the_proxy_error_never_empty
     assert env["outputs"] == {}
 
 
+def test_when_every_pod_failed_the_error_carries_the_same_hint_as_the_partial_path():
+    from k8s_otelcollector_health.exporter_queue import METRICS_HINT
+
+    # all pods failed: the task fails with RwError(code, message, hint=...), scope naming the pod
+    env, errors, _ = run(stubs_for("ok", {metrics(POD["ok"]): REFUSED}), resource("otel-ok"))
+    assert env["status"] == "failed" and env["outputs"] == {}
+    assert [(e["code"], e["scope"], e["hint"]) for e in errors] == [
+        ("unreachable", f"pod/{POD['ok']}", METRICS_HINT)
+    ]
+    assert "metricsPort" in errors[0]["hint"] and POD["ok"] in errors[0]["message"]
+    # ... and the partial path gives the very same hint
+    pods, second = two_pods("ok")
+    env, errors, _ = run(stubs_for("ok", {get_pods("ok"): ok(pods), metrics(second): REFUSED}))
+    assert env["status"] == "partial" and errors[0]["hint"] == METRICS_HINT
+
+
+def test_a_collector_with_no_exporter_queue_reports_the_fact_not_an_empty_list_alone():
+    page = 'otelcol_process_uptime{service_instance_id="x"} 12\notelcol_receiver_refused_spans{receiver="otlp"} 0\n'
+    env, errors, _ = run(stubs_for("ok", {metrics(POD["ok"]): ok(page)}), resource("otel-ok"))
+    assert env["status"] == "ok" and errors == []
+    check_outputs(env)
+    q = env["outputs"]["queues"]
+    assert q["items"] == [] and q["count"] == 0 and q["noQueuedExporters"] is True
+    env, _, _ = run(stubs_for("ok"), resource("otel-ok"))
+    assert env["outputs"]["queues"]["noQueuedExporters"] is False
+
+
 def test_pods_that_are_not_running_are_listed_and_not_asked_and_all_pending_is_unreachable():
     pods = copy.deepcopy(PODS["ok"])
     pods["items"][0]["status"]["phase"] = "Pending"

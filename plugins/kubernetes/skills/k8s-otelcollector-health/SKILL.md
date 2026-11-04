@@ -46,14 +46,16 @@ configured with `0.0.0.0` (or `${env:MY_POD_IP}`), and then the pod answers `unr
 
 Counters never reset while the process lives, so a non-zero `send_failed` may be old: compare with
 `uptimeSeconds`, run the task again later and see whether the value moved, and look at whether the queue
-is full now. `queues: []` is not a healthy collector: an exporter without a sending queue (the `debug`
-exporter, or `sending_queue.enabled: false`) has no queue series, and an older version may not expose the
-queue at all. A counter that is absent is not zero: newer collectors create a series at the first event.
+is full now. `queues: []` is not a healthy collector: `noQueuedExporters: true` says no pod reported any
+exporter queue (an exporter without a sending queue, such as the `debug` exporter or
+`sending_queue.enabled: false`, has no queue series, and an older version may not expose the queue at
+all), so back-pressure cannot be seen here; read `counters` instead. A counter that is absent is not zero: newer collectors create a series at the first event.
 `utilizationPercent: null` means the collector reports a size but no capacity (or the reverse).
 
 A pod that is not Running, or whose page could not be read, is in `pods` with the reason and the result is
 `partial` with an error per pod; when no pod could be read the task fails (`unreachable`, or
-`permission_denied` if the proxy was refused, or `internal` when the page is not a collector's metrics).
+`permission_denied` if the proxy was refused, or `internal` when the page is not a collector's metrics),
+with the same hint as the partial result (the metrics port and the telemetry bind address).
 `enqueue_failed` and `receiver.refused` climbing together with a full queue mean the pipeline is
 saturated; `send_failed` climbing with an empty queue means the destination rejects data right away.
 For a DaemonSet or a Deployment with several replicas, each pod has its own counters: compare the pods.

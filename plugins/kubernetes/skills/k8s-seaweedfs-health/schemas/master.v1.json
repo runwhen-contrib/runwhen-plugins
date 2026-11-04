@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "SeaweedFS master leadership",
-  "description": "Per master pod: /cluster/healthz (ok, or unhealthy when the pod answered with an error status), whether it claims leadership, the leader it names, and raft peers (null when the master does not report Peers, as a single master does). leaderCount is how many queried masters claim leadership (1 is normal); leaderAgreement is whether every queried master names the same leader (null when none was queried). A master that was not queried has queried false and the reason.",
+  "description": "Per master pod: /cluster/healthz (ok, or unhealthy when the pod answered with a non-5xx error status; a 5xx is an error), whether it claims leadership (an absent IsLeader is false: followers omit it), the leader it names (null: the master names none, a fact, not a failed read), and raft peers ([] when the master reports none, as a single master does). leaderCount is how many queried masters claim leadership (1 is normal; 0 with queried masters is a cluster with no leader); leaderAgreement is whether every queried master names the same leader (null when none was queried). A master that was not queried has queried false and notQueriedReason: why the pod was not asked, or the error code of its failed /cluster/status.",
   "type": "object",
   "properties": {
     "podCount": {

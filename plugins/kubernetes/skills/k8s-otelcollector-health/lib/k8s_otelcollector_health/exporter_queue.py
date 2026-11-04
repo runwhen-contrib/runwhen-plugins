@@ -14,6 +14,11 @@ TARGETS = {
 }
 PLURALS = {plural: plural for plural in TARGETS.values()}
 
+METRICS_HINT = (
+    "the collector exposes its own metrics on service.telemetry.metrics (default port 8888, "
+    "bound to localhost only by recent versions); set metricsPort or bind it to the pod IP"
+)
+
 
 def target_resource(ctx):
     """The kubectl resource of the target from `ctx.resource.type`, else from the plural segment of
@@ -119,7 +124,13 @@ def run(ctx):
     if not per_pod:
         # nothing was read: a result with no queue in it would look like a collector with none
         if failures:
-            raise failures[0][1]
+            name, exc = failures[0]  # the same hint as the partial path gives
+            raise RwError(
+                exc.code,
+                f"{name}: {exc.message}"[:MESSAGE_LIMIT],
+                scope=f"pod/{name}",
+                hint=getattr(exc, "hint", None) or METRICS_HINT,
+            )
         raise RwError(
             "unreachable",
             "no Running pod to ask: "
@@ -130,9 +141,7 @@ def run(ctx):
             exc.code,
             f"{name}: {exc.message}"[:MESSAGE_LIMIT],
             scope=f"pod/{name}",
-            hint=getattr(exc, "hint", None)
-            or "the collector exposes its own metrics on service.telemetry.metrics (default port 8888, "
-            "bound to localhost only by recent versions); set metricsPort or bind it to the pod IP",
+            hint=getattr(exc, "hint", None) or METRICS_HINT,
         )
     queues, counters = merge(per_pod)
     entries.sort(key=lambda e: e["pod"])
@@ -146,6 +155,7 @@ def run(ctx):
         "queues": {
             "thresholdPercent": ctx.settings.queue_utilization_percent,
             "count": len(queues),
+            "noQueuedExporters": not queues,
             "truncated": len(queues) > max_items,
             "items": cap(queues, max_items),
         },

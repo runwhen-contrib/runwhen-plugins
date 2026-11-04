@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "SeaweedFS buckets",
-  "description": "One entry per collection that has volumes on the master (a bucket's volumes are its collection, so an empty bucket is not listed): bytes used (one replica per volume), the filer entry's quota (quotaState none: unset; enabled: quotaBytes is the limit and quotaUsedPercent the share used; disabled: quotaBytes is the limit that was set but is not enforced), the NAMES of its extended attributes (never values), and whether an unauthenticated S3 list of the bucket is allowed, denied (401/403) or finds no such bucket. entryFound false is a collection with no /buckets/<name> entry in the filer; null is not read. inspected is capped by the maxBuckets setting.",
+  "description": "One entry per collection that has volumes on the master (buckets are approximated by collections with volumes; an empty bucket, a filer group's bucket and erasure-coded volumes are not seen, so a bucket may exist that is not listed): bytes used (usedBytes is live bytes, Size minus DeletedByteCount, one replica per volume: what a quota is measured against), the filer entry's quota (quotaState none: unset; enabled: quotaBytes is the limit and quotaUsedPercent the share used; disabled: quotaBytes is the limit that was set but is not enforced), the NAMES of its extended attributes (never values), and whether an unauthenticated S3 list of the bucket is allowed, denied (401/403) or finds no such bucket. entryFound false is a collection with no /buckets/<name> entry in the filer; null is not read. inspected is capped by the maxBuckets setting.",
   "type": "object",
   "properties": {
     "count": {

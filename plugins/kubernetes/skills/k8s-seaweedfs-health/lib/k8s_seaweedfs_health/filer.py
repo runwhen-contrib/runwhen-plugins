@@ -22,21 +22,40 @@ def filer_of(ctx, rel, pod, reads):
     }
 
 
+def pod_hosts(pod):
+    """The host names a data node may register a pod under: pod IPs, the pod name and its hostname
+    (IPv6 literals without brackets)."""
+    status, spec = pod.get("status") or {}, pod.get("spec") or {}
+    hosts = {i.get("ip") for i in status.get("podIPs") or []} | {status.get("podIP")}
+    hosts |= {pod["metadata"]["name"], spec.get("hostname")}
+    return {h.strip("[]") for h in hosts if h}
+
+
+def matching_host(pod, hosts):
+    """The key of `hosts` (data node hosts) that stands for `pod`: an equal name or address, or a
+    DNS name whose first label is the pod name or hostname (pod-0.svc.ns.svc.cluster.local)."""
+    own = pod_hosts(pod)
+    for host in hosts:
+        if host in own or ("." in host and host.split(".", 1)[0] in own):
+            return host
+    return None
+
+
 def volume_servers(rel, topology):
-    """Each volume-role pod against the data nodes the master lists (matched on pod IP), and the data
-    nodes that no volume pod of this release explains."""
+    """Each volume-role pod against the data nodes the master lists (matched on pod IP, pod name or
+    hostname), and the data nodes that no volume pod of this release explains."""
     hosts = data_node_hosts(topology)
     ok, rest = rel.role_pods("volume")
     items, matched = [], set()
     for pod in ok + rest:
-        ip = (pod.get("status") or {}).get("podIP")
-        node = hosts.get(ip)
+        host = matching_host(pod, hosts)
+        node = hosts.get(host)
         if node:
-            matched.add(ip)
+            matched.add(host)
         items.append(
             {
                 "pod": pod["metadata"]["name"],
-                "podIP": ip,
+                "podIP": (pod.get("status") or {}).get("podIP"),
                 "running": pod in ok,
                 "registered": node is not None,
                 "dataNodeUrl": node["url"] if node else None,
@@ -44,7 +63,7 @@ def volume_servers(rel, topology):
                 "maxVolumes": node["max"] if node else None,
             }
         )
-    unmatched = sorted(h["url"] for ip, h in hosts.items() if ip not in matched)
+    unmatched = sorted(h["url"] for host, h in hosts.items() if host not in matched)
     return {
         "podCount": len(items),
         "registeredCount": sum(1 for i in items if i["registered"]),
@@ -78,6 +97,7 @@ def run(ctx, release=""):
     return {
         "filer": {
             "podCount": len(ok) + len(rest),
+            "filerPods": len(ok) + len(rest),
             "notRunning": [p["metadata"]["name"] for p in rest][:50],
             "items": filers,
         },

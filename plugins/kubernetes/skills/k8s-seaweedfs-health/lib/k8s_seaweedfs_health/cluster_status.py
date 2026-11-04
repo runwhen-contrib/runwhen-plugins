@@ -19,8 +19,9 @@ def master_member(ctx, rel, pod, reads):
         "peerCount": None,
         "maxVolumeId": None,
     }
+    scope, seen = f"master/{name}/cluster-status", len(reads.failures)
     status = reads.run(
-        f"master/{name}/cluster-status",
+        scope,
         lambda: cluster_view(
             get_json(ctx, rel, pod, "master", "cluster/status", "master /cluster/status")
         ),
@@ -30,6 +31,8 @@ def master_member(ctx, rel, pod, reads):
     )
     if status is not None:
         member.update(status, queried=True)
+    else:  # the error code is the reason; the message is on ctx.error
+        member["notQueriedReason"] = next(e.code for s, e in reads.failures[seen:] if s == scope)
     return member
 
 

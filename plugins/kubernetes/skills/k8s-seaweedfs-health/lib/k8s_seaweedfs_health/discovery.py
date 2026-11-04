@@ -1,5 +1,7 @@
 """Which pods and workloads are one SeaweedFS release, and which role each plays (pure)."""
 
+import shlex
+
 from k8s_seaweedfs_health.common import NESTED_LIMIT
 from k8s_seaweedfs_health.errors import RwError
 
@@ -15,9 +17,10 @@ PLURALS = {"namespaces": NAMESPACE, "statefulsets": STATEFULSET}
 
 ROLES = ("master", "volume", "filer", "s3")
 # the chart's component label -> roles that pod serves; "all-in-one" (any label value
-# containing it) is one process doing everything
+# containing it) is one process doing master, volume and filer, and S3 only with an s3 flag
 COMPONENT_ROLES = {"master": ("master",), "volume": ("volume",), "filer": ("filer",), "s3": ("s3",)}
-S3_FLAGS = ("-s3", "--s3", "-s3=true", "--s3=true")
+ALL_IN_ONE_ROLES = ("master", "volume", "filer")
+_FALSE = ("false", "0", "no", "off", "f")
 
 
 def resolve_target(resource_type, resource_path=None):
@@ -71,20 +74,47 @@ def releases_of(items):
     return sorted({labels_of(i).get(INSTANCE_LABEL, "") for i in items})
 
 
-def _args(pod):
+def _words(arg):
+    """The words of one argv element: the element itself, and what a shell would split it into (the
+    chart runs `/bin/sh -ec "exec weed filer ... -s3 ..."`)."""
+    yield arg
+    try:
+        yield from shlex.split(arg)
+    except ValueError:  # unbalanced quotes: fall back to blanks
+        yield from arg.split()
+
+
+def is_s3_flag(word):
+    """True for `-s3`, `--s3`, `-s3=true` and `-s3.port=...` (any number of leading dashes up to two)."""
+    if not word.startswith("-") or word.startswith("---"):
+        return False
+    name, _, value = word.lstrip("-").partition("=")
+    if name == "s3":
+        return value.lower() not in _FALSE
+    return name == "s3.port" and bool(value)
+
+
+def serves_s3_by_flag(pod):
+    """Whether any container's command or args (including words inside a shell-form string) enable S3."""
     for c in (pod.get("spec") or {}).get("containers") or []:
-        yield from (c.get("command") or []) + (c.get("args") or [])
+        for arg in (c.get("command") or []) + (c.get("args") or []):
+            if any(is_s3_flag(w) for w in _words(str(arg))):
+                return True
+    return False
 
 
 def roles_of(pod):
-    """The roles a pod serves, from its component label (and the filer's -s3 flag): a subset of
-    ROLES, in ROLES order. Unknown components serve none."""
+    """The roles a pod serves, from its component label and an s3 flag in its command or args: a
+    subset of ROLES, in ROLES order. Unknown components serve none. An all-in-one pod serves S3
+    only with the flag."""
     component = labels_of(pod).get(COMPONENT_LABEL, "")
     if "all-in-one" in component:
-        found = set(ROLES)
+        found = set(ALL_IN_ONE_ROLES)
+        if serves_s3_by_flag(pod):
+            found.add("s3")
     else:
         found = set(COMPONENT_ROLES.get(component, ()))
-        if "filer" in found and any(a in S3_FLAGS for a in _args(pod)):
+        if "filer" in found and serves_s3_by_flag(pod):
             found.add("s3")
     return [r for r in ROLES if r in found]
 

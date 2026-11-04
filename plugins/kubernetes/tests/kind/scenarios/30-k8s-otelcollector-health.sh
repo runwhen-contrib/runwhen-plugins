@@ -9,6 +9,11 @@ K=(kubectl --context "$CTX" -n rw-otel)
 
 "${K[@]}" rollout status deployment/otel-sink deployment/otel-ok deployment/otel-broken --timeout=300s >/dev/null
 
+# otel-ok may have started before the sink was reachable and counted failed exports: a fresh process
+# starts its counters at zero, with the sink already up (otel-broken is meant to fail and is left alone)
+"${K[@]}" rollout restart deployment/otel-ok >/dev/null
+"${K[@]}" rollout status deployment/otel-ok --timeout=300s >/dev/null
+
 "${K[@]}" delete job otel-gen --ignore-not-found --wait=true >/dev/null
 "${K[@]}" apply -f - <<'YAML' >/dev/null
 apiVersion: batch/v1

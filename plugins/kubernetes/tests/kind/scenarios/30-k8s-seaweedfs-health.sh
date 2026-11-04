@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fills the two SeaweedFS releases of 30-k8s-seaweedfs-health.yaml once their pods are Ready:
 #   swfs-ok      bucket photos (a 2 MB file, 100 MB quota enabled) and logs (small).
+#   both         an empty bucket runwhen-s3-check (s3-check never creates a bucket: it must exist).
 #   swfs-broken  volume.max 3, so growing one volume for each of dataa, datab and datac takes every
 #                slot; dataa and datab hold a 3 MB file; dataa has a 1 MB quota enabled (used over
 #                it) and datab one that is set but disabled; volume 2 (datab) is marked read-only.
@@ -59,6 +60,9 @@ for dc in d["Volumes"]["DataCenters"].values():
 ')
   weedshell swfs-broken-0 "lock\nvolume.mark -node $ip:8080 -volumeId $vid -readonly\nunlock\n" >/dev/null
 fi
+for pod in swfs-ok-0 swfs-broken-0; do # an empty bucket: no volume, so no collection and no slot
+  has_bucket "$pod" runwhen-s3-check || weedshell "$pod" 's3.bucket.create -name runwhen-s3-check\n' >/dev/null
+done
 ro_marked() { proxy swfs-broken-0 9333 vol/status | grep -q '"ReadOnly":true'; }
 poll 60 "datab volume read-only on the master" ro_marked
 log "done"
