@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-litellm/deployments/litellm
-now: '2026-11-04T00:25:25.588Z'
+now: '2026-11-04T01:50:01.713Z'
 calls:
 - argv:
   - kubectl
@@ -43,31 +43,53 @@ calls:
   rc: 0
   stdout: |
     @
-    s:metadata.name=litellm-86bdbc9c6f-p59vx
+    s:metadata.name=litellm-86bdbc9c6f-rkq4p
     s:metadata.deletionTimestamp=
     s:status.phase=Running
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:37Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:36Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:38Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:38Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:36Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:51Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:50Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:51Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:51Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:50Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     c:litellm=python:3.12-alpine
     p:http=4000
   stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-litellm/pods/http:litellm-86bdbc9c6f-p59vx:4000/proxy/health/liveliness
-  - --request-timeout=30s
-  rc: 0
-  stdout: '"I''m alive!"'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-litellm/pods/http:litellm-86bdbc9c6f-p59vx:4000/proxy/health/liveness
-  - --request-timeout=30s
-  rc: 0
-  stdout: '"I''m alive!"'
-  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-litellm
+    kind: pods
+    name: litellm-86bdbc9c6f-rkq4p
+    port: 4000
+    path: /health/liveliness
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '12'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:50:02 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '"I''m alive!"'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-litellm
+    kind: pods
+    name: litellm-86bdbc9c6f-rkq4p
+    port: 4000
+    path: /health/liveness
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '12'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:50:02 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '"I''m alive!"'
+    truncated: false
+    location: null
 expect:
   status: ok
   errorCodes: []
