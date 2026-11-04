@@ -52,7 +52,7 @@ ENDPOINT_RE = re.compile(r"[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?")
 
 # Plugin stderr phrases that mean the credential could not be exchanged because something was
 # unreachable, not because it was refused. Matched, never echoed.
-UNREACHABLE_HINTS = ("dial tcp", "no such host", "i/o timeout", "connection refused", "metadata")
+UNREACHABLE_HINTS = ("dial tcp", "no such host", "i/o timeout", "connection refused")
 
 
 class AuthError(Exception):
@@ -295,6 +295,19 @@ def build(env):
     return build_kubeconfig(project, location, cluster, endpoint, ca, key_path)
 
 
+def fail(env, code, message):
+    """Write the one-line `{code, message}` error file (when asked for) and return exit code 1."""
+    target = env.get("RW_AUTH_OUT_ERROR")
+    if target:
+        try:
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"code": code, "message": message}) + "\n")
+        except OSError:
+            pass
+    print(f"auth/gke.py: {message}", file=sys.stderr)
+    return 1
+
+
 def main(env=None):
     env = os.environ if env is None else env
     try:
@@ -304,12 +317,9 @@ def main(env=None):
             raise AuthError("internal", "RW_AUTH_OUT_FILE is not set")
         write_private(out, json.dumps(config, indent=2) + "\n")
     except AuthError as exc:
-        target = env.get("RW_AUTH_OUT_ERROR")
-        if target:
-            with open(target, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps({"code": exc.code, "message": exc.message}) + "\n")
-        print(f"auth/gke.py: {exc.message}", file=sys.stderr)
-        return 1
+        return fail(env, exc.code, exc.message)
+    except Exception as exc:  # noqa: BLE001 - class name only: its text could hold a secret
+        return fail(env, "internal", type(exc).__name__)
     return 0
 
 

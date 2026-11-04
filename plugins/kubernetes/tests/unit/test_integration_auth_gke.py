@@ -70,6 +70,10 @@ case "$FAKE_PLUGIN_MODE" in
     echo "F1104 cred.go:166] failed: Get http://metadata.google.internal: dial tcp: i/o timeout" >&2
     exit 1
     ;;
+  misconfig)
+    echo "F1104 cred.go:166] compute: metadata server answered 403 Forbidden: scope missing" >&2
+    exit 1
+    ;;
   garbage)
     echo "this is not json $FAKE_TOKEN"
     ;;
@@ -377,6 +381,34 @@ def test_a_plugin_that_cannot_reach_the_metadata_server_is_unreachable(tmp_path,
     r = run_script(tmp_path, api(), ref={}, mode="unreachable")
     assert r.code == 1 and r.error["code"] == "unreachable"
     assert "metadata.google.internal" not in r.raw_error  # stderr is classified, never echoed
+
+
+def test_a_permanent_metadata_misconfiguration_is_not_labelled_unreachable(tmp_path, api):
+    r = run_script(tmp_path, api(), ref={}, mode="misconfig")
+    assert r.code == 1 and r.error["code"] == "permission_denied"
+
+
+def test_an_unexpected_exception_is_internal_with_only_its_class_name(tmp_path):
+    mod = load()
+
+    def boom(env):
+        raise RuntimeError(f"details with {TOKEN} and {KEY_SECRET}")
+
+    mod.build = boom
+    env = {"RW_AUTH_OUT_FILE": str(tmp_path / "kc"), "RW_AUTH_OUT_ERROR": str(tmp_path / "e")}
+    assert mod.main(env) == 1
+    error = json.loads((tmp_path / "e").read_text())
+    assert error == {"code": "internal", "message": "RuntimeError"}
+    assert not (tmp_path / "kc").exists()
+
+
+def test_an_unwritable_output_file_is_internal_not_a_traceback(tmp_path, api):
+    r = run_script(
+        tmp_path, api(), extra_env={"RW_AUTH_OUT_FILE": str(tmp_path / "no-such-dir" / "kc")}
+    )
+    assert r.code == 1 and r.error == {"code": "internal", "message": "FileNotFoundError"}
+    assert "Traceback" not in r.shown
+    assert_no_secret_anywhere(r)
 
 
 @pytest.mark.parametrize("mode", ["garbage", "notoken"])
