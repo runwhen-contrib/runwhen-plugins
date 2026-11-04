@@ -10,13 +10,13 @@ query() { # <path-and-query>
 }
 
 "${K[@]}" -n "$NS" rollout status deploy/jaeger --timeout=240s
-if ! query /api/services 2>/dev/null | grep -q '"checkout"'; then
+if ! query /api/services 2>/dev/null | grep -q '"inventory"'; then
   "${K[@]}" -n "$NS" delete job emit-spans --ignore-not-found --wait=true
   "${K[@]}" apply -f "$(dirname "${BASH_SOURCE[0]}")/30-k8s-jaeger-health.yaml"
 fi
 "${K[@]}" -n "$NS" wait --for=condition=complete job/emit-spans --timeout=240s
 end=$((SECONDS + 120))
-until query /api/services 2>/dev/null | grep -q '"gateway"'; do
+until query /api/services 2>/dev/null | grep -q '"inventory"'; do
   (( SECONDS < end )) || { echo "scenario spans did not reach jaeger in 120s" >&2; exit 1; }
   sleep 3
 done

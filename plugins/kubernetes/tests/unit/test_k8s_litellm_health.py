@@ -2,9 +2,11 @@
 `rw-litellm` namespace of the kind-rw-plugins scenario (plugins/kubernetes/tests/kind/scenarios/
 30-k8s-litellm-health.yaml): three stub proxies that answer LiteLLM's unauthenticated health
 endpoints as v1.102.1 does (the real image needs more memory than the cluster has): `litellm`
-(healthy, detailed readiness payload), `litellm-degraded` (200 with db "disconnected"; its Service
-exposes 8080) and `litellm-draining` (every endpoint 503; not Ready). `readiness-public.json` is
-the public payload the real v1.102.1 image returned. The scripts run through the SDK's test
+(healthy, detailed readiness payload), `litellm-degraded` (its database is unreachable: readiness
+503, liveness 200; its Service exposes 8080) and `litellm-draining` (every endpoint 503; not
+Ready). `readiness-public.json` is the public payload the real v1.102.1 image returned;
+`readiness-db-disconnected-200.json` is a hand-written 200 with db "disconnected" (allow_requests_
+on_db_unavailable, or an older version that did not 503). The scripts run through the SDK's test
 context (`ctx.run` raises on a non-zero exit like the real runner; `stub_commands` matches the
 exact kubectl argv, so an unexpected call fails)."""
 
@@ -93,8 +95,10 @@ def render(pods):
         ]
         lines.append(f"s:status.phase={status['phase']}")
         lines.append(f"j:status.conditions={json.dumps(status.get('conditions', []))}")
-        for port in pod["spec"]["containers"][0].get("ports", []):
-            lines.append(f"p:{port.get('name', '')}={port['containerPort']}")
+        for container in pod["spec"]["containers"]:
+            lines.append(f"c:{container.get('name', '')}={container.get('image', '')}")
+            for port in container.get("ports", []):
+                lines.append(f"p:{port.get('name', '')}={port['containerPort']}")
     return "\n".join(lines) + "\n"
 
 
@@ -221,7 +225,6 @@ def test_readiness_doc_rejects_what_is_not_readiness_json():
         '{"status":"healthy","db":3}',
         '{"status":"healthy","litellm_version":1}',
         '{"status":"healthy","success_callbacks":"x"}',
-        '{"status":"healthy","success_callbacks":[1]}',
         "",
     ):
         with pytest.raises(RwError) as exc:
@@ -244,6 +247,46 @@ def test_selector_string_and_port():
     pod["spec"]["containers"][0]["ports"] = [{"name": "litellm", "containerPort": 4400}]
     assert fetch.pod_port(pod) == 4400
     assert fetch.pod_port({"spec": {"containers": [{"ports": [{"containerPort": 1}]}]}}) == 4000
+
+
+def sidecar_pod(sidecar_first):
+    """A pod with LiteLLM and an injected sidecar that also has a port called `http`."""
+    sidecar = {
+        "name": "istio-proxy",
+        "image": "istio/proxyv2:1.24",
+        "ports": [{"name": "http", "containerPort": 9999}],
+    }
+    proxy_container = {"name": "litellm", "image": "ghcr.io/berriai/litellm:main", "ports": []}
+    pod = pods_of("litellm")[0]
+    pod["spec"]["containers"] = (
+        [sidecar, proxy_container] if sidecar_first else [proxy_container, sidecar]
+    )
+    return pod, proxy_container
+
+
+def test_the_port_comes_from_the_main_container_and_the_input_overrides_it():
+    for sidecar_first in (True, False):
+        pod, container = sidecar_pod(sidecar_first)
+        assert fetch.main_container(pod["spec"]) is container
+        assert fetch.pod_port(pod) == 4000  # the sidecar's `http` port is not taken
+        container["ports"] = [{"name": "http", "containerPort": 4400}]
+        assert fetch.pod_port(pod) == 4400 and fetch.pod_port(pod, 7000) == 7000
+    # no LiteLLM image: the first container that is not a known sidecar
+    pod, container = sidecar_pod(True)
+    container["image"] = "registry.example/gateway:1"
+    container["ports"] = [{"name": "litellm", "containerPort": 4100}]
+    assert fetch.main_container(pod["spec"]) is container and fetch.pod_port(pod) == 4100
+    assert fetch.serving_port({"containers": []}) == (4000, False)
+    assert fetch.serving_port(pod["spec"]) == (4100, True)
+
+
+def test_the_main_container_port_is_what_the_requests_go_to():
+    pod, container = sidecar_pod(True)
+    container["ports"] = [{"name": "http", "containerPort": 4400}]
+    env, calls = run("readiness", pods=[pod], port=4400)
+    assert env["status"] == "ok"
+    assert raw("litellm", "/health/readiness", port=4400) in calls
+    assert only_pod(env, "readiness")["port"] == 4400
 
 
 def test_check_inputs():
@@ -277,6 +320,77 @@ def test_classify_and_proxy_get_tell_the_statuses_apart():
     assert exc.value.code == "unreachable"
 
 
+class FakeRun:
+    def __init__(self, rc, out="", err=""):
+        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+
+    def run(self, argv, check=True, **_):
+        return self.result
+
+
+def test_the_error_reason_decides_before_the_message_text():
+    forbidden_not_found = (
+        'Error from server (Forbidden): pods "x" is forbidden: User "u" cannot get resource '
+        '"pods/proxy": the server could not find the requested resource (not found)'
+    )
+    assert k8s.classify(1, forbidden_not_found) == "permission_denied"
+    assert k8s.classify(1, "Error from server (Timeout): request did not complete") == "timeout"
+    assert k8s.classify(1, "Error from server (TooManyRequests): slow down") == "rate_limited"
+    assert k8s.classify(1, "Error from server (Unauthorized): Unauthorized") == "permission_denied"
+    assert (
+        k8s.classify(
+            1, 'Error from server (NotFound): the server doesn\'t have a resource type "x"'
+        )
+        == "dependency"
+    )
+    # a Reason that does not decide falls back to the text; no Reason line: text only
+    internal = "Error from server (InternalError): context deadline exceeded"
+    assert k8s.classify(1, internal) == "timeout"
+    assert k8s.classify(1, "Error from server (BadRequest): nope") == "internal"
+    assert (
+        k8s.classify(1, "Unable to connect to the server: dial tcp: i/o timeout") == "unreachable"
+    )
+    warned = "Warning: Error from server (Forbidden) in a log\nError from server (NotFound): gone"
+    assert k8s.classify(1, warned) == "not_found"
+
+
+def test_proxy_get_reads_the_reason_line_before_looking_for_a_404_or_503_text():
+    forbidden = (
+        'Error from server (Forbidden): pods "p" is forbidden: cannot get resource "pods/proxy" '
+        "(the server could not find the requested resource)"
+    )
+    with pytest.raises(RwError) as exc:
+        proxy.proxy_get(FakeRun(1, "", forbidden), "/x")
+    assert exc.value.code == "permission_denied"
+    with pytest.raises(RwError) as exc:
+        proxy.proxy_get(
+            FakeRun(1, "", "Error from server (Timeout): currently unable to handle the request"),
+            "/x",
+        )
+    assert exc.value.code == "timeout"
+    no_line = "the server could not find the requested resource"
+    assert proxy.proxy_get(FakeRun(1, "", no_line), "/x").status == 404
+
+
+def test_a_long_error_message_is_cut_to_1024_on_every_path():
+    long_err = "Error from server (InternalError): " + "x" * 5000
+    for task in ("liveness", "readiness"):
+        env, _ = run(task, fail={"proxy": long_err})  # every pod fails: the first is raised
+        assert env["status"] == "failed" and len(env["errors"][0]["message"]) <= 1024
+    two = pods_of("litellm")[0]
+    first = json.loads(json.dumps(two))
+    two["metadata"]["name"] = "litellm-zzz"
+    env, _ = run(
+        "readiness", pods=[first, two], replies={("litellm-zzz", PATHS[2]): (1, "", long_err)}
+    )
+    assert env["status"] == "partial" and len(env["errors"][0]["message"]) <= 1024
+    for task in SCRIPTS:
+        env, _ = run(task, fail={"workload": long_err})
+        assert env["status"] == "failed" and len(env["errors"][0]["message"]) <= 1024
+    assert len(k8s.failure(["kubectl"], FakeRun(1, "", long_err).result).message) <= 1024
+    assert len(RwError("internal", "s" * 3000).message) == 1024
+
+
 def test_reads_are_projected_so_no_env_value_leaves_the_cluster():
     _, calls = run("readiness")
     reads = [c for c in calls if "--raw" not in c]
@@ -284,9 +398,12 @@ def test_reads_are_projected_so_no_env_value_leaves_the_cluster():
     for projection in (WORKLOAD_FIELDS, POD_FIELDS):
         template = projection.template(True)
         assert "env" not in template and "annotations" not in template
-    # the container ports are the only part of the containers that is read
+    # of the containers only the name, image and ports are read: no args, command, env or mounts
     assert POD_FIELDS.template(False).count("spec.containers") == 1
     assert WORKLOAD_FIELDS.template(False).count("spec.template.spec.containers") == 1
+    for projection in (WORKLOAD_FIELDS, POD_FIELDS):
+        for field in (".args", ".command", ".env", ".volumeMounts", ".lifecycle"):
+            assert field not in projection.template(False)
 
 
 def test_projection_parses_what_kubectl_prints_and_refuses_anything_else():
@@ -300,9 +417,18 @@ def test_projection_parses_what_kubectl_prints_and_refuses_anything_else():
     }
     assert workload["spec"]["template"]["spec"]["containers"][0]["ports"][0]["name"] == "http"
     assert Projection(strings=("a.b",)).parse("@\ns:a.b=\n", False) == {}
+    assert pod["spec"]["containers"][0]["name"] == "litellm"
+    assert pod["spec"]["containers"][0]["image"] == "python:3.12-alpine"
+    two = Projection(containers=project.POD_CONTAINERS).parse(
+        "@\nc:a=i1\np:x=1\nc:b=i2\np:=2\n", False
+    )
+    assert [c.get("ports") for c in two["spec"]["containers"]] == [
+        [{"name": "x", "containerPort": 1}],
+        [{"containerPort": 2}],
+    ]
     for text in ("", "x\n", "@\nj:a=not json\n", "@\np:x=notaport\n", "s:a=1\n"):
         with pytest.raises(RwError) as exc:
-            Projection(strings=("a",), values=("a",), ports=("spec", "containers")).parse(
+            Projection(strings=("a",), values=("a",), containers=("spec", "containers")).parse(
                 text, False
             )
         assert exc.value.code == "internal"
@@ -355,7 +481,7 @@ def test_liveness_neither_path_served_is_a_dependency_error_never_alive():
     replies = {p: (1, "", NO_ROUTE) for p in PATHS[:2]}
     env, _ = run("liveness", replies=replies)
     assert env["status"] == "failed" and codes(env) == [
-        ("dependency", "pod/litellm-86bdbc9c6f-xh5wd")
+        ("dependency", "pod/litellm-86bdbc9c6f-p59vx")
     ]
     assert env["outputs"] == {}
 
@@ -370,7 +496,7 @@ def test_liveness_one_bad_path_keeps_what_the_other_said():
     replies = {"/health/liveliness": (1, "", UNAVAILABLE), "/health/liveness": (0, "<html>", "")}
     env, _ = run("liveness", replies=replies)
     assert env["status"] == "partial" and codes(env) == [
-        ("internal", "pod/litellm-86bdbc9c6f-xh5wd")
+        ("internal", "pod/litellm-86bdbc9c6f-p59vx")
     ]
     check_schemas("liveness", env)
     pod = only_pod(env, "liveness")
@@ -393,7 +519,7 @@ def test_liveness_one_dead_pod_is_one_error_and_the_other_still_reports():
     assert env["status"] == "partial" and codes(env) == [("unreachable", "pod/litellm-zzz")]
     rows = {p["name"]: p for p in env["outputs"]["liveness"]["pods"]}
     assert (
-        rows["litellm-86bdbc9c6f-xh5wd"]["alive"] is True and rows["litellm-zzz"]["alive"] is None
+        rows["litellm-86bdbc9c6f-p59vx"]["alive"] is True and rows["litellm-zzz"]["alive"] is None
     )
     assert env["outputs"]["liveness"]["aliveCount"] == 1
     check_schemas("liveness", env)
@@ -409,6 +535,43 @@ def test_liveness_pending_pod_is_listed_and_not_asked_and_no_pods_is_a_fact():
     check_schemas("liveness", env)
     env, _ = run("liveness", pods=[])
     assert env["status"] == "ok" and env["outputs"]["liveness"]["podCount"] == 0
+
+
+def test_pods_not_asked_are_counted_and_reported_in_a_scoped_error():
+    pod = pods_of("litellm")[0]
+    pending = json.loads(json.dumps(pod))
+    pending["metadata"]["name"] = "litellm-pending"
+    pending["status"]["phase"] = "Pending"
+    for task in ("liveness", "readiness"):
+        env, _ = run(task, pods=[pod, pending])
+        out = env["outputs"][task]
+        assert env["status"] == "partial"
+        assert codes(env) == [("unreachable", "pods/not-running")]
+        assert "litellm-pending" in env["errors"][0]["message"]
+        assert (out["podCount"], out["queriedCount"], out["unaskedCount"]) == (2, 1, 1)
+        check_schemas(task, env)
+        env, _ = run(task, pods=[pod])
+        out = env["outputs"][task]
+        assert env["status"] == "ok" and (out["queriedCount"], out["unaskedCount"]) == (1, 0)
+
+
+def test_running_pods_past_the_cap_are_not_asked_and_say_so():
+    base = pods_of("litellm")[0]
+    many = []
+    for i in range(12):
+        pod = json.loads(json.dumps(base))
+        pod["metadata"]["name"] = f"litellm-{i:02d}"
+        many.append(pod)
+    env, _ = run("readiness", pods=many)
+    out = env["outputs"]["readiness"]
+    assert (out["podCount"], out["queriedCount"], out["unaskedCount"]) == (12, 10, 2)
+    assert codes(env) == [("unreachable", "pods/not-asked")]
+    assert "litellm-10, litellm-11" in env["errors"][0]["message"]
+    env, _ = run("readiness", pods=many[:3], settings={"maxItems": 2})
+    out = env["outputs"]["readiness"]
+    assert out["truncated"] is True and len(out["pods"]) == 2
+    assert (out["queriedCount"], out["unaskedCount"]) == (2, 1)
+    assert codes(env) == [("unreachable", "pods/not-asked")]
 
 
 # ------------------------------------------------------------ scripts: readiness ----
@@ -434,23 +597,73 @@ def test_readiness_healthy_detailed_payload():
     assert raw("litellm", "/health/readiness") in calls
 
 
-def test_readiness_db_disconnected_is_a_fact_while_the_proxy_still_answers_200():
-    env, _ = run("readiness", name="litellm-degraded")
+def test_readiness_db_disconnected_with_a_200_is_a_fact_for_older_versions():
+    """allow_requests_on_db_unavailable, or a version before 503-on-disconnected: the body says
+    the database is not connected while the proxy keeps serving."""
+    old = reply_of("readiness", "db-disconnected-200")
+    env, _ = run("readiness", replies={"/health/readiness": old})
     assert env["status"] == "ok" and env["errors"] == []
     check_schemas("readiness", env)
     pod = only_pod(env, "readiness")
     assert pod["ready"] is True and pod["db"] == "disconnected" and pod["cache"] is None
-    assert pod["litellmVersion"] == "1.102.1"
+    assert pod["litellmVersion"] == "1.102.1" and pod["cause"] is None
 
 
-def test_readiness_503_is_not_ready_not_an_error():
-    env, _ = run("readiness", name="litellm-draining")
+def test_readiness_503_with_liveness_200_is_a_database_problem_likely():
+    """LiteLLM 1.102.1: readiness 503s for a configured database that is not connected, liveness
+    only during shutdown (litellm-degraded is the stub that does the former)."""
+    env, calls = run("readiness", name="litellm-degraded")
     assert env["status"] == "ok" and env["errors"] == []
     check_schemas("readiness", env)
     pod = only_pod(env, "readiness")
     assert pod["ready"] is False and pod["httpStatus"] == 503 and pod["podReady"] is False
+    assert pod["cause"] == "db_unreachable_likely" and pod["livenessHttpStatus"] == 200
+    assert "liveness answered 200" in pod["causeBasis"]
     assert pod["db"] is None and pod["status"] is None  # the proxy does not pass the body on
+    paths = [c[3].rsplit("/proxy", 1)[1] for c in calls if "--raw" in c]
+    assert paths == ["/health/readiness", "/health/liveliness"]
+
+
+def test_readiness_503_with_liveness_503_is_draining():
+    env, calls = run("readiness", name="litellm-draining")
+    assert env["status"] == "ok" and env["errors"] == []
+    check_schemas("readiness", env)
+    pod = only_pod(env, "readiness")
+    assert pod["ready"] is False and pod["cause"] == "draining" and pod["livenessHttpStatus"] == 503
+    assert "both answered 503" in pod["causeBasis"]
     assert env["outputs"]["readiness"]["notReadyCount"] == 1
+
+
+def test_readiness_503_whose_liveness_cannot_be_read_is_undetermined_with_an_error():
+    name = pod_name("litellm-degraded")
+    env, _ = run(
+        "readiness",
+        name="litellm-degraded",
+        replies={
+            (name, "/health/liveliness"): (0, "<html>login</html>", ""),
+        },
+    )
+    assert env["status"] == "partial" and codes(env) == [("internal", f"pod/{name}")]
+    pod = only_pod(env, "readiness")
+    assert pod["ready"] is False and pod["cause"] == "undetermined"
+    assert pod["livenessHttpStatus"] is None
+    check_schemas("readiness", env)
+    # a pod that serves neither liveness spelling: undetermined, and nothing to report
+    replies = {(name, p): (1, "", NO_ROUTE) for p in PATHS[:2]}
+    env, _ = run("readiness", name="litellm-degraded", replies=replies)
+    assert env["status"] == "ok" and only_pod(env, "readiness")["cause"] == "undetermined"
+    # the second spelling is asked when the first is a 404
+    replies = {(name, PATHS[0]): (1, "", NO_ROUTE)}
+    env, calls = run("readiness", name="litellm-degraded", replies=replies)
+    assert only_pod(env, "readiness")["cause"] == "db_unreachable_likely"
+    assert [c[3].rsplit("/proxy", 1)[1] for c in calls if "--raw" in c][-1] == PATHS[1]
+
+
+def test_readiness_a_pod_that_is_ready_has_no_cause():
+    env, calls = run("readiness")
+    pod = only_pod(env, "readiness")
+    assert (pod["cause"], pod["causeBasis"], pod["livenessHttpStatus"]) == (None, None, None)
+    assert len([c for c in calls if "--raw" in c]) == 1  # liveness is asked only after a 503
 
 
 def test_readiness_the_public_payload_has_status_and_db_only():
@@ -476,7 +689,7 @@ def test_readiness_a_status_that_is_not_healthy_is_not_ready():
 def test_readiness_a_reply_that_is_not_readiness_json_is_an_error_never_ready():
     env, _ = run("readiness", replies={"/health/readiness": (0, "<html>login</html>", "")})
     assert env["status"] == "failed" and codes(env) == [
-        ("internal", "pod/litellm-86bdbc9c6f-xh5wd")
+        ("internal", "pod/litellm-86bdbc9c6f-p59vx")
     ]
     assert env["outputs"] == {}
     env, _ = run("readiness", replies={"/health/readiness": (1, "", NO_ROUTE)})
@@ -499,6 +712,20 @@ def test_readiness_a_semantic_cache_object_and_long_values_are_bounded():
     assert len(pod["successCallbacks"]) == 50 and pod["successCallbacksTruncated"] is True
 
 
+def test_readiness_success_callbacks_are_coerced_to_text():
+    doc = {
+        "status": "healthy",
+        "db": "connected",
+        "success_callbacks": ["prometheus", 1, None, {"name": "x"}, ["a"], "z" * 2000],
+    }
+    env, _ = run("readiness", replies={"/health/readiness": (0, json.dumps(doc), "")})
+    assert env["status"] == "ok" and env["errors"] == []
+    check_schemas("readiness", env)
+    pod = only_pod(env, "readiness")
+    assert pod["successCallbacks"][:5] == ["prometheus", "1", "None", "{'name': 'x'}", "['a']"]
+    assert len(pod["successCallbacks"][5]) == 1024 and pod["truncated"] is True
+
+
 def test_readiness_one_dead_pod_is_one_error_and_the_other_still_reports():
     second = pods_of("litellm")[0]
     first = json.loads(json.dumps(second))
@@ -511,7 +738,7 @@ def test_readiness_one_dead_pod_is_one_error_and_the_other_still_reports():
     assert env["status"] == "partial" and codes(env) == [("unreachable", "pod/litellm-zzz")]
     rows = {p["name"]: p for p in env["outputs"]["readiness"]["pods"]}
     assert (
-        rows["litellm-86bdbc9c6f-xh5wd"]["ready"] is True and rows["litellm-zzz"]["ready"] is None
+        rows["litellm-86bdbc9c6f-p59vx"]["ready"] is True and rows["litellm-zzz"]["ready"] is None
     )
     check_schemas("readiness", env)
 
@@ -548,8 +775,10 @@ def test_service_healthy_selects_the_workload_with_a_ready_endpoint():
     out = env["outputs"]["service"]
     assert out["servicePort"] == 4000 and out["serviceCount"] == 1
     assert out["containerPorts"] == [{"name": "http", "port": 4000}]
+    assert (out["containerPort"], out["containerPortDeclared"]) == (4000, True)
     row = service_row(env, "litellm")
     assert row["exposesPort"] is True and row["headless"] is False
+    assert row["targetPortMatches"] is True
     assert row["ports"] == [
         {
             "name": "http",
@@ -557,6 +786,7 @@ def test_service_healthy_selects_the_workload_with_a_ready_endpoint():
             "targetPort": "http",
             "protocol": "TCP",
             "targetPortDeclared": True,
+            "targetPortMatches": True,
         }
     ]
     assert row["endpoints"]["readyEndpoints"] == 1 and row["endpoints"]["notReadyEndpoints"] == 0
@@ -583,10 +813,77 @@ def test_service_not_ready_endpoint_and_a_service_port_that_is_not_the_expected_
     row = service_row(env, "litellm-degraded")
     assert row["exposesPort"] is False  # the Service is on 8080 and the proxy is expected on 4000
     assert row["ports"][0]["port"] == 8080 and row["ports"][0]["targetPort"] == 4000
-    assert row["endpoints"]["readyEndpoints"] == 1
+    # ... but it does lead to the port the proxy listens on: exposesPort is the Service side only
+    assert row["targetPortMatches"] is True
+    assert row["endpoints"]["readyEndpoints"] == 0 and row["endpoints"]["notReadyEndpoints"] == 1
     env, _ = run("service", name="litellm-degraded", inputs={"service_port": 8080})
     assert service_row(env, "litellm-degraded")["exposesPort"] is True
     assert env["outputs"]["service"]["servicePort"] == 8080
+
+
+def test_service_target_port_matches_the_main_container_port():
+    doc = load("services.json")
+    svc = next(s for s in doc["items"] if s["metadata"]["name"] == "litellm")
+    for target, matches in (("http", True), (4000, True), (9999, False), ("web", False)):
+        svc["spec"]["ports"][0]["targetPort"] = target
+        env, _ = run("service", services=doc)
+        row = service_row(env, "litellm")
+        assert (
+            row["ports"][0]["targetPortMatches"] is matches and row["targetPortMatches"] is matches
+        )
+        assert row["exposesPort"] is True  # the Service side does not change
+        check_schemas("service", env)
+    # a Service port on 4000 whose targetPort is a sidecar's port: exposes, but does not match
+    text = load("workload-litellm.txt").replace(
+        "p:http=4000", "p:http=4000\nc:istio-proxy=istio/proxyv2:1\np:envoy=15090"
+    )
+    svc["spec"]["ports"][0]["targetPort"] = "envoy"
+    env, _ = run("service", services=doc, workload_text=text)
+    row = service_row(env, "litellm")
+    assert row["exposesPort"] is True and row["targetPortMatches"] is False
+    assert row["ports"][0]["targetPortDeclared"] is True
+    assert env["outputs"]["service"]["containerPort"] == 4000
+
+
+def test_service_container_port_is_the_default_when_none_is_declared():
+    text = "\n".join(
+        line for line in load("workload-litellm.txt").splitlines() if not line.startswith("p:")
+    )
+    env, _ = run("service", workload_text=text + "\n")
+    out = env["outputs"]["service"]
+    assert (out["containerPort"], out["containerPortDeclared"]) == (4000, False)
+    check_schemas("service", env)
+
+
+def test_dual_stack_endpoints_are_counted_once_per_pod():
+    doc = load("endpointslices.json")
+    mine = next(
+        s
+        for s in doc["items"]
+        if s["metadata"]["labels"]["kubernetes.io/service-name"] == "litellm"
+    )
+    v6 = json.loads(json.dumps(mine))
+    v6["addressType"] = "IPv6"
+    v6["metadata"]["name"] = mine["metadata"]["name"] + "-v6"
+    v6["endpoints"][0]["addresses"] = ["fd00::5"]
+    doc["items"].append(v6)
+    env, _ = run("service", slices=doc)
+    ends = service_row(env, "litellm")["endpoints"]
+    assert ends["sliceCount"] == 2
+    assert (ends["readyEndpoints"], ends["notReadyEndpoints"]) == (1, 0)
+    # one of the pod's two entries not ready: the pod is not ready, still one pod
+    v6["endpoints"][0]["conditions"]["ready"] = False
+    env, _ = run("service", slices=doc)
+    ends = service_row(env, "litellm")["endpoints"]
+    assert (ends["readyEndpoints"], ends["notReadyEndpoints"]) == (0, 1)
+    # endpoints without a targetRef are told apart by their addresses
+    for item in doc["items"]:
+        for endpoint in item["endpoints"]:
+            endpoint.pop("targetRef", None)
+    env, _ = run("service", slices=doc)
+    ends = service_row(env, "litellm")["endpoints"]
+    assert ends["readyEndpoints"] + ends["notReadyEndpoints"] == 2
+    check_schemas("service", env)
 
 
 def test_service_a_target_port_name_the_template_does_not_declare():
@@ -689,7 +986,7 @@ def test_forbidden_pods_list_and_forbidden_proxy_fail_with_permission_denied(tas
 def test_every_pod_failing_fails_the_task(task):
     env, _ = run(task, fail={"proxy": UNREACHABLE})
     assert env["status"] == "failed" and codes(env) == [
-        ("unreachable", "pod/litellm-86bdbc9c6f-xh5wd")
+        ("unreachable", "pod/litellm-86bdbc9c6f-p59vx")
     ]
 
 

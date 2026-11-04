@@ -2,6 +2,7 @@
 
 from k8s_litellm_health.common import NESTED_LIMIT, cap
 from k8s_litellm_health.errors import RwError
+from k8s_litellm_health.fetch import main_container, serving_port
 from k8s_litellm_health.k8s import kubectl_json, kubectl_json_scoped
 
 DEFAULT_SERVICE_PORT = 4000
@@ -14,11 +15,13 @@ def check_service_port(port):
     return port
 
 
+def template_spec(workload):
+    return ((workload.get("spec") or {}).get("template") or {}).get("spec") or {}
+
+
 def template_ports(workload):
     """[{name, port}] of the container ports the workload's pod template declares."""
-    containers = (((workload.get("spec") or {}).get("template") or {}).get("spec") or {}).get(
-        "containers"
-    ) or []
+    containers = template_spec(workload).get("containers") or []
     return [
         {"name": p.get("name"), "port": p.get("containerPort")}
         for c in containers
@@ -43,7 +46,18 @@ def declared(target, declared_ports):
     return any(p["name"] == target for p in declared_ports)
 
 
-def port_rows(service, declared_ports, expected):
+def resolve(target, main_ports):
+    """The container port number a Service port's targetPort leads to: a number is itself, a name
+    is looked up among the main container's declared ports (None when it names none)."""
+    if isinstance(target, int):
+        return target
+    for p in main_ports:
+        if p.get("name") == target:
+            return p.get("containerPort")
+    return None
+
+
+def port_rows(service, declared_ports, expected, container_port, main_ports):
     rows = []
     for p in (service.get("spec") or {}).get("ports") or []:
         target = p.get("targetPort", p.get("port"))
@@ -54,29 +68,41 @@ def port_rows(service, declared_ports, expected):
                 "targetPort": target,
                 "protocol": p.get("protocol") or "TCP",
                 "targetPortDeclared": declared(target, declared_ports),
+                "targetPortMatches": resolve(target, main_ports) == container_port,
             }
         )
     return cap(rows, NESTED_LIMIT), any(r["port"] == expected for r in rows)
 
 
+def endpoint_key(endpoint):
+    """What names the pod behind an endpoint, so a dual-stack Service's IPv4 and IPv6 slices (one
+    endpoint per pod in each) count it once: its targetRef, else its addresses."""
+    ref = endpoint.get("targetRef") or {}
+    if ref.get("name"):
+        return (ref.get("kind"), ref.get("namespace"), ref.get("name"))
+    return ("addresses", tuple(sorted(endpoint.get("addresses") or [])))
+
+
 def endpoint_summary(slices):
-    """Counts over a Service's EndpointSlices. An endpoint whose `ready` is unset counts as ready
-    (the API's documented reading); `ready: false` is not ready."""
-    ready = not_ready = 0
+    """Counts over a Service's EndpointSlices, one per pod (see endpoint_key): a pod listed in
+    several slices (IPv4 and IPv6) is counted once, and is not ready when any of its entries is
+    not. An endpoint whose `ready` is unset counts as ready (the API's documented reading);
+    `ready: false` is not ready."""
+    pods = {}
     ports = []
     for item in slices:
         for endpoint in item.get("endpoints") or []:
-            if (endpoint.get("conditions") or {}).get("ready") is False:
-                not_ready += 1
-            else:
-                ready += 1
+            not_ready = (endpoint.get("conditions") or {}).get("ready") is False
+            key = endpoint_key(endpoint)
+            pods[key] = pods.get(key, False) or not_ready
         for p in item.get("ports") or []:
             entry = {"name": p.get("name"), "port": p.get("port"), "protocol": p.get("protocol")}
             if entry not in ports:
                 ports.append(entry)
+    not_ready = sum(1 for v in pods.values() if v)
     return {
         "sliceCount": len(slices),
-        "readyEndpoints": ready,
+        "readyEndpoints": len(pods) - not_ready,
         "notReadyEndpoints": not_ready,
         "ports": cap(ports, NESTED_LIMIT),
     }
@@ -108,10 +134,14 @@ def view(ctx, workload, expected, limit):
         )
         slices = None if doc is None else doc["items"]
     declared_ports = template_ports(workload)
+    template = template_spec(workload)
+    container_port, port_declared = serving_port(template)
+    main = main_container(template) or {}
+    main_ports = main.get("ports") or []
     rows = []
     for service in shown:
         name = service["metadata"]["name"]
-        ports, exposes = port_rows(service, declared_ports, expected)
+        ports, exposes = port_rows(service, declared_ports, expected, container_port, main_ports)
         mine = None
         if slices is not None:
             mine = endpoint_summary(
@@ -125,6 +155,7 @@ def view(ctx, workload, expected, limit):
                 "headless": spec.get("clusterIP") == "None",
                 "selector": spec.get("selector"),
                 "exposesPort": exposes,
+                "targetPortMatches": any(p["targetPortMatches"] for p in ports),
                 "ports": ports,
                 "endpoints": mine,
             }
@@ -138,6 +169,8 @@ def view(ctx, workload, expected, limit):
             "readyReplicas": status.get("readyReplicas"),
         },
         "servicePort": expected,
+        "containerPort": container_port,
+        "containerPortDeclared": port_declared,
         "containerPorts": cap(declared_ports, NESTED_LIMIT),
         "serviceCount": len(matching),
         "truncated": len(matching) > limit,

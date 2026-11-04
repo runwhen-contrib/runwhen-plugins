@@ -7,9 +7,10 @@ the raw output (what a fixture records) never contains an env entry. `Projection
 lines back into a document shaped like the object, so the pure functions read it unchanged.
 
 Line format, one object after a `@` line: `s:<path>=<string>` (a string field, unquoted),
-`j:<path>=<JSON>` (an object, list, number or bool) and, for a pod, `p:<name>=<port>` (one container
-port of a pod or of a workload's pod template, name empty when unnamed). A field the object lacks is an empty value and is left out of the
-document.
+`j:<path>=<JSON>` (an object, list, number or bool) and, for the containers of a pod or of a
+workload's pod template, `c:<name>=<image>` (a container, in spec order) and `p:<name>=<port>` (a
+container port of the container above it, name empty when unnamed). A field the object lacks is an
+empty value and is left out of the document. Env, args and commands are not among the fields.
 """
 
 import json
@@ -17,17 +18,17 @@ import json
 from k8s_litellm_health.errors import RwError
 from k8s_litellm_health.k8s import run_checked
 
-POD_PORTS = ("spec", "containers")
-TEMPLATE_PORTS = ("spec", "template", "spec", "containers")
+POD_CONTAINERS = ("spec", "containers")
+TEMPLATE_CONTAINERS = ("spec", "template", "spec", "containers")
 
 
 class Projection:
-    def __init__(self, strings=(), values=(), ports=None):
-        """`ports` is the path to the containers list whose container ports are read (POD_PORTS or
-        TEMPLATE_PORTS), or None."""
+    def __init__(self, strings=(), values=(), containers=None):
+        """`containers` is the path to the containers list whose names, images and container
+        ports are read (POD_CONTAINERS or TEMPLATE_CONTAINERS), or None."""
         self.strings = tuple(strings)
         self.values = tuple(values)
-        self.ports = ports
+        self.containers = containers
 
     def template(self, many):
         parts = ['{"@\\n"}']
@@ -35,10 +36,11 @@ class Projection:
             parts.append(f'{{"s:{path}="}}{{.{path}}}{{"\\n"}}')
         for path in self.values:
             parts.append(f'{{"j:{path}="}}{{.{path}}}{{"\\n"}}')
-        if self.ports:
-            where = ".".join(self.ports)
+        if self.containers:
+            where = ".".join(self.containers)
             parts.append(
-                f'{{range .{where}[*].ports[*]}}{{"p:"}}{{.name}}{{"="}}{{.containerPort}}{{"\\n"}}{{end}}'
+                f'{{range .{where}[*]}}{{"c:"}}{{.name}}{{"="}}{{.image}}{{"\\n"}}'
+                f'{{range .ports[*]}}{{"p:"}}{{.name}}{{"="}}{{.containerPort}}{{"\\n"}}{{end}}{{end}}'
             )
         body = "".join(parts)
         return "{range .items[*]}" + body + "{end}" if many else body
@@ -52,20 +54,24 @@ class Projection:
                 objects.append(current)
             elif not line:
                 continue
-            elif current is None or line[:2] not in ("s:", "j:", "p:"):
+            elif current is None or line[:2] not in ("s:", "j:", "c:", "p:"):
                 raise RwError(
                     "internal", "kubectl returned output that is not the projection asked"
+                )
+            elif line[0] == "c":
+                name, _, image = line[2:].partition("=")
+                self._containers(current).append(
+                    {"name": name, **({"image": image} if image else {})}
                 )
             elif line[0] == "p":
                 name, _, number = line[2:].partition("=")
                 if not number.isdigit():
                     raise RwError("internal", "kubectl returned a bad container port")
                 entry = {"containerPort": int(number), **({"name": name} if name else {})}
-                holder = current
-                for key in self.ports[:-1]:
-                    holder = holder.setdefault(key, {})
-                container = holder.setdefault(self.ports[-1], [{}])[0]
-                container.setdefault("ports", []).append(entry)
+                containers = self._containers(current)
+                if not containers:
+                    containers.append({})
+                containers[-1].setdefault("ports", []).append(entry)
             else:
                 path, _, raw = line[2:].partition("=")
                 if raw == "":
@@ -85,6 +91,13 @@ class Projection:
             raise RwError("internal", "kubectl returned no object")
         return objects[0]
 
+    def _containers(self, current):
+        """The (created) list of containers of the object being parsed."""
+        holder = current
+        for key in self.containers[:-1]:
+            holder = holder.setdefault(key, {})
+        return holder.setdefault(self.containers[-1], [])
+
 
 def _set(doc, keys, value):
     for key in keys[:-1]:
@@ -101,12 +114,12 @@ WORKLOAD_FIELDS = Projection(
         "spec.template.metadata.labels",
         "status.readyReplicas",
     ),
-    ports=TEMPLATE_PORTS,
+    containers=TEMPLATE_CONTAINERS,
 )
 POD_FIELDS = Projection(
     strings=("metadata.name", "metadata.deletionTimestamp", "status.phase"),
     values=("status.conditions",),
-    ports=POD_PORTS,
+    containers=POD_CONTAINERS,
 )
 
 

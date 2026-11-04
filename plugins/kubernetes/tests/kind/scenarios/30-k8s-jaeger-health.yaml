@@ -1,11 +1,17 @@
 # k8s-jaeger-health scenario, applied by up.sh. A real jaegertracing/all-in-one (in-memory
 # storage, memory limit 128Mi) in namespace rw-jaeger, plus a one-shot Job (30-k8s-jaeger-health.sh
-# re-runs it when the in-memory store is empty) that sends OTLP/HTTP spans with HTTP status tags:
+# re-runs it when the in-memory store is empty) that sends OTLP/HTTP spans with HTTP status tags.
+# Like OpenTelemetry's HTTP instrumentation, a 5xx server span (and a 4xx/5xx client span) has span
+# status ERROR, which Jaeger stores as the tag error=true; a 4xx server span has no error status:
 #   checkout   POST /pay -> 500 x4, 503 x2, 200 x10;  GET /cart -> 404 x3, 200 x10
 #              (http.url carries a query string with a fake token: the skill must not return it)
+#              GET /reset/<hex>/confirm?code=.. -> 404 x2 (an id and a fake code in the path and in
+#              the operation name); POST payments (span.kind client) -> 503 x2 (outbound calls)
 #   catalog    GET /items -> 200 x15;  GET /items/{id} -> 404 x3          (no 5xx)
 #   gateway    GET /api -> 502 x2, 200 x6, using the newer semantic-convention keys
-#              http.response.status_code and url.path
+#              http.response.status_code and url.path; GET /v2/users/{id} -> 404 x2 with http.route
+#   inventory  POST /stock -> 507 x3: a 5xx that no default status code lists; only the error=true
+#              search finds it
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -71,19 +77,24 @@ data:
             return {"key": key, "value": {"intValue": str(value)}}
         return {"key": key, "value": {"stringValue": value}}
 
-    def send(service, name, count, status, status_key, extra):
+    def send(service, name, count, status, status_key, extra, kind=2):
+        # OTel: a server span is an error from 500, a client span from 400
+        failed = status >= (400 if kind == 3 else 500)
         spans = []
         for _ in range(count):
             start = time.time_ns() - random.randint(1, 60) * 1_000_000_000
-            spans.append({
+            span = {
                 "traceId": os.urandom(16).hex(),
                 "spanId": os.urandom(8).hex(),
                 "name": name,
-                "kind": 2,
+                "kind": kind,
                 "startTimeUnixNano": str(start),
                 "endTimeUnixNano": str(start + 5_000_000),
                 "attributes": [attr(status_key, status)] + [attr(k, v) for k, v in extra],
-            })
+            }
+            if failed:
+                span["status"] = {"code": 2}
+            spans.append(span)
         body = {"resourceSpans": [{
             "resource": {"attributes": [attr("service.name", service)]},
             "scopeSpans": [{"scope": {"name": "rw-scenario"}, "spans": spans}],
@@ -106,11 +117,17 @@ data:
     send("checkout", "POST /pay", 10, 200, OLD, pay)
     send("checkout", "GET /cart", 3, 404, OLD, cart)
     send("checkout", "GET /cart", 10, 200, OLD, cart)
+    reset = "/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"
+    send("checkout", "GET " + reset, 2, 404, OLD, [("http.target", reset), ("http.method", "GET")])
+    send("checkout", "POST payments", 2, 503, OLD, [("http.url", "http://payments:8080/charge"), ("http.method", "POST")], kind=3)
     send("catalog", "GET /items", 15, 200, OLD, [("http.target", "/items?page=2"), ("http.method", "GET")])
     send("catalog", "GET /items/{id}", 3, 404, OLD, [("http.target", "/items/9?debug=1"), ("http.method", "GET")])
     new = [("url.path", "/api"), ("url.query", "key=not-a-real-key"), ("http.request.method", "GET")]
     send("gateway", "GET /api", 2, 502, "http.response.status_code", new)
     send("gateway", "GET /api", 6, 200, "http.response.status_code", new)
+    users = [("http.route", "/v2/users/{id}"), ("url.path", "/v2/users/42"), ("http.request.method", "GET")]
+    send("gateway", "GET /v2/users/{id}", 2, 404, "http.response.status_code", users)
+    send("inventory", "POST /stock", 3, 507, OLD, [("http.target", "/stock"), ("http.method", "POST")])
     print("sent", flush=True)
 ---
 apiVersion: batch/v1

@@ -4,10 +4,38 @@ import json
 
 from k8s_litellm_health.common import MESSAGE_LIMIT, NESTED_LIMIT, cap, truncate
 from k8s_litellm_health.errors import RwError
-from k8s_litellm_health.fetch import Budget, fetch_one, pod_condition, pod_port, queried
+from k8s_litellm_health.fetch import (
+    MAX_QUERIED_PODS,
+    Budget,
+    fetch_one,
+    pod_condition,
+    pod_port,
+    queried,
+    running,
+)
 
 LIVENESS_PATHS = ("/health/liveliness", "/health/liveness")  # LiteLLM's own spelling first
 READINESS_PATH = "/health/readiness"
+# Why a readiness 503 happened, from what liveness answered at the same time. Read from LiteLLM
+# 1.102.1 (proxy/health_endpoints/_health_endpoints.py): /health/liveliness answers 503 only once
+# a graceful shutdown has begun; /health/readiness answers 503 then too, and also when a
+# configured database is not connected (unless allow_requests_on_db_unavailable is set) or when
+# building the detailed payload raised. So readiness 503 with liveness 200 is a database problem
+# in all but the rare error case, and 503 on both is a shutdown.
+CAUSE_DB = "db_unreachable_likely"
+CAUSE_DRAINING = "draining"
+CAUSE_UNDETERMINED = "undetermined"
+CAUSE_BASIS = {
+    CAUSE_DB: (
+        "readiness answered 503 while liveness answered 200: LiteLLM 503s readiness for a "
+        "configured database it cannot reach and liveness only during shutdown"
+    ),
+    CAUSE_DRAINING: (
+        "readiness and liveness both answered 503: LiteLLM answers 503 on both once a graceful "
+        "shutdown has begun"
+    ),
+    CAUSE_UNDETERMINED: "liveness could not be read to tell a database problem from a shutdown",
+}
 
 
 def alive_reply(reply, what):
@@ -48,10 +76,8 @@ def readiness_doc(reply, what):
         if doc.get(field) is not None and not isinstance(doc[field], str):
             raise RwError("internal", f"{what} returned a {field} that is not text")
     callbacks = doc.get("success_callbacks")
-    if callbacks is not None and (
-        not isinstance(callbacks, list) or not all(isinstance(c, str) for c in callbacks)
-    ):
-        raise RwError("internal", f"{what} returned success_callbacks that is not a list of text")
+    if callbacks is not None and not isinstance(callbacks, list):
+        raise RwError("internal", f"{what} returned success_callbacks that is not a list")
     return doc
 
 
@@ -117,8 +143,29 @@ def liveness_row(ctx, workload, pod, scheme, port, budget):
     return row, failure
 
 
+def readiness_cause(ctx, workload, pod, scheme, port, budget):
+    """(cause, liveness HTTP status, failure) for a pod whose readiness answered 503: liveness is
+    asked on the spelling the pod serves. 200 is a database problem (likely), 503 a shutdown; a
+    pod that serves neither path, or whose liveness cannot be read, is undetermined (the failure,
+    if any, is the one to report)."""
+    name = pod["metadata"]["name"]
+    for path in LIVENESS_PATHS:
+        try:
+            reply = fetch_one(ctx, workload, pod, scheme, port, path, budget)
+            if reply.status == 404:
+                continue
+            alive, _ = alive_reply(reply, f"{path} on pod {name}")
+        except RwError as exc:
+            if exc.code == "permission_denied":
+                raise
+            return CAUSE_UNDETERMINED, None, exc
+        return (CAUSE_DB if alive else CAUSE_DRAINING), reply.status, None
+    return CAUSE_UNDETERMINED, None, None
+
+
 def readiness_row(ctx, workload, pod, scheme, port, budget):
-    """(row, None) of one pod, or raises RwError for a reply that is not the readiness JSON."""
+    """(row, failure) of one pod: failure is set when a 503's cause could not be read. Raises
+    RwError for a reply that is not the readiness JSON."""
     name = pod["metadata"]["name"]
     what = f"{READINESS_PATH} on pod {name}"
     reply = fetch_one(ctx, workload, pod, scheme, port, READINESS_PATH, budget)
@@ -134,10 +181,15 @@ def readiness_row(ctx, workload, pod, scheme, port, budget):
         "successCallbacksTruncated": False,
         "detailed": False,
         "truncated": False,
+        "cause": None,
+        "causeBasis": None,
+        "livenessHttpStatus": None,
     }
     if reply.status == 503:
         row["ready"] = False  # the proxy answered not ready; its body does not come through
-        return row
+        cause, live_status, failure = readiness_cause(ctx, workload, pod, scheme, port, budget)
+        row.update(cause=cause, causeBasis=CAUSE_BASIS[cause], livenessHttpStatus=live_status)
+        return row, failure
     if reply.status != 200:
         raise RwError("dependency", f"{what} answered HTTP {reply.status}")
     doc = readiness_doc(reply, what)
@@ -156,9 +208,12 @@ def readiness_row(ctx, workload, pod, scheme, port, budget):
         truncated=cut_status or cut_db or cut_cache or cut_version,
     )
     if callbacks is not None:
-        row["successCallbacks"] = [truncate(c)[0] for c in callbacks[:NESTED_LIMIT]]
+        # entries are coerced to text: the proxy names a callback by its name or its repr
+        shown = [truncate(str(c)) for c in callbacks[:NESTED_LIMIT]]
+        row["successCallbacks"] = [text for text, _ in shown]
         row["successCallbacksTruncated"] = len(callbacks) > NESTED_LIMIT
-    return row
+        row["truncated"] = row["truncated"] or any(cut for _, cut in shown)
+    return row, None
 
 
 def unasked(pod, port, extra):
@@ -177,6 +232,9 @@ READINESS_UNASKED = {
     "successCallbacksTruncated": False,
     "detailed": False,
     "truncated": False,
+    "cause": None,
+    "causeBasis": None,
+    "livenessHttpStatus": None,
 }
 
 
@@ -186,6 +244,36 @@ def answered(kind, row):
     if kind == "liveness":
         return any(p["served"] for p in row["paths"])
     return row["ready"] is not None
+
+
+def names_text(names):
+    shown = ", ".join(names[:10])
+    return shown + (f" and {len(names) - 10} more" if len(names) > 10 else "")
+
+
+def report_unasked(ctx, pods, asked):
+    """One scoped error for the pods that were not asked: those not Running, and the Running ones
+    past the cap of MAX_QUERIED_PODS asks (or `maxItems`), so a result that covers fewer pods than
+    the workload has is `partial`, never silently complete."""
+    idle = sorted(p["metadata"]["name"] for p in pods if not running(p))
+    skipped = sorted(
+        p["metadata"]["name"] for p in pods if running(p) and p["metadata"]["name"] not in asked
+    )
+    if idle:
+        ctx.error(
+            "unreachable",
+            f"{len(idle)} pod(s) not Running, not asked: {names_text(idle)}"[:MESSAGE_LIMIT],
+            scope="pods/not-running",
+        )
+    if skipped:
+        ctx.error(
+            "unreachable",
+            (
+                f"{len(skipped)} Running pod(s) not asked: at most {MAX_QUERIED_PODS} pods are "
+                f"asked per run, and no more than maxItems are listed: {names_text(skipped)}"
+            )[:MESSAGE_LIMIT],
+            scope="pods/not-asked",
+        )
 
 
 def view(ctx, kind, workload, pods, scheme, port, limit, budget=None):
@@ -210,7 +298,9 @@ def view(ctx, kind, workload, pods, scheme, port, limit, budget=None):
                 if failure is not None:
                     failures.append((name, failure))
             else:
-                row = readiness_row(ctx, workload, pod, scheme, port, budget)
+                row, failure = readiness_row(ctx, workload, pod, scheme, port, budget)
+                if failure is not None:
+                    failures.append((name, failure))
             rows.append(row)
         except RwError as exc:
             if exc.code == "permission_denied":
@@ -225,10 +315,14 @@ def view(ctx, kind, workload, pods, scheme, port, limit, budget=None):
         raise RwError(exc.code, exc.message, scope=f"pod/{name}") from exc
     for name, exc in failures:
         ctx.error(exc.code, exc.message[:MESSAGE_LIMIT], scope=f"pod/{name}")
+    report_unasked(ctx, pods, {r["name"] for r in rows if r["queried"]})
     good = "alive" if kind == "liveness" else "ready"
+    asked_rows = sum(1 for r in rows if r["queried"])
     return {
         "workload": workload_summary(workload),
         "podCount": len(pods),
+        "queriedCount": asked_rows,
+        "unaskedCount": len(pods) - asked_rows,
         "truncated": len(pods) > limit,
         f"{good}Count": sum(1 for r in rows if r[good] is True),
         f"not{good.capitalize()}Count": sum(1 for r in rows if r[good] is False),

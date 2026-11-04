@@ -1,11 +1,13 @@
 """Unit tests for k8s-jaeger-health's lib/ and script. Captured JSON comes from the `rw-jaeger`
 namespace of the kind-rw-plugins scenario (plugins/kubernetes/tests/kind/scenarios/
 30-k8s-jaeger-health.yaml): a real jaegertracing/all-in-one with in-memory storage and spans sent
-over OTLP/HTTP: `checkout` (POST /pay 500 x4 and 503 x2, GET /cart 404 x3, 200s), `catalog` (404s
-only) and `gateway` (502 x2 on the newer http.response.status_code key). `traces-<service>.json`
-is everything Jaeger held for the service (spans cut to the fields the skill reads); the tests
-answer each tag query the way Jaeger does (a trace matches when a span's tag equals the value as a
-string). The script runs through the SDK's test context (`ctx.run` raises on a non-zero exit like
+over OTLP/HTTP, 5xx server spans with OpenTelemetry's error status (Jaeger's tag error=true):
+`checkout` (POST /pay 500 x4 and 503 x2, GET /cart 404 x3, a reset path with an id 404 x2, outbound
+POST payments 503 x2 of span.kind client), `catalog` (404s only), `gateway` (502 x2 on the newer
+http.response.status_code key, 404 x2 with http.route) and `inventory` (507 x3, a 5xx no default
+code lists). `traces-<service>.json` is everything Jaeger held for the service (spans cut to the
+fields the skill reads); the tests answer each tag query the way Jaeger does (a trace matches when
+a span's tag equals the value as a string, a bool as true/false). The script runs through the SDK's test context (`ctx.run` raises on a non-zero exit like
 the real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails)."""
 
 import importlib.util
@@ -27,11 +29,11 @@ SKILL = Path(__file__).parents[2] / "skills" / "k8s-jaeger-health"
 DATA = Path(__file__).parent / "data" / "k8s_jaeger_health"
 UTC = timezone.utc
 NS = "rw-jaeger"
-POD = "jaeger-f6bd9dd68-gr6tn"
-CAPTURED = datetime(2026, 11, 3, 23, 32, 28, tzinfo=UTC)  # just after the data was captured
+POD = "jaeger-f6bd9dd68-j59qx"
+CAPTURED = datetime(2026, 11, 4, 0, 14, 0, tzinfo=UTC)  # just after the data was captured
 TASKS = {t["name"]: t for t in yaml.safe_load((SKILL / "tasks.yaml").read_text())["tasks"]}
-CODES = [400, 401, 403, 404, 429, 500, 502, 503, 504]
-SETTINGS = {"maxItems": 200, "statusCodes": CODES}
+CODES = [400, 401, 403, 404, 429]
+SETTINGS = {"maxItems": 50, "statusCodes": CODES}
 RESOURCE = {
     "cluster": "kind",
     "namespace": NS,
@@ -51,7 +53,7 @@ UNAVAILABLE = (
     "Error from server (ServiceUnavailable): the server is currently unable to handle the request"
 )
 NO_ROUTE = "Error from server (NotFound): the server could not find the requested resource"
-SERVICES = ("catalog", "checkout", "gateway", "jaeger-all-in-one")  # the last has no scenario spans
+SERVICES = ("catalog", "checkout", "gateway", "inventory", "jaeger-all-in-one")  # last: no spans
 EMPTY = {"data": [], "total": 0, "limit": 0, "offset": 0, "errors": None}
 
 
@@ -80,8 +82,10 @@ def render(pods):
         ]
         lines.append(f"s:status.phase={status['phase']}")
         lines.append(f"j:status.conditions={json.dumps(status.get('conditions', []))}")
-        for port in pod["spec"]["containers"][0].get("ports", []):
-            lines.append(f"p:{port.get('name', '')}={port['containerPort']}")
+        for container in pod["spec"]["containers"]:
+            lines.append(f"c:{container.get('name', '')}={container.get('image', '')}")
+            for port in container.get("ports", []):
+                lines.append(f"p:{port.get('name', '')}={port['containerPort']}")
     return "\n".join(lines) + "\n"
 
 
@@ -118,9 +122,13 @@ def first_start(trace):
     return min(s["startTime"] for s in trace["spans"])
 
 
+def tag_text(value):
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
 def tag_matches(trace, key, code):
     return any(
-        t["key"] == key and str(t["value"]) == str(code)
+        t["key"] == key and tag_text(t["value"]) == str(code)
         for span in trace["spans"]
         for t in span["tags"]
     )
@@ -134,7 +142,18 @@ def jaeger_answer(doc, start, end, limit, key, code):
     return {**doc, "data": hits[:limit]}
 
 
-def stubs(now, since, limit, fail=None, replies=None, docs=None, pods=None, answer_all=None, **kw):
+def stubs(
+    now,
+    since,
+    limit,
+    codes=CODES,
+    fail=None,
+    replies=None,
+    docs=None,
+    pods=None,
+    answer_all=None,
+    **kw,
+):
     """kubectl answers for a run. `fail` maps 'workload', 'pods' or 'proxy' to stderr; `replies`
     maps a proxy path, or (service, key, code), to (rc, stdout, stderr); `docs` replaces a
     service's trace document; `answer_all` answers every traces query the same way."""
@@ -168,18 +187,18 @@ def stubs(now, since, limit, fail=None, replies=None, docs=None, pods=None, answ
         out[raw(path, scheme, port)] = (1, "", fail["proxy"]) if "proxy" in fail else reply
 
     put("/api/services", (0, json.dumps(load("services.json")), ""))
+    searches = [traces.ERROR_TAG] + [(k, c) for k in traces.STATUS_KEYS for c in codes]
     for service in (*SERVICES, "x"):
-        for key in traces.STATUS_KEYS:
-            for code in CODES:
-                path = traces.traces_path(service, start, end, limit, key, code)
-                if answer_all is not None:
-                    default = answer_all
-                elif service in SERVICES:
-                    doc = docs.get(service) or trace_doc(service)
-                    default = (0, json.dumps(jaeger_answer(doc, start, end, limit, key, code)), "")
-                else:
-                    default = (0, json.dumps(EMPTY), "")
-                put(path, default, (service, key, code))
+        for key, code in searches:
+            path = traces.traces_path(service, start, end, limit, key, code)
+            if answer_all is not None:
+                default = answer_all
+            elif service in SERVICES:
+                doc = docs.get(service) or trace_doc(service)
+                default = (0, json.dumps(jaeger_answer(doc, start, end, limit, key, code)), "")
+            else:
+                default = (0, json.dumps(EMPTY), "")
+            put(path, default, (service, key, code))
     return out
 
 
@@ -188,7 +207,14 @@ def run(now=CAPTURED, res=None, settings=None, inputs=None, **kw):
     inputs = inputs or {}
     since = parse_duration(inputs.get("since", "1h"))
     with make_context(resource=res or RESOURCE, settings=settings or SETTINGS, now=now) as tc:
-        table = stubs(now, since, inputs.get("limit", 100), **inputs_of(inputs), **kw)
+        table = stubs(
+            now,
+            since,
+            inputs.get("limit", 100),
+            codes=(settings or SETTINGS)["statusCodes"],
+            **inputs_of(inputs),
+            **kw,
+        )
         calls = stub_commands(tc, table)
         env = run_main(script(), tc, **inputs)
     return env, calls
@@ -217,8 +243,11 @@ def operation(env, service, name):
     return next(o for o in service_row(env, service)["operations"] if o["operation"] == name)
 
 
-def span_tags(status, **extra):
+def span_tags(status, error=None, **extra):
+    """A server span's tags; like OpenTelemetry's, a 5xx one carries error=true."""
     tags = [{"key": "http.status_code", "type": "int64", "value": status}]
+    if status >= 500 if error is None else error:
+        tags.append({"key": "error", "type": "bool", "value": True})
     return tags + [{"key": k, "type": "string", "value": v} for k, v in extra.items()]
 
 
@@ -237,18 +266,20 @@ def test_traces_path_is_one_exact_tag_query_in_microseconds():
 
 
 def test_the_window_is_microseconds_before_the_reference_time():
-    assert micros(CAPTURED) == 1793748748000000
+    assert micros(CAPTURED) == 1793751240000000
     env, calls = run()
     start, end = micros(CAPTURED - timedelta(hours=1)), micros(CAPTURED)
     literal = (
         f"/api/traces?service=checkout&start={start}&end={end}&limit=100"
-        "&tags=%7B%22http.status_code%22%3A%22500%22%7D"
+        "&tags=%7B%22error%22%3A%22true%22%7D"
     )
     assert raw(literal) in calls
+    exact = literal.replace("%22error%22%3A%22true%22", "%22http.status_code%22%3A%22404%22")
+    assert raw(exact) in calls
     assert env["outputs"]["httpErrors"]["window"] == {
         "since": 3600,
-        "start": "2026-11-03T22:32:28Z",
-        "end": "2026-11-03T23:32:28Z",
+        "start": "2026-11-03T23:14:00Z",
+        "end": "2026-11-04T00:14:00Z",
         "startMicros": start,
         "endMicros": end,
     }
@@ -269,9 +300,11 @@ def test_status_of_reads_an_int_or_digit_string_on_either_key_and_nothing_else()
         ({"http.url": "http://checkout:8080/cart/items?token=abc#frag"}, "/cart/items"),
         ({"url.full": "https://h.example/a/b?x=1"}, "/a/b"),
         ({"http.url": "http://checkout:8080"}, "/"),
-        ({"http.target": "/items/9?debug=1"}, "/items/9"),
+        ({"http.target": "/items/9?debug=1"}, "/items/{id}"),
         ({"url.path": "/api", "http.target": "/other?x"}, "/api"),
         ({"http.route": "/items/{id}"}, "/items/{id}"),
+        # the route (a template) wins over the raw path, which may hold ids
+        ({"http.route": "/users/{id}", "url.path": "/users/42"}, "/users/{id}"),
         ({"http.method": "GET"}, None),
     ],
 )
@@ -328,6 +361,100 @@ def test_selector_string_and_port():
     assert fetch.pod_port({"spec": {"containers": [{"ports": [{"containerPort": 1}]}]}}) == 16686
 
 
+def two_containers(sidecar_first):
+    """A pod with Jaeger and an injected sidecar that also has a port called `query`."""
+    sidecar = {
+        "name": "istio-proxy",
+        "image": "istio/proxyv2:1.24",
+        "ports": [{"name": "query", "containerPort": 9999}],
+    }
+    jaeger = {"name": "jaeger", "image": "jaegertracing/all-in-one:1.76.0", "ports": []}
+    pod = base_pod()
+    pod["spec"]["containers"] = [sidecar, jaeger] if sidecar_first else [jaeger, sidecar]
+    return pod, jaeger
+
+
+def test_the_port_comes_from_the_main_container_and_the_input_overrides_it():
+    for sidecar_first in (True, False):
+        pod, jaeger = two_containers(sidecar_first)
+        assert fetch.main_container(pod) is jaeger
+        # Jaeger's container declares no port: the sidecar's `query` port is not taken
+        assert fetch.pod_port(pod) == 16686
+        jaeger["ports"] = [{"name": "query", "containerPort": 8686}]
+        assert fetch.pod_port(pod) == 8686
+        assert fetch.pod_port(pod, 7000) == 7000
+    # no Jaeger image: the first container that is not a known sidecar
+    pod, _ = two_containers(True)
+    pod["spec"]["containers"][1]["image"] = "registry.example/tracing:1"
+    pod["spec"]["containers"][1]["ports"] = [{"name": "query", "containerPort": 8001}]
+    assert fetch.main_container(pod)["name"] == "jaeger" and fetch.pod_port(pod) == 8001
+    # a jaeger-agent sidecar is not the query service
+    assert not fetch.is_jaeger_image("jaegertracing/jaeger-agent:1.62")
+    assert fetch.is_jaeger_image("jaegertracing/jaeger-query:1.62")
+
+
+def test_the_asked_pod_reports_its_start_time_and_restarts():
+    env, _ = run()
+    pod = env["outputs"]["httpErrors"]["queryPod"]
+    assert pod == {
+        "name": POD,
+        "container": "jaeger",
+        "image": "jaegertracing/all-in-one:1.76.0",
+        "startTime": "2026-11-04T00:13:08Z",
+        "containerStartedAt": "2026-11-04T00:13:09Z",
+        "restartCount": 0,
+    }
+    restarted = base_pod()
+    restarted["status"]["containerStatuses"] = [
+        {
+            "name": "jaeger",
+            "restartCount": 3,
+            "state": {"running": {"startedAt": "2026-11-04T00:00:00Z"}},
+        }
+    ]
+    assert fetch.query_pod(restarted)["restartCount"] == 3
+    assert fetch.query_pod(restarted)["containerStartedAt"] == "2026-11-04T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    "replicas, image, sharded",
+    [
+        (1, "jaegertracing/all-in-one:1.76.0", False),
+        (3, "jaegertracing/all-in-one:1.76.0", True),
+        (3, "registry:5000/jaegertracing/all-in-one@sha256:abc", True),
+        (2, "jaegertracing/jaeger:2.4.0", True),
+        (3, "jaegertracing/jaeger-query:1.76.0", False),
+        (None, "jaegertracing/all-in-one:1.76.0", False),
+    ],
+)
+def test_more_than_one_all_in_one_replica_may_have_sharded_storage(replicas, image, sharded):
+    workload = {"kind": "Deployment", "metadata": {"name": "j"}, "spec": {"replicas": replicas}}
+    pod = base_pod()
+    pod["spec"]["containers"][0]["image"] = image
+    got, basis = fetch.storage_basis(workload, [pod], pod)
+    assert got is sharded and (basis is not None) is sharded
+
+
+def test_storage_may_be_sharded_is_a_fact_in_the_output():
+    out = http_errors.view(
+        Clocked(lambda i, argv: (0, json.dumps(EMPTY), "")),
+        {**WORKLOAD, "spec": {"replicas": 3}},
+        [base_pod()],
+        "http",
+        None,
+        timedelta(hours=1),
+        CAPTURED,
+        PARAMS,
+        50,
+        fetch.Budget(clock=lambda: 0.0),
+    )
+    assert out["storageMayBeSharded"] is True and "all-in-one" in out["storageBasis"]
+    assert out["workload"]["replicas"] == 3
+    env, _ = run()
+    assert env["outputs"]["httpErrors"]["storageMayBeSharded"] is False
+    assert env["outputs"]["httpErrors"]["storageBasis"] is None
+
+
 def test_check_inputs_codes_limit_and_duration():
     for scheme, port in (("ftp", None), ("http", 0), ("http", "80"), ("http", True)):
         with pytest.raises(RwError) as exc:
@@ -338,9 +465,10 @@ def test_check_inputs_codes_limit_and_duration():
     for bad in ([], [200], [600], ["500"], [True], None):
         with pytest.raises(RwError):
             http_errors.check_codes(bad)
-    for bad in (0, 1501, "5", True):
+    for bad in (0, 501, 1500, "5", True):
         with pytest.raises(RwError):
             http_errors.check_limit(bad)
+    assert http_errors.check_limit(500) == 500
     for text in ("", "soon", "0s", "1h30"):
         with pytest.raises(RwError):
             parse_duration(text)
@@ -367,6 +495,57 @@ def test_classify_and_proxy_get_tell_the_statuses_apart():
     assert exc.value.code == "unreachable"
 
 
+def test_the_error_reason_decides_before_the_message_text():
+    forbidden_not_found = (
+        'Error from server (Forbidden): pods "x" is forbidden: User "u" cannot get resource '
+        '"pods/proxy": the server could not find the requested resource (not found)'
+    )
+    assert k8s.classify(1, forbidden_not_found) == "permission_denied"
+    assert k8s.classify(1, "Error from server (Timeout): request did not complete") == "timeout"
+    assert k8s.classify(1, "Error from server (TooManyRequests): slow down") == "rate_limited"
+    assert k8s.classify(1, "Error from server (Unauthorized): Unauthorized") == "permission_denied"
+    assert (
+        k8s.classify(
+            1, 'Error from server (NotFound): the server doesn\'t have a resource type "x"'
+        )
+        == "dependency"
+    )
+    # a Reason that does not decide falls back to the text; no Reason line: text only
+    internal = "Error from server (InternalError): context deadline exceeded"
+    assert k8s.classify(1, internal) == "timeout"
+    assert k8s.classify(1, "Error from server (BadRequest): nope") == "internal"
+    assert (
+        k8s.classify(1, "Unable to connect to the server: dial tcp: i/o timeout") == "unreachable"
+    )
+    # the Reason is read on the line that starts with it, not anywhere in a message
+    warned = "Warning: Error from server (Forbidden) in a log\nError from server (NotFound): gone"
+    assert k8s.classify(1, warned) == "not_found"
+
+
+def test_proxy_get_reads_the_reason_line_before_looking_for_a_404_or_503_text():
+    # a permission error whose message happens to contain the 404 text is not a 404
+    forbidden = (
+        'Error from server (Forbidden): pods "p" is forbidden: cannot get resource "pods/proxy" '
+        "(the server could not find the requested resource)"
+    )
+    with pytest.raises(RwError) as exc:
+        proxy.proxy_get(FakeRun(1, "", forbidden), "/x")
+    assert exc.value.code == "permission_denied"
+    with pytest.raises(RwError) as exc:
+        proxy.proxy_get(
+            FakeRun(1, "", "Error from server (Timeout): currently unable to handle the request"),
+            "/x",
+        )
+    assert exc.value.code == "timeout"
+    # no Reason line at all: the text is all there is
+    assert (
+        proxy.proxy_get(
+            FakeRun(1, "", "the server could not find the requested resource"), "/x"
+        ).status
+        == 404
+    )
+
+
 def test_workload_and_pod_reads_are_projected_so_no_env_value_leaves_the_cluster():
     _, calls = run()
     reads = [c for c in calls if "--raw" not in c]
@@ -374,8 +553,12 @@ def test_workload_and_pod_reads_are_projected_so_no_env_value_leaves_the_cluster
     for projection in (WORKLOAD_FIELDS, POD_FIELDS):
         template = projection.template(True)
         assert "env" not in template and "annotations" not in template
-    # the container ports are the only part of spec.containers that is read
-    assert POD_FIELDS.template(False).count("spec.containers") == 1
+    # of spec.containers only the name, image and ports are read; of the status the restart count
+    # and start time. No args, command, env or volume mounts
+    template = POD_FIELDS.template(False)
+    assert template.count("spec.containers") == 1
+    for field in (".args", ".command", ".env", ".volumeMounts", ".lifecycle", ".securityContext"):
+        assert field not in template
 
 
 def test_projection_parses_what_kubectl_prints_and_refuses_anything_else():
@@ -384,13 +567,28 @@ def test_projection_parses_what_kubectl_prints_and_refuses_anything_else():
     assert pod["metadata"] == {"name": POD}
     assert pod["status"]["phase"] == "Running"
     assert pod["spec"]["containers"][0]["ports"][0] == {"name": "query", "containerPort": 16686}
+    assert pod["spec"]["containers"][0]["image"] == "jaegertracing/all-in-one:1.76.0"
+    assert pod["status"]["startTime"] == "2026-11-04T00:13:08Z"
+    assert pod["status"]["containerStatuses"] == [
+        {
+            "name": "jaeger",
+            "restartCount": 0,
+            "state": {"running": {"startedAt": "2026-11-04T00:13:09Z"}},
+        }
+    ]
+    two = Projection(containers=True).parse("@\nc:a=i1\np:x=1\nc:b=i2\np:=2\n", False)
+    assert [c.get("ports") for c in two["spec"]["containers"]] == [
+        [{"name": "x", "containerPort": 1}],
+        [{"containerPort": 2}],
+    ]
     workload = WORKLOAD_FIELDS.parse((DATA / "workload.txt").read_text(), False)
     assert workload["kind"] == "Deployment" and workload["spec"]["replicas"] == 1
     assert workload["spec"]["selector"]["matchLabels"]["app"] == "jaeger"
     assert Projection(strings=("a.b",)).parse("@\ns:a.b=\n", False) == {}  # absent: left out
-    for text in ("", "x\n", "@\nj:a=not json\n", "@\np:x=notaport\n", "s:a=1\n"):
+    bad = ("", "x\n", "@\nj:a=not json\n", "@\np:x=notaport\n", "@\nr:a=many|\n", "s:a=1\n")
+    for text in bad:
         with pytest.raises(RwError) as exc:
-            Projection(strings=("a",), values=("a",), ports=True).parse(text, False)
+            Projection(strings=("a",), values=("a",), containers=True).parse(text, False)
         assert exc.value.code == "internal"
 
 
@@ -402,10 +600,14 @@ def test_broken_reports_5xx_and_4xx_per_service_and_operation():
     assert env["status"] == "ok" and env["errors"] == []
     check_schema(env)
     out = env["outputs"]["httpErrors"]
-    assert (out["serverErrorSpans"], out["clientErrorSpans"]) == (8, 6)
-    assert out["serviceCount"] == 4 and out["queriedCount"] == 4 and out["truncated"] is False
+    assert (out["serverErrorSpans"], out["clientErrorSpans"]) == (11, 10)
+    assert out["outboundErrorSpans"] == 2
+    assert out["serviceCount"] == 5 and out["queriedCount"] == 5 and out["truncated"] is False
+    assert out["completeCount"] == 5 and out["servicesNotQueried"] == 0
+    assert out["limitReached"] is False
     assert [s["name"] for s in out["services"]] == [
         "checkout",
+        "inventory",
         "gateway",
         "catalog",
         "jaeger-all-in-one",
@@ -420,9 +622,53 @@ def test_broken_reports_5xx_and_4xx_per_service_and_operation():
     # the newer semantic-convention keys: status on http.response.status_code, path on url.path
     api = operation(env, "gateway", "GET /api")
     assert api["byStatus"] == {"502": 2} and api["urlPaths"] == ["/api"]
-    # one query per service, status attribute key and code
+    # a 507 is in no statusCodes list: the error=true pass finds it
+    assert 507 not in CODES
+    stock = operation(env, "inventory", "POST /stock")
+    assert (
+        stock["byStatus"] == {"507": 3} and service_row(env, "inventory")["serverErrorSpans"] == 3
+    )
+    # one error=true query per service, then one query per service, status attribute key and code
     queries = [c for c in calls if "/api/traces" in c[3]]
-    assert len(queries) == 4 * 2 * len(CODES)
+    assert len(queries) == 5 * (1 + 2 * len(CODES))
+    assert "tags=%7B%22error%22%3A%22true%22%7D" in queries[0][3]
+
+
+def test_all_error_true_queries_come_before_any_exact_code_query():
+    _, calls = run()
+    tags = [parse_qs(urlsplit(c[3]).query)["tags"][0] for c in calls if "/api/traces" in c[3]]
+    first_exact = next(i for i, t in enumerate(tags) if "error" not in json.loads(t))
+    assert all(json.loads(t) == {"error": "true"} for t in tags[:first_exact])
+    assert first_exact == len(SERVICES)
+    assert all("error" not in json.loads(t) for t in tags[first_exact:])
+
+
+def test_an_id_in_the_path_and_in_the_operation_name_is_replaced():
+    env, _ = run(inputs={"services": ["checkout"]})
+    reset = operation(env, "checkout", "GET /reset/{id}/confirm")
+    assert reset["urlPaths"] == ["/reset/{id}/confirm"] and reset["clientErrorSpans"] == 2
+    text = json.dumps(env)
+    assert "9f86d081884c" not in text and "not-a-real-code" not in text
+    # catalog's raw /items/9 and gateway's http.route /v2/users/{id}
+    env, _ = run(inputs={"services": ["catalog", "gateway"]})
+    assert operation(env, "catalog", "GET /items/{id}")["urlPaths"] == ["/items/{id}"]
+    users = operation(env, "gateway", "GET /v2/users/{id}")
+    assert users["urlPaths"] == ["/v2/users/{id}"] and "42" not in json.dumps(users)
+
+
+def test_outbound_client_spans_are_counted_apart_from_inbound_ones():
+    env, _ = run(inputs={"services": ["checkout"]})
+    row = service_row(env, "checkout")
+    assert (row["serverErrorSpans"], row["clientErrorSpans"], row["outboundErrorSpans"]) == (
+        6,
+        5,
+        2,
+    )
+    out = operation(env, "checkout", "POST payments")
+    assert out["serverErrorSpans"] == 0 and out["byStatus"] == {}
+    assert out["outboundByStatus"] == {"503": 2} and out["outboundErrorSpans"] == 2
+    assert out["urlPaths"] == [] and len(out["sampleOutboundTraceIds"]) == 2
+    check_schema(env)
 
 
 def test_healthy_service_has_no_5xx():
@@ -435,7 +681,7 @@ def test_healthy_service_has_no_5xx():
     assert row["name"] == "catalog" and row["serverErrorSpans"] == 0
     [op] = row["operations"]
     assert op["operation"] == "GET /items/{id}" and op["clientErrorSpans"] == 3
-    assert op["urlPaths"] == ["/items/9"]  # `?debug=1` is gone
+    assert op["urlPaths"] == ["/items/{id}"]  # `/items/9?debug=1`: the id and the query are gone
 
 
 def test_a_service_with_no_error_spans_has_zero_counts_and_no_operations():
@@ -445,7 +691,8 @@ def test_a_service_with_no_error_spans_has_zero_counts_and_no_operations():
     out = env["outputs"]["httpErrors"]
     assert out["serverErrorSpans"] == 0 and out["clientErrorSpans"] == 0
     assert all(
-        s["queried"] and s["operations"] == [] and s["tracesSeen"] == 0 for s in out["services"]
+        s["queried"] and s["complete"] and s["operations"] == [] and s["tracesSeen"] == 0
+        for s in out["services"]
     )
 
 
@@ -455,6 +702,8 @@ def test_no_tag_value_or_query_string_leaves_the_task():
     for leaked in (
         "not-a-real-token",
         "not-a-real-key",
+        "not-a-real-code",
+        "9f86d081884c",
         "user=42",
         "page=2",
         "debug=1",
@@ -465,13 +714,91 @@ def test_no_tag_value_or_query_string_leaves_the_task():
         "operation",
         "serverErrorSpans",
         "clientErrorSpans",
+        "outboundErrorSpans",
         "byStatus",
+        "outboundByStatus",
         "urlPaths",
         "urlPathsTruncated",
         "sampleServerTraceIds",
         "sampleClientTraceIds",
+        "sampleOutboundTraceIds",
         "truncated",
     }
+
+
+SECRET_PATHS = [
+    ("/reset/9f86d081884c7d659a2feaa0c55ad015/confirm", "/reset/{id}/confirm"),
+    ("/p/sk-abcdef123456", "/p/{id}"),
+    ("/p/sk-abcdefghijkl", "/p/{id}"),
+    ("/app/page;jsessionid=ABCDEF0123456789", "/app/page"),
+    ("/app;jsessionid=X/page;a=b/more", "/app/page/more"),
+    (
+        "/services/T0123ABCD45/B0123ABCD45/AbCdEfGhIjKlMnOpQrStUvWx",
+        "/services/T0123ABCD45/B0123ABCD45/{id}",
+    ),
+    (
+        "/services/T0123ABCD45/B0123ABCD45/xYz4kQw9LmN2pR7sT1uV5aBc",
+        "/services/T0123ABCD45/B0123ABCD45/{id}",
+    ),
+    ("/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/sendMessage", "/{id}/sendMessage"),
+    ("/hooks/eyJhbGciOiJIUzI1NiJ9.e30.abc", "/hooks/{id}"),
+    ("/orders/123456/items/42", "/orders/{id}/items/{id}"),
+    ("/users/123e4567-e89b-12d3-a456-426614174000/profile", "/users/{id}/profile"),
+    ("/files/deadbeefdeadbeef", "/files/{id}"),
+    ("/cart?token=abc#frag", "/cart"),
+    ("/api/authentication/get-user-profile", "/api/authentication/get-user-profile"),
+    ("/v2/users/{id}", "/v2/users/{id}"),
+    ("", "/"),
+]
+
+
+@pytest.mark.parametrize("raw_path, expected", SECRET_PATHS)
+def test_redact_path_replaces_ids_and_secrets_and_keeps_names(raw_path, expected):
+    assert traces.redact_path(raw_path) == expected
+
+
+def test_no_secret_shaped_path_leaves_the_task_in_a_path_or_an_operation_name():
+    """Each secret-shaped path is the span's URL path and part of its operation name."""
+    doc = load("traces-checkout.json")
+    base = doc["data"][0]
+    many = []
+    for i, (path, _) in enumerate(SECRET_PATHS[:10]):
+        t = json.loads(json.dumps(base))
+        t["traceID"] = f"{i:032x}"
+        t["spans"][0].update(
+            traceID=t["traceID"],
+            spanID=f"{i:016x}",
+            operationName=f"GET {path}?secret=not-a-real-secret#frag",
+        )
+        t["spans"][0]["tags"] = span_tags(500, **{"http.target": f"{path}?secret=x"})
+        many.append(t)
+    doc["data"] = many
+    env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"]})
+    check_schema(env)
+    text = json.dumps(env["outputs"])
+    for leaked in (
+        "9f86d081884c",
+        "sk-abcdef",
+        "jsessionid",
+        "AbCdEfGhIjKlMnOpQrStUvWx",
+        "xYz4kQw9LmN2pR7sT1uV5aBc",
+        "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
+        "123456789",
+        "not-a-real-secret",
+        "frag",
+    ):
+        assert leaked not in text, leaked
+    ops = {o["operation"] for o in service_row(env, "checkout")["operations"]}
+    assert "GET /reset/{id}/confirm" in ops and "GET /app/page" in ops
+    assert "GET /services/T0123ABCD45/B0123ABCD45/{id}" in ops
+
+
+def test_clean_operation_cuts_query_and_fragment_only_from_urls():
+    assert traces.clean_operation("GET /cart?token=x#f") == "GET /cart"
+    assert traces.clean_operation("GET https://u:pw@h.example/a/123456?x=1") == "GET /a/{id}"
+    assert traces.clean_operation("UserService#get") == "UserService#get"
+    assert traces.clean_operation("SELECT x FROM t WHERE a = ?") == "SELECT x FROM t WHERE a = ?"
+    assert traces.clean_operation("POST /pay") == "POST /pay"
 
 
 def test_outside_the_window_nothing_counts_even_if_jaeger_returns_the_trace():
@@ -481,10 +808,9 @@ def test_outside_the_window_nothing_counts_even_if_jaeger_returns_the_trace():
     replies = {}
     for service in SERVICES:
         doc = trace_doc(service)
-        for key in traces.STATUS_KEYS:
-            for code in CODES:
-                hits = [t for t in doc["data"] if tag_matches(t, key, code)]
-                replies[(service, key, code)] = (0, json.dumps({**doc, "data": hits}), "")
+        for key, code in [traces.ERROR_TAG] + [(k, c) for k in traces.STATUS_KEYS for c in CODES]:
+            hits = [t for t in doc["data"] if tag_matches(t, key, code)]
+            replies[(service, key, code)] = (0, json.dumps({**doc, "data": hits}), "")
     env, _ = run(now=later, replies=replies)
     out = env["outputs"]["httpErrors"]
     assert out["window"]["startMicros"] == micros(later - timedelta(hours=1))
@@ -492,45 +818,89 @@ def test_outside_the_window_nothing_counts_even_if_jaeger_returns_the_trace():
     assert service_row(env, "checkout")["tracesSeen"] > 0
 
 
-def test_only_listed_codes_of_the_service_itself_are_counted():
+def test_every_error_status_in_a_returned_trace_counts_listed_or_not_and_only_the_services_own():
     doc = load("traces-checkout.json")
     trace = doc["data"][0]
     span = trace["spans"][0]
     trace["processes"]["p2"] = {"serviceName": "other", "tags": []}
     other = {**span, "spanID": "ff01", "processID": "p2", "tags": span_tags(500)}
-    teapot = {**span, "spanID": "ff02", "tags": span_tags(418)}
+    teapot = {**span, "spanID": "ff02", "operationName": "teapot", "tags": span_tags(418)}
     as_text = {
         **span,
         "spanID": "ff03",
         "operationName": "textual",
-        "tags": [{"key": "http.status_code", "type": "string", "value": "500"}],
+        "tags": [
+            {"key": "http.status_code", "type": "string", "value": "500"},
+            {"key": "error", "type": "bool", "value": True},
+        ],
     }
-    trace["spans"] += [other, teapot, as_text]
+    ok = {**span, "spanID": "ff04", "operationName": "fine", "tags": span_tags(399)}
+    trace["spans"] += [other, teapot, as_text, ok]
+    # the trace is returned by an error=true or a 404 query only if one of its spans carries that
+    trace["spans"][0]["tags"] += [{"key": "error", "type": "bool", "value": True}]
     env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"]})
     row = service_row(env, "checkout")
-    assert row["serverErrorSpans"] == 7  # 6 + the string "500"; not the other service's, not 418
-    assert next(o for o in row["operations"] if o["operation"] == "textual")["byStatus"] == {
-        "500": 1
-    }
+    assert row["serverErrorSpans"] == 7  # 6 + the string "500"; not the other service's
+    ops = {o["operation"]: o for o in row["operations"]}
+    assert ops["textual"]["byStatus"] == {"500": 1}
+    assert ops["teapot"]["byStatus"] == {"418": 1}  # 418 is in no list: counted, it was seen
+    assert row["clientErrorSpans"] == 6 and "fine" not in ops
+
+
+def test_a_5xx_without_the_error_flag_is_found_only_when_a_returned_trace_carries_it():
+    """The documented gap: a 503 span with no error status and no listed code is in no search."""
+    doc = load("traces-gateway.json")
+    for t in doc["data"]:
+        for sp in t["spans"]:
+            sp["tags"] = [x for x in sp["tags"] if x["key"] != "error"]
+    env, _ = run(docs={"gateway": doc}, inputs={"services": ["gateway"]})
+    row = service_row(env, "gateway")
+    assert row["serverErrorSpans"] == 0 and row["clientErrorSpans"] == 2  # the 502s are missed
+    # ... but a trace returned for another reason (a listed 404) shows the 5xx beside it
+    carrier = next(t for t in doc["data"] if tag_matches(t, "http.response.status_code", 404))
+    extra = {**carrier["spans"][0], "spanID": "ee01", "operationName": "beside"}
+    extra["tags"] = [
+        {"key": "http.response.status_code", "type": "int64", "value": 503},
+        {"key": "span.kind", "type": "string", "value": "server"},
+    ]
+    carrier["spans"].append(extra)
+    env, _ = run(docs={"gateway": doc}, inputs={"services": ["gateway"]})
+    assert operation(env, "gateway", "beside")["byStatus"] == {"503": 1}
 
 
 def test_a_span_found_by_two_queries_is_counted_once():
     doc = load("traces-checkout.json")
-    both = next(t for t in doc["data"] if tag_matches(t, "http.status_code", 500))
-    both["spans"][0]["tags"].append(
+    both = next(t for t in doc["data"] if tag_matches(t, "http.status_code", 404))
+    for span in both["spans"]:
+        span["tags"].append({"key": "http.response.status_code", "type": "int64", "value": 404})
+    env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"]})
+    assert operation(env, "checkout", "GET /cart")["clientErrorSpans"] == 3
+    # a 500 span is returned by the error=true query and by a listed-code query: still one span
+    flagged = next(
+        t
+        for t in doc["data"]
+        if tag_matches(t, "error", "true") and tag_matches(t, "http.status_code", 500)
+    )
+    flagged["spans"][0]["tags"].append(
         {"key": "http.response.status_code", "type": "int64", "value": 500}
     )
-    env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"]})
+    env, _ = run(
+        docs={"checkout": doc},
+        inputs={"services": ["checkout"]},
+        settings={**SETTINGS, "statusCodes": [404, 500]},
+    )
     assert operation(env, "checkout", "POST /pay")["serverErrorSpans"] == 6
 
 
 def test_limit_reached_marks_the_counts_as_a_lower_bound():
     env, _ = run(inputs={"limit": 2, "services": ["checkout"]})
     row = service_row(env, "checkout")
-    assert row["limitReached"] is True and env["outputs"]["httpErrors"]["limit"] == 2
-    assert row["serverErrorSpans"] == 4  # 2 of the four 500s and both 503s
+    out = env["outputs"]["httpErrors"]
+    assert row["limitReached"] is True and out["limit"] == 2 and out["limitReached"] is True
+    assert row["serverErrorSpans"] < 6  # the error=true query returned 2 of its 8 traces
     env, _ = run(inputs={"limit": 100, "services": ["checkout"]})
     assert service_row(env, "checkout")["limitReached"] is False
+    assert env["outputs"]["httpErrors"]["limitReached"] is False
 
 
 def test_services_inputs_unknown_and_excluded_names_are_facts():
@@ -540,9 +910,20 @@ def test_services_inputs_unknown_and_excluded_names_are_facts():
     assert out["unknownServices"] == ["nope"] and out["excludedServices"] == ["checkout"]
     env, _ = run(inputs={"exclude_services": ["checkout", "gateway"]})
     assert [s["name"] for s in env["outputs"]["httpErrors"]["services"]] == [
+        "inventory",
         "catalog",
         "jaeger-all-in-one",
     ]
+    check_schema(env)
+
+
+def test_services_beyond_max_items_are_counted_not_queried():
+    env, calls = run(settings={**SETTINGS, "maxItems": 2})
+    out = env["outputs"]["httpErrors"]
+    assert out["truncated"] is True and out["serviceCount"] == 5
+    assert out["queriedCount"] == 2 and out["servicesNotQueried"] == 3
+    assert [s["name"] for s in out["services"]] == ["checkout", "catalog"]
+    assert len([c for c in calls if "/api/traces" in c[3]]) == 2 * (1 + 2 * len(CODES))
     check_schema(env)
 
 
@@ -569,7 +950,7 @@ def test_operations_are_capped_at_50_and_long_text_is_cut():
         )
         many.append(t)
     doc["data"] = many
-    env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"], "limit": 1500})
+    env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"], "limit": 500})
     check_schema(env)
     row = service_row(env, "checkout")
     assert row["operationCount"] == 60 and len(row["operations"]) == 50
@@ -586,7 +967,7 @@ def test_url_paths_and_samples_are_capped():
         t = json.loads(json.dumps(doc["data"][0]))
         t["traceID"] = f"{i:032x}"
         t["spans"][0].update(traceID=t["traceID"], spanID=f"{i:016x}", operationName="GET /x")
-        t["spans"][0]["tags"] = span_tags(500, **{"http.target": f"/x/{i}"})
+        t["spans"][0]["tags"] = span_tags(500, **{"http.target": f"/x/name-{chr(97 + i)}"})
         many.append(t)
     doc["data"] = many
     env, _ = run(docs={"checkout": doc}, inputs={"services": ["checkout"]})
@@ -611,16 +992,36 @@ def test_a_services_path_the_pod_does_not_serve_is_a_dependency_error():
     assert env["status"] == "failed" and codes_of(env) == [("dependency", None)]
 
 
-def test_one_service_failing_is_one_error_and_the_others_still_report():
-    env, _ = run(replies={("catalog", "http.status_code", 404): (0, "<html>login</html>", "")})
+def test_a_service_whose_first_query_fails_is_one_error_and_the_others_still_report():
+    env, _ = run(replies={("catalog", "error", "true"): (0, "<html>login</html>", "")})
     assert env["status"] == "partial" and codes_of(env) == [("internal", "service/catalog")]
     check_schema(env)
     catalog = service_row(env, "catalog")
     assert catalog["queried"] is False and catalog["serverErrorSpans"] is None
+    assert catalog["complete"] is False and catalog["queriesDone"] == 0
     assert catalog["operations"] == []
-    assert env["outputs"]["httpErrors"]["queriedCount"] == 3
-    assert [s["name"] for s in env["outputs"]["httpErrors"]["services"]][-1] == "catalog"
+    out = env["outputs"]["httpErrors"]
+    assert out["queriedCount"] == 4 and out["servicesNotQueried"] == 1
+    assert [s["name"] for s in out["services"]][-1] == "catalog"
     assert service_row(env, "checkout")["serverErrorSpans"] == 6
+
+
+def test_a_service_cut_off_mid_pass_keeps_its_finished_queries():
+    env, calls = run(replies={("checkout", "http.status_code", 404): (0, "<html>login</html>", "")})
+    assert env["status"] == "partial" and codes_of(env) == [("internal", "service/checkout")]
+    check_schema(env)
+    row = service_row(env, "checkout")
+    # pass 1 (error=true) and the 400, 401 and 403 queries finished; the 404 one failed and the
+    # service's remaining queries were not asked
+    assert row["queried"] is True and row["complete"] is False
+    assert row["queriesDone"] == 4 and row["queriesPlanned"] == 1 + 2 * len(CODES)
+    assert row["serverErrorSpans"] == 6 and row["clientErrorSpans"] == 0
+    checkout_queries = [c for c in calls if "service=checkout" in c[3]]
+    assert len(checkout_queries) == 5
+    other = service_row(env, "catalog")
+    assert other["complete"] is True and other["clientErrorSpans"] == 3
+    out = env["outputs"]["httpErrors"]
+    assert out["queriedCount"] == 5 and out["completeCount"] == 4
 
 
 def test_jaeger_errors_in_a_200_body_are_an_error_never_no_errors():
@@ -628,6 +1029,24 @@ def test_jaeger_errors_in_a_200_body_are_an_error_never_no_errors():
     env, _ = run(answer_all=(0, body, ""))
     assert env["status"] == "failed" and codes_of(env) == [("internal", "service/catalog")]
     assert "invalid tags" in env["errors"][0]["message"]
+
+
+def test_a_long_error_message_is_cut_to_1024_on_every_path():
+    long_err = "Error from server (InternalError): " + "x" * 5000
+    # every service fails: the first failure is raised
+    env, _ = run(answer_all=(1, "", long_err))
+    assert env["status"] == "failed" and len(env["errors"][0]["message"]) <= 1024
+    # one service fails: ctx.error
+    env, _ = run(replies={("catalog", "error", "true"): (1, "", long_err)})
+    assert env["status"] == "partial" and len(env["errors"][0]["message"]) <= 1024
+    # a failing kubectl read before any query
+    env, _ = run(fail={"workload": long_err})
+    assert env["status"] == "failed" and len(env["errors"][0]["message"]) <= 1024
+    # a service name that is itself very long
+    name = "s" * 3000
+    err = k8s.failure(["kubectl"], FakeRun(1, "", long_err).result)
+    assert len(err.message) <= 1024
+    assert len(RwError("internal", name).message) == 1024
 
 
 def test_every_service_failing_fails_the_task():
@@ -685,6 +1104,7 @@ def bare_run(settings=None, **inputs):
         {"since": "soon"},
         {"since": "0s"},
         {"limit": 0},
+        {"limit": 501},
         {"limit": 5000},
         {"scheme": "ftp"},
         {"port": 0},
@@ -747,7 +1167,7 @@ class Clocked:
 
 WORKLOAD = {"kind": "Deployment", "metadata": {"name": "jaeger", "namespace": NS}}
 PODS = [{"metadata": {"name": POD}, "status": {"phase": "Running"}, "spec": {}}]
-PARAMS = {"statusCodes": [500], "limit": 100, "services": [], "excludeServices": []}
+PARAMS = {"statusCodes": [404], "limit": 100, "services": [], "excludeServices": []}
 TIMEOUT = "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)"
 
 
@@ -758,12 +1178,31 @@ def test_the_deadline_leaves_the_services_not_asked_a_timeout_error():
     out = http_errors.view(
         ctx, WORKLOAD, PODS, "http", None, timedelta(hours=1), CAPTURED, PARAMS, 200, budget
     )
-    # /api/services at 0s, then two asks (one per attribute key) per service at 30s each: the
-    # 100s deadline falls inside service b
-    assert [s["queried"] for s in out["services"]] == [True, False, False, False]
-    assert [s for _, s, _ in ctx.errors] == ["service/b", "service/c", "service/d"]
+    # /api/services at 0s, then pass 1 asks a, b, c at 30s each: the 100s deadline falls before d
+    assert [s["queried"] for s in out["services"]] == [True, True, True, False]
+    # pass 2 (two queries per service) finds no time left: a, b and c are incomplete
+    assert [s["complete"] for s in out["services"]] == [False, False, False, False]
+    assert [s["name"] for s in out["services"] if s["queried"]] == ["a", "b", "c"]
+    assert [s for _, s, _ in ctx.errors] == ["service/a", "service/b", "service/c", "service/d"]
     assert all(code == "timeout" and "deadline" in msg for code, _, msg in ctx.errors)
-    assert out["queriedCount"] == 1
+    assert out["queriedCount"] == 3 and out["servicesNotQueried"] == 1
+    assert out["completeCount"] == 0
+
+
+def test_pass_1_covers_every_service_before_pass_2_spends_budget():
+    names = json.dumps({"data": [f"s{i:02d}" for i in range(10)]})
+    ctx = Clocked(lambda i, argv: (0, names, "") if i == 0 else (0, json.dumps(EMPTY), ""), step=5)
+    budget = fetch.Budget(clock=ctx.clock)
+    out = http_errors.view(
+        ctx, WORKLOAD, PODS, "http", None, timedelta(hours=1), CAPTURED, PARAMS, 200, budget
+    )
+    # 100s at 5s per ask: /api/services, 10 pass-1 asks, then 9 asks of pass 2 (two per service)
+    assert out["queriedCount"] == 10 and out["servicesNotQueried"] == 0
+    rows = {s["name"]: s for s in out["services"]}
+    assert rows["s00"]["complete"] is True and rows["s00"]["queriesDone"] == 3
+    assert rows["s04"]["complete"] is False and rows["s04"]["queriesDone"] == 2
+    assert rows["s09"]["complete"] is False and rows["s09"]["queriesDone"] == 1
+    assert out["completeCount"] == 4
 
 
 def test_three_consecutive_timeouts_stop_asking():
@@ -792,10 +1231,11 @@ def test_a_slow_jaeger_stops_after_three_timeouts_with_the_rest_reported():
     out = http_errors.view(
         ctx, WORKLOAD, PODS, "http", None, timedelta(hours=1), CAPTURED, PARAMS, 200, budget
     )
-    assert [s["queried"] for s in out["services"]] == [True, False, False, False, False]
-    assert [c for c, _, _ in ctx.errors] == ["timeout"] * 4
-    assert "consecutive" in ctx.errors[3][2]
-    assert len(ctx.calls) == 6  # services, a (two queries), then b, c and d timing out; e not asked
+    # a and b answered pass 1; c, d and e timed out (three in a row): pass 2 is not asked at all
+    assert [s["queried"] for s in out["services"]] == [True, True, False, False, False]
+    assert [c for c, _, _ in ctx.errors] == ["timeout"] * 5
+    assert "consecutive" in ctx.errors[0][2] and "Timeout" in ctx.errors[4][2]
+    assert len(ctx.calls) == 6  # services, then a to e once each
 
 
 # ------------------------------------------------------------ permissions ----
@@ -844,6 +1284,7 @@ def test_a_statefulset_target_works_too():
     assert env["status"] == "ok" and env["outputs"]["httpErrors"]["workload"] == {
         "kind": "StatefulSet",
         "name": "jaeger",
+        "replicas": 1,
     }
     assert (
         "kubectl",

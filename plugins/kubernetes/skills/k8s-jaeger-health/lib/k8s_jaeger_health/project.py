@@ -7,9 +7,11 @@ the raw output (what a fixture records) never contains an env entry. `Projection
 lines back into a document shaped like the object, so the pure functions read it unchanged.
 
 Line format, one object after a `@` line: `s:<path>=<string>` (a string field, unquoted),
-`j:<path>=<JSON>` (an object, list, number or bool) and, for a pod, `p:<name>=<port>` (one container
-port, name empty when unnamed). A field the object lacks is an empty value and is left out of the
-document.
+`j:<path>=<JSON>` (an object, list, number or bool) and, for a pod, `c:<name>=<image>` (a
+container, in spec order), `p:<name>=<port>` (a container port of the container above it, name
+empty when unnamed) and `r:<container>=<restarts>|<startedAt>` (a container status). A field the
+object lacks is an empty value and is left out of the document. Env, args and commands are not
+among the fields.
 """
 
 import json
@@ -17,14 +19,21 @@ import json
 from k8s_jaeger_health.errors import RwError
 from k8s_jaeger_health.k8s import run_checked
 
-PORTS = '{range .spec.containers[*].ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\\n"}{end}'
+CONTAINERS = (
+    '{range .spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\\n"}'
+    '{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\\n"}{end}{end}'
+)
+RESTARTS = (
+    '{range .status.containerStatuses[*]}{"r:"}{.name}{"="}{.restartCount}{"|"}'
+    '{.state.running.startedAt}{"\\n"}{end}'
+)
 
 
 class Projection:
-    def __init__(self, strings=(), values=(), ports=False):
+    def __init__(self, strings=(), values=(), containers=False):
         self.strings = tuple(strings)
         self.values = tuple(values)
-        self.ports = ports
+        self.containers = containers
 
     def template(self, many):
         parts = ['{"@\\n"}']
@@ -32,8 +41,9 @@ class Projection:
             parts.append(f'{{"s:{path}="}}{{.{path}}}{{"\\n"}}')
         for path in self.values:
             parts.append(f'{{"j:{path}="}}{{.{path}}}{{"\\n"}}')
-        if self.ports:
-            parts.append(PORTS)
+        if self.containers:
+            parts.append(CONTAINERS)
+            parts.append(RESTARTS)
         body = "".join(parts)
         return "{range .items[*]}" + body + "{end}" if many else body
 
@@ -46,17 +56,33 @@ class Projection:
                 objects.append(current)
             elif not line:
                 continue
-            elif current is None or line[:2] not in ("s:", "j:", "p:"):
+            elif current is None or line[:2] not in ("s:", "j:", "c:", "p:", "r:"):
                 raise RwError(
                     "internal", "kubectl returned output that is not the projection asked"
+                )
+            elif line[0] == "c":
+                name, _, image = line[2:].partition("=")
+                current.setdefault("spec", {}).setdefault("containers", []).append(
+                    {"name": name, **({"image": image} if image else {})}
                 )
             elif line[0] == "p":
                 name, _, number = line[2:].partition("=")
                 if not number.isdigit():
                     raise RwError("internal", "kubectl returned a bad container port")
                 entry = {"containerPort": int(number), **({"name": name} if name else {})}
-                container = current.setdefault("spec", {}).setdefault("containers", [{}])[0]
-                container.setdefault("ports", []).append(entry)
+                containers = current.setdefault("spec", {}).setdefault("containers", [])
+                if not containers:
+                    containers.append({})
+                containers[-1].setdefault("ports", []).append(entry)
+            elif line[0] == "r":
+                name, _, rest = line[2:].partition("=")
+                count, _, started = rest.partition("|")
+                if not count.isdigit():
+                    raise RwError("internal", "kubectl returned a bad restart count")
+                status = {"name": name, "restartCount": int(count)}
+                if started:
+                    status["state"] = {"running": {"startedAt": started}}
+                current.setdefault("status", {}).setdefault("containerStatuses", []).append(status)
             else:
                 path, _, raw = line[2:].partition("=")
                 if raw == "":
@@ -89,9 +115,9 @@ WORKLOAD_FIELDS = Projection(
     values=("spec.replicas", "spec.selector", "status.readyReplicas"),
 )
 POD_FIELDS = Projection(
-    strings=("metadata.name", "metadata.deletionTimestamp", "status.phase"),
+    strings=("metadata.name", "metadata.deletionTimestamp", "status.phase", "status.startTime"),
     values=("status.conditions",),
-    ports=True,
+    containers=True,
 )
 
 

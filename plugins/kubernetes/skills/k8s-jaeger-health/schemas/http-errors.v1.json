@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "HTTP error spans per Jaeger service",
-  "description": "Spans in the look-back window whose HTTP status is 4xx or 5xx, per service and operation, from the Jaeger query API. Only status codes in statusCodes are searched for (exact-match tag search); a service with no error spans has zero counts and no operations. Tag values other than the status code, the operation, the service name and the URL path are never returned.",
+  "description": "Spans in the look-back window whose HTTP status is 4xx or 5xx, per service and operation, from the Jaeger query API. Pass 1 searches every service for error=true (5xx server spans flagged as errors, whatever the code); pass 2 searches the 4xx codes in statusCodes by exact match; every span with a status from 400 to 599 in a returned trace is counted. Tag values other than the status code, the operation, the service name and the URL path are never returned.",
   "type": "object",
   "properties": {
     "workload": {
@@ -12,17 +12,25 @@
         },
         "name": {
           "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "spec.replicas"
         }
       },
       "required": [
         "kind",
-        "name"
+        "name",
+        "replicas"
       ],
       "additionalProperties": false
     },
     "viewedFrom": {
       "type": "string",
-      "description": "The pod whose query API was asked"
+      "description": "The pod whose query API was asked (queryPod.name)"
     },
     "window": {
       "type": "object",
@@ -55,13 +63,14 @@
     },
     "limit": {
       "type": "integer",
-      "description": "most traces per query"
+      "description": "most traces per query (max 500)"
     },
     "statusCodes": {
       "type": "array",
       "items": {
         "type": "integer"
-      }
+      },
+      "description": "Codes searched by exact match in pass 2"
     },
     "statusKeys": {
       "type": "array",
@@ -76,7 +85,7 @@
     },
     "queriedCount": {
       "type": "integer",
-      "description": "Services whose queries all succeeded"
+      "description": "Services whose pass 1 query finished (their counts are real, possibly incomplete: see complete)"
     },
     "truncated": {
       "type": "boolean",
@@ -98,11 +107,11 @@
     },
     "serverErrorSpans": {
       "type": "integer",
-      "description": "Total over the queried services"
+      "description": "Total over the queried services: inbound (not span.kind client) spans with status 500 to 599"
     },
     "clientErrorSpans": {
       "type": "integer",
-      "description": "Total over the queried services"
+      "description": "Total over the queried services: inbound spans with status 400 to 499"
     },
     "services": {
       "type": "array",
@@ -114,14 +123,25 @@
           },
           "queried": {
             "type": "boolean",
-            "description": "false when the service could not be read (see errors) or was not asked before the deadline; its counts are then null"
+            "description": "false when the service's first query failed or was not asked before the deadline (see errors); its counts are then null"
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "every planned query for the service finished; false when it ran out of budget or a query failed (the counts of the finished queries are kept)"
+          },
+          "queriesDone": {
+            "type": "integer"
+          },
+          "queriesPlanned": {
+            "type": "integer",
+            "description": "1 (error=true) plus one per searched code and status attribute key"
           },
           "tracesSeen": {
             "type": [
               "integer",
               "null"
             ],
-            "description": "Distinct traces the queries returned for the service"
+            "description": "Distinct traces the service's queries returned (every search, whatever status they hold)"
           },
           "limitReached": {
             "type": [
@@ -134,9 +154,17 @@
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "description": "inbound spans with status 500 to 599"
           },
           "clientErrorSpans": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "inbound spans with status 400 to 499"
+          },
+          "outboundErrorSpans": {
             "type": [
               "integer",
               "null"
@@ -159,15 +187,19 @@
               "properties": {
                 "operation": {
                   "type": "string",
-                  "description": "The span's operation name, cut at 1024 characters"
+                  "description": "The span's operation name, query strings and ids in paths removed, cut at 1024 characters"
                 },
                 "serverErrorSpans": {
                   "type": "integer",
-                  "description": "Spans with a status of 500 or more"
+                  "description": "Inbound spans with a status of 500 or more"
                 },
                 "clientErrorSpans": {
                   "type": "integer",
-                  "description": "Spans with a status of 400 to 499"
+                  "description": "Inbound spans with a status of 400 to 499"
+                },
+                "outboundErrorSpans": {
+                  "type": "integer",
+                  "description": "span.kind client spans with status 400 to 599"
                 },
                 "byStatus": {
                   "type": "object",
@@ -176,13 +208,20 @@
                   },
                   "description": "Span count per status code"
                 },
+                "outboundByStatus": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "description": "Outbound span count per status code"
+                },
                 "urlPaths": {
                   "type": "array",
                   "items": {
                     "type": "string"
                   },
                   "maxItems": 10,
-                  "description": "Distinct URL paths of those spans, query string removed"
+                  "description": "Distinct URL paths of the inbound spans: http.route when the span has it, else the raw path with ;params, query string and fragment removed and id-like segments replaced by {id}"
                 },
                 "urlPathsTruncated": {
                   "type": "boolean",
@@ -202,6 +241,13 @@
                   },
                   "maxItems": 5
                 },
+                "sampleOutboundTraceIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 5
+                },
                 "truncated": {
                   "type": "boolean",
                   "description": "the operation name or a path was cut at 1024 characters"
@@ -211,11 +257,14 @@
                 "operation",
                 "serverErrorSpans",
                 "clientErrorSpans",
+                "outboundErrorSpans",
                 "byStatus",
+                "outboundByStatus",
                 "urlPaths",
                 "urlPathsTruncated",
                 "sampleServerTraceIds",
                 "sampleClientTraceIds",
+                "sampleOutboundTraceIds",
                 "truncated"
               ],
               "additionalProperties": false
@@ -227,10 +276,14 @@
         "required": [
           "name",
           "queried",
+          "complete",
+          "queriesDone",
+          "queriesPlanned",
           "tracesSeen",
           "limitReached",
           "serverErrorSpans",
           "clientErrorSpans",
+          "outboundErrorSpans",
           "operationCount",
           "operationsTruncated",
           "operations"
@@ -238,22 +291,108 @@
         "additionalProperties": false
       },
       "description": "Queried services first, most server errors first; capped at maxItems"
+    },
+    "queryPod": {
+      "type": "object",
+      "description": "The pod asked, and how long its store has been collecting: an in-memory Jaeger is empty after a restart",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "container": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The container taken as Jaeger (its image is Jaeger's, else the first that is not a sidecar)"
+        },
+        "image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "status.startTime of the pod"
+        },
+        "containerStartedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "When the container's current run started"
+        },
+        "restartCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Restarts of that container"
+        }
+      },
+      "required": [
+        "name",
+        "container",
+        "image",
+        "startTime",
+        "containerStartedAt",
+        "restartCount"
+      ],
+      "additionalProperties": false
+    },
+    "storageMayBeSharded": {
+      "type": "boolean",
+      "description": "More than one replica and an image that keeps spans in the pod (all-in-one: memory or Badger): each pod then holds only its share and the counts are those of the pod asked"
+    },
+    "storageBasis": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why storageMayBeSharded is true (read from the image name only)"
+    },
+    "completeCount": {
+      "type": "integer",
+      "description": "Services whose every planned query finished"
+    },
+    "servicesNotQueried": {
+      "type": "integer",
+      "description": "Services selected but not queried (beyond maxItems, or whose first query failed or was not asked)"
+    },
+    "limitReached": {
+      "type": "boolean",
+      "description": "Some service had a query that returned `limit` traces: its counts are a lower bound"
+    },
+    "outboundErrorSpans": {
+      "type": "integer",
+      "description": "Total over the queried services: span.kind client spans with status 400 to 599 (the service's own calls to others)"
     }
   },
   "required": [
     "workload",
     "viewedFrom",
+    "queryPod",
+    "storageMayBeSharded",
+    "storageBasis",
     "window",
     "limit",
     "statusCodes",
     "statusKeys",
     "serviceCount",
     "queriedCount",
+    "completeCount",
+    "servicesNotQueried",
     "truncated",
+    "limitReached",
     "unknownServices",
     "excludedServices",
     "serverErrorSpans",
     "clientErrorSpans",
+    "outboundErrorSpans",
     "services"
   ],
   "additionalProperties": false

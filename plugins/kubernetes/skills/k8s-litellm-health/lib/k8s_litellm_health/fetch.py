@@ -21,6 +21,20 @@ MAX_QUERIED_PODS = 10
 TASK_DEADLINE = 100.0
 MAX_CONSECUTIVE_TIMEOUTS = 3
 REQUEST_SECONDS = 30
+# Container names that are injected next to the application and are not LiteLLM.
+SIDECAR_PREFIXES = (
+    "istio-proxy",
+    "linkerd-proxy",
+    "envoy",
+    "vault-agent",
+    "oauth2-proxy",
+    "cloud-sql-proxy",
+    "config-reloader",
+    "fluent",
+    "filebeat",
+    "kube-rbac-proxy",
+    "otel-agent",
+)
 
 
 class Budget:
@@ -123,16 +137,40 @@ def workload_pods(ctx, workload):
     return sorted(doc["items"], key=lambda p: p["metadata"]["name"])
 
 
+def is_litellm_image(image):
+    """Whether a container image is a LiteLLM proxy's (ghcr.io/berriai/litellm...)."""
+    return "litellm" in (image or "").lower()
+
+
+def main_container(spec):
+    """The container that runs LiteLLM in a pod spec or pod template spec: the one whose image is
+    LiteLLM's, else the first that is not a known sidecar (a mesh proxy, a log shipper), else the
+    first. None without containers."""
+    containers = (spec or {}).get("containers") or []
+    for container in containers:
+        if is_litellm_image(container.get("image")):
+            return container
+    for container in containers:
+        if not str(container.get("name") or "").lower().startswith(SIDECAR_PREFIXES):
+            return container
+    return containers[0] if containers else None
+
+
+def serving_port(spec):
+    """(port, declared) of the main container of a pod spec: its port named http, litellm or
+    http-litellm, else 4000 (the proxy's default, declared False)."""
+    for entry in (main_container(spec) or {}).get("ports") or []:
+        if entry.get("name") in PORT_NAMES:
+            return entry.get("containerPort", DEFAULT_PORT), True
+    return DEFAULT_PORT, False
+
+
 def pod_port(pod, port=None):
-    """`port` if given, else the container port named http, litellm or http-litellm, else 4000
-    (the proxy's default)."""
+    """`port` if given (the override), else the main container's port named http, litellm or
+    http-litellm, else 4000. Ports of the other containers are not looked at."""
     if port is not None:
         return port
-    for container in (pod.get("spec") or {}).get("containers") or []:
-        for entry in container.get("ports") or []:
-            if entry.get("name") in PORT_NAMES:
-                return entry.get("containerPort", DEFAULT_PORT)
-    return DEFAULT_PORT
+    return serving_port(pod.get("spec"))[0]
 
 
 def running(pod):

@@ -4,10 +4,12 @@ No exec and no port-forward: the API server forwards the request to the pod IP, 
 RBAC needed is `get` on `pods/proxy`. The skill adds no credential to the request and reads no
 Secret.
 Through `kubectl get --raw` an HTTP error from the backend is not an HTTP status but an error
-line, and the backend's body is lost, so two statuses are told apart by their line: 404 ("the
-server could not find the requested resource": the pod does not serve that path) and 503 ("the
-server is currently unable to handle the request": the pod answered unavailable; an API server
-that is itself overloaded says the same). A backend 403 is not told apart from a missing
+line, and the backend's body is lost, so two statuses are told apart by their line: 404
+(`Error from server (NotFound): the server could not find the requested resource`: the pod does
+not serve that path) and 503 (`Error from server (ServiceUnavailable): the server is currently
+unable to handle the request`: the pod answered unavailable; an API server that is itself
+overloaded says the same). The Reason in parentheses decides first; the text is read only inside
+that line, or when there is no such line. A backend 403 is not told apart from a missing
 `pods/proxy` permission: both are `permission_denied`. A pod the API server could not reach
 ("error trying to reach service") is `unreachable`, never an HTTP status.
 """
@@ -15,7 +17,7 @@ that is itself overloaded says the same). A backend 403 is not told apart from a
 from dataclasses import dataclass
 
 from k8s_litellm_health.errors import RwError
-from k8s_litellm_health.k8s import failure, run_unchecked
+from k8s_litellm_health.k8s import api_error, failure, run_unchecked
 
 REQUEST_TIMEOUT = "30s"
 _NOT_FOUND = "the server could not find the requested resource"
@@ -43,10 +45,12 @@ def proxy_get(ctx, api_path, request_timeout=REQUEST_TIMEOUT):
     result = run_unchecked(ctx, argv)
     if not result.returncode:
         return Reply(200, result.stdout or "")
-    stderr = (result.stderr or "").lower()
-    if _NOT_FOUND in stderr:
+    reason, message = api_error(result.stderr)
+    if reason is None:  # no `Error from server` line: the text is all there is
+        message = (result.stderr or "").lower()
+    if reason in (None, "NotFound") and _NOT_FOUND in message:
         return Reply(404, "")
-    if _UNAVAILABLE in stderr:
+    if reason in (None, "ServiceUnavailable") and _UNAVAILABLE in message:
         return Reply(503, "")
     raise failure(argv, result)
 

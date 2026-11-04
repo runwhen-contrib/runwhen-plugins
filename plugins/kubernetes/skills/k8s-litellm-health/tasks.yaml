@@ -26,7 +26,7 @@ tasks:
     tags: [litellm, liveness, health]
     readOnly: true
     inputs:
-      port: { type: integer, required: false, min: 1, max: 65535, description: "LiteLLM HTTP port; by default the pod's container port named http, litellm or http-litellm, else 4000" }
+      port: { type: integer, required: false, min: 1, max: 65535, description: "LiteLLM HTTP port (the override); by default the main container's port named http, litellm or http-litellm (the container whose image is LiteLLM's, else the first that is not a sidecar), else 4000" }
       scheme: { type: string, default: http, description: "http or https" }
     permissions:
       - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
@@ -38,22 +38,21 @@ tasks:
   - name: readiness
     title: LiteLLM readiness
     description: >-
-      GET /health/readiness on each running pod, through the API server's pod proxy (no exec,
-      no port-forward, no credential: the endpoint is unauthenticated). 200 with status
-      "healthy" is ready; 503 is not ready (LiteLLM answers 503 while a configured database is
-      unreachable or a shutdown has begun; the proxy does not forward the body, so the reason is
-      not available); any other reply (HTML, JSON without status, a 404, a timeout) is an error and
-      ready is null, never true. Reports the db state ("connected", "Not connected" when no
-      database is configured, "disconnected"); the cache type, litellm_version and success
-      callbacks are present only when the proxy exposes the detailed payload publicly
-      (general_settings.allow_public_health_readiness_details), else null. A pod that is not
-      Running is listed and not asked. Inputs port and scheme as for liveness.
+      GET /health/readiness on each running pod, through the API server's pod proxy (no exec, no
+      port-forward, no credential). 200 with status "healthy" is ready. 503 is not ready (LiteLLM
+      1.102.1: a configured database is not connected, or a graceful shutdown has begun; the proxy
+      drops the body), so liveness is asked for the cause: 200 is db_unreachable_likely, 503 is
+      draining, else undetermined. Any other reply is an error and ready is null, never true.
+      Reports the db state; cache, litellm_version and success callbacks only when the proxy
+      exposes the detailed payload (allow_public_health_readiness_details), else null.
+      queriedCount and unaskedCount say how many pods were asked; the rest are named in a scoped
+      error. Inputs port and scheme as for liveness.
     script: scripts/readiness.py
     timeout: 120s
     tags: [litellm, readiness, health, database, cache]
     readOnly: true
     inputs:
-      port: { type: integer, required: false, min: 1, max: 65535, description: "LiteLLM HTTP port; by default the pod's container port named http, litellm or http-litellm, else 4000" }
+      port: { type: integer, required: false, min: 1, max: 65535, description: "LiteLLM HTTP port (the override); by default the main container's port named http, litellm or http-litellm (the container whose image is LiteLLM's, else the first that is not a sidecar), else 4000" }
       scheme: { type: string, default: http, description: "http or https" }
     permissions:
       - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
@@ -67,8 +66,10 @@ tasks:
     description: >-
       The Services in the namespace whose selector picks the workload's pods: for each, its
       ports (port, targetPort, protocol), whether it exposes the expected port (servicePort,
-      default 4000), whether each targetPort names a container port the pod template declares,
-      and its EndpointSlices' ready and not-ready endpoint counts. Facts only: no request is
+      default 4000: the Service side only), whether each targetPort leads to the port the proxy
+      listens on in the pod template's main container (targetPortMatches), whether it names a
+      container port the template declares, and its EndpointSlices' ready and not-ready endpoint
+      counts (one per pod: a dual-stack Service's IPv4 and IPv6 slices are not counted twice). Facts only: no request is
       sent to the proxy. A workload no Service selects is services [] (a fact); a forbidden
       EndpointSlice list is reported (permission_denied scoped endpointslices) and the
       Services are still listed with endpoints null.

@@ -2,14 +2,15 @@
 # memory budget of this cluster (it was OOM-killed at a 320Mi limit and needs about 480Mi to answer),
 # so each "LiteLLM" here is a documented python stub (python:3.12-alpine, 64Mi limit) that serves
 # LiteLLM's unauthenticated health endpoints as v1.102.1 does (read from its source, health_endpoints/
-# _health_endpoints.py): /health/liveliness and /health/liveness answer "I'm alive!", /health/readiness
-# answers {"status": "healthy", "db": ...} (the public payload) or, with
-# general_settings.allow_public_health_readiness_details, the detailed payload (cache,
-# litellm_version, success_callbacks, ...), and 503 once a graceful shutdown has begun. Keyed endpoints
-# answer 401. In namespace rw-litellm:
+# _health_endpoints.py): /health/liveliness and /health/liveness answer "I'm alive!" (503 only once a
+# graceful shutdown has begun), /health/readiness answers {"status": "healthy", "db": ...} (the
+# public payload) or, with general_settings.allow_public_health_readiness_details, the detailed
+# payload (cache, litellm_version, success_callbacks, ...), and 503 when a configured database is not
+# connected (unless allow_requests_on_db_unavailable) or once a graceful shutdown has begun. Keyed
+# endpoints answer 401. In namespace rw-litellm:
 #   litellm           healthy: alive, ready, db connected, cache redis (detailed payload); Service on 4000
-#   litellm-degraded  ready (200) but db "disconnected" and no cache (allow_requests_on_db_unavailable);
-#                     its Service exposes port 8080, not 4000
+#   litellm-degraded  its database is unreachable: readiness 503 while liveness stays 200 (the pod is
+#                     not Ready); its Service exposes port 8080, not 4000
 #   litellm-draining  a proxy in graceful shutdown: every health endpoint answers 503, so its pod is
 #                     not Ready and its Service has a not-ready endpoint
 apiVersion: v1
@@ -53,8 +54,8 @@ data:
             if path == "/health/readiness":
                 if draining:
                     return self.send(503, {"status": "shutting_down"})
-                if MODE == "degraded":
-                    return self.send(200, {**DETAILED, "db": "disconnected", "cache": None})
+                if MODE == "degraded":  # a configured database that is not connected
+                    return self.send(503, {**DETAILED, "db": "disconnected", "cache": None})
                 return self.send(200, DETAILED)
             if path in ("/model/info", "/health", "/v1/models"):
                 return self.send(401, {"error": {"message": "Authentication Error, No api key passed in.", "type": "auth_error", "code": "401"}})

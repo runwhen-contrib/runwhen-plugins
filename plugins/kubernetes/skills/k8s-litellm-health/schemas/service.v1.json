@@ -37,6 +37,14 @@
     "servicePort": {
       "type": "integer"
     },
+    "containerPort": {
+      "type": "integer",
+      "description": "The port the proxy listens on in the pod template's main container (its container whose image is LiteLLM's, else the first that is not a sidecar): the port named http, litellm or http-litellm, else 4000"
+    },
+    "containerPortDeclared": {
+      "type": "boolean",
+      "description": "false when containerPort is the 4000 default because no such port is declared"
+    },
     "containerPorts": {
       "type": "array",
       "items": {
@@ -99,7 +107,11 @@
           },
           "exposesPort": {
             "type": "boolean",
-            "description": "a Service port equals servicePort"
+            "description": "A Service port equals servicePort. About the Service's side only: it says nothing about the container"
+          },
+          "targetPortMatches": {
+            "type": "boolean",
+            "description": "Some Service port's targetPort (a number, or a name looked up in the main container's ports) is containerPort: traffic reaches the port the proxy listens on"
           },
           "ports": {
             "type": "array",
@@ -130,6 +142,10 @@
                 "targetPortDeclared": {
                   "type": "boolean",
                   "description": "the pod template declares a container port with this number (or name): an undeclared number is legal, an undeclared name leaves the endpoints without a port"
+                },
+                "targetPortMatches": {
+                  "type": "boolean",
+                  "description": "This port's targetPort leads to containerPort"
                 }
               },
               "required": [
@@ -137,7 +153,8 @@
                 "port",
                 "targetPort",
                 "protocol",
-                "targetPortDeclared"
+                "targetPortDeclared",
+                "targetPortMatches"
               ],
               "additionalProperties": false
             },
@@ -156,11 +173,11 @@
                   },
                   "readyEndpoints": {
                     "type": "integer",
-                    "description": "endpoints whose ready condition is true or unset"
+                    "description": "pods behind the Service whose ready condition is true or unset, counted once however many EndpointSlices (IPv4 and IPv6) list them"
                   },
                   "notReadyEndpoints": {
                     "type": "integer",
-                    "description": "endpoints whose ready condition is false"
+                    "description": "pods with an endpoint whose ready condition is false"
                   },
                   "ports": {
                     "type": "array",
@@ -212,7 +229,8 @@
           "selector",
           "exposesPort",
           "ports",
-          "endpoints"
+          "endpoints",
+          "targetPortMatches"
         ],
         "additionalProperties": false
       }
@@ -221,6 +239,8 @@
   "required": [
     "workload",
     "servicePort",
+    "containerPort",
+    "containerPortDeclared",
     "containerPorts",
     "serviceCount",
     "truncated",

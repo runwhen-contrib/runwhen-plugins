@@ -37,6 +37,14 @@
     "podCount": {
       "type": "integer"
     },
+    "queriedCount": {
+      "type": "integer",
+      "description": "Pods asked (Running ones, at most 10; a failed ask still counts)"
+    },
+    "unaskedCount": {
+      "type": "integer",
+      "description": "Pods of the workload not asked: not Running, past the cap of 10, or past maxItems (a scoped error names them)"
+    },
     "truncated": {
       "type": "boolean",
       "description": "pods were cut at maxItems"
@@ -80,7 +88,8 @@
             "type": [
               "boolean",
               "null"
-            ]
+            ],
+            "description": "true for a 200 healthy; false for a 503 (see cause) or another status; null when the ask failed"
           },
           "httpStatus": {
             "type": [
@@ -100,7 +109,7 @@
               "string",
               "null"
             ],
-            "description": "connected, Not connected (no database configured), disconnected"
+            "description": "connected, Not connected (no database configured), disconnected (a 200 with this means allow_requests_on_db_unavailable is set, or an older version that does not 503)"
           },
           "cache": {
             "type": [
@@ -135,6 +144,33 @@
           "truncated": {
             "type": "boolean",
             "description": "a text field was cut at 1024 characters"
+          },
+          "cause": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "db_unreachable_likely",
+              "draining",
+              "undetermined",
+              null
+            ],
+            "description": "Only for a 503: db_unreachable_likely when liveness answered 200 (LiteLLM 503s readiness for a configured database it cannot reach, and liveness only during shutdown), draining when liveness also answered 503, undetermined when liveness could not tell. Verified against LiteLLM 1.102.1"
+          },
+          "causeBasis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why cause was concluded"
+          },
+          "livenessHttpStatus": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The status liveness gave when asked for the cause of a 503"
           }
         },
         "required": [
@@ -152,7 +188,10 @@
           "successCallbacks",
           "successCallbacksTruncated",
           "detailed",
-          "truncated"
+          "truncated",
+          "cause",
+          "causeBasis",
+          "livenessHttpStatus"
         ],
         "additionalProperties": false
       }
@@ -161,6 +200,8 @@
   "required": [
     "workload",
     "podCount",
+    "queriedCount",
+    "unaskedCount",
     "truncated",
     "readyCount",
     "notReadyCount",

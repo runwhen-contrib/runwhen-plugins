@@ -1,10 +1,26 @@
 """kubectl access for this skill's scripts."""
 
 import json
+import re
 
 from k8s_litellm_health.common import MESSAGE_LIMIT
 from k8s_litellm_health.errors import RwError
 
+# kubectl prints an API error as `Error from server (<Reason>): <message>`; the Reason is the
+# API server's own classification and is read first. The message text is only a fallback for the
+# reasons that do not decide (InternalError, BadRequest) and for errors with no such line
+# (`Unable to connect to the server`).
+_API_ERROR = re.compile(r"^Error from server \((\w+)\):?(.*)$", re.MULTILINE)
+_REASONS = {
+    "Forbidden": "permission_denied",
+    "Unauthorized": "permission_denied",
+    "NotFound": "not_found",
+    "Timeout": "timeout",
+    "ServerTimeout": "timeout",
+    "GatewayTimeout": "timeout",
+    "TooManyRequests": "rate_limited",
+    "ServiceUnavailable": "unreachable",
+}
 # (code, substrings of lower-cased stderr); first match wins.
 _CLASSES = (
     (
@@ -31,13 +47,26 @@ _CLASSES = (
 )
 
 
+def api_error(stderr):
+    """(Reason, lower-cased message) of the first `Error from server (<Reason>): <message>` line,
+    or (None, None)."""
+    match = _API_ERROR.search(stderr or "")
+    return (match.group(1), match.group(2).strip().lower()) if match else (None, None)
+
+
 def classify(returncode, stderr):
-    """D64 error code for a failed kubectl call."""
+    """D64 error code for a failed kubectl call: the exit code, then the `Error from server`
+    Reason, then (only when those do not decide) the message text."""
     text = (stderr or "").lower()
     if returncode == 124:
         return "timeout"
     if returncode == 127:
         return "dependency"
+    reason, _ = api_error(stderr)
+    if reason == "NotFound" and "doesn't have a resource type" in text:
+        return "dependency"
+    if reason in _REASONS:
+        return _REASONS[reason]
     for code, needles in _CLASSES:
         if any(n in text for n in needles):
             return code
@@ -51,8 +80,8 @@ def failure(argv, result):
     lines = [x for x in stderr.splitlines() if not x.startswith("Warning:")]
     shown = "\n".join(lines).strip() or stderr
     return RwError(
-        classify(result.returncode, stderr),
-        f"{argv[0]} exited {result.returncode}: {shown[:MESSAGE_LIMIT]}",
+        classify(result.returncode, shown),
+        f"{argv[0]} exited {result.returncode}: {shown}",
     )
 
 
