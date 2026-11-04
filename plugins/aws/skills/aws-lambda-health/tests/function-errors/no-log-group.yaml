@@ -1,0 +1,101 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/report-batch
+now: '2026-11-04T01:15:28.833Z'
+calls:
+- argv:
+  - aws
+  - lambda
+  - get-function-configuration
+  - --function-name
+  - report-batch
+  - --query
+  - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
+    Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
+    Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason,
+    LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason:
+    LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount:
+    length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds
+    || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup:
+    LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode,
+    EnvironmentErrorMessage: Environment.Error.Message}'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "FunctionName": "report-batch",
+        "FunctionArn": "arn:aws:lambda:eu-west-1:123456789012:function:report-batch",
+        "Runtime": "python3.12",
+        "PackageType": "Zip",
+        "Handler": "app.handler",
+        "MemorySize": 512,
+        "Timeout": 300,
+        "EphemeralStorageMb": 512,
+        "Architectures": [
+            "arm64"
+        ],
+        "State": "Active",
+        "StateReasonCode": null,
+        "StateReason": null,
+        "LastUpdateStatus": "Successful",
+        "LastUpdateStatusReasonCode": null,
+        "LastUpdateStatusReason": null,
+        "LastModified": "2026-10-28T09:14:03.000+0000",
+        "CodeSize": 4821337,
+        "Version": "$LATEST",
+        "LayerCount": 1,
+        "SubnetCount": 0,
+        "SecurityGroupCount": 0,
+        "DeadLetterTargetArn": null,
+        "TracingMode": "PassThrough",
+        "LogGroup": "/aws/lambda/report-batch",
+        "LogFormat": "Text",
+        "EnvironmentErrorCode": null,
+        "EnvironmentErrorMessage": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - logs
+  - filter-log-events
+  - --log-group-name
+  - /aws/lambda/report-batch
+  - --start-time
+  - '1793751328000'
+  - --end-time
+  - '1793754928000'
+  - --filter-pattern
+  - ?ERROR ?Exception ?"Task timed out" ?"Runtime.ExitError"
+  - --query
+  - '{events: events[].{timestamp: timestamp, logStreamName: logStreamName, message: message}, NextToken:
+    NextToken}'
+  - --max-items
+  - '50'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (ResourceNotFoundException) when calling the FilterLogEvents operation: The specified log group does not exist.
+expect:
+  status: partial
+  errorCodes:
+  - not_found
+  outputs:
+    logs:
+      logGroup: /aws/lambda/report-batch
+      logGroupFound: false
+      events: []
+      matched: 0
+      truncated: false

@@ -1,0 +1,38 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/nope
+now: '2026-11-04T01:15:22.257Z'
+calls:
+- argv:
+  - aws
+  - lambda
+  - get-function-configuration
+  - --function-name
+  - nope
+  - --query
+  - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
+    Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
+    Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason,
+    LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason:
+    LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount:
+    length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds
+    || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup:
+    LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode,
+    EnvironmentErrorMessage: Environment.Error.Message}'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (ResourceNotFoundException) when calling the GetFunctionConfiguration operation: Function not found: arn:aws:lambda:eu-west-1:123456789012:function:nope
+expect:
+  status: failed
+  errorCodes:
+  - not_found

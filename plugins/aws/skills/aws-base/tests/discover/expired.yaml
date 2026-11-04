@@ -1,0 +1,26 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012
+now: '2026-11-04T01:14:52.410Z'
+calls:
+- argv:
+  - aws
+  - sts
+  - get-caller-identity
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (ExpiredToken) when calling the GetCallerIdentity operation: The security token included in the request is expired
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied
