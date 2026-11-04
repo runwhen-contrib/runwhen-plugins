@@ -1,11 +1,12 @@
-"""discover: the subscription, its resource groups and their Key Vaults, as facts and as an
-rw.discovery.v1 sync.
+"""discover: the subscription, its resource groups and what the plugin's skills target in them, as facts
+and as an rw.discovery.v1 sync.
 
 The az calls return plain facts; `build_sync` turns them into the recorded sync (open, item
 batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync"). The child
 types are the ones the plugin's skills target (D51): the resource group, which addresses the
-resources below it (subscription -> resourcegroup -> keyvault | aks-cluster), the Key Vault and the
-AKS cluster. CHILD_TYPES is the table of them: one row per type a skill targets.
+resources below it (subscription -> resourcegroup -> keyvault | aks-cluster | app-service-plan | web-app),
+the Key Vault, the AKS cluster, the App Service plan and the web app (a function app is a web app of
+kind functionapp). CHILD_TYPES is the table of them: one row per type a skill targets.
 
 Every call that lists below the subscription passes `-g`: one partition per resource group, so a
 group that cannot be read (forbidden, throttled, out of time) is not complete and nothing is swept
@@ -29,7 +30,27 @@ GROUP_PLURAL = (
 LABEL_LIMIT = 50  # Azure allows 50 tags per resource
 LABEL_TEXT = 255
 LIST_BUDGET = 300  # seconds for the per-group listings; the rest of the task's 600s is the push
-LISTED = {"keyvault": "Key Vaults", "aks-cluster": "AKS clusters"}  # the child types, in words
+LISTED = {
+    "keyvault": "Key Vaults",
+    "aks-cluster": "AKS clusters",
+    "app-service-plan": "App Service plans",
+    "web-app": "web apps",
+}  # the child types, in words
+BASE_FACTS = (
+    "name",
+    "resourceGroup",
+    "location",
+    "id",
+)  # what every child's listing and document hold
+# the facts a type keeps beyond BASE_FACTS (in its listing and in its sync item's document)
+EXTRA_FACTS = {
+    "app-service-plan": ("kind", "skuName", "skuTier"),
+    "web-app": ("kind", "state"),
+}
+
+
+def facts(type_name):
+    return (*BASE_FACTS, *EXTRA_FACTS.get(type_name, ()))
 
 
 def target_subscription(resource):
@@ -151,15 +172,83 @@ def read_aks_clusters(ctx, subscription, group):
     return sorted(clusters, key=lambda c: c["name"].lower())
 
 
+def listed(ctx, argv):
+    """The rows of one az listing; a failure to list raises, and so does a reply that is not a list of
+    named, identified objects."""
+    rows = az_json(ctx, argv)
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise RwError("internal", f"az {' '.join(argv[:2])} returned no list")
+    for row in rows:
+        if not row.get("name") or not row.get("id"):
+            raise RwError(
+                "internal", f"az {' '.join(argv[:2])} returned an object without a name or id"
+            )
+    return rows
+
+
+def base_row(row, group):
+    return {
+        "name": str(row["name"]),
+        "resourceGroup": group["name"],
+        "location": str(row.get("location") or ""),
+        "id": str(row["id"]),
+        "tags": labels(row.get("tags")),
+    }
+
+
+def read_plans(ctx, subscription, group):
+    """The App Service plans of one resource group, by name. A failure to list raises."""
+    rows = listed(
+        ctx, ["appservice", "plan", "list", "-g", group["name"], "--subscription", subscription]
+    )
+    plans = []
+    for row in rows:
+        sku = row.get("sku") if isinstance(row.get("sku"), dict) else {}
+        plans.append(
+            {
+                **base_row(row, group),
+                "kind": str(row.get("kind") or ""),
+                "skuName": str(sku.get("name") or ""),
+                "skuTier": str(sku.get("tier") or ""),
+            }
+        )
+    return sorted(plans, key=lambda p: p["name"].lower())
+
+
+def read_web_apps(ctx, subscription, group):
+    """The web apps of one resource group, function apps included (a function app is a web app of kind
+    functionapp): `az webapp list` leaves the function apps out and `az functionapp list` lists only
+    them, so both are read, and both must succeed for the listing to be complete."""
+    rows = listed(ctx, ["webapp", "list", "-g", group["name"], "--subscription", subscription])
+    rows += listed(
+        ctx, ["functionapp", "list", "-g", group["name"], "--subscription", subscription]
+    )
+    apps, seen = [], set()
+    for row in rows:
+        if str(row["id"]).lower() in seen:
+            continue
+        seen.add(str(row["id"]).lower())
+        apps.append(
+            {
+                **base_row(row, group),
+                "kind": str(row.get("kind") or ""),
+                "state": str(row.get("state") or ""),
+            }
+        )
+    return sorted(apps, key=lambda a: a["name"].lower())
+
+
 # One row per child type of the resource group a skill targets: (type name in types.yaml, reader).
 # A reader takes (ctx, subscription, group) and returns [{name, resourceGroup, location, id, tags}].
 CHILD_TYPES = (
     ("keyvault", read_vaults),
     ("aks-cluster", read_aks_clusters),
+    ("app-service-plan", read_plans),
+    ("web-app", read_web_apps),
 )
 
 
-def group_listing(groups, vault_counts, limit, cluster_counts):
+def group_listing(groups, vault_counts, limit, cluster_counts, plan_counts=None, app_counts=None):
     items, total, omitted = bound(groups, limit)
     return {
         "items": [
@@ -169,6 +258,8 @@ def group_listing(groups, vault_counts, limit, cluster_counts):
                 "id": g["id"],
                 "keyvaults": vault_counts.get(group_key(g["name"])),
                 "aksClusters": cluster_counts.get(group_key(g["name"])),
+                "appServicePlans": (plan_counts or {}).get(group_key(g["name"])),
+                "webApps": (app_counts or {}).get(group_key(g["name"])),
             }
             for g in items
         ],
@@ -189,6 +280,16 @@ def vault_listing(vaults, limit):
 def cluster_listing(clusters, limit):
     """Same shape as vault_listing: name, resource group, location and id of each AKS cluster."""
     return vault_listing(clusters, limit)
+
+
+def child_listing(type_name, rows, limit):
+    """name, resource group, location, id and the type's own facts of each plan or web app."""
+    items, total, omitted = bound(rows, limit)
+    return {
+        "items": [{k: v[k] for k in facts(type_name)} for v in items],
+        "total": total,
+        "omitted": omitted,
+    }
 
 
 def partition(type_name, status, parent_path, count=None, reason=None):
@@ -253,7 +354,7 @@ def build_sync(path, name, subscription, groups, children, partitions, summary):
                         "chain": [root, link, {"type": type_name, "name": child["name"]}],
                     },
                     "displayName": child["name"],
-                    "document": {k: child[k] for k in ("name", "resourceGroup", "location", "id")},
+                    "document": {k: child[k] for k in facts(type_name)},
                 }
                 if len(child["id"]) <= 255:
                     child_item["providerUid"] = child["id"]
@@ -324,14 +425,19 @@ def discover(ctx, max_items, *, clock=time.monotonic, budget=LIST_BUDGET):
         )
 
     vaults, clusters = flat("keyvault"), flat("aks-cluster")
+    plans, apps = flat("app-service-plan"), flat("web-app")
     counts_by_group = {k: len(v) for k, v in children["keyvault"].items()}
     clusters_by_group = {k: len(v) for k, v in children["aks-cluster"].items()}
+    plans_by_group = {k: len(v) for k, v in children["app-service-plan"].items()}
+    apps_by_group = {k: len(v) for k, v in children["web-app"].items()}
     summary = summarize(
         {
             "subscription": 1,
             "resourcegroup": len(groups),
             "keyvault": len(vaults),
             "aks-cluster": len(clusters),
+            "app-service-plan": len(plans),
+            "web-app": len(apps),
         },
         partitions,
         ctx.errors,
@@ -342,8 +448,12 @@ def discover(ctx, max_items, *, clock=time.monotonic, budget=LIST_BUDGET):
     outputs = {
         "summary": summary,
         "subscription": subscription,
-        "resourceGroups": group_listing(groups, counts_by_group, max_items, clusters_by_group),
+        "resourceGroups": group_listing(
+            groups, counts_by_group, max_items, clusters_by_group, plans_by_group, apps_by_group
+        ),
         "keyvaults": vault_listing(vaults, max_items),
         "aksClusters": cluster_listing(clusters, max_items),
+        "appServicePlans": child_listing("app-service-plan", plans, max_items),
+        "webApps": child_listing("web-app", apps, max_items),
     }
     return outputs, sync

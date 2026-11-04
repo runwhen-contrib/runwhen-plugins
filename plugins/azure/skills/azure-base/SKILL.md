@@ -2,7 +2,7 @@
 name: azure-base
 description: >-
   The Azure integration's own skill. discover reads a subscription (id, name, tenant, state), lists
-  its resource groups and, group by group, their Key Vaults and AKS clusters with location, and
+  its resource groups and, group by group, their Key Vaults, AKS clusters, App Service plans and web apps with location, and
   reports the subscription id as the root's canonical key. Use to see what is in a subscription, or to check that an Azure connection
   reaches it before running the other azure skills.
 runwhen:
@@ -62,6 +62,11 @@ without case; the display name keeps ARM's spelling.
   complete.
 - `subscription.state` other than `Enabled` (`Warned`, `PastDue`, `Disabled`): Azure limits what the
   subscription's resources answer; the other azure skills may fail with `permission_denied`.
+- `appServicePlans` and `webApps` are listed per group like the others (`appServicePlans`/`webApps` of a group entry are
+  null when they could not be listed). A function app is a web app of kind functionapp: `az webapp list` leaves
+  function apps out and `az functionapp list` has only them, so both are read and the web app partition is complete
+  only when both are. Targets are `.../app-service-plans/<name>` and `.../web-apps/<name>`; read them with
+  `azure:azure-appservice-health`.
 - Soft-deleted vaults are not listed. A vault is listed under the name it was created with; the
   sync keeps it as is.
 - The run fails with a code, not an empty result, classified from az's own words (the `ERROR:` lines

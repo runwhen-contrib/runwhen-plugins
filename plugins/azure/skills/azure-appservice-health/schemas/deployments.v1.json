@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Slots and recent deployments of a web app",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string"
+    },
+    "productionState": {
+      "type": "string",
+      "description": "The production slot's state"
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "slots": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "availabilityState": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "enabled": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "defaultHostName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastModifiedTimeUtc": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "state",
+                  "availabilityState",
+                  "enabled",
+                  "defaultHostName",
+                  "lastModifiedTimeUtc"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "total": {
+              "type": "integer",
+              "description": "Everything found"
+            },
+            "omitted": {
+              "type": "integer",
+              "description": "How many were cut at maxItems"
+            },
+            "complete": {
+              "type": "boolean",
+              "description": "Every page of the slot list was read"
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "omitted",
+            "complete"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "deployments": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Pending, Building, Deploying, Failed or Success"
+                  },
+                  "active": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "description": "The deployment that is live"
+                  },
+                  "deployer": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "The committer's text, cut to 256 characters with e-mail addresses and the credentials in URLs masked"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "startTime": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "endTime": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "status",
+                  "active",
+                  "deployer",
+                  "message",
+                  "truncated",
+                  "startTime",
+                  "endTime"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "total": {
+              "type": "integer",
+              "description": "Records that started inside the window"
+            },
+            "omitted": {
+              "type": "integer"
+            },
+            "listed": {
+              "type": "integer",
+              "description": "Records the API returned, window or not"
+            },
+            "complete": {
+              "type": "boolean",
+              "description": "Every page of the list was read"
+            },
+            "latest": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pending, Building, Deploying, Failed or Success"
+                    },
+                    "active": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "The deployment that is live"
+                    },
+                    "deployer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The committer's text, cut to 256 characters with e-mail addresses and the credentials in URLs masked"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "startTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "endTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "active",
+                    "deployer",
+                    "message",
+                    "truncated",
+                    "startTime",
+                    "endTime"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "failedInWindow": {
+              "type": "integer"
+            },
+            "inProgress": {
+              "type": "integer"
+            },
+            "activeDeployment": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pending, Building, Deploying, Failed or Success"
+                    },
+                    "active": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "The deployment that is live"
+                    },
+                    "deployer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The committer's text, cut to 256 characters with e-mail addresses and the credentials in URLs masked"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "startTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "endTime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "active",
+                    "deployer",
+                    "message",
+                    "truncated",
+                    "startTime",
+                    "endTime"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "items",
+            "total",
+            "omitted",
+            "listed",
+            "complete",
+            "latest",
+            "failedInWindow",
+            "inProgress",
+            "activeDeployment"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "app",
+    "productionState",
+    "windowSeconds",
+    "slots",
+    "deployments"
+  ],
+  "additionalProperties": false
+}

@@ -129,3 +129,29 @@ the CLI prints. `capture/splice_aks.py` copies the files into the scenarios and 
 themselves (the values are invented, shaped after the reference pages), nor what a real subscription
 returns (`served.json` of a capture lists the REST requests az made, with the api-version, so a request
 the real service would refuse shows there).
+
+## azure-appservice-health: web apps, function apps and plans
+
+The scenarios `appservice-healthy`, `-broken`, `-forbidden`, `-write-forbidden`, `-not-found`, `-throttled`, `-swap-busy` and
+`-partial` are this skill's own (a fixture of its tasks names its scenario in the `record.sh` manifest:
+`name=scenario@<group>/<plural>/<name>+input=value`). One world: `plan-orders-prod` (P1v3, 2 instances, autoscale 2 to 5),
+`app-orders-api` and the function app `func-orders-jobs` on it, all fine, in `rg-orders-prod`; `plan-orders-dev` (S2, 3
+instances, autoscale at its maximum of 3, CPU and memory above 80%), the stopped `app-orders-web` (HTTPS off, TLS 1.0, a
+failed deployment, a 5xx spike, a stopped staging slot) and the function app `func-orders-ingest` (missing intervals) in
+`rg-orders-dev`, Resource Health Degraded. The healthy scenario accepts every write and changes nothing (the stub is
+stateless), so a recorded `applied` write finds the object as it was. `appservice-partial` refuses `config/web`, the slot
+list and the Http4xx metric of `app-orders-web`; `appservice-swap-busy` has a swap under way on `app-orders-api`
+(`slotSwapStatus`). The autoscale list is the subscription's: it holds the prod plan's setting, the dev plan's (kept in
+`RG-Platform`, not in the plan's group) and one that targets a scale set.
+
+**These answers are the pinned az's own where the CLI shapes them** (`capture/appservice.py`, run in the azure@1 image with
+`--network none`): every `az rest` reply is produced by the real `az rest` against a local HTTP server that answers with the
+ARM body (so the formatting is az's, and the `ERROR: Not Found(...)`, `Forbidden(...)` and `Too Many Requests(...)` texts
+are az's stderr for a 404, 403 and 429); the discover listings (`az webapp list`, `az functionapp list`,
+`az appservice plan list`) and the plan `az appservice plan update` prints go through the CLI's own list functions and
+serialization with the ARM bodies deserialized into azure-mgmt-web models. `az monitor metrics list` is an AAZ command: its
+replies are checked against the schema in `azure/cli/command_modules/monitor/aaz/latest/monitor/metrics/_list.py` and printed
+with knack's JSON settings, but the datapoints are typed, not rendered. The write error texts follow the azure-core form the
+CLI prints for SDK-backed commands. The ARM bodies follow https://learn.microsoft.com/rest/api/appservice (API 2024-04-01) and
+have not been re-recorded against a real subscription; the Kudu deployment status codes (0 to 4) are Kudu's `DeployStatus`.
+The block of listings in `healthy/calls.yaml` and `group-forbidden/calls.yaml` is written between marker comments, like the AKS one.

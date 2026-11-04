@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Azure Resource Health of the web app or plan",
+  "type": "object",
+  "properties": {
+    "resource": {
+      "type": "string"
+    },
+    "resourceType": {
+      "type": "string",
+      "enum": [
+        "web-app",
+        "app-service-plan"
+      ]
+    },
+    "availabilityState": {
+      "type": "string",
+      "description": "As Resource Health reports it: Available, Unavailable, Degraded or Unknown"
+    },
+    "healthy": {
+      "type": "boolean",
+      "description": "availabilityState is Available"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Resource Health's own summary, cut to 1024 characters"
+    },
+    "detailedStatus": {
+      "type": "string",
+      "description": "Cut to 1024 characters; empty when Azure gives none"
+    },
+    "reasonType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reasonChronicity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "occurredTime": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reportedTime": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "serviceImpactingEvents": {
+      "type": "integer",
+      "description": "How many service-impacting events Azure lists"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "summary or detailedStatus was cut"
+    }
+  },
+  "required": [
+    "resource",
+    "resourceType",
+    "availabilityState",
+    "healthy",
+    "summary",
+    "detailedStatus",
+    "reasonType",
+    "reasonChronicity",
+    "occurredTime",
+    "reportedTime",
+    "serviceImpactingEvents",
+    "truncated"
+  ],
+  "additionalProperties": false
+}

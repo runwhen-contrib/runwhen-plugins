@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HTTP metrics of a web app over a window",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "isFunctionApp": {
+      "type": "boolean"
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "interval": {
+      "type": "string",
+      "description": "Azure Monitor grain, ISO 8601"
+    },
+    "requests": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/series"
+        }
+      ]
+    },
+    "http5xx": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/series"
+        }
+      ]
+    },
+    "http4xx": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/series"
+        }
+      ]
+    },
+    "responseTime": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/series"
+        }
+      ]
+    }
+  },
+  "required": [
+    "app",
+    "kind",
+    "isFunctionApp",
+    "windowSeconds",
+    "interval",
+    "requests",
+    "http5xx",
+    "http4xx",
+    "responseTime"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "series": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "grains": {
+          "type": "integer",
+          "description": "Intervals in the window"
+        },
+        "withData": {
+          "type": "integer"
+        },
+        "missing": {
+          "type": "integer",
+          "description": "Intervals with no datapoint: no information, not zero"
+        },
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "last": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lastGrainMissing": {
+          "type": "boolean",
+          "description": "The newest interval has no value, so last is an older reading"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              },
+              "maximum": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "timestamp",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        },
+        "pointsOmitted": {
+          "type": "integer"
+        },
+        "total": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Sum over every interval with a value; null when none has one"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "crossings": {
+          "type": "integer",
+          "description": "Intervals above the threshold"
+        },
+        "crossed": {
+          "type": "boolean",
+          "description": "crossings is above zero"
+        }
+      },
+      "required": [
+        "metric",
+        "grains",
+        "withData",
+        "missing",
+        "min",
+        "max",
+        "last",
+        "lastGrainMissing",
+        "points",
+        "pointsOmitted",
+        "total"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

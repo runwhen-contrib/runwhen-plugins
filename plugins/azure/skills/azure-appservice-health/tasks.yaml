@@ -1,0 +1,303 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: azure@1              # ships az (runtimes/azure)
+defaults: { credentials: azure/cli, timeout: 180s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  commandTimeout: { type: duration, default: 60s, description: "How long one read-only az command may run before it is stopped (timeout)" }
+  operationTimeout: { type: duration, default: 300s, description: "How long one write az command (restart, start, stop, swap-slot, scale) may run before it is stopped (timeout); at most 600s. A swap or a scale can take minutes" }
+  metricInterval: { type: enum, enum: [PT1M, PT5M, PT15M, PT30M, PT1H, PT6H, PT12H, P1D], default: PT1H, description: "Grain of the Azure Monitor metrics (ISO 8601); the window is cut into intervals of this size" }
+  http5xxThreshold: { type: integer, default: 50, min: 0, max: 1000000000, description: "Http5xx responses per metricInterval above which an interval counts as crossing" }
+  http4xxThreshold: { type: integer, default: 100, min: 0, max: 1000000000, description: "Http4xx responses per metricInterval above which an interval counts as crossing" }
+  responseTimeThresholdSeconds: { type: number, default: 5, min: 0, max: 1000000, description: "Average HttpResponseTime in seconds (Azure reports this metric in seconds) above which an interval counts as crossing" }
+  cpuThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Average plan CpuPercentage above which an interval counts as crossing" }
+  memoryThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Average plan MemoryPercentage above which an interval counts as crossing" }
+  diskQueueThreshold: { type: number, default: 10, min: 0, max: 1000000000, description: "Average plan DiskQueueLength above which an interval counts as crossing" }
+tasks:
+  - name: app-state
+    title: Web app state and availability
+    description: >-
+      Reads the web app (or function app) from Azure: its state (Running or Stopped), whether it is
+      enabled, the availability state (Normal, Limited, DisasterRecoveryMode), the usage state
+      (Exceeded when a quota of the plan is used up), the kind (a function app is a web app of kind
+      functionapp), the host name, when it was last modified and the plan it runs on. The app's
+      settings and connection strings are never read. Read-only.
+    script: scripts/app_state.py
+    tags: [health, state, availability]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+    outputs:
+      appState: { schema: ./schemas/app-state.v1.json, description: "State, availability, usage state, kind and plan of the web app" }
+  - name: plan-state
+    title: App Service plan state, SKU and instance count
+    description: >-
+      Reads the App Service plan: its status, SKU (name, tier, size, capacity), the instance count it
+      runs, the most instances the SKU allows, how many apps it hosts, and the elastic-scale,
+      per-site-scaling, zone-redundancy and spot flags. On a web app target it reads the plan the app
+      runs on, which may be in another resource group. Read-only.
+    script: scripts/plan_state.py
+    tags: [health, plan, sku, capacity]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Web/sites/read }                       # a web app target: its serverFarmId
+      - { action: Microsoft.Web/serverfarms/read }
+    outputs:
+      planState: { schema: ./schemas/plan-state.v1.json, description: "Status, SKU, instance count and scaling flags of the plan" }
+  - name: autoscale
+    title: Autoscale settings of the plan
+    description: >-
+      Lists the autoscale settings (Azure Monitor) of the plan's subscription, because a setting can live
+      in any resource group, and returns those that target the plan: enabled or not, each profile's
+      minimum, maximum and default instance count, the number of rules, whether it is scheduled, and for an
+      enabled setting whether the plan's current instance count has reached the profile's maximum (which
+      profile is active now is not evaluated). Notification addresses are not returned. A list cut short
+      that held no setting for the plan says null, not false. On a web app target it reads the plan the
+      app runs on. Read-only.
+    script: scripts/autoscale.py
+    tags: [capacity, autoscale, plan]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/serverfarms/read }
+      - { action: Microsoft.Insights/autoscalesettings/read, scope: subscription }   # the setting can be in any group
+    outputs:
+      autoscale: { schema: ./schemas/autoscale.v1.json, description: "The autoscale settings that target the plan, with profile bounds and the current instance count" }
+  - name: resource-health
+    title: Azure Resource Health of the app or plan
+    description: >-
+      Reads Azure's own availability verdict for the web app or the plan (Microsoft.ResourceHealth
+      availabilityStatuses/current): the state (Available, Degraded, Unavailable, Unknown), Azure's
+      summary and detailed status, the reason type and chronicity, when it occurred and was reported,
+      and how many service-impacting events Azure lists. Does not register the resource provider; if
+      the subscription has not registered Microsoft.ResourceHealth the run fails with dependency.
+      Read-only.
+    script: scripts/resource_health.py
+    tags: [health, availability, platform]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/serverfarms/read }
+      - { action: Microsoft.ResourceHealth/availabilityStatuses/read }
+    outputs:
+      health: { schema: ./schemas/health.v1.json, description: "Availability state, Azure's summary and detailed status, reason, times and the number of service-impacting events" }
+  - name: configuration
+    title: Web app configuration facts
+    description: >-
+      Reads the web app's configuration as facts: HTTPS only, minimum TLS version (app and SCM),
+      FTPS state, HTTP/2, always on, health check path, runtime, public network access, client
+      certificate mode, virtual network integration, and the managed identity (its type and how many
+      user-assigned identities, never an id). A custom container's image is returned with any credentials
+      in its reference removed, and COMPOSE| and KUBE| runtimes as their prefix only. Reads the site and its web configuration only: app
+      settings, connection strings and publishing credentials are never read. If the web
+      configuration cannot be read its fields are null and the error is reported. Read-only.
+    script: scripts/configuration.py
+    tags: [config, security]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/sites/config/read }
+    outputs:
+      configuration: { schema: ./schemas/configuration.v1.json, description: "HTTPS only, TLS, FTPS, always on, health check path, runtime, network access and identity type" }
+  - name: deployments
+    title: Slots and recent deployments
+    description: >-
+      Lists the app's deployment slots (name, state, availability, host name, last modified) and its
+      deployment records that started within the window (status Pending, Building, Deploying,
+      Failed or Success, which one is active, deployer, message (the committer's text: cut to 256 characters, e-mail addresses and URL credentials masked), times), newest first, with the
+      newest record overall, how many failed in the window and how many are still in progress.
+      One of the two lists that cannot be read is reported with its own error and the other
+      stands. An app that is not deployed through Kudu has no records: that is no data, not a
+      healthy deployment. Read-only.
+    script: scripts/deployments.py
+    tags: [deployment, slots]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/sites/slots/read }
+      - { action: Microsoft.Web/sites/deployments/read }
+    inputs:
+      window: { type: duration, default: 7d, description: "How far back to look for deployment records, from 1m to 30d" }
+    outputs:
+      deployments: { schema: ./schemas/deployments.v1.json, description: "Slots, the deployment records of the window, the newest record, failures and records in progress" }
+  - name: http-metrics
+    title: HTTP requests, errors and response time
+    description: >-
+      Reads the web app's Azure Monitor metrics Requests, Http5xx, Http4xx (totals) and
+      HttpResponseTime (average and maximum, in seconds) over the window that ends at the run's
+      reference time, and for each reports the intervals with and without a value, min, max, last,
+      the total, the newest 50 intervals and how many cross http5xxThreshold, http4xxThreshold or
+      responseTimeThresholdSeconds. A metric that cannot be read is reported with its own error
+      and the others stand. Read-only.
+    script: scripts/http_metrics.py
+    tags: [metrics, performance, http]
+    readOnly: true
+    timeout: 360s                                  # the app lookup and 4 metric reads of commandTimeout (usage.py BUDGET is 330s)
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      http: { schema: ./schemas/http.v1.json, description: "Requests, Http5xx, Http4xx and response time per interval over the window with counts of intervals over the thresholds" }
+  - name: function-metrics
+    title: Function executions and server errors
+    description: >-
+      For a function app (a web app of kind functionapp; any other kind is invalid_input) reads the
+      Azure Monitor metrics FunctionExecutionCount, FunctionExecutionUnits and Http5xx (totals) over the
+      window, and for each reports the intervals with and without a value, min, max, last, the total, the
+      newest 50 intervals and, for Http5xx, how many cross http5xxThreshold. Http5xx counts failures of
+      HTTP-triggered functions; failures of other triggers are not in the platform metrics (they are in
+      Application Insights). A metric that cannot be read is reported with its own error and the
+      others stand. Read-only.
+    script: scripts/function_metrics.py
+    tags: [metrics, functions, executions]
+    readOnly: true
+    timeout: 360s
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      functions: { schema: ./schemas/functions.v1.json, description: "Function executions, execution units and HTTP server errors per interval over the window" }
+  - name: plan-metrics
+    title: Plan CPU, memory and disk queue
+    description: >-
+      Reads the plan's Azure Monitor metrics CpuPercentage and MemoryPercentage (average and
+      maximum) and DiskQueueLength (average) over the window, and for each reports the intervals
+      with and without a value, min, max, last, the newest 50 intervals and how many cross
+      cpuThresholdPercent, memoryThresholdPercent or diskQueueThreshold. On a web app target it reads
+      the plan the app runs on. A plan on a Consumption (Dynamic) SKU has no such metrics: that is
+      reported as an error scoped to the metric, not as a quiet plan. Read-only.
+    script: scripts/plan_metrics.py
+    tags: [metrics, capacity, plan]
+    readOnly: true
+    timeout: 360s
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/serverfarms/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      planMetrics: { schema: ./schemas/plan-metrics.v1.json, description: "CPU, memory and disk queue per interval over the window with counts of intervals over the thresholds" }
+  - name: restart
+    title: Restart the web app
+    description: >-
+      Restarts the web app's production slot (az webapp restart), then reads the app again and reports
+      its state before and after. In a dry run the app is read and what would be sent is reported;
+      nothing is sent. Works for a function app. Read the effects before approving.
+    script: scripts/restart.py
+    tags: [restart, ops]
+    readOnly: false
+    destructive: false
+    idempotent: false
+    dryRun: true
+    timeout: 780s                                  # operationTimeout (at most 600s) and two reads of commandTimeout
+    effects:
+      - "Restarts the app's worker processes on every instance of its plan: requests in flight are dropped and the app is unavailable while it starts; in-memory state and caches are lost."
+      - "Does not touch the app's settings, deployment slots other than production, or the other apps on the plan."
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/sites/restart/action }
+    outputs:
+      power: { schema: ./schemas/power.v1.json, description: "The action, whether it was sent, the state before and after" }
+  - name: start
+    title: Start the web app
+    description: >-
+      Starts a stopped web app (az webapp start), then reads the app again and reports its state before
+      and after. Starting a running app changes nothing. In a dry run the app is read and nothing is
+      sent. Works for a function app.
+    script: scripts/start.py
+    tags: [start, ops]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    timeout: 780s
+    effects:
+      - "Starts the app on its plan: it begins to serve requests, run its WebJobs and (for a function app) its triggers, and consumes the plan's capacity again."
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/sites/start/action }
+    outputs:
+      power: { schema: ./schemas/power.v1.json, description: "The action, whether it was sent, the state before and after" }
+  - name: stop
+    title: Stop the web app
+    description: >-
+      Stops the web app (az webapp stop), then reads the app again and reports its state before and
+      after. The app serves no requests until it is started. Stopping a stopped app changes nothing. In a
+      dry run the app is read and nothing is sent. Works for a function app.
+    script: scripts/stop.py
+    tags: [stop, ops]
+    readOnly: false
+    destructive: true
+    idempotent: true
+    dryRun: true
+    timeout: 780s
+    effects:
+      - "Takes the app offline: every request fails until it is started, and a function app stops running all its triggers, so queues and event hubs back up."
+      - "The plan keeps being billed; stopping an app does not release the plan's instances."
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/sites/stop/action }
+    outputs:
+      power: { schema: ./schemas/power.v1.json, description: "The action, whether it was sent, the state before and after" }
+  - name: swap-slot
+    title: Swap two deployment slots
+    description: >-
+      Swaps the source slot with the target slot (default production) of the web app (az webapp
+      deployment slot swap) and reports both slots' state before and after. Both slots must exist
+      (a missing one is not_found); a slot cannot be swapped with itself. In a dry run the slots are read
+      and checked and nothing is sent. A swap already under way on either slot (slotSwapStatus or targetSwapSlot set) is refused as invalid_input. Swapping again exchanges the two slots back, but it is a second change of what production serves, with its own warm-up.
+    script: scripts/swap_slot.py
+    tags: [swap, slots, ops]
+    readOnly: false
+    destructive: false
+    idempotent: false
+    dryRun: true
+    timeout: 1020s                                 # operationTimeout (at most 600s), two reads and two slot lists of at most 120s
+    effects:
+      - "Exchanges the content and the settings that are not marked as slot settings between the two slots: what ran in the source slot now serves the target's host name and the other way round, so with production as the target, production traffic moves to the code of the source slot."
+      - "Warms up the source slot before the swap and restarts apps in it; a failed warm-up fails the swap and leaves both slots as they were."
+      - "Settings marked as slot settings stay with their slot; every other app setting moves with the content (this skill does not read or return any of them)."
+    permissions:
+      - { action: Microsoft.Web/sites/read }
+      - { action: Microsoft.Web/sites/slots/read }
+      - { action: Microsoft.Web/sites/slots/slotsswap/action }
+    inputs:
+      sourceSlot: { type: string, description: "The slot to swap in (not production), for example staging" }
+      targetSlot: { type: string, default: production, description: "The slot to swap with: production or another slot" }
+    outputs:
+      swap: { schema: ./schemas/swap.v1.json, description: "Source and target slot, whether the swap was sent, both slots' state before and after" }
+  - name: scale
+    title: Scale the App Service plan
+    description: >-
+      Sets the plan's instance count and/or SKU to the values asked for (az appservice plan update
+      --number-of-workers / --sku), then reads the plan again and reports before and after and whether it
+      has the requested values. Give instances, sku or both; the values are absolute, not factors. Runs on
+      a plan target only. The plan's autoscale settings are read first, in a dry run too: an enabled setting
+      that targets the plan would scale it back, so an instance count outside its minimum and maximum is
+      refused as invalid_input unless overrideAutoscale is true. The result carries the autoscale bounds.
+      In a dry run the plan is read and what would change is reported; nothing is sent.
+    script: scripts/scale.py
+    tags: [scale, capacity, ops]
+    readOnly: false
+    destructive: false
+    idempotent: true
+    dryRun: true
+    timeout: 900s                                  # operationTimeout (at most 600s), two plan reads and the autoscale list of at most 120s
+    effects:
+      - "Changes the plan's instance count or SKU for every app on the plan (numberOfSites says how many): all of them are scaled together and billed at the new size."
+      - "A SKU change moves the apps to other workers and can restart them; a smaller SKU can lack the memory the apps need."
+      - "An autoscale setting that targets the plan may change the instance count again afterwards."
+    permissions:
+      - { action: Microsoft.Web/serverfarms/read }
+      - { action: Microsoft.Web/serverfarms/write }
+      - { action: Microsoft.Insights/autoscalesettings/read, scope: subscription }   # the setting can be in any group
+    inputs:
+      instances: { type: integer, required: false, min: 1, max: 100, description: "The instance count to set; leave out to keep the current one" }
+      sku: { type: string, required: false, description: "The SKU to set, for example B1, S1 or P1v3; leave out to keep the current one" }
+      overrideAutoscale: { type: boolean, default: false, description: "Scale to an instance count outside the bounds of an enabled autoscale setting that targets the plan, which will move it back" }
+    outputs:
+      scale: { schema: ./schemas/scale.v1.json, description: "The requested values, the autoscale bounds, whether the call was sent, the plan before and after" }

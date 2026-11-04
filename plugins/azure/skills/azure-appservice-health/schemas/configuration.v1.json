@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Configuration facts of a web app",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "isFunctionApp": {
+      "type": "boolean"
+    },
+    "httpsOnly": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Plain HTTP requests are redirected to HTTPS"
+    },
+    "clientCertEnabled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "clientCertMode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publicNetworkAccess": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Enabled or Disabled; null when Azure gives none"
+    },
+    "vnetIntegrated": {
+      "type": "boolean",
+      "description": "The app has a virtual network integration subnet"
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "None, SystemAssigned, UserAssigned or SystemAssigned, UserAssigned"
+        },
+        "systemAssigned": {
+          "type": "boolean"
+        },
+        "userAssignedCount": {
+          "type": "integer",
+          "description": "Identities only counted: no principal or client id is returned"
+        }
+      },
+      "required": [
+        "type",
+        "systemAssigned",
+        "userAssignedCount"
+      ],
+      "additionalProperties": false
+    },
+    "configRead": {
+      "type": "boolean",
+      "description": "config/web was read; false means the fields below it are null and an error says why"
+    },
+    "alwaysOn": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Normal for a function app on a Consumption plan to be false"
+    },
+    "minTlsVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scmMinTlsVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ftpsState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "AllAllowed, FtpsOnly or Disabled"
+    },
+    "http20Enabled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "healthCheckPath": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "runtime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "linuxFxVersion or windowsFxVersion, cut to 256 characters. COMPOSE| and KUBE| give only the prefix (the rest is a whole configuration); DOCKER| gives the image reference with any user:pass@ removed"
+    },
+    "numberOfWorkers": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "webSocketsEnabled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "remoteDebuggingEnabled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "autoHealEnabled": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "app",
+    "kind",
+    "isFunctionApp",
+    "httpsOnly",
+    "clientCertEnabled",
+    "clientCertMode",
+    "publicNetworkAccess",
+    "vnetIntegrated",
+    "identity",
+    "configRead",
+    "alwaysOn",
+    "minTlsVersion",
+    "scmMinTlsVersion",
+    "ftpsState",
+    "http20Enabled",
+    "healthCheckPath",
+    "runtime",
+    "numberOfWorkers",
+    "webSocketsEnabled",
+    "remoteDebuggingEnabled",
+    "autoHealEnabled"
+  ],
+  "additionalProperties": false
+}

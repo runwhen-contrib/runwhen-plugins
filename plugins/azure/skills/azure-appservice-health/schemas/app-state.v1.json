@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "State and availability of a web app",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "description": "ARM kind: app, app,linux, functionapp, functionapp,linux ..."
+    },
+    "isFunctionApp": {
+      "type": "boolean",
+      "description": "kind contains functionapp"
+    },
+    "isLinux": {
+      "type": "boolean"
+    },
+    "isContainer": {
+      "type": "boolean"
+    },
+    "state": {
+      "type": "string",
+      "description": "Running or Stopped, as Azure reports it"
+    },
+    "running": {
+      "type": "boolean",
+      "description": "state is Running"
+    },
+    "enabled": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The app is enabled; false means disabled"
+    },
+    "availabilityState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Normal, Limited or DisasterRecoveryMode; null when Azure gives none"
+    },
+    "limited": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "availabilityState is Limited; null when it is not reported (DisasterRecoveryMode is named by availabilityState, not by this flag)"
+    },
+    "usageState": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Normal or Exceeded (a quota of the plan was used up); null when not reported"
+    },
+    "quotaExceeded": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "usageState is Exceeded; null when it is not reported"
+    },
+    "suspendedTill": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "When the app is suspended until (quota exceeded)"
+    },
+    "defaultHostName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lastModifiedTimeUtc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "planName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The App Service plan the app runs on; null when it has none (Container Apps hosting)"
+    },
+    "planResourceGroup": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The plan's resource group, which may differ from the app's"
+    }
+  },
+  "required": [
+    "app",
+    "kind",
+    "isFunctionApp",
+    "isLinux",
+    "isContainer",
+    "state",
+    "running",
+    "enabled",
+    "availabilityState",
+    "limited",
+    "usageState",
+    "quotaExceeded",
+    "suspendedTill",
+    "defaultHostName",
+    "lastModifiedTimeUtc",
+    "location",
+    "planName",
+    "planResourceGroup"
+  ],
+  "additionalProperties": false
+}

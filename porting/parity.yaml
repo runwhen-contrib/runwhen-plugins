@@ -425,6 +425,71 @@ azure:
       "Fetch Activities for AKS Cluster": "azure-aks-health/activity-failures (failed operations only, which is what the classic Critical/Error severities were derived from; warnings and the caller are not read)"
       "Check Kubernetes Version Support for AKS Cluster": azure-aks-health/version-support
       "Analyze AKS Cluster Cost Optimization Opportunities": "dropped: a cost analysis over the node resource group (VMSS, disks) with a built-in price table and failed metrics read as 0% utilization; cost is a different skill (azure-cost, wave 3) and the node-level facts are node-pools and node-metrics"
+  # --- azure-appservice-health (M3 wave 1): web apps, function apps (web-app kind functionapp) and plans ----------
+  - bundle: azure-appservice-webapp-health
+    skills: [azure-appservice-health]
+    status: partial
+    ported: [azure-appservice-health]
+    note: "per-app target (azure/web-app) instead of a resource-group loop. Read through `az rest` GETs of the site, so no call returns an app setting, a connection string or a publishing credential (`az webapp show` reads the publishing profile with secrets in-process and `az webapp config appsettings list` returns the values). Classic false-passes not reproduced: a failed metrics call (`2>/dev/null`) read as 'No data found' and `continue` with no issue; a failed `az webapp show` gave an empty document and the config checks did not fire; a failed slot list fell to the production branch; AVG_RSP_TIME 5000 compared against AverageResponseTime, which Azure reports in seconds (never fired): HttpResponseTime in seconds with a seconds threshold; the Http5xx/4xx thresholds were per 5-minute grain, now per metricInterval and a setting. Resource Health no longer registers Microsoft.ResourceHealth (a write in a read task): an unregistered provider is a dependency error. Deferred: activity log (Fetch App Service Activities, Check Recent Activities), Advisor/service health/security recommendations, Log Analytics and Application Insights log analysis, app log download (needs publishing credentials: Microsoft.Web/sites/config/list/action) are not in this skill."
+    tasks:
+      "Check for Resource Health Issues Affecting App Service": "azure-appservice-health/resource-health"
+      "Check App Service Health": "azure-appservice-health/app-state (state, availabilityState and usageState from the site object; the HealthCheckStatus metric is not ported: it needs a health check path and reads as no data on most apps, configuration reports healthCheckPath)"
+      "Fetch App Service Utilization Metrics": "azure-appservice-health/http-metrics (Requests, Http5xx, Http4xx, HttpResponseTime) and azure-appservice-health/plan-metrics (CPU and memory percentage of the plan the app runs on); CpuTime, BytesSent/Received, FileSystemUsage and Threads are not ported"
+      "Get App Service Logs": "dropped: asserts nothing (the classic Robot only prints the tail of downloaded logs) and the download needs publishing credentials"
+      "Check Configuration Health of App Service": "azure-appservice-health/configuration (HTTPS only, minimum TLS, FTPS, always on, health check path, runtime, managed identity type, public network access; diagnostic-settings and plan-tier checks are not ported)"
+      "Check Deployment Health of App Service": "azure-appservice-health/deployments (slots and the deployment records through the ARM deployments list; the Kudu deployment log is not read)"
+      "Fetch App Service Activities": "dropped: activity log is not in this skill (follow-up)"
+      "Check Recent Activities for App Service": "dropped: activity log is not in this skill (follow-up); duplicate of the previous task in the classic bundle"
+      "Check Recommendations and Notifications for App Service": "dropped: Advisor, service health and Defender assessments are not in this skill (follow-up)"
+      "Check Diagnostic Logs for App Service": "dropped: Log Analytics and Application Insights queries are not in this skill (follow-up)"
+      "Check Logs for Errors in App Service": "dropped: reads app settings (az webapp config appsettings list) to find the Application Insights key; never read by this plugin"
+
+  - bundle: azure-appservice-functionapp-health
+    skills: [azure-appservice-health]
+    status: partial
+    ported: [azure-appservice-health]
+    note: "a function app is a web-app of kind functionapp. Classic false-passes not reproduced: FunctionErrors, FunctionThrottles, FunctionExecutionDuration and FunctionMemoryUsage are not Azure Monitor metrics of Microsoft.Web/sites, and every read ended `2>/dev/null || echo 0`, so 'no errors' was the answer to a metric that does not exist: function-metrics reads FunctionExecutionCount, FunctionExecutionUnits and Http5xx only, and says that failures of non-HTTP triggers are not platform metrics; an empty function list wrote '{\"issues\":[]}' and exit 0; plan CPU/memory 'No data found' continue. Deferred: per-function dimensions, activity log, recommendations, Log Analytics/Application Insights, log download."
+    tasks:
+      "Check for Resource Health Issues Affecting Function App": "azure-appservice-health/resource-health"
+      "Log Every Function Invocation Result": "dropped: report-only invocation dump built on metrics that do not exist (FunctionErrors, FunctionThrottles); executions are in function-metrics"
+      "Analyze Function Failure Patterns": "dropped: asserts nothing (the classic Robot only prints the first issue of failure_analysis.json)"
+      "Check Function App Health in Resource Group": "azure-appservice-health/app-state and azure-appservice-health/function-metrics"
+      "Fetch Function App Plan Utilization Metrics": "azure-appservice-health/plan-metrics (the plan the function app runs on)"
+      "Check Individual Function Invocations Health": "azure-appservice-health/function-metrics (app level: FunctionExecutionCount, FunctionExecutionUnits, Http5xx); per-function errors, throttles, duration and memory are not platform metrics"
+      "Get Function App Logs and Analyze Errors": "dropped: log download needs publishing credentials"
+      "Check Configuration Health of Function App": "azure-appservice-health/configuration"
+      "Check Deployment Health of Function App": "azure-appservice-health/deployments"
+      "Fetch Function App Activities": "dropped: activity log is not in this skill (follow-up)"
+      "Fetch Azure Recommendations and Notifications for Function App": "dropped: Advisor, service health and Defender assessments are not in this skill (follow-up)"
+      "Check Recent Activities for Function App": "dropped: duplicate of Fetch Function App Activities (same script and result file)"
+      "Check Diagnostic Logs for Function App": "dropped: Log Analytics and Application Insights queries are not in this skill (follow-up)"
+
+  - bundle: azure-appservice-plan-health
+    skills: [azure-appservice-health]
+    status: partial
+    ported: [azure-appservice-health]
+    note: "per-plan target (azure/app-service-plan) instead of a resource-group loop. Classic false-passes not reproduced: the SLI scored availability 1 when at least ONE plan in the group was Available; a failed per-plan Resource Health call dropped the plan from the list; the capacity script listed plans of the whole subscription (no -g) and read failed metrics as 'not evaluated'; metrics `2>/dev/null || echo ''`. Capacity thresholds are settings (CPU 80, memory 80, disk queue 10); the classic scale-up/scale-down recommendations (70/30 thresholds) are verdicts and are not ported. Instance count, SKU and autoscale are new read tasks."
+    tasks:
+      "Check Azure App Service Plan Resource Health": "azure-appservice-health/resource-health"
+      "Check App Service Plan Capacity and Recommendations": "azure-appservice-health/plan-metrics (CpuPercentage, MemoryPercentage, DiskQueueLength with thresholds as booleans), azure-appservice-health/plan-state and azure-appservice-health/autoscale; the scale-up/scale-down recommendations are dropped (verdicts)"
+      "Analyze App Service Plan Cost Optimization Opportunities": "dropped: cost recommendations belong to the azure-cost skill (wave 3); the plan's utilization facts are in plan-metrics"
+      "Analyze App Service Plan Weekly Utilization Trends": "dropped: week-over-week trend verdict; plan-metrics takes a window up to 30d"
+      "Check App Service Plan Changes": "dropped: activity log is not in this skill (follow-up)"
+
+  - bundle: azure-appservice-webapp-ops
+    skills: [azure-appservice-health]
+    status: partial
+    ported: [azure-appservice-health]
+    note: "write tasks (readOnly false, effects, destructive, idempotent, dryRun: true; Azure has no server-side dry run, so a dry run reads and checks and sends nothing). Classic defects not reproduced: every task raised its issue from `'ERROR' in stdout` while the scripts wrote ERROR to stderr (a failed redeploy raised nothing): a failed az call fails the task with its D64 code; scale multiplied/divided the instance count by a factor and picked the next/previous SKU from a map (decided by arithmetic, not by the caller): scale takes absolute instances and/or sku and reads the plan's autoscale settings first (a count outside an enabled setting's bounds is refused unless overrideAutoscale); restart downloaded logs before and after (publishing credentials): not ported."
+    tasks:
+      "Restart App Service": "azure-appservice-health/restart"
+      "Swap Deployment Slots": "azure-appservice-health/swap-slot (sourceSlot and targetSlot are inputs; the classic auto-picked the single non-production slot)"
+      "Scale Up App Service": "azure-appservice-health/scale (sku input)"
+      "Scale Down App Service": "azure-appservice-health/scale (sku input)"
+      "Scale Out Instances for App Service": "azure-appservice-health/scale (instances input)"
+      "Scale In Instances for App Service": "azure-appservice-health/scale (instances input)"
+      "Redeploy App Service from Latest Source": "dropped: a container redeploy is restart; a zip redeploy needs a package file and Microsoft.Web/sites/extensions/write, not in this skill"
+
 # --- gcp (M3; lane F plan, Appendix C). The four bundles of the 94-bundle baseline; the 27 other
 # gcp bundles on main are out of scope unless Samir widens it. Skills are stub-recorded (C5).
 gcp:

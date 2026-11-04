@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Autoscale settings that target an App Service plan",
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "string"
+    },
+    "instanceCount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "The plan's current instance count"
+    },
+    "configured": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "An autoscale setting targets the plan; null when the list was cut short and held none"
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "At least one targeting setting is enabled"
+    },
+    "settings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "minimum": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "maximum": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "default": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "ruleCount": {
+                  "type": "integer"
+                },
+                "scheduled": {
+                  "type": "boolean",
+                  "description": "The profile has a fixed date or a recurrence"
+                },
+                "atMaximum": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "The plan's instance count has reached this profile's maximum; null for a setting that is not enabled. Which profile is active now is not evaluated (profiles can be scheduled), so this is a fact about the profile"
+                }
+              },
+              "required": [
+                "name",
+                "minimum",
+                "maximum",
+                "default",
+                "ruleCount",
+                "scheduled",
+                "atMaximum"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 50
+          },
+          "profilesOmitted": {
+            "type": "integer"
+          },
+          "notificationCount": {
+            "type": "integer",
+            "description": "Notification targets; their addresses are not returned"
+          }
+        },
+        "required": [
+          "name",
+          "enabled",
+          "profiles",
+          "profilesOmitted",
+          "notificationCount"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "total": {
+      "type": "integer"
+    },
+    "omitted": {
+      "type": "integer"
+    },
+    "listComplete": {
+      "type": "boolean",
+      "description": "Every page of the resource group's autoscale list was read"
+    }
+  },
+  "required": [
+    "plan",
+    "instanceCount",
+    "configured",
+    "enabled",
+    "settings",
+    "total",
+    "omitted",
+    "listComplete"
+  ],
+  "additionalProperties": false
+}

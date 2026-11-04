@@ -51,6 +51,14 @@ SYNTHETIC_CLUSTERS = {"aks-orders-dev", "aks-orders-prod", "aks-orders-dev2", "n
 SYNTHETIC_AKS_HOSTS = {"aks-orders-dev-dns-1a2b3c4d", "aks-orders-prod-dns-1a2b3c4d"}
 SYNTHETIC_WORKSPACES = {"law-central"}
 SYNTHETIC_ENDPOINTS = {"pe-orders"}
+SYNTHETIC_APPS = {
+    "app-orders-api",
+    "app-orders-web",
+    "func-orders-jobs",
+    "func-orders-ingest",
+    "nope",
+}
+SYNTHETIC_PLANS = {"plan-orders-prod", "plan-orders-dev", "nope"}
 SYNTHETIC_EMAILS = set()  # the stub invents none: a principal is a GUID
 # IPv4 addresses are only the documentation ranges (RFC 5737)
 DOCUMENTATION_NETS = [
@@ -76,6 +84,8 @@ EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 VAULT_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.vault\.azure\.net\b")
 AKS_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.(?:hcp|privatelink)\.[a-z0-9]+\.azmk8s\.io\b")
+# a web app's host names: <app>.azurewebsites.net, <app>.scm.azurewebsites.net, <app>-staging.azurewebsites.net
+SITE_HOST = re.compile(r"(?i)\b([a-z0-9-]+)(?:\.scm)?\.azurewebsites\.net\b")
 NAME = r"([A-Za-z0-9_.()-]+)"  # a name ends at the first character a resource name cannot hold
 RESOURCE_NAMES = [  # (what, pattern of an ARM id or resource path, the stub's set)
     (
@@ -114,6 +124,21 @@ RESOURCE_NAMES = [  # (what, pattern of an ARM id or resource path, the stub's s
         "private endpoint",
         re.compile(r"(?i)/providers/microsoft\.network/privateendpoints/" + NAME),
         SYNTHETIC_ENDPOINTS,
+    ),
+    (
+        "web app",
+        re.compile(
+            r"(?i)(?:/providers/microsoft\.web/sites/|/resourcegroups/[^/\s]+/web-apps/)" + NAME
+        ),
+        SYNTHETIC_APPS,
+    ),
+    (
+        "service plan",
+        re.compile(
+            r"(?i)(?:/providers/microsoft\.web/serverfarms/|/resourcegroups/[^/\s]+/app-service-plans/)"
+            + NAME
+        ),
+        SYNTHETIC_PLANS,
     ),
 ]
 # argument names that would put a secret on argv, alone (`--password x`) or joined to their value
@@ -213,6 +238,10 @@ def foreign(text):
     for host in AKS_HOST.findall(text):
         if host.lower() not in SYNTHETIC_AKS_HOSTS:
             out.append(("an AKS API server host name", host))
+    for host in SITE_HOST.findall(text):
+        app = host.lower().removesuffix("-staging")
+        if app not in {a.lower() for a in SYNTHETIC_APPS}:
+            out.append(("a web app host name", f"{host}.azurewebsites.net"))
     for what, pattern, allowed in RESOURCE_NAMES:
         for name in pattern.findall(text):
             if name.lower() not in allowed and not GUID.fullmatch(name):
@@ -252,6 +281,14 @@ def test_the_name_scan_finds_what_it_looks_for_and_passes_the_stub_names():
     )
     # an action name such as Microsoft.Resources/subscriptions/resourceGroups/read is not a group
     assert foreign("'Microsoft.Resources/subscriptions/resourceGroups/read'") == []
+    sites = "/subscriptions/x/resourceGroups/rg-orders-dev/providers/Microsoft.Web/sites/shop-prod"
+    assert foreign(sites) == [("a web app name", "shop-prod")]
+    assert foreign(
+        "/providers/Microsoft.Web/serverfarms/plan-shop azure/subscriptions/x/resourcegroups/rg-orders-dev/web-apps/APP-ORDERS-WEB"
+    ) == [("a service plan name", "plan-shop")]
+    assert foreign(
+        "https://shop-prod.azurewebsites.net https://app-orders-web-staging.azurewebsites.net"
+    ) == [("a web app host name", "shop-prod.azurewebsites.net")]
     assert foreign(
         "/providers/Microsoft.OperationalInsights/workspaces/real-ws "
         "/v1/workspaces/0b6c2f1e-3d4a-4e5f-9a7b-1c2d3e4f5a6b/query"

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Result of restarting, starting or stopping a web app",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "restart",
+        "start",
+        "stop"
+      ]
+    },
+    "applied": {
+      "type": "boolean",
+      "description": "The az call was made"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "expectedState": {
+      "type": "string",
+      "description": "Running or Stopped: the state the action ends in"
+    },
+    "wouldChange": {
+      "type": "boolean",
+      "description": "The app is not already in the expected state, or the action is restart"
+    },
+    "before": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "availabilityState": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "availabilityState"
+      ],
+      "additionalProperties": false
+    },
+    "after": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "availabilityState": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "availabilityState"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "reachedExpected": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The state read after the call is the expected one; null in a dry run or when it could not be read"
+    }
+  },
+  "required": [
+    "app",
+    "action",
+    "applied",
+    "dryRun",
+    "expectedState",
+    "wouldChange",
+    "before",
+    "after",
+    "reachedExpected"
+  ],
+  "additionalProperties": false
+}

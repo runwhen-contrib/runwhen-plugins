@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Result of scaling an App Service plan",
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "string"
+    },
+    "applied": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "requested": {
+      "type": "object",
+      "properties": {
+        "instances": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sku": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "instances",
+        "sku"
+      ],
+      "additionalProperties": false
+    },
+    "numberOfSites": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Apps on the plan: all of them are affected"
+    },
+    "noChange": {
+      "type": "boolean",
+      "description": "The plan already has the requested instance count and SKU"
+    },
+    "autoscale": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "An enabled autoscale setting targets the plan; false when the list was read whole and has none; null when that cannot be told"
+        },
+        "minimum": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Lowest minimum of the enabled settings' profiles"
+        },
+        "maximum": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Highest maximum of the enabled settings' profiles"
+        }
+      },
+      "required": [
+        "enabled",
+        "minimum",
+        "maximum"
+      ],
+      "additionalProperties": false
+    },
+    "autoscaleOverridden": {
+      "type": "boolean",
+      "description": "overrideAutoscale let a count outside the autoscale bounds through"
+    },
+    "before": {
+      "type": "object",
+      "properties": {
+        "skuName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instanceCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "planStatus": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skuName",
+        "tier",
+        "instanceCount",
+        "planStatus"
+      ],
+      "additionalProperties": false
+    },
+    "after": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "skuName": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tier": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "instanceCount": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "planStatus": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "skuName",
+            "tier",
+            "instanceCount",
+            "planStatus"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "reachedRequested": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The plan read after the call has the requested values; scaling can lag, so false is not a failure"
+    }
+  },
+  "required": [
+    "plan",
+    "applied",
+    "dryRun",
+    "requested",
+    "numberOfSites",
+    "noChange",
+    "autoscale",
+    "autoscaleOverridden",
+    "before",
+    "after",
+    "reachedRequested"
+  ],
+  "additionalProperties": false
+}

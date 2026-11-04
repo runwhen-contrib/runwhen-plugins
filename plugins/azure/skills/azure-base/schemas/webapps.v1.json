@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The subscription's web apps and function apps across its resource groups",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "resourceGroup": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "The ARM resource id"
+          },
+          "kind": {
+            "type": "string",
+            "description": "app, app,linux, functionapp, functionapp,linux ...: a function app is a web app whose kind contains functionapp"
+          },
+          "state": {
+            "type": "string",
+            "description": "Running or Stopped; empty when Azure gives none"
+          }
+        },
+        "required": [
+          "name",
+          "resourceGroup",
+          "location",
+          "id",
+          "kind",
+          "state"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "total": {
+      "type": "integer",
+      "description": "Web apps found"
+    },
+    "omitted": {
+      "type": "integer",
+      "description": "Web apps left out of items by maxItems"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "omitted"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Result of swapping two slots of a web app",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string"
+    },
+    "sourceSlot": {
+      "type": "string"
+    },
+    "targetSlot": {
+      "type": "string"
+    },
+    "applied": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "before": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "availabilityState": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "swapInProgress": {
+              "type": "boolean",
+              "description": "slotSwapStatus is set: a swap is running"
+            },
+            "targetSwapSlot": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "targetSwapSlot: the slot a swap with preview is applied to"
+            }
+          },
+          "required": [
+            "state",
+            "availabilityState",
+            "swapInProgress",
+            "targetSwapSlot"
+          ],
+          "additionalProperties": false
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "availabilityState": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "swapInProgress": {
+              "type": "boolean",
+              "description": "slotSwapStatus is set: a swap is running"
+            },
+            "targetSwapSlot": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "targetSwapSlot: the slot a swap with preview is applied to"
+            }
+          },
+          "required": [
+            "state",
+            "availabilityState",
+            "swapInProgress",
+            "targetSwapSlot"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "after": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "availabilityState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "availabilityState"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "target": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "availabilityState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "availabilityState"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "source",
+            "target"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "app",
+    "sourceSlot",
+    "targetSlot",
+    "applied",
+    "dryRun",
+    "before",
+    "after"
+  ],
+  "additionalProperties": false
+}

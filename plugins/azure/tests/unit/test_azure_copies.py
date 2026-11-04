@@ -17,7 +17,12 @@ K8S_SYNC = PLUGIN.parent / "kubernetes" / "skills" / "k8s-base" / "lib" / "k8s_b
 SHARED = ("errors.py", "az.py", "common.py", "metrics.py")
 
 # every azure skill that runs az carries the shared files; a skill missing here is untested
-SKILLS_WITH_COPIES = {"azure-base", "azure-kv-health", "azure-aks-health"}
+SKILLS_WITH_COPIES = {
+    "azure-base",
+    "azure-kv-health",
+    "azure-aks-health",
+    "azure-appservice-health",
+}
 
 
 def copies(name):

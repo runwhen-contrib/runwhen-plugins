@@ -51,6 +51,15 @@ def test_the_scenarios_this_plugin_records_exist():
         "group-forbidden",
         "stopped",
         "monitor-forbidden",
+        # azure-appservice-health: the web apps, function apps and plans (capture/appservice.py)
+        "appservice-healthy",
+        "appservice-broken",
+        "appservice-forbidden",
+        "appservice-write-forbidden",
+        "appservice-not-found",
+        "appservice-throttled",
+        "appservice-partial",
+        "appservice-swap-busy",
     }
 
 
@@ -356,7 +365,12 @@ def test_record_sh_replays_with_the_stub_off_the_path(recorder):
     done, calls = recorder("azure-base/discover/healthy")
     assert done.returncode == 0, done.stderr
     replays = [c for c in calls if "--record" not in c["argv"]]
-    assert [c["argv"][1] for c in replays] == ["azure-base", "azure-kv-health", "azure-aks-health"]
+    assert [c["argv"][1] for c in replays] == [
+        "azure-base",
+        "azure-kv-health",
+        "azure-aks-health",
+        "azure-appservice-health",
+    ]
     assert all(not c["stub_on_path"] and c["scenario"] is None for c in replays)
 
 

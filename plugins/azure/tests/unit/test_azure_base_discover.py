@@ -39,6 +39,22 @@ GROUPS = ["rg-orders-dev", "rg-orders-prod", "RG-Platform"]  # as `az group list
 GROUP_PATH = f"azure/subscriptions/{SUB}/resourcegroups"
 
 
+def group_calls(group):
+    """The az calls made for one resource group, in the order of dc.CHILD_TYPES."""
+    return [
+        ["keyvault", "list", "-g", group, "--resource-type", "vault", "--subscription", SUB],
+        ["aks", "list", "-g", group, "--subscription", SUB],
+        ["appservice", "plan", "list", "-g", group, "--subscription", SUB],
+        ["webapp", "list", "-g", group, "--subscription", SUB],
+        ["functionapp", "list", "-g", group, "--subscription", SUB],
+    ]
+
+
+def empty_apps(group):
+    """Replies for the plan and web app listings of a group that holds none."""
+    return {tuple(call): (0, "[]", "") for call in group_calls(group)[2:]}
+
+
 def test_it_reports_the_subscription_its_groups_and_its_vaults(run_script):
     run = discover(run_script)
     assert (run.envelope["status"], run.errors) == ("ok", [])
@@ -76,19 +92,31 @@ def test_it_reports_the_subscription_its_groups_and_its_vaults(run_script):
         ("rg-orders-prod", 1),
         ("RG-Platform", 0),
     ]
-    # the account, the groups, then per group one vault listing and one cluster listing, each
-    # scoped with -g
+    assert [
+        (g["name"], g["appServicePlans"], g["webApps"]) for g in out["resourceGroups"]["items"]
+    ] == [
+        ("rg-orders-dev", 1, 2),
+        ("rg-orders-prod", 1, 2),
+        ("RG-Platform", 0, 0),
+    ]
+    assert out["appServicePlans"]["total"] == 2 and out["webApps"]["total"] == 4
+    assert [(p["name"], p["skuName"], p["skuTier"]) for p in out["appServicePlans"]["items"]] == [
+        ("plan-orders-dev", "S2", "Standard"),
+        ("plan-orders-prod", "P1v3", "PremiumV3"),
+    ]
+    # a function app is a web app of kind functionapp, listed with the others
+    assert [(a["name"], a["kind"], a["state"]) for a in out["webApps"]["items"]] == [
+        ("app-orders-api", "app,linux", "Running"),
+        ("app-orders-web", "app", "Stopped"),
+        ("func-orders-ingest", "functionapp", "Running"),
+        ("func-orders-jobs", "functionapp,linux", "Running"),
+    ]
+    # the account, the groups, then per group the vault, cluster, plan, web app and function app
+    # listings, each scoped with -g
     assert run.calls == [
         ["account", "show", "--subscription", SUB],
         ["group", "list", "--subscription", SUB],
-        *(
-            call
-            for g in GROUPS
-            for call in (
-                ["keyvault", "list", "-g", g, "--resource-type", "vault", "--subscription", SUB],
-                ["aks", "list", "-g", g, "--subscription", SUB],
-            )
-        ),
+        *(call for g in GROUPS for call in group_calls(g)),
     ]
 
 
@@ -99,9 +127,11 @@ def test_the_summary_reports_the_subscription_id_as_the_canonical_key(run_script
         "resourcegroup": 3,
         "keyvault": 2,
         "aks-cluster": 2,
+        "app-service-plan": 2,
+        "web-app": 4,
     }
-    # the groups, then a vault and a cluster partition for each of the three groups
-    assert summary["partitions"] == {"complete": 7, "failed": 0, "forbidden": 0, "excluded": 0}
+    # the groups, then a partition per child type for each of the three groups
+    assert summary["partitions"] == {"complete": 13, "failed": 0, "forbidden": 0, "excluded": 0}
     assert summary["root"] == {"canonicalKey": {"name": "subscriptionId", "value": SUB}}
     types = yaml.safe_load((PLUGIN / "integration" / "types.yaml").read_text())["types"]
     assert types["subscription"]["canonicalKey"] == summary["root"]["canonicalKey"]["name"]
@@ -124,7 +154,20 @@ def test_the_sync_artifact_is_a_valid_rw_discovery_v1_document(run_script):
         "mode": "full",
     }
     (batch,) = sync_doc["batches"]
-    root, dev, dev_vault, dev_aks, prod, prod_vault, prod_aks, platform = batch["items"]
+    (
+        root,
+        dev,
+        dev_vault,
+        dev_aks,
+        dev_plan,
+        dev_web,
+        dev_func,
+        prod,
+        prod_vault,
+        prod_aks,
+        *rest,
+    ) = batch["items"]
+    prod_plan, prod_web, prod_func, platform = rest
     assert root["identity"] == {
         "platform": "azure",
         "chain": [{"type": "subscription", "name": SUB}],
@@ -150,6 +193,26 @@ def test_the_sync_artifact_is_a_valid_rw_discovery_v1_document(run_script):
         "location": "westeurope",
         "id": f"/subscriptions/{SUB}/resourceGroups/rg-orders-dev/providers/Microsoft.ContainerService/managedClusters/aks-orders-dev",
     }
+    assert prod_plan["identity"]["chain"][1:] == [
+        {"type": "resourcegroup", "name": "rg-orders-prod"},
+        {"type": "app-service-plan", "name": "plan-orders-prod"},
+    ]
+    assert prod_plan["document"] == {
+        "name": "plan-orders-prod",
+        "resourceGroup": "rg-orders-prod",
+        "location": "East US",
+        "id": f"/subscriptions/{SUB}/resourceGroups/rg-orders-prod/providers/Microsoft.Web/serverfarms/plan-orders-prod",
+        "kind": "linux",
+        "skuName": "P1v3",
+        "skuTier": "PremiumV3",
+    }
+    assert dev_web["identity"]["chain"][2:] == [{"type": "web-app", "name": "app-orders-web"}]
+    assert dev_web["document"]["state"] == "Stopped" and dev_web["document"]["kind"] == "app"
+    assert dev_func["identity"]["chain"][2:] == [{"type": "web-app", "name": "func-orders-ingest"}]
+    assert prod_func["document"]["kind"] == "functionapp,linux"
+    for item in (dev_web, dev_func, prod_web, prod_func, dev_plan):
+        # nothing but the listed facts: no site object, no settings, no host names
+        assert "properties" not in item["document"] and "appSettings" not in str(item)
     # the group's name is lower case in the identity, as ARM spells it in the display name
     assert platform["identity"]["chain"] == [sub, {"type": "resourcegroup", "name": "rg-platform"}]
     assert platform["displayName"] == "RG-Platform"
@@ -169,8 +232,14 @@ def test_the_sync_artifact_is_a_valid_rw_discovery_v1_document(run_script):
                 "status": "complete",
                 "count": count,
             }
-            for group, count in (("rg-orders-dev", 1), ("rg-orders-prod", 1), ("rg-platform", 0))
-            for type_name in ("keyvault", "aks-cluster")
+            for group, counts in (
+                ("rg-orders-dev", (1, 1, 1, 2)),
+                ("rg-orders-prod", (1, 1, 1, 2)),
+                ("rg-platform", (0, 0, 0, 0)),
+            )
+            for type_name, count in zip(
+                ("keyvault", "aks-cluster", "app-service-plan", "web-app"), counts
+            )
         ),
     ]
     # the identity chain names types the integration declares, each below the right parent
@@ -189,8 +258,16 @@ def test_the_group_partitions_use_the_plural_the_types_file_declares():
     assert types["resourcegroup"]["parent"] == "subscription"
     assert types["keyvault"]["parent"] == "resourcegroup"
     assert types["aks-cluster"]["parent"] == "resourcegroup"
-    assert [t for t, _ in dc.CHILD_TYPES] == ["keyvault", "aks-cluster"]
+    assert [t for t, _ in dc.CHILD_TYPES] == [
+        "keyvault",
+        "aks-cluster",
+        "app-service-plan",
+        "web-app",
+    ]
     assert all(t in types for t, _ in dc.CHILD_TYPES)
+    # every type below the resource group has its discover row
+    below = {t for t, spec in types.items() if spec.get("parent") == "resourcegroup"}
+    assert below == {t for t, _ in dc.CHILD_TYPES}
 
 
 def test_max_items_cuts_the_listings_but_never_the_sync(run_script):
@@ -199,7 +276,7 @@ def test_max_items_cuts_the_listings_but_never_the_sync(run_script):
     assert (len(keyvaults["items"]), keyvaults["total"], keyvaults["omitted"]) == (1, 2, 1)
     groups = run.envelope["outputs"]["resourceGroups"]
     assert (len(groups["items"]), groups["total"], groups["omitted"]) == (1, 3, 2)
-    assert len(json.loads(run.files["sync.json"])["batches"][0]["items"]) == 8
+    assert len(json.loads(run.files["sync.json"])["batches"][0]["items"]) == 14
 
 
 @pytest.mark.parametrize("bad", [0, 10001, True, "5", 1.5])
@@ -278,6 +355,17 @@ def aks_argv(group):
     return ("aks", "list", "-g", group, "--subscription", SUB)
 
 
+def web_row(name, group, kind="app"):
+    return {
+        "id": f"/subscriptions/{SUB}/resourceGroups/{group}/providers/Microsoft.Web/sites/{name}",
+        "name": name,
+        "location": "eastus",
+        "kind": kind,
+        "state": "Running",
+        "tags": {},
+    }
+
+
 def aks_row(name, group):
     return {
         "id": f"/subscriptions/{SUB}/resourceGroups/{group}/providers/Microsoft.ContainerService/managedClusters/{name}",
@@ -314,11 +402,13 @@ def test_a_group_without_vaults_is_a_complete_empty_partition(run_script):
             ("group", "list", "--subscription", SUB): (0, json.dumps([group_row("rg-a")]), ""),
             list_argv("rg-a"): (0, "[]", ""),
             aks_argv("rg-a"): (0, "[]", ""),
+            **empty_apps("rg-a"),
         }
     )
     run = discover(run_script, runner=runner)
     assert run.envelope["status"] == "ok"
-    keyvault, aks = json.loads(run.files["sync.json"])["commit"]["partitions"][1:]
+    keyvault, aks, plans, webs = json.loads(run.files["sync.json"])["commit"]["partitions"][1:]
+    assert (plans["type"], webs["type"]) == ("app-service-plan", "web-app")
     assert keyvault == {
         "type": "keyvault",
         "parentPath": f"{GROUP_PATH}/rg-a",
@@ -347,6 +437,10 @@ def test_a_group_whose_vaults_cannot_be_listed_is_forbidden_and_the_others_stand
         "aks-orders-dev",
         "aks-orders-prod",
     ]
+    # nor the plan and web app partitions of the group
+    for type_name in ("app-service-plan", "web-app"):
+        refused = [p["status"] for p in sync_doc["commit"]["partitions"] if p["type"] == type_name]
+        assert refused == ["complete"] * 3
     dev = partitions[f"{GROUP_PATH}/rg-orders-dev"]
     assert (
         dev["status"] == "forbidden"
@@ -361,7 +455,7 @@ def test_a_group_whose_vaults_cannot_be_listed_is_forbidden_and_the_others_stand
     clusters_of = {g["name"]: g["aksClusters"] for g in out["resourceGroups"]["items"]}
     assert clusters_of == {"rg-orders-dev": 1, "rg-orders-prod": 1, "RG-Platform": 0}
     assert out["summary"]["partitions"] == {
-        "complete": 6,  # the groups, three cluster partitions and two vault partitions
+        "complete": 12,  # the groups and every partition but the one vault listing refused
         "failed": 0,
         "forbidden": 1,
         "excluded": 0,
@@ -387,6 +481,7 @@ def test_a_group_whose_clusters_cannot_be_listed_keeps_its_vaults_and_is_forbidd
                 "ERROR: (AuthorizationFailed) The client does not have authorization to perform "
                 "action 'Microsoft.ContainerService/managedClusters/read'.\n",
             ),
+            **empty_apps("rg-a"),
         }
     )
     run = discover(run_script, runner=runner)
@@ -399,11 +494,74 @@ def test_a_group_whose_clusters_cannot_be_listed_keeps_its_vaults_and_is_forbidd
         ("resourcegroup", "complete"),
         ("keyvault", "complete"),
         ("aks-cluster", "forbidden"),
+        ("app-service-plan", "complete"),
+        ("web-app", "complete"),
     ]
     out = run.envelope["outputs"]
     assert [v["name"] for v in out["keyvaults"]["items"]] == ["kv-a-vault"]
     assert out["aksClusters"] == {"items": [], "total": 0, "omitted": 0}
     assert out["resourceGroups"]["items"][0]["aksClusters"] is None  # not listed, not zero
+
+
+def test_a_group_whose_plans_or_web_apps_cannot_be_listed_is_forbidden_for_that_type_only(
+    run_script,
+):
+    """The web app type is read by two commands (`az webapp list`, `az functionapp list`) and is
+    complete only when both are: one refused makes the whole partition forbidden."""
+    denied = "ERROR: (AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Web/sites/read'.\n"
+    runner = Replies(
+        {
+            ("account", "show", "--subscription", SUB): (0, ACCOUNT, ""),
+            ("group", "list", "--subscription", SUB): (0, json.dumps([group_row("rg-a")]), ""),
+            list_argv("rg-a"): (0, "[]", ""),
+            aks_argv("rg-a"): (0, "[]", ""),
+            tuple(group_calls("rg-a")[2]): (0, "[]", ""),
+            tuple(group_calls("rg-a")[3]): (0, json.dumps([web_row("app-a", "rg-a")]), ""),
+            tuple(group_calls("rg-a")[4]): (1, "", denied),
+        }
+    )
+    run = discover(run_script, runner=runner)
+    assert run.envelope["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in run.errors] == [("permission_denied", "web-app:rg-a")]
+    partitions = json.loads(run.files["sync.json"])["commit"]["partitions"]
+    assert [(p["type"], p["status"]) for p in partitions][-2:] == [
+        ("app-service-plan", "complete"),
+        ("web-app", "forbidden"),
+    ]
+    out = run.envelope["outputs"]
+    # the app the first command found is not listed as a complete listing: the group says unknown
+    assert out["resourceGroups"]["items"][0]["webApps"] is None
+    assert out["resourceGroups"]["items"][0]["appServicePlans"] == 0
+    assert out["webApps"]["total"] == 0
+
+
+def test_a_function_app_is_listed_once_and_a_web_app_listing_that_is_not_a_list_is_an_error(
+    run_script,
+):
+    both = json.dumps([web_row("app-a", "rg-a"), web_row("func-a", "rg-a", kind="functionapp")])
+    runner = Replies(
+        {
+            ("account", "show", "--subscription", SUB): (0, ACCOUNT, ""),
+            ("group", "list", "--subscription", SUB): (0, json.dumps([group_row("rg-a")]), ""),
+            list_argv("rg-a"): (0, "[]", ""),
+            aks_argv("rg-a"): (0, "[]", ""),
+            tuple(group_calls("rg-a")[2]): (0, "[]", ""),
+            tuple(group_calls("rg-a")[3]): (0, both, ""),
+            tuple(group_calls("rg-a")[4]): (
+                0,
+                json.dumps([web_row("func-a", "rg-a", kind="functionapp")]),
+                "",
+            ),
+        }
+    )
+    out = discover(run_script, runner=runner).envelope["outputs"]
+    assert [(a["name"], a["kind"]) for a in out["webApps"]["items"]] == [
+        ("app-a", "app"),
+        ("func-a", "functionapp"),
+    ]
+    runner.answers[tuple(group_calls("rg-a")[3])] = (0, '{"value": []}', "")
+    run = discover(run_script, runner=runner)
+    assert [(e["code"], e["scope"]) for e in run.errors] == [("internal", "web-app:rg-a")]
 
 
 def test_aks_list_returning_anything_but_a_list_or_a_nameless_cluster_is_an_error(run_script):
@@ -414,6 +572,7 @@ def test_aks_list_returning_anything_but_a_list_or_a_nameless_cluster_is_an_erro
                 ("group", "list", "--subscription", SUB): (0, json.dumps([group_row("rg-a")]), ""),
                 list_argv("rg-a"): (0, "[]", ""),
                 aks_argv("rg-a"): (0, reply, ""),
+                **empty_apps("rg-a"),
             }
         )
         run = discover(run_script, runner=runner)
@@ -438,6 +597,8 @@ def test_a_group_listing_that_fails_for_another_reason_is_a_failed_partition(run
             list_argv("rg-b"): (0, json.dumps([vault_row("kv-b-vault", "rg-b")]), ""),
             aks_argv("rg-a"): (0, "[]", ""),
             aks_argv("rg-b"): (0, "[]", ""),
+            **empty_apps("rg-a"),
+            **empty_apps("rg-b"),
         }
     )
     run = discover(run_script, runner=runner)
@@ -463,6 +624,7 @@ def test_the_listing_budget_stops_further_groups_and_leaves_them_failed_not_swep
         ),
         list_argv("rg-a"): (0, json.dumps([vault_row("kv-a-vault", "rg-a")]), ""),
         aks_argv("rg-a"): (0, json.dumps([aks_row("aks-a", "rg-a")]), ""),
+        **empty_apps("rg-a"),
     }
     errors = []
     ctx = SimpleNamespace(
@@ -490,9 +652,11 @@ def test_the_listing_budget_stops_further_groups_and_leaves_them_failed_not_swep
     assert [(e["code"], e["scope"]) for e in errors] == [
         ("timeout", "keyvault"),
         ("timeout", "aks-cluster"),
+        ("timeout", "app-service-plan"),
+        ("timeout", "web-app"),
     ]
-    assert ctx.run.calls[-2:] == [list(list_argv("rg-a")), list(aks_argv("rg-a"))]
-    assert outputs["summary"]["partitions"]["failed"] == 4  # rg-b and rg-c, a partition per type
+    assert ctx.run.calls[-1] == ["functionapp", "list", "-g", "rg-a", "--subscription", SUB]
+    assert outputs["summary"]["partitions"]["failed"] == 8  # rg-b and rg-c, a partition per type
     assert {
         p["status"] for p in sync_doc["commit"]["partitions"] if p["type"] == "aks-cluster"
     } == {"complete", "failed"}
@@ -535,8 +699,8 @@ def test_a_rejected_vault_through_the_whole_push_fails_only_its_partition(
     run_script, monkeypatch, tmp_path
 ):
     with_credential(tmp_path, monkeypatch)
-    # the platform refuses the 6th item (index 5 of the batch): the prod vault
-    http = Http(rejected=[{"index": 5, "code": "bad_name"}])
+    # the platform refuses the 9th item (index 8 of the batch): the prod vault
+    http = Http(rejected=[{"index": 8, "code": "bad_name"}])
     monkeypatch.setattr(sync, "default_open", http)
     run = discover(run_script)
     assert run.envelope["status"] == "partial"
@@ -546,7 +710,7 @@ def test_a_rejected_vault_through_the_whole_push_fails_only_its_partition(
     }
     assert states[("keyvault", "rg-orders-prod")] == "failed"
     assert [k for k, v in states.items() if v == "failed"] == [("keyvault", "rg-orders-prod")]
-    assert len(states) == 7
+    assert len(states) == 13
 
 
 # --- the push ----------------------------------------------------------------------------------
@@ -619,9 +783,15 @@ def test_with_the_credential_it_opens_sends_the_batches_and_commits(
         "resourcegroup",
         "keyvault",
         "aks-cluster",
+        "app-service-plan",
+        "web-app",
+        "web-app",
         "resourcegroup",
         "keyvault",
         "aks-cluster",
+        "app-service-plan",
+        "web-app",
+        "web-app",
         "resourcegroup",
     ]
     assert http.requests[2][2]["summary"]["counts"] == {
@@ -629,6 +799,8 @@ def test_with_the_credential_it_opens_sends_the_batches_and_commits(
         "resourcegroup": 3,
         "keyvault": 2,
         "aks-cluster": 2,
+        "app-service-plan": 2,
+        "web-app": 4,
     }
     assert "tok-SECRET" not in run.files["sync.json"] + json.dumps(run.envelope)
 
@@ -688,13 +860,15 @@ def test_the_permission_discover_declares_is_the_one_its_az_calls_need():
     doc = yaml.safe_load((SKILLS / "azure-base" / "tasks.yaml").read_text())
     task = next(t for t in doc["tasks"] if t["name"] == "discover")
     # az account show reads the local profile; az group list reads the groups of the subscription;
-    # az keyvault list -g reads the vaults of one group and az aks list -g its clusters. Nothing
-    # else: without -g az would search the subscription's resources
+    # az keyvault list -g reads the vaults of one group, az aks list -g its clusters, az appservice
+    # plan list -g its plans and az webapp|functionapp list -g its sites. Nothing else: without -g az would search the subscription's resources
     # (Microsoft.Resources/subscriptions/resources/read)
     assert task["permissions"] == [
         {"action": "Microsoft.Resources/subscriptions/resourceGroups/read"},
         {"action": "Microsoft.KeyVault/vaults/read"},
         {"action": "Microsoft.ContainerService/managedClusters/read"},
+        {"action": "Microsoft.Web/serverfarms/read"},
+        {"action": "Microsoft.Web/sites/read"},
     ]
 
 
