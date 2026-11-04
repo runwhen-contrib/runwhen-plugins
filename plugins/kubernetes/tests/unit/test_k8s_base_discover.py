@@ -1436,7 +1436,9 @@ def _item(platform, *chain):
         ),
     ],
 )
-def test_a_rejected_item_fails_exactly_its_own_partition_for_any_integration_shape(item, parent_path):
+def test_a_rejected_item_fails_exactly_its_own_partition_for_any_integration_shape(
+    item, parent_path
+):
     t = item["identity"]["chain"][-1]["type"]
     other = parent_path.rsplit("/", 1)[0] + "/other"
     partitions = [
