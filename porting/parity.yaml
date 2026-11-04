@@ -383,3 +383,16 @@ kubernetes:
       "Resolve LiteLLM Master Key": "dropped: a secret read (Secrets, pod env, printenv through exec): not ported, no V13 skill reads the key"
   - { bundle: k8s-litellm-spend-governance, skills: [], status: planned, plugin: misc,
       note: "needs the LiteLLM master key: misc plugin skill on a generic/bearer connection (D72), M4" }
+
+# --- aws (M3, plan Appendix C): classic bundles -> skills of the aws plugin ----------------------------------
+aws:
+  - bundle: aws-lambda-health
+    skills: [aws-lambda-health]
+    status: ported
+    ported: [aws-lambda-health]
+    pilot: true
+    note: "classic ran region-wide for an SLX bound to one function, never checked an exit code (a log-tail failure or AccessDenied printed to stderr and the loop went on), matched the substring ERROR in whatever stdout held (including function names) and passed when the call failed; re-derived per function (aws/lambda-function), every call classified from the CLI's error code, the target read first so a missing function is not_found and not idle, metrics reported with datapoint counts, logs with caps, scrub and a truncated flag. The SLI (pushes 0 when stdout contains ERROR) is not ported: it carried the same false pass; function-metrics errorRateAboveThreshold is the data it should have used"
+    tasks:
+      "List Lambda Versions and Runtimes in Account Region": "aws-lambda-health/function-config (one function: runtime, version, state and last update status; the region-wide listing is aws-base/discover)"
+      "Analyze AWS Lambda Invocation Errors in Account Region": "aws-lambda-health/function-errors (the function's own log group, since/errorPattern; classic tailed 24h of every function)"
+      "Monitor AWS Lambda Performance Metrics in Account Region": "aws-lambda-health/function-metrics (Duration, Errors, Throttles, Invocations and ConcurrentExecutions over since, default 1h, with thresholds as booleans; a window with no Invocations is idle and its errors, throttles and booleans are null, never healthy)"

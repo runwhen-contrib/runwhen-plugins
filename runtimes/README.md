@@ -8,6 +8,7 @@ runtime: a `Dockerfile` and a `runtime.yaml` that the plugin registry reads (tag
 | Runtime | Image | For |
 | --- | --- | --- |
 | `kubernetes` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes` | `kubernetes` plugin tasks |
+| `aws` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-aws` | `aws` plugin tasks |
 
 ## kubernetes
 
@@ -36,6 +37,25 @@ Local check, native architecture:
 docker build -t rwp-runtime-kubernetes:dev runtimes/kubernetes
 docker run --rm -i --entrypoint sh rwp-runtime-kubernetes:dev -s < runtimes/kubernetes/smoke.sh
 python ci/check_runtime.py validate --allow-placeholder
+```
+
+## aws
+
+Same base pin as `kubernetes` (`v13-plugins-d1c7d04`), plus the AWS CLI v2 and nothing else: the
+Dockerfile downloads `awscli-exe-linux-<arch>-<version>.zip` from `awscli.amazonaws.com` at the
+pinned version, checks it against the sha256 recorded in the Dockerfile (one per architecture),
+installs it to `/usr/local/aws-cli` and removes `unzip` again. To move the CLI, change `AWSCLI_VERSION` and both
+checksums together, bump `runtime.yaml` (`tools.aws` and `version`) and run the local check below.
+`AWS_PAGER` is set empty so a task never waits on a pager. The AWS SDKs, `sam`, `cdk` and `eksctl`
+are left out on purpose; an EKS kubeconfig is built by the kubernetes plugin, in `kubernetes@1`.
+The versions, digests, release flow and workflow are the same as for `kubernetes` with `aws` for the name.
+
+```
+docker build -t rwp-runtime-aws:dev runtimes/aws
+docker run --rm -i --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
+# as the runner runs it (the smoke also makes one CLI call against a fake endpoint)
+docker run --rm -i --user 65532 --read-only --tmpfs /work:rw,mode=1777 --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
+python ci/check_runtime.py validate --allow-placeholder --runtime-dir runtimes/aws
 ```
 
 ## Versions

@@ -1,0 +1,11 @@
+# AWS = account -> region -> resource (D51): a type exists only if a skill targets it. Region is a
+# type, not an input: every AWS API call is regional, a skill's tasks read their region from the
+# target (ctx.resource), and discovery reports a region it cannot read (an SCP denies it, it is not
+# enabled) as that region's partition instead of failing the account. Function names are unique only
+# per region, so the region is part of the identity of everything below it.
+types:
+  # canonicalKey: the 12-digit account id (sts get-caller-identity), the same for every
+  # connection that reaches the account, whatever the credential or region.
+  account: { root: true, rootKey: accountId, canonicalKey: accountId, plural: accounts }
+  region: { parent: account, plural: regions }
+  lambda-function: { parent: region, plural: lambda-functions }

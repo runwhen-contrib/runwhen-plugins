@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The regions discover read, one row each",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"enum": ["ok", "forbidden", "failed"], "description": "ok: the list was read to its end; forbidden: the credential may not list Lambda functions there (an SCP, a missing permission); failed: any other error, with a matching entry in the run's errors"},
+          "functions": {"type": ["integer", "null"], "description": "Lambda functions in the region (0 for a region that was read and is empty); null when the region could not be read"}
+        },
+        "required": ["name", "status", "functions"],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Regions read"},
+    "omitted": {"type": "integer", "description": "Regions left out of items by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}
