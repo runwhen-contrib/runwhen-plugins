@@ -17,22 +17,28 @@ FROM ${BASE_IMAGE}
 # az is a Python application with a few hundred dependencies. It goes into its own virtualenv
 # so none of them can replace what the runwhen-capability SDK in /opt/venv imports, and so the
 # pin below is the whole of what changes. The Microsoft apt repository is not used: it publishes
-# no package for Debian trixie that we could pin the same way. The version is the pin; the pushed
-# image digests in runtime.yaml are what reaches clusters. The base ends on a non-root user, so
-# switch to root for the install and back after it.
+# no package for Debian trixie that we could pin the same way. requirements.txt is the hash lock of
+# azure-cli==${AZURE_CLI_VERSION} and all its dependencies (how it is generated is at its top):
+# `--require-hashes --no-deps` installs exactly those files and nothing resolved at build time. The
+# version is the pin; the pushed image digests in runtime.yaml are what reaches clusters. The base
+# ends on a non-root user, so switch to root for the install and back after it.
 ARG AZURE_CLI_VERSION=2.92.0
+COPY requirements.txt /tmp/az-requirements.txt
 USER root
-RUN python3 -m venv /opt/az \
-    && /opt/az/bin/pip install --no-cache-dir "azure-cli==${AZURE_CLI_VERSION}" \
+RUN grep -q "^azure-cli==${AZURE_CLI_VERSION} " /tmp/az-requirements.txt \
+    && python3 -m venv /opt/az \
+    && /opt/az/bin/pip install --no-cache-dir --require-hashes --no-deps -r /tmp/az-requirements.txt \
+    && /opt/az/bin/pip check \
+    && rm /tmp/az-requirements.txt \
     && ln -s /opt/az/bin/az /usr/local/bin/az
 USER runwhen
 
-# az writes its token cache, logs and config under AZURE_CONFIG_DIR. The auth scripts point it at
-# a directory under $RW_CREDENTIALS_DIR (memory-backed, deleted when the task ends); this default
-# keeps a stray `az` from writing under the read-only root. Telemetry off; an extension is never
-# installed on the fly (a task could not write it anyway, and a prompt would hang a run).
-ENV AZURE_CONFIG_DIR=/work/.azure \
-    AZURE_CORE_COLLECT_TELEMETRY=false \
+# No AZURE_CONFIG_DIR default: az's state is the session an auth script created in the task's private
+# secrets directory (the `azure/cli` credential sets AZURE_CONFIG_DIR to it), and a task without that
+# credential has no session, which is correct. A default under /work would leave a token cache where
+# the next task could find it. Telemetry off; an extension is never installed on the fly (a task could
+# not write it anyway, and a prompt would hang a run).
+ENV AZURE_CORE_COLLECT_TELEMETRY=false \
     AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no \
     AZURE_CORE_NO_COLOR=true
 

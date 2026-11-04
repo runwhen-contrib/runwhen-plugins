@@ -44,11 +44,14 @@ python ci/check_runtime.py validate --allow-placeholder
 The same rw-task base pin as `kubernetes`, plus the Azure CLI (`az`) and nothing else: no `aws`,
 no `gcloud`. `az` is installed from PyPI into its own virtualenv (`/opt/az`,
 `azure-cli==<AZURE_CLI_VERSION>`, linked to `/usr/local/bin/az`) so its dependencies cannot replace
-what the SDK in `/opt/venv` imports. The image sets `AZURE_CONFIG_DIR=/work/.azure` as a fallback
-only: the `azure/cli` auth scripts point it at a directory under `$RW_CREDENTIALS_DIR`, where the
-token cache lives for one task run. Telemetry and dynamic extension install are off.
-To move `az`, change `AZURE_CLI_VERSION` in the Dockerfile, update `runtime.yaml` `tools`, and bump the
-runtime version.
+what the SDK in `/opt/venv` imports. The install is hash-locked: `runtimes/azure/requirements.txt`
+holds every dependency of `azure-cli==<AZURE_CLI_VERSION>` with the hashes of its files, the Dockerfile
+installs it with `pip install --require-hashes --no-deps`, and the header of that file says how to
+regenerate it. The image sets no `AZURE_CONFIG_DIR`: the `azure/cli` auth scripts create the az
+session in the task's private secrets directory and the credential points `AZURE_CONFIG_DIR` at it
+(the token cache lives for one task run). Telemetry and dynamic extension install are off.
+To move `az`, change `AZURE_CLI_VERSION` in the Dockerfile and `requirements.in`, regenerate
+`requirements.txt`, update `runtime.yaml` `tools`, and bump the runtime version.
 
 ```
 docker build -t rwp-runtime-azure:dev runtimes/azure

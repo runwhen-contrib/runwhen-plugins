@@ -5,6 +5,13 @@ set -eu
 # Non-root, like the base image.
 [ "$(id -u)" != "0" ] || { echo "image runs as root" >&2; exit 1; }
 
+# The image sets no AZURE_CONFIG_DIR: a task without the azure/cli credential has no az session, and
+# a default would leave a token cache where the next task could find it.
+if [ -n "${AZURE_CONFIG_DIR:-}" ]; then
+  echo "image sets AZURE_CONFIG_DIR=$AZURE_CONFIG_DIR" >&2
+  exit 1
+fi
+
 # az keeps its config, logs and token cache under AZURE_CONFIG_DIR, and Python needs a TMPDIR. The
 # runner mounts only /work writable (the executor gives each task a private TMPDIR there), so use
 # scratch directories under it, the way the auth scripts put AZURE_CONFIG_DIR under
@@ -13,8 +20,8 @@ scratch=/work
 [ -w "$scratch" ] || scratch=/tmp
 TMPDIR="$scratch/smoke.$$"
 AZURE_CONFIG_DIR="$TMPDIR/az"
-mkdir -p "$AZURE_CONFIG_DIR"
-export TMPDIR AZURE_CONFIG_DIR
+mkdir -p "$TMPDIR" "$AZURE_CONFIG_DIR"
+export TMPDIR AZURE_CONFIG_DIR   # TMPDIR: set before anything runs; Python and az need one
 trap 'rm -rf "$TMPDIR"' EXIT
 
 az version --output json
