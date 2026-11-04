@@ -2,13 +2,14 @@
 
 import json
 
-from k8s_artifactory_health.common import MESSAGE_LIMIT, NESTED_LIMIT, cap, truncate
+from k8s_artifactory_health.common import MESSAGE_LIMIT, NESTED_LIMIT, cap, cap_text, truncate
 from k8s_artifactory_health.errors import RwError
 from k8s_artifactory_health.fetch import (
     PORT_NAMES,
     Budget,
     ask,
     pod_port,
+    no_pod_error,
     pod_ready,
     pod_url,
     queried,
@@ -16,12 +17,18 @@ from k8s_artifactory_health.fetch import (
     service_url,
 )
 
-# (name, path, which port serves it)
+# (name, path, which port serves it). liveness and readiness are Artifactory's; routerLiveness and
+# routerReadiness are the router's own, the ones the chart's probes use (anonymous).
 ENDPOINTS = (
     ("liveness", "/artifactory/api/v1/system/liveness", "artifactory"),
     ("readiness", "/artifactory/api/v1/system/readiness", "artifactory"),
     ("router", "/router/api/v1/system/health", "router"),
+    ("routerLiveness", "/router/api/v1/system/liveness", "router"),
+    ("routerReadiness", "/router/api/v1/system/readiness", "router"),
 )
+# The endpoints that answer OK (bare, or {"code": "OK"}), not a document.
+PROBES = ("liveness", "readiness", "routerLiveness", "routerReadiness")
+NOT_SERVED = "not served (booting, wrong port, or not Artifactory)"
 AUTH_HINT = (
     "the endpoint wants credentials and the skill sends none (only the kubernetes connection is "
     "used); an Artifactory access token needs a generic connection (misc plugin, M4)"
@@ -54,8 +61,8 @@ def parse_router(body, what):
         message, was_cut = truncate(item.get("message"))
         rows.append(
             {
-                "serviceId": item.get("service_id"),
-                "nodeId": item.get("node_id"),
+                "serviceId": cap_text(item.get("service_id")),
+                "nodeId": cap_text(item.get("node_id")),
                 "state": item["state"],
                 "message": message,
                 "messageTruncated": was_cut,
@@ -80,29 +87,46 @@ def endpoint_row(path, port, reply=None):
         "ok": None,
         "authRequired": bool(reply and reply.status in (401, 403)),
         "noEndpoints": bool(reply and reply.reason == "no_endpoints"),
+        "reason": None,
         "body": None,
         "bodyTruncated": False,
         "router": None,
     }
 
 
-def read_reply(name, path, port, reply, what):
+def probe_body(body, what):
+    """The OK text of a liveness or readiness 200: the bare text `OK`, or a JSON document whose
+    `code` is "OK". Anything else (an HTML page, another product, a different code) is an
+    `internal` error, never ok."""
+    text = body.strip()
+    if text == "OK":
+        return text
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        doc = None
+    if isinstance(doc, dict) and doc.get("code") == "OK":
+        return text
+    raise RwError("internal", f"{what} did not answer OK: {text[:80]!r}")
+
+
+def read_reply(name, path, port, reply, what, noun="pod"):
     """The endpoint row for a reply. 200 with the expected payload is ok true; 503 is ok false;
-    404 is served false; 401 and 403 are authRequired; a 200 that is not the expected payload is an
-    `internal` error."""
+    a 404 is served false, and on a pod's liveness or readiness (a Running pod that does not serve
+    them) it is also ok false with a reason; 401 and 403 are authRequired; a 200 that is not the
+    expected payload is an `internal` error."""
     row = endpoint_row(path, port, reply)
     if reply.status == 200:
         if name == "router":
             row["router"] = parse_router(reply.body, what)
             row["ok"] = row["router"]["state"] == HEALTHY and not row["router"]["unhealthyCount"]
         else:
-            text = reply.body.strip()
-            if text != "OK":
-                raise RwError("internal", f"{what} did not answer OK: {text[:80]!r}")
-            row["body"], row["bodyTruncated"] = truncate(text)
+            row["body"], row["bodyTruncated"] = truncate(probe_body(reply.body, what))
             row["ok"] = True
     elif reply.status == 503:
         row["ok"] = False
+    elif reply.status == 404 and noun == "pod" and name in PROBES:
+        row["ok"], row["reason"] = False, NOT_SERVED
     return row
 
 
@@ -112,6 +136,8 @@ class Stats:
     def __init__(self):
         self.answered = 0
         self.auth = 0
+        self.pod_asked = 0  # asks of a pod's endpoints, answered or not
+        self.pod_not_served = 0  # of those, the 404s
         self.failures = []  # (scope, RwError)
 
 
@@ -127,9 +153,10 @@ def probe(ctx, noun, name, ports, url_for, scheme, budget, stats):
             continue
         ask_port, shown = ports[kind]
         what = f"{path} on {noun}/{name}"
+        stats.pod_asked += noun == "pod"
         try:
             reply = ask(ctx, url_for(scheme, ask_port, path), budget, path)
-            rows[endpoint] = read_reply(endpoint, path, shown, reply, what)
+            rows[endpoint] = read_reply(endpoint, path, shown, reply, what, noun)
         except RwError as exc:
             if exc.code == "permission_denied":
                 raise
@@ -137,6 +164,7 @@ def probe(ctx, noun, name, ports, url_for, scheme, budget, stats):
             rows[endpoint] = endpoint_row(path, shown)
             continue
         stats.answered += 1
+        stats.pod_not_served += noun == "pod" and reply.status == 404
         if reply.status in (401, 403):
             stats.auth += 1
             ctx.error(
@@ -232,6 +260,8 @@ def view(
     if asked and not stats.answered:
         scope, exc = stats.failures[0]
         raise RwError(exc.code, exc.message, scope=scope) from exc
+    if stats.pod_asked and stats.pod_not_served == stats.pod_asked:
+        raise RwError("not_found", "no Artifactory endpoint answered; check the port input")
     if stats.answered and stats.auth == stats.answered:
         ctx.skip(
             "every endpoint asked answered 401 or 403: Artifactory requires credentials "
@@ -239,6 +269,7 @@ def view(
         )
     for scope, exc in stats.failures:
         ctx.error(exc.code, exc.message[:MESSAGE_LIMIT], scope=scope)
+    no_pod_error(ctx, workload, asked)
     spec, status = workload.get("spec") or {}, workload.get("status") or {}
     rows = pod_rows + service_rows
     return {

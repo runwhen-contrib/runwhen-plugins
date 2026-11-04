@@ -230,5 +230,17 @@ def service_url(workload, service, scheme, port, path):
     )
 
 
+def no_pod_error(ctx, workload, asked):
+    """A workload that wants pods (replicas > 0) with none Running to ask is not a clean result:
+    the error (scope `pods`) makes it partial."""
+    replicas = (workload.get("spec") or {}).get("replicas") or 0
+    if replicas > 0 and not asked:
+        ctx.error(
+            "unreachable",
+            f"the workload wants {replicas} replica(s) but no pod is Running to ask",
+            scope="pods",
+        )
+
+
 def short(exc):
     return exc.message[:MESSAGE_LIMIT]

@@ -3,6 +3,7 @@
 import re
 import time
 from datetime import timedelta
+from typing import NamedTuple
 
 from k8s_jenkins_health.common import MESSAGE_LIMIT
 from k8s_jenkins_health.errors import RwError
@@ -30,6 +31,9 @@ TASK_DEADLINE = 100.0
 MAX_CONSECUTIVE_TIMEOUTS = 3
 REQUEST_SECONDS = 30
 _PREFIX = re.compile(r"(?:/[A-Za-z0-9_.-]+)*")
+# the version at the start of an image tag: 2.452.3, 2.452.3-lts-jdk17 (not lts, latest, jdk17)
+_TAG_VERSION = re.compile(r"(\d+\.\d+(?:\.\d+)?)(?:[-_+]|$)")
+LOGIN = "/login"
 _DURATION = re.compile(r"(\d+)(ms|s|m|h|d)")
 _DURATION_FULL = re.compile(r"(?:\d+(?:ms|s|m|h|d))+")
 _UNIT_SECONDS = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -86,10 +90,10 @@ def target_type(ctx):
     return PLURAL_TYPES.get(segments[-2]) if len(segments) >= 2 else None
 
 
-def check_inputs(scheme, port, prefix=""):
+def check_inputs(scheme, port, prefix=None):
     """Bad input is `invalid_input`, before any kubectl call (a proxy path is never built from
-    anything but plain path segments)."""
-    if (
+    anything but plain path segments). None means no input: the pod's readiness probe decides."""
+    if prefix is not None and (
         not isinstance(prefix, str)
         or not _PREFIX.fullmatch(prefix)
         or any(seg in (".", "..") for seg in prefix.split("/"))
@@ -98,7 +102,7 @@ def check_inputs(scheme, port, prefix=""):
             "invalid_input",
             f"urlPrefix must be empty or plain path segments like /jenkins: {prefix!r}",
         )
-    if scheme not in SCHEMES:
+    if scheme is not None and scheme not in SCHEMES:
         raise RwError("invalid_input", f"scheme must be one of {SCHEMES}, got {scheme!r}")
     if port is not None and (
         isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535
@@ -154,16 +158,74 @@ def workload_pods(ctx, workload):
     return sorted(items, key=lambda p: p["metadata"]["name"])
 
 
-def pod_port(pod, port=None):
-    """`port` if given, else the pod's container port named http (the chart's), jenkins or web,
-    else 8080."""
-    if port is not None:
-        return port
-    for container in (pod.get("spec") or {}).get("containers") or []:
-        for entry in container.get("ports") or []:
-            if entry.get("name") in PORT_NAMES and "containerPort" in entry:
-                return entry["containerPort"]
-    return DEFAULT_PORT
+def container_of(pod, port=None):
+    """The pod's Jenkins container: the one that declares `port` (the input), else the one with a
+    port named http, jenkins or web (the chart's controller container; its sidecars declare
+    none). None when no container does."""
+    containers = (pod.get("spec") or {}).get("containers") or []
+    for wanted in ([lambda e: e["containerPort"] == port] if port is not None else []) + [
+        lambda e: e.get("name") in PORT_NAMES
+    ]:
+        for container in containers:
+            if any("containerPort" in e and wanted(e) for e in container.get("ports") or []):
+                return container
+    return None
+
+
+class Endpoint(NamedTuple):
+    port: int
+    scheme: str
+    prefix: str
+
+
+def pod_endpoint(pod, port=None, scheme=None, prefix=None):
+    """Where to ask the pod: each of port, scheme and URL prefix is the input if given, else taken
+    from the Jenkins container's readiness probe (`httpGet` port, scheme, and path minus a trailing
+    `/login`: the chart's probe asks `<jenkinsUriPrefix>/login`), else the container port named
+    http, jenkins or web, else 8080 / http / no prefix."""
+    container = container_of(pod, port) or {}
+    probe = (container.get("readinessProbe") or {}).get("httpGet") or {}
+    if port is None:
+        port = probe_port(container, probe.get("port"))
+    if port is None:
+        port = next(
+            (
+                e["containerPort"]
+                for e in container.get("ports") or []
+                if e.get("name") in PORT_NAMES and "containerPort" in e
+            ),
+            DEFAULT_PORT,
+        )
+    if scheme is None:
+        scheme = "https" if str(probe.get("scheme", "")).lower() == "https" else "http"
+    if prefix is None:
+        path = probe.get("path") or ""
+        found = path[: -len(LOGIN)] if path.endswith(LOGIN) else None
+        prefix = found if found is not None and _PREFIX.fullmatch(found) else ""
+        if any(seg in (".", "..") for seg in prefix.split("/")):
+            prefix = ""
+    return Endpoint(port, scheme, prefix)
+
+
+def probe_port(container, value):
+    """The container port number a readiness probe's `port` (a number or a port name) means."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    for entry in container.get("ports") or []:
+        if value is not None and entry.get("name") == value and "containerPort" in entry:
+            return entry["containerPort"]
+    return None
+
+
+def image_version(pod, port=None):
+    """The version in the tag of the Jenkins container's image (2.452.3 of
+    jenkins/jenkins:2.452.3-lts-jdk17), or None: no tag, a digest only, or a tag that is not a
+    version (lts, latest)."""
+    image = (container_of(pod, port) or {}).get("image") or ""
+    name = image.split("@", 1)[0]
+    tag = name.rpartition(":")[2] if ":" in name.rpartition("/")[2] else ""
+    found = _TAG_VERSION.match(tag)
+    return found.group(1) if found else None
 
 
 def running(pod):
@@ -185,20 +247,37 @@ def queried(pods):
     return [p for p in pods if running(p)][:MAX_QUERIED]
 
 
-def ask(ctx, workload, pod, scheme, port, path, budget, headers=False):
-    """GET `path` from one pod within the budget: a Reply or RwError. A call past the deadline, or
-    on a path that timed out for the last pods, raises `timeout` without asking."""
+def ask(ctx, workload, pod, endpoint, path, budget):
+    """GET `path` (the URL prefix included) from one pod within the budget: a Reply or RwError. A
+    call past the deadline, or on a path that timed out for the last pods, raises `timeout`
+    without asking."""
     budget.check(path)
     api_path = pod_path(
-        workload["metadata"]["namespace"], pod["metadata"]["name"], scheme, port, path
+        workload["metadata"]["namespace"],
+        pod["metadata"]["name"],
+        endpoint.scheme,
+        endpoint.port,
+        path,
     )
     try:
-        reply = proxy_get(ctx, api_path, budget.request_timeout(), headers)
+        reply = proxy_get(ctx, api_path, budget.request_timeout())
     except RwError as exc:
         budget.record(path, exc.code == "timeout")
         raise
     budget.record(path, False)
     return reply
+
+
+def no_pod_error(ctx, workload, asked):
+    """A workload that wants pods (replicas > 0) with none Running to ask is not a clean result:
+    the error (scope `pods`) makes it partial."""
+    replicas = (workload.get("spec") or {}).get("replicas") or 0
+    if replicas > 0 and not asked:
+        ctx.error(
+            "unreachable",
+            f"the workload wants {replicas} replica(s) but no pod is Running to ask",
+            scope="pods",
+        )
 
 
 def short(exc):

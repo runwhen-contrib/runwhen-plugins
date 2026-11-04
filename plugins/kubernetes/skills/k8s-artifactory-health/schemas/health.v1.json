@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Artifactory health per pod and Service",
-  "description": "What each pod of the workload, and each Service selecting those pods, answered on Artifactory's liveness, readiness and router health endpoints through the API server's proxy. ok is true for the expected payload, false for a 503 or an unhealthy router state, null when nothing usable came back.",
+  "description": "What each pod of the workload, and each Service selecting those pods, answered on Artifactory's liveness and readiness, the router's health document and the router's own liveness and readiness through the API server's proxy. ok is true for the expected payload, false for a 503, an unhealthy router state or a pod's liveness or readiness answering 404, null when nothing usable came back.",
   "type": "object",
   "properties": {
     "workload": {
@@ -117,7 +117,7 @@
                   "boolean",
                   "null"
                 ],
-                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
               },
               "authRequired": {
                 "type": "boolean",
@@ -127,12 +127,19 @@
                 "type": "boolean",
                 "description": "a Service with no ready endpoint (the API server's 503)"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
               "body": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "the OK text of a liveness or readiness 200"
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
               },
               "bodyTruncated": {
                 "type": "boolean"
@@ -168,13 +175,15 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "nodeId": {
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "state": {
                           "type": "string"
@@ -218,6 +227,7 @@
               "ok",
               "authRequired",
               "noEndpoints",
+              "reason",
               "body",
               "bodyTruncated",
               "router"
@@ -257,7 +267,7 @@
                   "boolean",
                   "null"
                 ],
-                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
               },
               "authRequired": {
                 "type": "boolean",
@@ -267,12 +277,19 @@
                 "type": "boolean",
                 "description": "a Service with no ready endpoint (the API server's 503)"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
               "body": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "the OK text of a liveness or readiness 200"
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
               },
               "bodyTruncated": {
                 "type": "boolean"
@@ -308,13 +325,15 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "nodeId": {
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "state": {
                           "type": "string"
@@ -358,6 +377,7 @@
               "ok",
               "authRequired",
               "noEndpoints",
+              "reason",
               "body",
               "bodyTruncated",
               "router"
@@ -397,7 +417,7 @@
                   "boolean",
                   "null"
                 ],
-                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
               },
               "authRequired": {
                 "type": "boolean",
@@ -407,12 +427,19 @@
                 "type": "boolean",
                 "description": "a Service with no ready endpoint (the API server's 503)"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
               "body": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "the OK text of a liveness or readiness 200"
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
               },
               "bodyTruncated": {
                 "type": "boolean"
@@ -448,13 +475,15 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "nodeId": {
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "state": {
                           "type": "string"
@@ -498,6 +527,307 @@
               "ok",
               "authRequired",
               "noEndpoints",
+              "reason",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "routerLiveness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "the router's own /router/api/v1/system/liveness (what the chart's probe asks); null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "reason",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "routerReadiness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "the router's own /router/api/v1/system/readiness (what the chart's probe asks); null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "reason",
               "body",
               "bodyTruncated",
               "router"
@@ -514,7 +844,9 @@
           "queried",
           "liveness",
           "readiness",
-          "router"
+          "router",
+          "routerLiveness",
+          "routerReadiness"
         ],
         "additionalProperties": false
       }
@@ -570,7 +902,7 @@
                   "boolean",
                   "null"
                 ],
-                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
               },
               "authRequired": {
                 "type": "boolean",
@@ -580,12 +912,19 @@
                 "type": "boolean",
                 "description": "a Service with no ready endpoint (the API server's 503)"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
               "body": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "the OK text of a liveness or readiness 200"
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
               },
               "bodyTruncated": {
                 "type": "boolean"
@@ -621,13 +960,15 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "nodeId": {
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "state": {
                           "type": "string"
@@ -671,6 +1012,7 @@
               "ok",
               "authRequired",
               "noEndpoints",
+              "reason",
               "body",
               "bodyTruncated",
               "router"
@@ -710,7 +1052,7 @@
                   "boolean",
                   "null"
                 ],
-                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
               },
               "authRequired": {
                 "type": "boolean",
@@ -720,12 +1062,19 @@
                 "type": "boolean",
                 "description": "a Service with no ready endpoint (the API server's 503)"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
               "body": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "the OK text of a liveness or readiness 200"
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
               },
               "bodyTruncated": {
                 "type": "boolean"
@@ -761,13 +1110,15 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "nodeId": {
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "state": {
                           "type": "string"
@@ -811,6 +1162,7 @@
               "ok",
               "authRequired",
               "noEndpoints",
+              "reason",
               "body",
               "bodyTruncated",
               "router"
@@ -850,7 +1202,7 @@
                   "boolean",
                   "null"
                 ],
-                "description": "true for a 200 with the expected payload (and, for the router, every state HEALTHY); false for a 503, or a router document with a state that is not HEALTHY; null otherwise"
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
               },
               "authRequired": {
                 "type": "boolean",
@@ -860,12 +1212,19 @@
                 "type": "boolean",
                 "description": "a Service with no ready endpoint (the API server's 503)"
               },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
               "body": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "the OK text of a liveness or readiness 200"
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
               },
               "bodyTruncated": {
                 "type": "boolean"
@@ -901,13 +1260,15 @@
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "nodeId": {
                           "type": [
                             "string",
                             "null"
-                          ]
+                          ],
+                          "maxLength": 1024
                         },
                         "state": {
                           "type": "string"
@@ -951,6 +1312,307 @@
               "ok",
               "authRequired",
               "noEndpoints",
+              "reason",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "routerLiveness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "the router's own /router/api/v1/system/liveness (what the chart's probe asks); null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "reason",
+              "body",
+              "bodyTruncated",
+              "router"
+            ],
+            "additionalProperties": false
+          },
+          "routerReadiness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "the router's own /router/api/v1/system/readiness (what the chart's probe asks); null when the pod or Service was not asked, or a Service does not expose the port",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "description": "the container port (pod) or Service port (Service) asked"
+              },
+              "httpStatus": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "200, 401, 403, 404 or 503; null when the ask failed (see errors) or the reply was not the expected payload"
+              },
+              "served": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false for a 404 (nothing serves the path there); null when the ask failed"
+              },
+              "ok": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true for a 200 with the expected payload (and, for the router health, every state HEALTHY); false for a 503, a router health document with a state that is not HEALTHY, or a pod's liveness or readiness answering 404 (see reason); null otherwise"
+              },
+              "authRequired": {
+                "type": "boolean",
+                "description": "Artifactory answered 401 or 403: it wants credentials, which the skill does not send"
+              },
+              "noEndpoints": {
+                "type": "boolean",
+                "description": "a Service with no ready endpoint (the API server's 503)"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set on a pod's liveness or readiness that answered 404 (ok is false): the path is not served on that port (the pod is booting, the port is wrong, or the workload is not Artifactory)"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "the OK text of a liveness or readiness 200: OK, or a JSON document whose code is OK"
+              },
+              "bodyTruncated": {
+                "type": "boolean"
+              },
+              "router": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "the router health document of a 200",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "description": "the router's own state"
+                  },
+                  "serviceCount": {
+                    "type": "integer"
+                  },
+                  "unhealthyCount": {
+                    "type": "integer",
+                    "description": "services whose state is not HEALTHY"
+                  },
+                  "servicesTruncated": {
+                    "type": "boolean",
+                    "description": "services cut at 50"
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "serviceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "nodeId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 1024
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "messageTruncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "serviceId",
+                        "nodeId",
+                        "state",
+                        "message",
+                        "messageTruncated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "serviceCount",
+                  "unhealthyCount",
+                  "servicesTruncated",
+                  "services"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "port",
+              "httpStatus",
+              "served",
+              "ok",
+              "authRequired",
+              "noEndpoints",
+              "reason",
               "body",
               "bodyTruncated",
               "router"
@@ -964,7 +1626,9 @@
           "queried",
           "liveness",
           "readiness",
-          "router"
+          "router",
+          "routerLiveness",
+          "routerReadiness"
         ],
         "additionalProperties": false
       }

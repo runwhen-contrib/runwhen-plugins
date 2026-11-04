@@ -4,11 +4,14 @@
 # (StatefulSet label app=artifactory/role=artifactory/component=artifactory/release=<release>;
 # container ports http 8082 = router, http-internal 8081 = Artifactory; Service ports http-router
 # and http-artifactory). Namespace rw-artifactory:
-#   artifactory         StatefulSet, healthy: liveness and readiness answer 200 OK, the router
-#                       health lists every service HEALTHY (Service artifactory)
-#   artifactory-broken  StatefulSet whose readiness answers 503, and whose router health lists
-#                       jfrt UNHEALTHY; its pod is not Ready, so its Service has no endpoints
-#                       (Service artifactory-broken answers 503 as well)
+#   artifactory         StatefulSet, healthy: liveness and readiness answer 200 with the bare text
+#                       OK, the router's liveness and readiness answer {"code":"OK"}, the router
+#                       health lists every service HEALTHY (Service artifactory, and
+#                       artifactory-numeric whose only port is unnamed with a numeric targetPort)
+#   artifactory-broken  StatefulSet whose liveness answers {"code":"OK"} and whose readiness
+#                       answers 503, and whose router health lists jfrt UNHEALTHY; its pod is not
+#                       Ready, so its Service has no endpoints (Service artifactory-broken answers
+#                       503 as well)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -27,6 +30,8 @@ data:
       default_type text/plain;
       location = /artifactory/api/v1/system/liveness { return 200 "OK"; }
       location = /artifactory/api/v1/system/readiness { return 200 "OK"; }
+      location = /router/api/v1/system/liveness { default_type application/json; return 200 '{"code":"OK"}'; }
+      location = /router/api/v1/system/readiness { default_type application/json; return 200 '{"code":"OK"}'; }
       location = /router/api/v1/system/health {
         default_type application/json;
         return 200 '{"router":{"node_id":"artifactory-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-0","state":"HEALTHY","message":"OK"}]}';
@@ -38,8 +43,10 @@ data:
       listen 8081;
       listen 8082;
       default_type text/plain;
-      location = /artifactory/api/v1/system/liveness { return 200 "OK"; }
+      location = /artifactory/api/v1/system/liveness { default_type application/json; return 200 '{"code":"OK"}'; }
       location = /artifactory/api/v1/system/readiness { return 503 "Service Unavailable"; }
+      location = /router/api/v1/system/liveness { default_type application/json; return 200 '{"code":"OK"}'; }
+      location = /router/api/v1/system/readiness { default_type application/json; return 200 '{"code":"OK"}'; }
       location = /router/api/v1/system/health {
         default_type application/json;
         return 200 '{"router":{"node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-broken-0","state":"UNHEALTHY","message":"database connection refused"}]}';
@@ -57,6 +64,16 @@ spec:
   ports:
     - {name: http-router, port: 8082, targetPort: http}
     - {name: http-artifactory, port: 8081, targetPort: http-internal}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifactory-numeric
+  namespace: rw-artifactory
+spec:
+  selector: {app: artifactory, role: artifactory, release: artifactory}
+  ports:
+    - {port: 80, targetPort: 8081}
 ---
 apiVersion: v1
 kind: Service

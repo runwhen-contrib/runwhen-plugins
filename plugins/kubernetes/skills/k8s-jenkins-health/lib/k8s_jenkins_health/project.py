@@ -7,9 +7,10 @@ the raw output (what a fixture records) never contains an env entry. `Projection
 lines back into a document shaped like the object, so the pure functions read it unchanged.
 
 Line format, one object after a `@` line: `s:<path>=<string>` (a string field, unquoted),
-`j:<path>=<JSON>` (an object, list, number or bool) and, for a pod, `k:<container>=<JSON ports>`
-(a container's name and declared ports, nothing else of it). A field the object lacks is an empty
-value and is left out of the document.
+`j:<path>=<JSON>` (an object, list, number or bool) and, for a pod, per container `k:<name>=<JSON
+ports>`, `i:<name>=<image>` and `p:<name>=<path>|<port>|<scheme>` (the readiness probe's httpGet
+path, port and scheme only: no headers). A field the object lacks is an empty value and is left out
+of the document.
 """
 
 import json
@@ -32,7 +33,12 @@ class Projection:
         for path in self.values:
             parts.append(f'{{"j:{path}="}}{{.{path}}}{{"\\n"}}')
         if self.containers:
-            parts.append('{range .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\\n"}{end}')
+            parts.append(
+                '{range .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\\n"}'
+                '{"i:"}{.name}{"="}{.image}{"\\n"}'
+                '{"p:"}{.name}{"="}{.readinessProbe.httpGet.path}{"|"}{.readinessProbe.httpGet.port}'
+                '{"|"}{.readinessProbe.httpGet.scheme}{"\\n"}{end}'
+            )
         body = "".join(parts)
         return "{range .items[*]}" + body + "{end}" if many else body
 
@@ -45,16 +51,13 @@ class Projection:
                 objects.append(current)
             elif not line:
                 continue
-            elif current is None or line[:2] not in ("s:", "j:", "k:"):
+            elif current is None or line[:2] not in ("s:", "j:", "k:", "i:", "p:"):
                 raise RwError(
                     "internal", "kubectl returned output that is not the projection asked"
                 )
-            elif line[0] == "k":
+            elif line[0] in "kip":
                 name, _, raw = line[2:].partition("=")
-                container = {"name": name}
-                if raw:
-                    container["ports"] = _loads(raw, f"the ports of container {name}")
-                current.setdefault("spec", {}).setdefault("containers", []).append(container)
+                _container(current, line[0], name, raw)
             else:
                 path, _, raw = line[2:].partition("=")
                 if raw == "":
@@ -66,6 +69,37 @@ class Projection:
         if len(objects) != 1:
             raise RwError("internal", "kubectl returned no object")
         return objects[0]
+
+
+def _container(obj, kind, name, raw):
+    """Record one container line (k: ports, i: image, p: probe) on the pod's container `name`."""
+    containers = obj.setdefault("spec", {}).setdefault("containers", [])
+    if kind == "k":
+        containers.append({"name": name})
+        if raw:
+            containers[-1]["ports"] = _loads(raw, f"the ports of container {name}")
+        return
+    container = next((c for c in reversed(containers) if c["name"] == name), None)
+    if container is None:
+        raise RwError("internal", "kubectl returned output that is not the projection asked")
+    if kind == "i":
+        if raw:
+            container["image"] = raw
+        return
+    rest, _, scheme = raw.rpartition("|")
+    path, _, port = rest.rpartition("|")
+    if path or port or scheme:
+        container["readinessProbe"] = {
+            "httpGet": {
+                key: value
+                for key, value in (
+                    ("path", path),
+                    ("port", int(port) if port.isdigit() else port),
+                    ("scheme", scheme),
+                )
+                if value != ""
+            }
+        }
 
 
 def _loads(raw, what):

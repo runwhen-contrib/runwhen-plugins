@@ -8,7 +8,7 @@ from k8s_jenkins_health.fetch import (
 )
 
 
-def main(ctx, stuck_after="30m", port=None, scheme="http", url_prefix=""):
+def main(ctx, stuck_after="30m", port=None, scheme=None, url_prefix=None):
     budget = Budget()
     seconds = parse_duration(stuck_after).total_seconds()
     check_inputs(scheme, port, url_prefix)

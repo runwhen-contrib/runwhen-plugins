@@ -2,7 +2,8 @@
 `rw-artifactory` namespace of the kind-rw-plugins scenario (plugins/kubernetes/tests/kind/scenarios/
 30-k8s-artifactory-health.yaml): `artifactory`, a healthy StatefulSet, and `artifactory-broken`,
 whose readiness answers 503 and whose router lists a service UNHEALTHY. Both are nginx stubs
-serving the documented endpoints, not a real Artifactory. The workload, pod and Service data are
+serving the documented endpoints, not a real Artifactory. `artifactory-numeric` is a second Service
+of `artifactory` whose only port is unnamed with a numeric targetPort. The workload, pod and Service data are
 the narrow `-o jsonpath` projections the script asks for (no env, no pod template). The script runs
 through the SDK's test context (`ctx.run` raises on a non-zero exit like the real runner;
 `stub_commands` matches the exact kubectl argv, so an unexpected call fails)."""
@@ -14,7 +15,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 import yaml
-from k8s_artifactory_health import fetch, health, project, proxy
+from k8s_artifactory_health import fetch, health, k8s, project, proxy
 from k8s_artifactory_health.errors import RwError
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
@@ -47,8 +48,27 @@ CLIENT_TIMEOUT = (
 LIVENESS = "/artifactory/api/v1/system/liveness"
 READINESS = "/artifactory/api/v1/system/readiness"
 ROUTER = "/router/api/v1/system/health"
+ROUTER_LIVE = "/router/api/v1/system/liveness"
+ROUTER_READY = "/router/api/v1/system/readiness"
 KINDS = {"statefulset": "StatefulSet", "deployment": "Deployment"}
-NAMES = {LIVENESS: "liveness", READINESS: "readiness", ROUTER: "router"}
+NAMES = {
+    LIVENESS: "liveness",
+    READINESS: "readiness",
+    ROUTER: "router",
+    ROUTER_LIVE: "routerLiveness",
+    ROUTER_READY: "routerReadiness",
+}
+CODE_OK = '{"code":"OK"}'
+# the Services of each workload, with the proxy port each is asked on per port kind
+SERVICES_OF = {
+    "artifactory": {
+        "artifactory": {"artifactory": "http-artifactory", "router": "http-router"},
+        "artifactory-numeric": {"artifactory": 80},
+    },
+    "artifactory-broken": {
+        "artifactory-broken": {"artifactory": "http-artifactory", "router": "http-router"}
+    },
+}
 
 
 def load(name):
@@ -79,11 +99,19 @@ def router_doc(state="HEALTHY"):
     )
 
 
-HEALTHY = {LIVENESS: (0, "OK", ""), READINESS: (0, "OK", ""), ROUTER: (0, router_doc(), "")}
-BROKEN = {
+HEALTHY = {
     LIVENESS: (0, "OK", ""),
+    READINESS: (0, "OK", ""),
+    ROUTER: (0, router_doc(), ""),
+    ROUTER_LIVE: (0, CODE_OK, ""),
+    ROUTER_READY: (0, CODE_OK, ""),
+}
+BROKEN = {
+    LIVENESS: (0, CODE_OK, ""),
     READINESS: (1, "", UNAVAILABLE),
     ROUTER: (0, router_doc("UNHEALTHY"), ""),
+    ROUTER_LIVE: (0, CODE_OK, ""),
+    ROUTER_READY: (0, CODE_OK, ""),
 }
 SELECTOR = {
     "artifactory": "app=artifactory,release=artifactory,role=artifactory",
@@ -149,19 +177,31 @@ def stubs(
     )
     pod = f"{name}-0"
     for path, default in base.items():
-        port = r_port if path == ROUTER else a_port
+        kind_of = "router" if path.startswith("/router") else "artifactory"
+        port = r_port if kind_of == "router" else a_port
         reply = replies.get((pod, path), replies.get(path, default))
         out[raw("pods", pod, port, path, scheme)] = (
             (1, "", fail["proxy"]) if "proxy" in fail else reply
         )
-        svc_port = "http-router" if path == ROUTER else "http-artifactory"
-        reply = replies.get((name, path), replies.get(path, default))
-        if name == "artifactory-broken":
-            reply = replies.get((name, path), (1, "", NO_ENDPOINTS))
-        out[raw("services", name, svc_port, path, scheme)] = (
-            (1, "", fail["svc_proxy"]) if "svc_proxy" in fail else reply
-        )
+        for service, svc_ports in SERVICES_OF[name].items():
+            if kind_of not in svc_ports:
+                continue
+            reply = replies.get((service, path), replies.get(path, default))
+            if name == "artifactory-broken":
+                reply = replies.get((service, path), (1, "", NO_ENDPOINTS))
+            out[raw("services", service, svc_ports[kind_of], path, scheme)] = (
+                (1, "", fail["svc_proxy"]) if "svc_proxy" in fail else reply
+            )
     return out
+
+
+RESOURCE = {
+    "cluster": "kind",
+    "namespace": NS,
+    "name": "artifactory",
+    "type": "kubernetes/statefulset",
+    "path": f"kubernetes/clusters/kind/namespaces/{NS}/statefulsets/artifactory",
+}
 
 
 def run(name="artifactory", inputs=None, res=None, settings=None, kind="statefulset", **kw):
@@ -213,13 +253,14 @@ def test_healthy_every_pod_and_service_endpoint_is_ok():
     }
     assert (out["podCount"], out["serviceCount"], out["servicesRead"], out["notOkCount"]) == (
         1,
-        1,
+        2,
         True,
         0,
     )
     for row in (pod_of(env), service_of(env)):
-        assert [row[n]["ok"] for n in ("liveness", "readiness", "router")] == [True] * 3
+        assert [row[n]["ok"] for n in NAMES.values()] == [True] * 5
         assert row["liveness"]["body"] == "OK"
+        assert row["routerLiveness"]["body"] == CODE_OK
         assert row["router"]["router"]["unhealthyCount"] == 0
     assert pod_of(env)["podReady"] is True
     assert (pod_of(env)["artifactoryPort"], pod_of(env)["routerPort"]) == (8081, 8082)
@@ -228,6 +269,23 @@ def test_healthy_every_pod_and_service_endpoint_is_ok():
     assert raw("services", "artifactory", "http-artifactory", LIVENESS) in calls
     assert raw("services", "artifactory", "http-router", ROUTER) in calls
     assert raw("pods", "artifactory-0", 8081, LIVENESS) in calls
+    # the router's own liveness and readiness (the chart's probes) are asked on the router port
+    assert raw("pods", "artifactory-0", 8082, ROUTER_LIVE) in calls
+    assert raw("pods", "artifactory-0", 8082, ROUTER_READY) in calls
+    assert raw("services", "artifactory", "http-router", ROUTER_READY) in calls
+
+
+def test_a_service_with_a_numeric_target_port_is_asked_on_its_port_number():
+    env, calls = run()
+    numeric = env["outputs"]["health"]["services"][1]
+    assert numeric["name"] == "artifactory-numeric"
+    # its only port is unnamed (port 80 -> targetPort 8081): the number is the proxy port, and the
+    # router endpoints, which it does not expose, are null rather than asked
+    assert raw("services", "artifactory-numeric", 80, LIVENESS) in calls
+    assert (numeric["liveness"]["port"], numeric["liveness"]["ok"]) == (80, True)
+    assert (numeric["readiness"]["ok"], numeric["router"]) == (True, None)
+    assert numeric["routerLiveness"] is None and numeric["routerReadiness"] is None
+    assert not [c for c in calls if "artifactory-numeric" in c[3] and "/router/" in c[3]]
 
 
 def test_broken_a_503_is_a_fact_and_the_router_names_the_unhealthy_service():
@@ -237,63 +295,135 @@ def test_broken_a_503_is_a_fact_and_the_router_names_the_unhealthy_service():
     assert (pod["liveness"]["ok"], pod["liveness"]["httpStatus"]) == (True, 200)
     assert (pod["readiness"]["ok"], pod["readiness"]["httpStatus"]) == (False, 503)
     assert pod["router"]["ok"] is False and pod["router"]["httpStatus"] == 200
+    assert (pod["liveness"]["body"], pod["routerReadiness"]["ok"]) == (CODE_OK, True)
     assert pod["router"]["router"]["unhealthyCount"] == 1
     unhealthy = [s for s in pod["router"]["router"]["services"] if s["state"] != "HEALTHY"]
     assert [(s["serviceId"], s["message"]) for s in unhealthy] == [("jfrt@1", "db down")]
     assert pod["podReady"] is False
     service = service_of(env)
-    for name in ("liveness", "readiness", "router"):
+    for name in NAMES.values():
         row = service[name]
         assert (row["httpStatus"], row["ok"], row["noEndpoints"]) == (503, False, True)
-    assert env["outputs"]["health"]["notOkCount"] == 5
+    assert (
+        env["outputs"]["health"]["notOkCount"] == 7
+    )  # the pod's readiness and router, 5 on the Service
     assert env["outputs"]["health"]["workload"]["readyReplicas"] is None
     check_schema(env)
+
+
+def asked_services(path):
+    """The Services of `artifactory` that are asked `path`: the numeric one has no router port."""
+    return ["artifactory"] if path.startswith("/router") else ["artifactory", "artifactory-numeric"]
 
 
 @pytest.mark.parametrize(
     "path, reply",
     [
         (LIVENESS, (0, "<html><body>Sign in</body></html>", "")),
+        (LIVENESS, (0, '{"code":"UNAVAILABLE"}', "")),
+        (LIVENESS, (0, '{"status":"OK"}', "")),
+        (LIVENESS, (0, '"OK"', "")),
         (READINESS, (0, "", "")),
         (READINESS, (0, "NOT OK", "")),
         (ROUTER, (0, "<html>nope</html>", "")),
         (ROUTER, (0, '{"router": {}}', "")),
         (ROUTER, (0, "[]", "")),
+        (ROUTER_LIVE, (0, "OK but not really", "")),
+        (ROUTER_READY, (0, '{"code":"ERROR"}', "")),
     ],
 )
 def test_unexpected_payload_is_an_error_never_ok(path, reply):
     env, _ = run(replies={path: reply})
     name = NAMES[path]
     assert env["status"] == "partial"
-    assert codes(env) == [
-        ("internal", f"pod/artifactory-0/{name}"),
-        ("internal", f"service/artifactory/{name}"),
+    assert codes(env) == [("internal", f"pod/artifactory-0/{name}")] + [
+        ("internal", f"service/{service}/{name}") for service in asked_services(path)
     ]
     for row in (pod_of(env), service_of(env)):
         assert row[name]["ok"] is None and row[name]["httpStatus"] is None
     check_schema(env)
 
 
-def test_a_404_is_served_false_and_not_an_error():
-    env, _ = run(replies={ROUTER: (1, "", NO_ROUTE)})
+@pytest.mark.parametrize(
+    "path, reply, body",
+    [
+        (LIVENESS, (0, "OK", ""), "OK"),
+        (LIVENESS, (0, "OK\n", ""), "OK"),
+        (READINESS, (0, '{"code":"OK"}', ""), '{"code":"OK"}'),
+        (READINESS, (0, ' {"code": "OK", "message": "x"} ', ""), '{"code": "OK", "message": "x"}'),
+        (ROUTER_LIVE, (0, CODE_OK, ""), CODE_OK),
+        (ROUTER_READY, (0, "OK", ""), "OK"),
+    ],
+)
+def test_ok_is_the_bare_text_or_a_json_document_with_code_ok(path, reply, body):
+    env, _ = run(replies={path: reply})
+    assert env["status"] == "ok" and env["errors"] == []
+    row = pod_of(env)[NAMES[path]]
+    assert (row["ok"], row["httpStatus"], row["body"]) == (True, 200, body)
+    check_schema(env)
+
+
+def test_the_router_endpoints_are_probed_on_the_router_port_input():
+    env, calls = run(inputs={"router_port": 9000})
     assert env["status"] == "ok"
-    for row in (pod_of(env), service_of(env)):
-        assert (row["router"]["served"], row["router"]["ok"], row["router"]["httpStatus"]) == (
-            False,
-            None,
-            404,
-        )
-        assert row["liveness"]["ok"] is True
+    for path in (ROUTER, ROUTER_LIVE, ROUTER_READY):
+        assert raw("pods", "artifactory-0", 9000, path) in calls
+    assert (pod_of(env)["routerLiveness"]["port"], pod_of(env)["routerPort"]) == (9000, 9000)
+
+
+def test_a_404_from_a_pods_liveness_or_readiness_is_ok_false_with_a_reason():
+    env, _ = run(replies={("artifactory-0", READINESS): (1, "", NO_ROUTE)})
+    assert env["status"] == "ok" and env["errors"] == []
+    row = pod_of(env)["readiness"]
+    assert (row["httpStatus"], row["served"], row["ok"]) == (404, False, False)
+    assert row["reason"] == "not served (booting, wrong port, or not Artifactory)"
+    assert pod_of(env)["liveness"]["reason"] is None
+    out = env["outputs"]["health"]
+    assert out["notOkCount"] == 1
+    check_schema(env)
+
+
+@pytest.mark.parametrize("path", [LIVENESS, READINESS, ROUTER_LIVE, ROUTER_READY])
+def test_each_probe_endpoint_on_a_pod_counts_a_404_as_not_ok(path):
+    env, _ = run(replies={("artifactory-0", path): (1, "", NO_ROUTE)})
+    row = pod_of(env)[NAMES[path]]
+    assert (row["ok"], row["served"], row["reason"] is not None) == (False, False, True)
+    assert env["outputs"]["health"]["notOkCount"] == 1
+
+
+def test_a_404_on_a_service_or_on_the_router_health_stays_served_false_ok_null():
+    env, _ = run(replies={("artifactory", READINESS): (1, "", NO_ROUTE), ROUTER: (1, "", NO_ROUTE)})
+    assert env["status"] == "ok"
+    for row in (pod_of(env)["router"], service_of(env)["readiness"], service_of(env)["router"]):
+        assert (row["served"], row["ok"], row["reason"]) == (False, None, None)
+    assert env["outputs"]["health"]["notOkCount"] == 0
+
+
+def test_every_endpoint_of_every_pod_answering_404_fails_with_not_found():
+    env, _ = run(replies={p: (1, "", NO_ROUTE) for p in NAMES})
+    assert env["status"] == "failed" and env["outputs"] == {}
+    assert [(e["code"], e["message"]) for e in env["errors"]] == [
+        ("not_found", "no Artifactory endpoint answered; check the port input")
+    ]
+
+
+def test_one_endpoint_answering_something_else_keeps_the_result():
+    replies = {p: (1, "", NO_ROUTE) for p in NAMES}
+    replies[("artifactory-0", LIVENESS)] = (0, "OK", "")
+    env, _ = run(replies=replies)
+    assert env["status"] == "ok"
+    assert pod_of(env)["liveness"]["ok"] is True and pod_of(env)["readiness"]["ok"] is False
+    # an endpoint that failed (not answered) is not a 404 either
+    replies[("artifactory-0", LIVENESS)] = (1, "", UNREACHABLE)
+    env, _ = run(replies=replies)
+    assert env["status"] == "partial"
+    assert [e["code"] for e in env["errors"]] == ["unreachable"]
 
 
 def test_every_endpoint_wanting_credentials_skips_the_task():
-    env, _ = run(
-        replies={
-            LIVENESS: (1, "", BACKEND_403),
-            READINESS: (1, "", BACKEND_403),
-            ROUTER: (1, "", BACKEND_401),
-        }
-    )
+    wants = {p: (1, "", BACKEND_403) for p in (LIVENESS, READINESS)}
+    wants |= {p: (1, "", BACKEND_401) for p in (ROUTER, ROUTER_LIVE, ROUTER_READY)}
+    env, _ = run(replies=wants)
     assert env["status"] == "skipped"
     assert "credentials" in env["reason"] and "misc plugin, M4" in env["reason"]
     assert env["errors"] == [] and env["outputs"] == {}
@@ -305,6 +435,7 @@ def test_some_endpoints_wanting_credentials_are_partial_with_a_scoped_permission
     assert codes(env) == [
         ("permission_denied", "pod/artifactory-0/readiness"),
         ("permission_denied", "service/artifactory/readiness"),
+        ("permission_denied", "service/artifactory-numeric/readiness"),
     ]
     assert "generic connection" in env["errors"][0]["hint"]
     row = pod_of(env)["readiness"]
@@ -385,12 +516,28 @@ def test_pods_that_are_not_running_are_listed_and_not_asked():
     pod = pod_of(env)
     assert (pod["phase"], pod["queried"], pod["liveness"]) == ("Pending", False, None)
     assert not [c for c in calls if "/pods/" in c[3]]
-    assert env["status"] == "ok"
+    # the workload wants a replica and none is Running: the result is partial, not clean
+    assert env["status"] == "partial"
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("unreachable", "pods")]
+    assert "1 replica(s) but no pod is Running" in env["errors"][0]["message"]
+
+
+def test_no_running_pod_is_only_an_error_when_the_workload_wants_replicas():
+    text = load("pods_artifactory.txt").replace("status.phase=Running", "status.phase=Pending")
+    zero = load("workload_artifactory.txt").replace("j:spec.replicas=1", "j:spec.replicas=0")
+    assert zero != load("workload_artifactory.txt")
+    with make_context(resource=RESOURCE, settings=SETTINGS) as tc:
+        table = stubs(pods_text=text)
+        table[next(a for a in table if "statefulsets.apps" in a)] = (0, zero, "")
+        stub_commands(tc, table)
+        env = run_main(script(), tc)
+    assert env["status"] == "ok" and env["errors"] == []
 
 
 def test_a_workload_without_pods_is_a_fact():
     env, calls = run(pods_text="")
-    assert env["status"] == "ok"
+    assert env["status"] == "partial"  # replicas 1, no pod: see the test above
+    assert [(e["code"], e["scope"]) for e in env["errors"]] == [("unreachable", "pods")]
     out = env["outputs"]["health"]
     assert (out["podCount"], out["pods"]) == (0, [])
     # the Services are asked on the chart's port names, as there is no pod to name the ports
@@ -478,6 +625,69 @@ def test_proxy_get_tells_the_statuses_apart():
         assert exc.value.code == code, stderr
 
 
+SPOOF_RBAC = (
+    'Error from server (Forbidden): <html>pods "x" is forbidden: User "u" cannot get resource '
+    '"pods/proxy"</html>'
+)
+
+
+def test_a_rbac_denial_is_told_by_the_anchored_wording_not_by_a_backends_body():
+    # the apiserver's own refusal, for pods and for services
+    for kind in ("pods", "services"):
+        stderr = FORBIDDEN.format(r=f"{kind}/proxy").replace('"x"', f'"{kind}"')
+        with pytest.raises(RwError) as exc:
+            proxy.proxy_get(Canned(1, "", stderr), "/x")
+        assert exc.value.code == "permission_denied"
+    # a backend 403 whose body merely quotes the wording is the backend wanting credentials
+    assert proxy.proxy_get(Canned(1, "", SPOOF_RBAC), "/x").status == 403
+    body = "Error from server (Forbidden): sorry, cannot get resource: is forbidden: User nobody"
+    assert proxy.proxy_get(Canned(1, "", body), "/x").status == 403
+
+
+def test_other_failures_are_mapped_from_the_error_from_server_reason():
+    def code(stderr, rc=1):
+        with pytest.raises(RwError) as exc:
+            proxy.proxy_get(Canned(rc, "", stderr), "/x")
+        return exc.value.code
+
+    assert code('Error from server (NotFound): pods "p" not found') == "not_found"
+    assert code("Error from server (Timeout): request did not complete within 30s") == "timeout"
+    assert code("Error from server (TooManyRequests): slow down") == "rate_limited"
+    assert code("Error from server (InternalError): oops") == "internal"
+    assert code("Error from server (SomethingNew): x") == "internal"
+    assert code(UNREACHABLE) == "unreachable"
+    assert code("Error from server (ServiceUnavailable): something else") == "unreachable"
+    # the backend's body text never decides: these bodies mention other classes' wording
+    assert (
+        code("Error from server (InternalError): x509 connection refused not found") == "internal"
+    )
+    other = "Error from server (NotFound): the server could not find the requested resource (get pods p)"
+    assert code(other) == "not_found"
+    assert code("anything", rc=124) == "timeout" and code("anything", rc=127) == "dependency"
+
+
+def test_a_failure_shows_only_the_first_line_of_a_backend_body_cut_at_256():
+    body = "Error from server (Forbidden): " + "x" * 400 + "\n<html>\nsecret page\n</html>"
+    err = k8s.failure(["kubectl", "get"], type("R", (), {"returncode": 1, "stderr": body}))
+    assert err.message.startswith("kubectl exited 1: Error from server (Forbidden): xxx")
+    assert len(err.message) == len("kubectl exited 1: ") + 256 and "secret" not in err.message
+    warned = 'Warning: deprecated\nError from server (NotFound): pods "p" not found\nmore'
+    err = k8s.failure(["kubectl", "get"], type("R", (), {"returncode": 1, "stderr": warned}))
+    assert err.message == 'kubectl exited 1: Error from server (NotFound): pods "p" not found'
+    assert err.code == "not_found"
+
+
+def test_a_401_line_is_a_credential_failure_for_the_api_and_the_backends_401_on_a_proxy_call():
+    assert k8s.classify(1, BACKEND_401) == "permission_denied"
+    assert proxy.proxy_get(Canned(1, "", BACKEND_401), "/x").status == 401
+    assert (
+        proxy.proxy_get(
+            Canned(1, "", "Error from server (Unauthorized): Unauthorized"), "/x"
+        ).status
+        == 401
+    )
+
+
 def test_parse_router_caps_and_rejects():
     big = {
         "router": {"state": "HEALTHY"},
@@ -489,6 +699,20 @@ def test_parse_router_caps_and_rejects():
     assert (doc["serviceCount"], len(doc["services"]), doc["servicesTruncated"]) == (60, 50, True)
     assert doc["services"][0]["messageTruncated"] is True
     assert len(doc["services"][0]["message"]) == 1024
+    # ids are cut at 1024 as well
+    long_ids = {
+        "router": {"state": "HEALTHY"},
+        "services": [{"service_id": "s" * 3000, "node_id": "n" * 3000, "state": "HEALTHY"}],
+    }
+    row = health.parse_router(json.dumps(long_ids), "w")["services"][0]
+    assert (len(row["serviceId"]), len(row["nodeId"])) == (1024, 1024)
+    jsonschema.validate(
+        row,
+        json.loads((SKILL / "schemas/health.v1.json").read_text())["properties"]["pods"]["items"][
+            "properties"
+        ]["router"]["properties"]["router"]["properties"]["services"]["items"],
+        cls=jsonschema.Draft202012Validator,
+    )
     for body in (
         "",
         "<html>",
@@ -547,7 +771,8 @@ def test_services_are_matched_by_the_pod_template_labels():
             return type("R", (), {"returncode": 0, "stdout": other, "stderr": ""})
 
     services, readable = fetch.workload_services(Ctx(), workload)
-    assert readable is True and [s["metadata"]["name"] for s in services] == ["artifactory"]
+    assert readable is True
+    assert [s["metadata"]["name"] for s in services] == ["artifactory", "artifactory-numeric"]
 
 
 def test_the_projections_never_ask_for_env():
@@ -608,13 +833,14 @@ def pods(n):
 
 
 def test_the_task_deadline_leaves_the_remaining_asks_a_timeout_error():
-    ctx = Clocked(lambda i, argv: (0, router_doc() if "router" in argv[3] else "OK", ""))
+    ctx = Clocked(lambda i, argv: (0, router_doc() if argv[3].endswith("/health") else "OK", ""))
     budget = fetch.Budget(clock=ctx.clock)
     out = health.view(ctx, WORKLOAD, pods(3), [], True, "http", None, None, 200, budget)
-    # four asks at 0s, 30s, 60s, 90s (the fourth limited to the 10s left); the rest time out
+    # four asks at 0s, 30s, 60s, 90s (the fourth limited to the 10s left); the other 11 of the
+    # 3 pods' 5 endpoints time out
     assert len(ctx.calls) == 4
     assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
-    assert {c for c, _, _ in ctx.errors} == {"timeout"} and len(ctx.errors) == 5
+    assert {c for c, _, _ in ctx.errors} == {"timeout"} and len(ctx.errors) == 11
     assert "100s deadline" in ctx.errors[0][2]
     assert out["pods"][2]["router"]["httpStatus"] is None
 

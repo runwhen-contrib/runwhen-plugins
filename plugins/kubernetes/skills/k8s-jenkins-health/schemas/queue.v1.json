@@ -77,6 +77,19 @@
           "port": {
             "type": "integer"
           },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ],
+            "description": "the scheme asked: the input, else the readiness probe's, else http"
+          },
+          "urlPrefix": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "the URL prefix put before the API paths: the input, else the readiness probe's path minus a trailing /login, else empty"
+          },
           "queried": {
             "type": "boolean",
             "description": "false for a pod that is not Running (or beyond the first 10), which is not asked"
@@ -92,6 +105,13 @@
                 "type": "integer",
                 "description": "items in the queue"
               },
+              "discoverableCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "items Jenkins lets the caller discover but not read (discoverableItems): the queue is longer than itemCount by this much; null when the document had no such list"
+              },
               "flaggedStuckCount": {
                 "type": "integer",
                 "description": "items Jenkins itself flags stuck"
@@ -106,7 +126,7 @@
               },
               "stuckAfterCount": {
                 "type": "integer",
-                "description": "items waiting longer than stuckAfter"
+                "description": "items listed: those Jenkins flags stuck, whatever their age, and blocked or buildable ones waiting longer than stuckAfter"
               },
               "stuckAfterTruncated": {
                 "type": "boolean",
@@ -114,21 +134,33 @@
               },
               "stuckAfterItems": {
                 "type": "array",
-                "description": "oldest first",
+                "description": "flagged stuck first, then the rest; oldest first within each",
                 "items": {
                   "type": "object",
                   "properties": {
                     "id": {
                       "type": [
                         "integer",
+                        "string",
                         "null"
-                      ]
+                      ],
+                      "maxLength": 1024
                     },
                     "task": {
                       "type": [
                         "string",
                         "null"
-                      ]
+                      ],
+                      "maxLength": 1024,
+                      "description": "the task's name"
+                    },
+                    "taskUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 1024,
+                      "description": "the task's url (the job's page)"
                     },
                     "inQueueSince": {
                       "type": [
@@ -137,7 +169,11 @@
                       ]
                     },
                     "ageSeconds": {
-                      "type": "number"
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "description": "null for a flagged-stuck item with no inQueueSince"
                     },
                     "stuck": {
                       "type": [
@@ -170,6 +206,7 @@
                   "required": [
                     "id",
                     "task",
+                    "taskUrl",
                     "inQueueSince",
                     "ageSeconds",
                     "stuck",
@@ -184,6 +221,7 @@
             },
             "required": [
               "itemCount",
+              "discoverableCount",
               "flaggedStuckCount",
               "flaggedBlockedCount",
               "ageUnknownCount",
@@ -231,7 +269,8 @@
                       "type": [
                         "string",
                         "null"
-                      ]
+                      ],
+                      "maxLength": 1024
                     },
                     "temporarilyOffline": {
                       "type": [
@@ -282,6 +321,8 @@
           "phase",
           "podReady",
           "port",
+          "scheme",
+          "urlPrefix",
           "queried",
           "queue",
           "computers"
