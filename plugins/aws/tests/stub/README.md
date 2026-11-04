@@ -7,7 +7,7 @@ against a real account when a credential exists (plan Appendix C5).
 
 ```
 # record one fixture (from the repo root; AWS_REGION unset so the home region is us-east-1)
-PATH=$PWD/plugins/aws/tests/stub/bin:$PATH RW_STUB_SCENARIO=healthy \
+PATH=$PWD/plugins/aws/tests/stub/bin:$PATH AWS_STUB_SCENARIO=healthy \
   rwtask test aws-lambda-health/function-config --plugin-dir plugins/aws --record --scenario healthy \
   --resource aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
 
@@ -17,13 +17,17 @@ rwtask test aws-lambda-health --plugin-dir plugins/aws
 
 ## How a call is answered
 
+The scenario is named by `AWS_STUB_SCENARIO`, not `RW_STUB_SCENARIO`: the real runner strips every
+`RW_*` variable from the task it starts, so a `RW_` name never reaches the stub under `rwtask run`
+or `rwtask test --record` (the stub still accepts `RW_STUB_SCENARIO` as an alias for direct use).
+
 `bin/aws` (python3 -I, standard library only) normalises the argv, finds it in
-`scenarios/$RW_STUB_SCENARIO/calls.yaml` and prints the canned `stdout` file and `stderr` text and
+`scenarios/$AWS_STUB_SCENARIO/calls.yaml` and prints the canned `stdout` file and `stderr` text and
 exits with `rc`. Normalising drops `--output json`, `-o json` and `--no-cli-pager`, and replaces
 the value after `--start-time` / `--end-time` with `<time>`; nothing else changes, and the order of
 words is the order the skill sends them. An argv that is not in the scenario exits **2** with
 `aws stub: scenario ... has no canned response for: ...` and the first known calls, so a test notices
-a call nobody planned. `RW_STUB_LOG=<file>` appends the normalised argv of every call as a JSON line.
+a call nobody planned. `AWS_STUB_LOG=<file>` appends the normalised argv of every call as a JSON line.
 
 `calls.yaml` is written as JSON (which is YAML), so the stub needs no YAML library:
 

@@ -27,9 +27,9 @@ def calls_of(scenario_dir):
 def run_stub(scenario, *argv, log=None):
     env = {"PATH": os.environ["PATH"]}
     if scenario is not None:
-        env["RW_STUB_SCENARIO"] = scenario
+        env["AWS_STUB_SCENARIO"] = scenario
     if log is not None:
-        env["RW_STUB_LOG"] = str(log)
+        env["AWS_STUB_LOG"] = str(log)
     return subprocess.run([str(AWS), *argv], env=env, capture_output=True, text=True)
 
 
@@ -139,3 +139,12 @@ def test_the_log_file_records_each_normalised_argv(tmp_path):
     run_stub("healthy", "s3", "ls", log=log)
     lines = [json.loads(line) for line in log.read_text().splitlines()]
     assert lines == [["sts", "get-caller-identity", "--region", "us-east-1"], ["s3", "ls"]]
+
+
+def test_the_rw_prefixed_names_are_aliases_for_direct_use():
+    env = {"PATH": os.environ["PATH"], "RW_STUB_SCENARIO": "healthy"}
+    done = subprocess.run([str(AWS), "sts", "get-caller-identity", "--region", "us-east-1"], env=env, capture_output=True, text=True)
+    assert done.returncode == 0 and "123456789012" in done.stdout
+    env["AWS_STUB_SCENARIO"] = "forbidden"  # the AWS_ name wins
+    done = subprocess.run([str(AWS), "ec2", "describe-regions", "--region", "us-east-1"], env=env, capture_output=True, text=True)
+    assert done.returncode == 254
