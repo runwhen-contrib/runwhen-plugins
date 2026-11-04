@@ -15,6 +15,9 @@ credentialTypes:
     description: "The libpq environment a client reads: PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE and PGSSLMODE."
     materialize:
       env: [PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGSSLMODE]
+      # contracts-v5: only PGPASSWORD is secret. Without this the runner redacts every materialized
+      # value from task output, so a PGDATABASE of `postgres` would blank every "postgres".
+      nonSecret: [PGHOST, PGPORT, PGUSER, PGDATABASE, PGSSLMODE]
 
 # --- how a credential reference becomes that type (D67) -----------------------
 # Each method is self-contained: it accepts its own reference kinds, has its own
