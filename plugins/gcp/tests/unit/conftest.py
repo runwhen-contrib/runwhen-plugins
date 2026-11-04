@@ -1,0 +1,162 @@
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from runwhen_capability.testing import make_context, run_main
+
+# At run time a skill's lib/ is on sys.path (CAP-12); its package is named after the skill.
+for lib in sorted((Path(__file__).parents[2] / "skills").glob("*/lib")):
+    sys.path.insert(0, str(lib))
+
+PLUGIN = Path(__file__).parents[2]
+STUB = PLUGIN / "tests" / "stub"
+
+SETTINGS = {
+    "maxItems": 200,
+    "commandTimeout": "60s",
+    "usageThresholdTib": 0.5,  # declared by gcp-bucket-health only; harmless elsewhere
+    "sizeTimeout": "300s",
+    "publicBucketThreshold": 0,
+}
+PROJECT = {
+    "path": "gcp/projects/shop-prod-1234",
+    "type": "gcp/project",
+    "name": "shop-prod-1234",
+}
+
+
+def bucket_target(name, project="shop-prod-1234"):
+    return {
+        "path": f"gcp/projects/{project}/buckets/{name}",
+        "type": "gcp/bucket",
+        "project": project,
+        "name": name,
+    }
+
+
+def load_script(name, skill):
+    spec = importlib.util.spec_from_file_location(
+        f"{skill.replace('-', '_')}_{name.replace('-', '_')}",
+        PLUGIN / "skills" / skill / "scripts" / f"{name}.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def stub_module():
+    """The stubs' shared module (tests/stub/stublib.py)."""
+    spec = importlib.util.spec_from_file_location("stublib", STUB / "stublib.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class StubRun:
+    """Stands in for ctx.run: answers gcloud and curl from a scenario of the stub (the same canned
+    data a fixture is recorded from), exactly as the stubs would, plus per-test overrides.
+
+    Like the SDK's ctx.run under v13 it would raise on a non-zero exit, but the plugin must ask
+    for check=False and classify itself, so a call that does not pass check=False fails here. A
+    curl call must pass its credential as a header file in ctx.workdir (never on argv): the file
+    is read at call time and must hold only the stub's fake token."""
+
+    def __init__(self, scenario, workdir=None):
+        self.scenario = scenario
+        self.stub = stub_module()
+        directory = STUB / "scenarios" / scenario
+        self.directory = directory
+        self.calls = self.stub.parse_calls((directory / "calls.yaml").read_text())
+        self.log = []  # {"argv", "asked", "env", "timeout", "tool"}
+        self.overrides = []
+        self.headers = []  # the header file of each curl call, as it was when curl ran
+        self.workdir = workdir
+
+    def set(self, asked, rc=0, stdout="", stderr="", tool="gcloud"):
+        """Answer the (normalised) argv `asked` with this, ahead of the scenario."""
+        self.overrides.append((tool, list(asked), rc, stdout, stderr))
+        return self
+
+    def asked(self, tool="gcloud"):
+        return [c["asked"] for c in self.log if c["tool"] == tool]
+
+    def __call__(self, argv, cwd=None, timeout=None, env=None, *, inherit_env=True, check=None):
+        assert check is False, "the plugin must pass check=False and classify the exit itself"
+        tool = argv[0]
+        assert tool in ("gcloud", "curl"), argv
+        if tool == "gcloud":
+            assert argv[-1] == "--quiet", argv
+        else:
+            self.check_header(argv, cwd)
+        asked = self.stub.normalise(tool, argv[1:])
+        self.log.append(
+            {"argv": list(argv), "asked": asked, "env": env, "timeout": timeout, "tool": tool}
+        )
+        for kind, expected, rc, stdout, stderr in self.overrides:
+            if (kind, expected) == (tool, asked):
+                return subprocess.CompletedProcess(argv, rc, stdout, stderr)
+        for call in self.calls:
+            if call.get("tool", "gcloud") == tool and call["argv"] == asked:
+                stdout = ""
+                if call.get("stdout"):
+                    stdout = (self.directory / call["stdout"]).read_text()
+                return subprocess.CompletedProcess(
+                    argv, call.get("rc", 0), stdout, call.get("stderr", "")
+                )
+        raise AssertionError(f"scenario {self.scenario} has no answer for {tool} {asked}")
+
+    def check_header(self, argv, cwd):
+        refs = [
+            a[1:] for i, a in enumerate(argv) if i and argv[i - 1] == "-H" and a.startswith("@")
+        ]
+        assert len(refs) == 1, f"curl must pass its credential as -H @<file>: {argv}"
+        path = Path(cwd or self.workdir) / refs[0]
+        assert path.stat().st_mode & 0o777 == 0o600, "the header file must be mode 0600"
+        text = path.read_text()
+        token = json.loads((STUB / "identities.json").read_text())["fakeToken"]
+        assert f"Authorization: Bearer {token}\n" in text
+        assert not any(token in a for a in argv), "the token is on the command line"
+        self.headers.append(text)
+
+
+@pytest.fixture
+def stub_run():
+    def make(scenario):
+        return StubRun(scenario)
+
+    return make
+
+
+@pytest.fixture
+def run_script():
+    """run_script("discover", skill="gcp-base", stub=StubRun, resource=..., **inputs): the script's
+    main under the real v13 context, gcloud answered by `stub`. Returns the result envelope, the
+    errors and the files written under $RW_OUT."""
+
+    def run(script, *, skill, stub, resource=PROJECT, settings=None, **inputs):
+        main = load_script(script, skill).main
+        with make_context(resource=resource, settings={**SETTINGS, **(settings or {})}) as tc:
+            tc.ctx.run = stub
+            stub.workdir = tc.ctx.workdir
+            envelope = run_main(main, tc, **inputs)
+            files = {p.name: p.read_text() for p in Path(tc.out_dir).iterdir()}
+            left = sorted(p.name for p in Path(tc.ctx.workdir).iterdir() if p.name.startswith("."))
+            return SimpleNamespace(
+                envelope=envelope, errors=list(tc.errors), files=files, workdir_dotfiles=left
+            )
+
+    return run
+
+
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch):
+    for name in (
+        "RW_SYNC_CREDENTIAL",
+        "RW_SYNC_ALLOW_HTTP",
+        "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE",
+    ):
+        monkeypatch.delenv(name, raising=False)
