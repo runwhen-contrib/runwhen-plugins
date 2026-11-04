@@ -8,6 +8,7 @@ runtime: a `Dockerfile` and a `runtime.yaml` that the plugin registry reads (tag
 | Runtime | Image | For |
 | --- | --- | --- |
 | `kubernetes` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes` | `kubernetes` plugin tasks |
+| `azure` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-azure` | `azure` plugin tasks |
 
 ## kubernetes
 
@@ -38,6 +39,23 @@ docker run --rm -i --entrypoint sh rwp-runtime-kubernetes:dev -s < runtimes/kube
 python ci/check_runtime.py validate --allow-placeholder
 ```
 
+## azure
+
+The same rw-task base pin as `kubernetes`, plus the Azure CLI (`az`) and nothing else: no `aws`,
+no `gcloud`. `az` is installed from PyPI into its own virtualenv (`/opt/az`,
+`azure-cli==<AZURE_CLI_VERSION>`, linked to `/usr/local/bin/az`) so its dependencies cannot replace
+what the SDK in `/opt/venv` imports. The image sets `AZURE_CONFIG_DIR=/work/.azure` as a fallback
+only: the `azure/cli` auth scripts point it at a directory under `$RW_CREDENTIALS_DIR`, where the
+token cache lives for one task run. Telemetry and dynamic extension install are off.
+To move `az`, change `AZURE_CLI_VERSION` in the Dockerfile, update `runtime.yaml` `tools`, and bump the
+runtime version.
+
+```
+docker build -t rwp-runtime-azure:dev runtimes/azure
+docker run --rm -i --entrypoint sh rwp-runtime-azure:dev -s < runtimes/azure/smoke.sh
+python ci/check_runtime.py validate --runtime-dir runtimes/azure --allow-placeholder
+```
+
 ## Versions
 
 `runtime.yaml` `version` is a semver; the git tag is `runtimes/kubernetes/v<version>` and must
@@ -56,6 +74,9 @@ Never move a published tag: the registry rejects a tag whose content changed.
 The digests in `runtime.yaml` are the pin that reaches customer clusters, and a rebuild does not
 reproduce a digest. So the image is built and pushed first, and the digests are committed before
 the tag. The `runtime-kubernetes` workflow does the checks at each step.
+
+(The `ci/check_runtime.py` commands below default to `runtimes/kubernetes`; pass
+`--runtime-dir runtimes/<name>` for another runtime. The `runtime-azure` workflow does.)
 
 1. **Change the image** (Dockerfile, base pin, `smoke.sh`) and bump `version` in `runtime.yaml`
    (the `digests` block keeps its all-zero placeholder, or the previous release's digests, for now).
