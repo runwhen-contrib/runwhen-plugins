@@ -25,7 +25,7 @@ SYNC = {
 PACKAGE = {"postgres": "pg_base", "kubernetes": "k8s_base"}
 
 # every aws skill that runs the CLI carries the shared files; a skill missing here is untested
-SKILLS_WITH_COPIES = {"aws-base"}
+SKILLS_WITH_COPIES = {"aws-base", "aws-lambda-health"}
 
 
 def copies(name):

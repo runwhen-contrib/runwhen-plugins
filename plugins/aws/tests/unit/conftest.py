@@ -92,10 +92,12 @@ def run_script(fake_aws):
     script's main under the real v13 context, aws answered by `fake_aws`. Returns the result
     envelope, the errors and the files written under $RW_OUT."""
 
-    def run(skill, script, *, resource, settings=None, **inputs):
+    def run(skill, script, *, resource, settings=None, now=None, **inputs):
         main = load_script(skill, script).main
         defaults = json.loads(json.dumps(DEFAULT_SETTINGS[skill]))
-        with make_context(resource=resource, settings={**defaults, **(settings or {})}) as tc:
+        with make_context(
+            resource=resource, settings={**defaults, **(settings or {})}, now=now
+        ) as tc:
             tc.ctx.run = fake_aws
             envelope = run_main(main, tc, **inputs)
             files = {p.name: p.read_text() for p in Path(tc.out_dir).iterdir()}
@@ -153,10 +155,12 @@ def run_with_stub(stub_on_path):
     """Like run_script, but ctx.run is real and `aws` is the stub: what `rwtask test --record`
     does. use(scenario) first."""
 
-    def run(skill, script, *, resource, settings=None, **inputs):
+    def run(skill, script, *, resource, settings=None, now=None, **inputs):
         main = load_script(skill, script).main
         defaults = json.loads(json.dumps(DEFAULT_SETTINGS[skill]))
-        with make_context(resource=resource, settings={**defaults, **(settings or {})}) as tc:
+        with make_context(
+            resource=resource, settings={**defaults, **(settings or {})}, now=now
+        ) as tc:
             envelope = run_main(main, tc, **inputs)
             files = {p.name: p.read_text() for p in Path(tc.out_dir).iterdir()}
             return SimpleNamespace(envelope=envelope, errors=list(tc.errors), files=files)

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A Lambda function's configuration and state",
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "region": {"type": "string"},
+    "arn": {"type": ["string", "null"]},
+    "runtime": {"type": ["string", "null"], "description": "Runtime identifier such as python3.12; null for a container image function"},
+    "packageType": {"type": ["string", "null"], "description": "Zip or Image"},
+    "handler": {"type": ["string", "null"]},
+    "memoryMb": {"type": ["integer", "null"]},
+    "timeoutSeconds": {"type": ["integer", "null"]},
+    "ephemeralStorageMb": {"type": ["integer", "null"]},
+    "architectures": {"type": "array", "maxItems": 50, "items": {"type": "string"}},
+    "state": {"type": ["string", "null"], "description": "Pending, Active, Inactive or Failed"},
+    "stateReasonCode": {"type": ["string", "null"]},
+    "stateReason": {"type": ["string", "null"], "maxLength": 1024},
+    "lastUpdateStatus": {"type": ["string", "null"], "description": "InProgress, Successful or Failed"},
+    "lastUpdateStatusReasonCode": {"type": ["string", "null"]},
+    "lastUpdateStatusReason": {"type": ["string", "null"], "maxLength": 1024},
+    "lastModified": {"type": ["string", "null"]},
+    "codeSizeBytes": {"type": ["integer", "null"]},
+    "version": {"type": ["string", "null"]},
+    "layerCount": {"type": "integer"},
+    "vpc": {
+      "type": ["object", "null"],
+      "properties": {
+        "subnetCount": {"type": "integer"},
+        "securityGroupCount": {"type": "integer"}
+      },
+      "required": ["subnetCount", "securityGroupCount"],
+      "additionalProperties": false,
+      "description": "null when the function is not attached to a VPC"
+    },
+    "deadLetterTargetArn": {"type": ["string", "null"]},
+    "tracingMode": {"type": ["string", "null"]},
+    "logGroup": {"type": "string", "description": "The CloudWatch log group the function writes to"},
+    "logFormat": {"type": ["string", "null"]},
+    "environmentError": {
+      "type": ["object", "null"],
+      "properties": {
+        "code": {"type": "string"},
+        "message": {"type": ["string", "null"], "maxLength": 1024}
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "description": "Lambda could not decrypt or apply the environment variables; never their values"
+    },
+    "textTruncated": {"type": "boolean", "description": "Some text field passed 1024 characters and was cut"}
+  },
+  "required": [
+    "name", "region", "arn", "runtime", "packageType", "handler", "memoryMb", "timeoutSeconds",
+    "ephemeralStorageMb", "architectures", "state", "stateReasonCode", "stateReason",
+    "lastUpdateStatus", "lastUpdateStatusReasonCode", "lastUpdateStatusReason", "lastModified",
+    "codeSizeBytes", "version", "layerCount", "vpc", "deadLetterTargetArn", "tracingMode",
+    "logGroup", "logFormat", "environmentError", "textTruncated"
+  ],
+  "additionalProperties": false
+}

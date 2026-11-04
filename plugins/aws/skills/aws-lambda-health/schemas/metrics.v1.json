@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A Lambda function's CloudWatch metrics over a window",
+  "type": "object",
+  "properties": {
+    "window": {
+      "type": "object",
+      "properties": {
+        "start": {"type": "string"},
+        "end": {"type": "string"},
+        "seconds": {"type": "integer"}
+      },
+      "required": ["start", "end", "seconds"],
+      "additionalProperties": false
+    },
+    "periodSeconds": {"type": "integer", "description": "The CloudWatch period of each datapoint"},
+    "invocations": {"type": ["number", "null"], "description": "Sum of Invocations; 0 with no datapoints; null when the call failed"},
+    "errors": {"type": ["number", "null"], "description": "Sum of Errors (invocations that raised, timed out or crashed); null when the call failed"},
+    "throttles": {"type": ["number", "null"], "description": "Sum of Throttles; null when the call failed"},
+    "errorRate": {"type": ["number", "null"], "description": "errors / invocations; null when there were no invocations or a count is unknown"},
+    "duration": {
+      "type": ["object", "null"],
+      "properties": {
+        "averageMs": {"type": ["number", "null"], "description": "Average weighted by each datapoint's sample count"},
+        "maxMs": {"type": ["number", "null"]},
+        "sampleCount": {"type": "number", "description": "Invocations that reported a duration"}
+      },
+      "required": ["averageMs", "maxMs", "sampleCount"],
+      "additionalProperties": false,
+      "description": "null when the Duration call failed"
+    },
+    "timeoutSeconds": {"type": ["integer", "null"], "description": "The function's configured timeout"},
+    "datapoints": {
+      "type": "object",
+      "properties": {
+        "Invocations": {"type": ["integer", "null"]},
+        "Errors": {"type": ["integer", "null"]},
+        "Throttles": {"type": ["integer", "null"]},
+        "Duration": {"type": ["integer", "null"]}
+      },
+      "required": ["Invocations", "Errors", "Throttles", "Duration"],
+      "additionalProperties": false,
+      "description": "Datapoints CloudWatch returned per metric; 0 means no data in the window (a function that was not invoked publishes none); null means the call failed"
+    },
+    "errorRateAboveThreshold": {"type": ["boolean", "null"], "description": "errorRate >= the errorRateThreshold setting; null when the numbers were not read"},
+    "throttlesAboveThreshold": {"type": ["boolean", "null"], "description": "throttles >= the throttleThreshold setting; null when not read"},
+    "durationNearTimeout": {"type": ["boolean", "null"], "description": "The longest invocation reached durationTimeoutRatio of the function's timeout; null when not read"}
+  },
+  "required": [
+    "window", "periodSeconds", "invocations", "errors", "throttles", "errorRate", "duration",
+    "timeoutSeconds", "datapoints", "errorRateAboveThreshold", "throttlesAboveThreshold",
+    "durationNearTimeout"
+  ],
+  "additionalProperties": false
+}

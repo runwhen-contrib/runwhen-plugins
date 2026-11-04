@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Log events of a Lambda function that match the error pattern",
+  "type": "object",
+  "properties": {
+    "logGroup": {"type": "string"},
+    "logGroupFound": {"type": ["boolean", "null"], "description": "false: the log group does not exist (the function was never invoked, or it was deleted); null: it could not be read (a scoped permission_denied error); true otherwise"},
+    "window": {
+      "type": "object",
+      "properties": {"start": {"type": "string"}, "end": {"type": "string"}},
+      "required": ["start", "end"],
+      "additionalProperties": false
+    },
+    "pattern": {"type": "string", "description": "The filter pattern that was searched"},
+    "events": {
+      "type": "array",
+      "description": "Oldest first, at most maxLogEvents",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": {"type": "string", "description": "UTC, millisecond precision"},
+          "logStream": {"type": ["string", "null"]},
+          "message": {"type": "string", "maxLength": 1024, "description": "The log text, scrubbed of credentials, cut to 1024 characters"},
+          "truncated": {"type": "boolean"}
+        },
+        "required": ["timestamp", "logStream", "message", "truncated"],
+        "additionalProperties": false
+      }
+    },
+    "matched": {"type": "integer", "description": "Events in this list"},
+    "truncated": {"type": "boolean", "description": "More events matched than the list holds: the newest are not shown; narrow since"},
+    "messagesTruncated": {"type": "boolean", "description": "Some message passed 1024 characters and was cut"}
+  },
+  "required": ["logGroup", "logGroupFound", "window", "pattern", "events", "matched", "truncated", "messagesTruncated"],
+  "additionalProperties": false
+}
