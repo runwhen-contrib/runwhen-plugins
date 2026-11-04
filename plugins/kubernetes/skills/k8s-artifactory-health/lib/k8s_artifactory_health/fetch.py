@@ -1,7 +1,6 @@
 """Fetching the target workload, its pods and Services, and asking them (the only I/O besides
 k8s.py)."""
 
-import re
 import time
 
 from k8s_artifactory_health.common import MESSAGE_LIMIT
@@ -178,24 +177,16 @@ def pod_port(pod, kind, override=None):
     return DEFAULTS[kind], None
 
 
-# `ctx.k8s_proxy_get` takes a port name of 1 to 15 characters (a container port name's limit); a
-# Service port name may be longer (the chart's `http-artifactory` is 16)
-PROXY_PORT_NAME = re.compile(r"^[a-z0-9-]{1,15}$")
-
-
 def service_port_for(service, number, names=()):
     """(proxy port, port number) of the Service port whose targetPort is the container port
-    `number` or one of its `names`: the proxy port is the Service port's name if it has one the
-    helper accepts, else its number (the proxy takes either). None when the Service does not
-    expose that container port."""
+    `number` or one of its `names`: the proxy port is the Service port's name if it has one (a
+    Service port name is a DNS label of up to 63 characters, which the SDK helper takes whole, e.g.
+    the chart's `http-artifactory`), else its number (the proxy takes either). None when the
+    Service does not expose that container port."""
     for entry in (service.get("spec") or {}).get("ports") or []:
         target = entry.get("targetPort", entry.get("port"))
         if target == number or target in names:
-            name = entry.get("name")
-            return (
-                name if name and PROXY_PORT_NAME.match(name) else entry.get("port"),
-                entry.get("port"),
-            )
+            return entry.get("name") or entry.get("port"), entry.get("port")
     return None
 
 
