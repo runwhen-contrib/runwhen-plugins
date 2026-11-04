@@ -3,7 +3,8 @@
 # scenario needs: `jenkins` ready with an empty queue, `jenkins-stuck` with a queue item and an
 # offline node, `jenkins-down` answering 503 on every path, `jenkins-locked` answering 403
 # (anonymous read off) on the JSON API while /login stays 200, and `jenkins-prefix` serving
-# everything under /jenkins. Idempotent: only waits.
+# everything under /jenkins, `jenkins-sso` answering every request with a 302 to another host
+# (example.invalid). Idempotent: only waits.
 set -euo pipefail
 K=(kubectl --context "${K_CONTEXT:-kind-rw-plugins}")
 NS=rw-jenkins
@@ -12,7 +13,7 @@ proxy() { # <pod> <path>
 }
 
 # not jenkins-down: its pod never becomes Ready, so its rollout never completes
-for sts in jenkins jenkins-stuck jenkins-locked jenkins-prefix; do
+for sts in jenkins jenkins-stuck jenkins-locked jenkins-prefix jenkins-sso; do
   "${K[@]}" -n "$NS" rollout status "sts/${sts}" --timeout=240s
 done
 

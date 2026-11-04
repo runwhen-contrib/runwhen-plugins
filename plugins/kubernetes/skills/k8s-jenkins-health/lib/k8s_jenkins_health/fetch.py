@@ -12,7 +12,7 @@ from k8s_jenkins_health.project import (
     WORKLOAD_FIELDS,
     kubectl_projected,
 )
-from k8s_jenkins_health.proxy import pod_path, proxy_get
+from k8s_jenkins_health.proxy import proxy_get
 
 KINDS = {
     "kubernetes/statefulset": "statefulsets.apps",
@@ -64,8 +64,8 @@ class Budget:
             )
 
     def request_timeout(self):
-        """The kubectl --request-timeout for the next ask: never past the deadline."""
-        return f"{max(1, min(REQUEST_SECONDS, int(self.remaining())))}s"
+        """Seconds for the next ask: never past the deadline."""
+        return max(1, min(REQUEST_SECONDS, int(self.remaining())))
 
     def record(self, path, timed_out):
         self._timeouts[path] = self._timeouts.get(path, 0) + 1 if timed_out else 0
@@ -252,15 +252,16 @@ def ask(ctx, workload, pod, endpoint, path, budget):
     call past the deadline, or on a path that timed out for the last pods, raises `timeout`
     without asking."""
     budget.check(path)
-    api_path = pod_path(
-        workload["metadata"]["namespace"],
-        pod["metadata"]["name"],
-        endpoint.scheme,
-        endpoint.port,
-        path,
-    )
     try:
-        reply = proxy_get(ctx, api_path, budget.request_timeout())
+        reply = proxy_get(
+            ctx,
+            workload["metadata"]["namespace"],
+            pod["metadata"]["name"],
+            endpoint.scheme,
+            endpoint.port,
+            path,
+            budget.request_timeout(),
+        )
     except RwError as exc:
         budget.record(path, exc.code == "timeout")
         raise
