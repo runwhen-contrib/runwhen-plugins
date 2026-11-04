@@ -1,0 +1,248 @@
+{
+  "calls": [
+    {
+      "argv": [
+        "sts",
+        "get-caller-identity",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/sts/get-caller-identity.html",
+      "rc": 0,
+      "stdout": "../_shared/sts-get-caller-identity.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ec2",
+        "describe-regions",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-regions.html",
+      "rc": 0,
+      "stdout": "../_shared/ec2-describe-regions.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "ap-south-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/lambda/list-functions.html",
+      "rc": 0,
+      "stdout": "../_shared/lambda-list-functions-empty.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/lambda/list-functions.html",
+      "rc": 0,
+      "stdout": "../_shared/lambda-list-functions-empty.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (TooManyRequestsException) when calling the ListFunctions operation (reached max retries: 2): Rate exceeded\n"
+    },
+    {
+      "argv": [
+        "lambda",
+        "get-function-configuration",
+        "--function-name",
+        "arn:aws:lambda:eu-west-1:123456789012:function:orders-api",
+        "--query",
+        "{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size, Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason, LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason: LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount: length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup: LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode, EnvironmentErrorMessage: Environment.Error.Message}",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/lambda/get-function-configuration.html",
+      "rc": 0,
+      "stdout": "lambda-get-function-configuration.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cloudwatch",
+        "get-metric-statistics",
+        "--namespace",
+        "AWS/Lambda",
+        "--metric-name",
+        "Invocations",
+        "--dimensions",
+        "Name=FunctionName,Value=orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--period",
+        "300",
+        "--statistics",
+        "Sum",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html",
+      "rc": 0,
+      "stdout": "cloudwatch-invocations.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cloudwatch",
+        "get-metric-statistics",
+        "--namespace",
+        "AWS/Lambda",
+        "--metric-name",
+        "Errors",
+        "--dimensions",
+        "Name=FunctionName,Value=orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--period",
+        "300",
+        "--statistics",
+        "Sum",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (Throttling) when calling the GetMetricStatistics operation (reached max retries: 2): Rate exceeded\n"
+    },
+    {
+      "argv": [
+        "cloudwatch",
+        "get-metric-statistics",
+        "--namespace",
+        "AWS/Lambda",
+        "--metric-name",
+        "Throttles",
+        "--dimensions",
+        "Name=FunctionName,Value=orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--period",
+        "300",
+        "--statistics",
+        "Sum",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html",
+      "rc": 0,
+      "stdout": "cloudwatch-throttles.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cloudwatch",
+        "get-metric-statistics",
+        "--namespace",
+        "AWS/Lambda",
+        "--metric-name",
+        "Duration",
+        "--dimensions",
+        "Name=FunctionName,Value=orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--period",
+        "300",
+        "--statistics",
+        "Average",
+        "Maximum",
+        "SampleCount",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html",
+      "rc": 0,
+      "stdout": "cloudwatch-duration.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "cloudwatch",
+        "get-metric-statistics",
+        "--namespace",
+        "AWS/Lambda",
+        "--metric-name",
+        "ConcurrentExecutions",
+        "--dimensions",
+        "Name=FunctionName,Value=orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--period",
+        "300",
+        "--statistics",
+        "Maximum",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/cloudwatch/get-metric-statistics.html",
+      "rc": 0,
+      "stdout": "cloudwatch-concurrent-executions.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "logs",
+        "filter-log-events",
+        "--log-group-name",
+        "/aws/lambda/orders-api",
+        "--start-time",
+        "<time>",
+        "--end-time",
+        "<time>",
+        "--filter-pattern",
+        "?ERROR ?Exception ?\"Task timed out\" ?\"Runtime.ExitError\"",
+        "--query",
+        "{events: events[].{timestamp: timestamp, logStreamName: logStreamName, message: message}, NextToken: NextToken}",
+        "--max-items",
+        "50",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (ThrottlingException) when calling the FilterLogEvents operation (reached max retries: 2): Rate exceeded\n"
+    }
+  ]
+}

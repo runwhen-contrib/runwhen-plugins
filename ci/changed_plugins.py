@@ -16,11 +16,20 @@ from pathlib import Path
 ALL_TRIGGERS = ("ci/changed_plugins.py", "ci/papi_register_check.py", ".github/workflows/plugins.yml")
 
 
+# A file of one plugin that other plugins carry a verbatim copy of: a change selects them too, so
+# the copy-drift tests (aws, postgres) run when the original moves.
+SHARED_COPIES = {
+    "plugins/kubernetes/skills/k8s-base/lib/k8s_base/sync.py": ("aws", "postgres"),
+}
+
+
 def changed_plugins(paths: list[str], all_plugins: list[str]) -> list[str]:
     if any(p in ALL_TRIGGERS for p in paths):
         return sorted(all_plugins)
     known = set(all_plugins)
     hit: set[str] = set()
+    for path in paths:
+        hit.update(name for name in SHARED_COPIES.get(path, ()) if name in known)
     for path in paths:
         parts = path.split("/")
         if len(parts) >= 3 and parts[0] == "plugins" and parts[1] in known:

@@ -19,7 +19,7 @@ plugins/
         tasks.yaml
         scripts/ lib/ schemas/ references/ assets/ tests/
 ci/                          repo tooling (changed-plugin selection, tag checks) and its tests
-runtimes/                    runtime images plugin tasks run in (kubernetes@1), with their runtime.yaml
+runtimes/                    runtime images plugin tasks run in (kubernetes@1, aws@1), with their runtime.yaml
 porting/                     classic-bundle inventory and parity tracking
 .github/workflows/           per-plugin CI and release
 ```

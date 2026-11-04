@@ -1,0 +1,76 @@
+{
+  "calls": [
+    {
+      "argv": [
+        "sts",
+        "get-caller-identity",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/sts/get-caller-identity.html",
+      "rc": 0,
+      "stdout": "../_shared/sts-get-caller-identity.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ec2",
+        "describe-regions",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-regions.html",
+      "rc": 0,
+      "stdout": "../_shared/ec2-describe-regions.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "ap-south-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (AccessDeniedException) when calling the ListFunctions operation: User: arn:aws:iam::123456789012:user/rw-monitor is not authorized to perform: lambda:ListFunctions on resource: * with an explicit deny in a service control policy\n"
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/lambda/list-functions.html",
+      "rc": 0,
+      "stdout": "../_shared/lambda-list-functions-empty.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/lambda/list-functions.html",
+      "rc": 0,
+      "stdout": "lambda-list-functions.json",
+      "stderr": ""
+    }
+  ]
+}
