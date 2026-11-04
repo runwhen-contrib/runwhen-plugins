@@ -1,0 +1,24 @@
+# Canned answers of scenario 'du-fallback', written by tests/stub/capture/capture.sh from the real
+# gcloud 592.0.0 in the runtime image (see ../../README.md). Project, buckets and members are invented.
+# Every value is one line of JSON.
+- argv: ["storage", "buckets", "describe", "gs://shop-assets", "--raw", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "bucket-shop-assets.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/resources/resource_util.py (get_display_dict_for_resource, --raw) and surface/storage/buckets/describe.py (FULL projection)"
+- argv: ["auth", "print-access-token", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "token.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/auth/print-access-token"
+  cli_source: "gcloud 592.0.0: surface/auth/print_access_token.py"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22storage.googleapis.com%2Fstorage%2Fv2%2Ftotal_bytes%22%20AND%20resource.type%20%3D%20%22gcs_bucket%22%20AND%20resource.labels.project_id%20%3D%20%22shop-prod-1234%22%20AND%20resource.labels.bucket_name%20%3D%20%22shop-assets%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_MAX&pageSize=1000"]
+  rc: 0
+  stdout: "monitoring-shop-assets.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- argv: ["storage", "du", "--summarize", "gs://shop-assets", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "du-shop-assets.txt"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/objects/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/command_lib/storage/du_command_util.py (DuExecutor: '{size:<13}{url}')"

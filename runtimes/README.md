@@ -9,6 +9,7 @@ runtime: a `Dockerfile` and a `runtime.yaml` that the plugin registry reads (tag
 | --- | --- | --- |
 | `kubernetes` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes` | `kubernetes` plugin tasks |
 | `aws` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-aws` | `aws` plugin tasks |
+| `gcp` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-gcp` | `gcp` plugin tasks |
 
 ## kubernetes
 
@@ -57,6 +58,40 @@ docker run --rm -i --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.s
 docker run --rm -i --user 65532 --read-only --tmpfs /work:rw,mode=1777 --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
 python ci/check_runtime.py validate --allow-placeholder --runtime-dir runtimes/aws
 ```
+
+## gcp
+
+The same rw-task base pin as `kubernetes`, plus only the Google Cloud CLI: `google-cloud-cli`
+from Google's apt repository at an exact version (`GCLOUD_VERSION` in the Dockerfile), whose signing
+key is pinned by sha256 (`GCLOUD_APT_REPO_SHA256`: a key Google rotates fails the build until the new
+one is checked against Google's install page). The package also ships `gsutil`, `bq` and its own
+python 3.14; the Dockerfile removes all three in the same `RUN`, and gcloud runs on the base's
+python3 (`CLOUDSDK_PYTHON=python3`). gcp tasks use `gcloud storage`; a task that needs `bq` or
+`gsutil` must add them to the image on purpose (and `rwtask test --shim bq` for its fixtures, as
+`bq` is not shimmed by default). Nothing else is added: the base
+image's kubectl and psql are still there but no gcp task uses them; az, aws, oc, helm, flux and
+argocd are absent. The image sets `CLOUDSDK_CONFIG=/work/.config/gcloud` (the
+runner's root is read-only; `/work` is the writable mount) and turns off gcloud's update check,
+usage reporting and prompts. A blank `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` counts as unset
+(checked with `gcloud config get auth/credential_file_override`); the cloud-identity connection
+relies on that. Credentials never come from `gcloud auth login`: the `gcp/adc` type
+materializes `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`.
+
+To move gcloud, change `GCLOUD_VERSION` and `runtime.yaml` `tools.gcloud`, and bump `version`
+(`gcloud --version` is the check; the tool version list of the apt repository is
+`https://packages.cloud.google.com/apt/dists/cloud-sdk/main/binary-amd64/Packages`).
+
+Local check, native architecture (the smoke test never contacts Google and uses a throwaway
+gcloud config directory):
+
+```
+docker build -t rwp-runtime-gcp:dev runtimes/gcp
+docker run --rm -i --entrypoint sh rwp-runtime-gcp:dev -s < runtimes/gcp/smoke.sh
+python ci/check_runtime.py validate --runtime-dir runtimes/gcp --allow-placeholder
+```
+
+`check_runtime.py validate` and `compare` read `runtimes/kubernetes` unless `--runtime-dir` says
+otherwise, so every runtime workflow passes its own directory.
 
 ## Versions
 
