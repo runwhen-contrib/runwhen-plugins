@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bytes held by each bucket, largest first",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "One entry per bucket measured, largest first. A bucket that could not be measured has an error scoped to its name (or to budget) and no entry",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "sizeBytes": {"type": "integer", "description": "Sum of the live objects' sizes from gcloud storage du"},
+          "sizeTiB": {"type": "number", "description": "sizeBytes / 1024^4, to four decimals"},
+          "overThreshold": {"type": "boolean", "description": "sizeTiB is above the usageThresholdTib setting"}
+        },
+        "required": ["name", "sizeBytes", "sizeTiB", "overThreshold"],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Buckets the target covers"},
+    "omitted": {"type": "integer", "description": "Buckets left out of the run by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}

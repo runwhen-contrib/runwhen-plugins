@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Settings of the project's (or the one) Cloud Storage bucket",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "One entry per bucket described. A bucket whose read failed has an error scoped to its name and no entry",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "location": {"type": ["string", "null"], "description": "e.g. US-CENTRAL1 or US"},
+          "locationType": {"type": ["string", "null"], "description": "region, dual-region or multi-region"},
+          "storageClass": {"type": ["string", "null"], "description": "The default storage class"},
+          "created": {"type": ["string", "null"], "description": "timeCreated, RFC 3339"},
+          "updated": {"type": ["string", "null"], "description": "updated, RFC 3339"},
+          "versioning": {"type": "boolean", "description": "Object versioning is on"},
+          "uniformBucketLevelAccess": {"type": "boolean", "description": "IAM is the only access path; ACLs are disabled"},
+          "publicAccessPrevention": {"type": ["string", "null"], "description": "enforced or inherited; null when the API did not report it"},
+          "retention": {
+            "type": ["object", "null"],
+            "description": "The bucket's retention policy, or null when it has none",
+            "properties": {
+              "periodSeconds": {"type": ["integer", "null"]},
+              "locked": {"type": "boolean", "description": "The policy is locked and cannot be shortened or removed"}
+            },
+            "required": ["periodSeconds", "locked"],
+            "additionalProperties": false
+          },
+          "lifecycleRuleCount": {"type": "integer", "description": "Number of lifecycle rules"},
+          "softDeleteSeconds": {"type": ["integer", "null"], "description": "Soft delete retention; 0 means disabled, null when not reported"},
+          "cmek": {"type": "boolean", "description": "A default customer-managed encryption key is set"},
+          "kmsKey": {"type": ["string", "null"], "description": "The key's resource name (not key material); null without a default key"},
+          "labels": {
+            "type": "object",
+            "description": "User labels, at most 50",
+            "additionalProperties": {"type": ["string", "null"]}
+          },
+          "labelsTruncated": {"type": "boolean", "description": "The bucket has more than 50 labels"}
+        },
+        "required": [
+          "name", "location", "locationType", "storageClass", "created", "updated", "versioning",
+          "uniformBucketLevelAccess", "publicAccessPrevention", "retention", "lifecycleRuleCount",
+          "softDeleteSeconds", "cmek", "kmsKey", "labels", "labelsTruncated"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Buckets the target covers"},
+    "omitted": {"type": "integer", "description": "Buckets left out of the run by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}

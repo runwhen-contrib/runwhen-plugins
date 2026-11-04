@@ -15,7 +15,13 @@ for lib in sorted((Path(__file__).parents[2] / "skills").glob("*/lib")):
 PLUGIN = Path(__file__).parents[2]
 STUB = PLUGIN / "tests" / "stub"
 
-SETTINGS = {"maxItems": 200, "commandTimeout": "60s"}
+SETTINGS = {
+    "maxItems": 200,
+    "commandTimeout": "60s",
+    "usageThresholdTib": 0.5,  # declared by gcp-bucket-health only; harmless elsewhere
+    "sizeTimeout": "300s",
+    "publicBucketThreshold": 0,
+}
 PROJECT = {
     "path": "gcp/projects/shop-prod-1234",
     "type": "gcp/project",

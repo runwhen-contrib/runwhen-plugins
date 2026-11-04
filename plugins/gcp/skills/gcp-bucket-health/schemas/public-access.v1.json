@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Whether each bucket grants access to allUsers or allAuthenticatedUsers",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "One entry per bucket examined. A bucket whose bucket resource could not be read has an error scoped to its name and no entry",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "publicGrant": {
+            "type": ["boolean", "null"],
+            "description": "true: the IAM policy or an ACL names allUsers or allAuthenticatedUsers. false: neither does. null: the IAM policy could not be read (an error scoped to the bucket says why) and no ACL grants it"
+          },
+          "publicViaIam": {"type": ["boolean", "null"], "description": "The IAM policy has a public binding; null when the policy could not be read"},
+          "publicViaAcl": {"type": "boolean", "description": "A legacy ACL entry is public. Always false with uniform bucket-level access, where ACLs do not apply"},
+          "uniformBucketLevelAccess": {"type": "boolean"},
+          "publicAccessPrevention": {"type": ["string", "null"], "description": "enforced or inherited; null when not reported"},
+          "blockedByPrevention": {"type": "boolean", "description": "There is a public grant and public access prevention is enforced, which makes the grant ineffective"},
+          "iamBindings": {
+            "type": "array",
+            "description": "The IAM bindings that name a public member, at most 50",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {"type": ["string", "null"]},
+                "members": {"type": "array", "items": {"enum": ["allUsers", "allAuthenticatedUsers"]}},
+                "conditional": {"type": "boolean", "description": "The binding has an IAM condition: it holds only while the condition does"}
+              },
+              "required": ["role", "members", "conditional"],
+              "additionalProperties": false
+            }
+          },
+          "aclEntries": {
+            "type": "array",
+            "description": "The legacy ACL entries that name a public entity, at most 50",
+            "items": {
+              "type": "object",
+              "properties": {"entity": {"enum": ["allUsers", "allAuthenticatedUsers"]}, "role": {"type": ["string", "null"]}},
+              "required": ["entity", "role"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name", "publicGrant", "publicViaIam", "publicViaAcl", "uniformBucketLevelAccess",
+          "publicAccessPrevention", "blockedByPrevention", "iamBindings", "aclEntries"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Buckets the target covers"},
+    "omitted": {"type": "integer", "description": "Buckets left out of the run by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}

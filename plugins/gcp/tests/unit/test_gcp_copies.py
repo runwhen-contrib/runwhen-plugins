@@ -17,7 +17,7 @@ SKILLS = PLUGIN / "skills"
 PLUGINS = PLUGIN.parent
 SHARED = ("errors.py", "gcloud.py")
 # every gcp skill that runs gcloud carries the shared files; a skill missing here is untested
-SKILLS_WITH_COPIES = {"gcp-base"}
+SKILLS_WITH_COPIES = {"gcp-base", "gcp-bucket-health"}
 
 
 def copies(name):
