@@ -105,7 +105,7 @@ SETTINGS = {
     "diskUsedPercent": 85,
     "memoryUsedPercent": 90,
     "uptimeDays": 30,
-    "osCheckTimeout": 180,
+    "osCheckTimeout": "180s",
 }
 
 

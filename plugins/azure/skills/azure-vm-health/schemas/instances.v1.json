@@ -116,13 +116,17 @@
               "type": "integer",
               "description": "Instances that do not say whether the latest model is applied"
             },
+            "healthy": {
+              "type": "integer",
+              "description": "Instances whose health state is healthy"
+            },
             "unhealthy": {
               "type": "integer",
-              "description": "Instances whose health state is not healthy"
+              "description": "Instances whose health state is unhealthy"
             },
             "healthUnknown": {
               "type": "integer",
-              "description": "Instances with no health state: no health extension or probe reports one; not a healthy reading"
+              "description": "Instances with no health state, or one Azure reports as unknown (no health extension or probe): not a healthy reading. healthy + unhealthy + healthUnknown = total"
             },
             "withFailedExtensions": {
               "type": "integer"
@@ -145,6 +149,7 @@
             "provisioningFailed",
             "modelOutdated",
             "modelUnknown",
+            "healthy",
             "unhealthy",
             "healthUnknown",
             "withFailedExtensions",
@@ -158,6 +163,13 @@
         }
       ],
       "description": "null when the instances could not be listed (an error scoped instances), including Flexible orchestration"
+    },
+    "listedMatchesCapacity": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The number of instances listed equals the model's capacity; false is a scale operation in flight, a partial listing or a model that moved; null when the instances were not listed or the capacity is unknown"
     },
     "instances": {
       "oneOf": [
@@ -270,6 +282,7 @@
     "statusesSummary",
     "extensionsSummary",
     "counts",
+    "listedMatchesCapacity",
     "instances"
   ],
   "additionalProperties": false

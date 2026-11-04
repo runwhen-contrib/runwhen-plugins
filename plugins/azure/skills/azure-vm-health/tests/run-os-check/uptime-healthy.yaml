@@ -6,7 +6,7 @@
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/virtual-machines/vm-orders-web01
 inputs:
   check: uptime
-now: '2026-11-04T03:59:10.683Z'
+now: '2026-11-04T05:06:33.488Z'
 calls:
 - argv:
   - az
@@ -166,11 +166,11 @@ calls:
   - --scripts
   - |
     #!/bin/sh
-    # runwhen azure-vm-health run-os-check: uptime v1. Read-only: reads /proc/uptime and /proc/loadavg.
+    # runwhen azure-vm-health run-os-check: uptime v2. Read-only: reads /proc/uptime and /proc/loadavg.
     LC_ALL=C
     export LC_ALL
     echo "RW_BEGIN uptime"
-    cat /proc/uptime /proc/loadavg
+    timeout 30 cat /proc/uptime /proc/loadavg
     rc=$?
     echo "RW_END uptime rc=$rc"
     exit 0
@@ -200,7 +200,7 @@ expect:
       check: uptime
       executed: true
       dryRun: false
-      scriptSha256: 1c67731f02b9b20cef4501ec34050783fddf26db0b126de122f43a45e8d1362c
+      scriptSha256: 3f0429ad253daa322f3adb03665e586e9fcb96e24d9555ff4806dedc529bc896
       invocation:
         code: ProvisioningState/succeeded
         level: Info

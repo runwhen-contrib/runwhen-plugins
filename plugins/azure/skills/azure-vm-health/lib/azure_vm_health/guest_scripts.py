@@ -10,62 +10,77 @@ A test (test_azure_vm_health.py) keeps this file free of verbs that change a mac
 
 import hashlib
 
+# Every command that can block (df on a hung mount, a package manager waiting on a lock or a mirror)
+# runs under `timeout 30`; the exit status of a timeout is 124 and is read like any other failure.
+# A client that gives up does not cancel a script already running in the guest: the 30 seconds are
+# what bounds it there. df is `-l` (local file systems: a hung network mount cannot block it), and its
+# rows are sorted by Use% and cut to 40 with the number of rows before the cut printed beside them.
 DISK = """#!/bin/sh
-# runwhen azure-vm-health run-os-check: disk v1. Read-only: df and nothing else.
+# runwhen azure-vm-health run-os-check: disk v2. Read-only: df and nothing else.
 LC_ALL=C
 export LC_ALL
 echo "RW_BEGIN disk"
-df -P -k -x tmpfs -x devtmpfs -x squashfs -x overlay
+out=$(timeout 30 df -P -k -l -x tmpfs -x devtmpfs -x squashfs -x overlay 2>&1)
 rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "error=$(printf '%s\\n' "$out" | head -n 3)"
+else
+  printf '%s\\n' "$out" | head -n 1
+  printf '%s\\n' "$out" | tail -n +2 | sort -k5 -n -r | head -n 40
+  echo "rows_total=$(printf '%s\\n' "$out" | tail -n +2 | wc -l | tr -d ' ')"
+fi
 echo "RW_END disk rc=$rc"
 exit 0
 """
 
 MEMORY = """#!/bin/sh
-# runwhen azure-vm-health run-os-check: memory v1. Read-only: reads /proc/meminfo.
+# runwhen azure-vm-health run-os-check: memory v2. Read-only: reads /proc/meminfo.
 LC_ALL=C
 export LC_ALL
 echo "RW_BEGIN memory"
-grep -E '^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree):' /proc/meminfo
+timeout 30 grep -E '^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree):' /proc/meminfo
 rc=$?
 echo "RW_END memory rc=$rc"
 exit 0
 """
 
 UPTIME = """#!/bin/sh
-# runwhen azure-vm-health run-os-check: uptime v1. Read-only: reads /proc/uptime and /proc/loadavg.
+# runwhen azure-vm-health run-os-check: uptime v2. Read-only: reads /proc/uptime and /proc/loadavg.
 LC_ALL=C
 export LC_ALL
 echo "RW_BEGIN uptime"
-cat /proc/uptime /proc/loadavg
+timeout 30 cat /proc/uptime /proc/loadavg
 rc=$?
 echo "RW_END uptime rc=$rc"
 exit 0
 """
 
 # The package manager is asked what it knows from its local database: apt-get -s (simulate) and
-# yum/dnf -C (cache only) never refresh an index. A manager that errors makes rc non-zero (dnf and
-# yum use 100 for "updates are available"), and the error text goes to stdout under error=.
+# yum/dnf -C (cache only) never refresh an index. `dist-upgrade` is the simulation that counts what
+# `upgrade` keeps back (a new kernel or a package that needs a new dependency): those are updates
+# too. A manager that errors or times out makes rc non-zero (dnf and yum use 100 for "updates are
+# available"), and the error text goes to stdout under error=.
 PATCHES = """#!/bin/sh
-# runwhen azure-vm-health run-os-check: patches v1. Read-only: simulation and cache-only queries.
+# runwhen azure-vm-health run-os-check: patches v2. Read-only: simulation and cache-only queries.
 LC_ALL=C
 export LC_ALL
 echo "RW_BEGIN patches"
 rc=0
 if command -v apt-get >/dev/null 2>&1; then
   echo "manager=apt"
-  out=$(apt-get -s -o Debug::NoLocking=1 upgrade 2>&1)
+  out=$(timeout 30 apt-get -s -o Debug::NoLocking=1 dist-upgrade 2>&1)
   rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "error=$(printf '%s\\n' "$out" | head -n 3)"
   else
     echo "pending=$(printf '%s\\n' "$out" | grep -c '^Inst ')"
     echo "security=$(printf '%s\\n' "$out" | grep '^Inst ' | grep -c -i 'security')"
+    echo "kept_back=$(printf '%s\\n' "$out" | awk '/have been kept back/{f=1;next} /^The following|^[0-9]+ upgraded/{f=0} f{n+=NF} END{print n+0}')"
     printf '%s\\n' "$out" | grep '^Inst ' | head -n 10 | awk '{print "package=" $2}'
   fi
   stamp=/var/lib/apt/periodic/update-success-stamp
   if [ -e "$stamp" ]; then
-    echo "index_age_seconds=$(( $(date +%s) - $(stat -c %Y "$stamp") ))"
+    echo "index_age_seconds=$(( $(date +%s) - $(timeout 30 stat -c %Y "$stamp") ))"
   else
     echo "index_age_seconds=unknown"
   fi
@@ -73,7 +88,7 @@ if command -v apt-get >/dev/null 2>&1; then
 elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
   if command -v dnf >/dev/null 2>&1; then tool=dnf; else tool=yum; fi
   echo "manager=$tool"
-  out=$($tool -C -q check-update 2>&1)
+  out=$(timeout 30 $tool -C -q check-update 2>&1)
   rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "pending=0"

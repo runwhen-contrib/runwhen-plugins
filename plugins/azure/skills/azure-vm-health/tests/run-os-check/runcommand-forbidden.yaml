@@ -6,7 +6,7 @@
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/virtual-machines/vm-orders-web01
 inputs:
   check: disk
-now: '2026-11-04T03:59:23.818Z'
+now: '2026-11-04T05:06:58.244Z'
 calls:
 - argv:
   - az
@@ -166,12 +166,19 @@ calls:
   - --scripts
   - |
     #!/bin/sh
-    # runwhen azure-vm-health run-os-check: disk v1. Read-only: df and nothing else.
+    # runwhen azure-vm-health run-os-check: disk v2. Read-only: df and nothing else.
     LC_ALL=C
     export LC_ALL
     echo "RW_BEGIN disk"
-    df -P -k -x tmpfs -x devtmpfs -x squashfs -x overlay
+    out=$(timeout 30 df -P -k -l -x tmpfs -x devtmpfs -x squashfs -x overlay 2>&1)
     rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "error=$(printf '%s\n' "$out" | head -n 3)"
+    else
+      printf '%s\n' "$out" | head -n 1
+      printf '%s\n' "$out" | tail -n +2 | sort -k5 -n -r | head -n 40
+      echo "rows_total=$(printf '%s\n' "$out" | tail -n +2 | wc -l | tr -d ' ')"
+    fi
     echo "RW_END disk rc=$rc"
     exit 0
   - --subscription

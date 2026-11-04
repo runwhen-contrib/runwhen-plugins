@@ -6,8 +6,9 @@ the instance view does not carry (a deallocated VM has no agent report) is null,
 reading."""
 
 from .az import az_json
-from .common import NESTED_LIMIT, clip
+from .common import NESTED_LIMIT
 from .errors import RwError
+from .text import safe_clip
 from .target import VM, checked_id, target
 
 
@@ -18,7 +19,7 @@ def dicts(value):
 def status(entry):
     """One status object of an instance view: code, level, displayStatus, message (cut to 1024
     characters), time."""
-    message, cut = clip(entry.get("message"))
+    message, cut = safe_clip(entry.get("message"))
     return {
         "code": str(entry.get("code") or ""),
         "level": entry.get("level") or None,

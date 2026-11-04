@@ -47,43 +47,51 @@ ends at the run's reference time.
   `diskRead`, `diskWrite`, `networkIn`, `networkOut`. Each has `hasData`, the intervals with and without
   a value, `min`, `max`, `last`, the newest 50 intervals; CPU counts intervals whose highest value is
   above `cpuThresholdPercent` (80) and memory those whose lowest is below `availableMemoryFloorMb` (256).
-- `activity-errors` returns `activity`: counts per level and the Critical, Error and Warning entries
-  (operation, status, message, time), worst and newest first. `readCapReached` says the log held more
-  than the 1000 events read.
+- `activity-errors` reads the resource group's log (up to `activityScanLimit`, 500, events; the caller
+  and claims are not fetched) and returns `activity`: counts per level and the Critical, Error and
+  Warning entries about this resource or something under it such as an extension (`target`), worst and
+  newest first. Messages are redacted of identifiers and secrets. `scanCut: true`: the group had more
+  events than were read, so the list may be incomplete and an empty one proves nothing.
 - `scale-set-config` returns `scaleSet`: SKU and capacity, orchestration mode, zones, upgrade mode,
   automatic repairs and OS upgrade, the image's marketplace reference, health probe, extensions.
-- `scale-set-instances` returns `instances`: counts (`provisioningFailed`, `modelOutdated`, `unhealthy`,
-  `healthUnknown`, `withFailedExtensions`, by provisioning and power state), the Azure instance view
+- `scale-set-instances` returns `instances`: counts (`provisioningFailed`, `modelOutdated`, `healthy`, `unhealthy`,
+  `healthUnknown` (these three add up to `total`), `withFailedExtensions`, by provisioning and power state), the Azure instance view
   summary, and the instances, those with something to look at first.
 - `autoscale` returns `autoscale`: the settings in the scale set's group that target it, per profile the
   minimum, maximum, default and whether the current capacity is at either, and each rule.
 - `run-os-check` (write) takes `check`: `disk`, `memory`, `uptime` or `patches`, and returns `osCheck`
   with the fixed script's SHA-256 and typed facts from its output: filesystems against `diskUsedPercent`
   (85), memory used (total minus MemAvailable) against `memoryUsedPercent` (90), uptime and load against
-  `uptimeDays` (30), or pending updates and the age of the package index.
+  `uptimeDays` (30), or pending updates (`apt-get -s dist-upgrade`, so what `upgrade` keeps back counts) and
+  the age of the package index.
 
 ## How to read the result
 
 - `hasData: false` or `missing` above zero: Azure Monitor had no datapoint. That is no information,
   not a healthy VM. `availableMemory` is only published where Azure has a memory reading; its absence
-  is normal for some images and sizes. `lastGrainMissing: true`: `last` is an older reading.
+  is normal for some images and sizes (Azure may answer 400 "Failed to find metric configuration": that
+  is `unavailable: true`, `hasData: false`). `lastGrainMissing: true`: `last` is an older reading.
 - `agent.reported: false` or `ready: null`: no agent report (normal for a deallocated VM); `ready: false`
   is Azure's "Not Ready". `powerState: deallocated` or `stopped` is a state, not a fault.
   `bootDiagnostics` flags are false for a stopped VM.
 - A failed extension fails the VM's `provisioningState` (Failed) even when the VM runs; read the
   extension's `message`. A scale set's `healthUnknown` counts instances with no health extension or
   probe: unknown, not healthy. `modelOutdated` after a model change is normal until the upgrade
-  policy has rolled it (`upgradeMode: Manual` never does).
+  policy has rolled it (`upgradeMode: Manual` never does). `listedMatchesCapacity: false`: the
+  instances listed differ from the model's capacity (a scale operation in flight or a partial list).
 - `scale-set-instances` with `orchestrationMode: Flexible` has no instance list: its instances are
   ordinary VMs of the group (error `invalid_input` scoped `instances`, the summary stands). Either
   half of the task failing is `partial` with the scope `instance-view` or `instances`.
 - `autoscale.found: false`: no setting in that resource group targets the set (none configured, or its
   setting lives in another group). `capacityAtMaximum: true` means autoscale cannot add more.
-- `run-os-check` is `skipped` with the reason when the VM is not Linux, not running or its agent is not
-  ready; with `--dry-run` it reads the instance view and reports the script it would run
+- `run-os-check` is `skipped` with the reason unless the VM is Linux, running and Azure reports its agent
+  `Ready` (no report is not ready); with `--dry-run` it reads the instance view and reports the script it would run
   (`executed: false`). `pending: null` is "could not tell" (no known package manager), never up to
   date; `patches` reads the package manager's local database and does not refresh it, so it is as fresh
-  as the index (`indexAgeSeconds`).
+  as the index. `indexAgeSeconds` comes from apt's `update-success-stamp`, which exists only where
+  apt's periodic job runs: null when the file is absent, and always null for dnf and yum, whose
+  cache-only query also appends to its own log (`/var/log/dnf.log`). `cutInGuest` on `disk`: the
+  guest keeps the 40 fullest local file systems.
 - Lists are cut at `maxItems` (200; `omitted` says how many), nested lists at 50, text at 1024.
 - The run fails with a code, never an empty result, from az's own `ERROR:` lines: `permission_denied`
   (the message names the action: `Microsoft.Compute/virtualMachines/runCommand/action` for the guest
@@ -106,7 +114,10 @@ It is remote command execution on a customer VM, so it is a write task (`readOnl
 not `destructive`, `dryRun`, with `effects`). The script is a constant of the skill
 (`lib/azure_vm_health/guest_scripts.py`): chosen by name, never built from input, run as root by the VM
 agent, reads `/proc`, `df` or the package manager's local database, writes nothing and refreshes no
-index. It needs `Microsoft.Compute/virtualMachines/runCommand/action`, which Reader does not include.
+index. Each blocking command in it runs under `timeout 30`; `osCheckTimeout` (a duration, 10s to 240s)
+only bounds how long the client waits, and a script already running in the guest is not cancelled.
+The first run command on a VM installs the RunCommandLinux handler, which needs outbound access. It
+needs `Microsoft.Compute/virtualMachines/runCommand/action`, which Reader does not include.
 
 ## Tests
 

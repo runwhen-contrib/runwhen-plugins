@@ -154,25 +154,20 @@ def metric_calls(prefix, rid):
 
 
 def activity_call(prefix, rid):
+    # the group as the resource's own id spells it, as the skill passes it
+    group = rid.split("/resourceGroups/")[1].split("/")[0]
     return call(
         f"{prefix}-activity",
         "activity",
         [
-            "monitor",
-            "activity-log",
-            "list",
-            "--resource-id",
-            rid,
-            "--start-time",
-            START,
-            "--end-time",
-            END,
-            "--max-events",
-            "1000",
-            "--subscription",
-            SUB,
+            "monitor", "activity-log", "list", "-g", group,
+            "--start-time", START, "--end-time", END,
+            "--max-events", "501",
+            "--select", "eventTimestamp", "level", "operationName", "properties", "resourceId",
+            "status", "subStatus", "correlationId", "description",
+            "--subscription", SUB,
         ],
-    )
+    )  # fmt: skip
 
 
 def vmss_calls(name, group, full=True, only=None):

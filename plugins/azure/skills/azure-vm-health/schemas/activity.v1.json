@@ -15,13 +15,23 @@
     "windowSeconds": {
       "type": "integer"
     },
-    "eventsRead": {
-      "type": "integer",
-      "description": "Events read from the log, of every level"
+    "scanLimit": {
+      "type": "integer"
     },
-    "readCapReached": {
+    "eventsScanned": {
+      "type": "integer",
+      "description": "Events read from the resource group's log, of every level and every resource"
+    },
+    "scanCut": {
       "type": "boolean",
-      "description": "The read stopped at its cap: the log held more events than were read and the counts are lower bounds"
+      "description": "The group's log held more events than scanLimit: the resource's list may be incomplete and an empty one proves nothing"
+    },
+    "eventsForResource": {
+      "type": "integer",
+      "description": "Of those scanned, the events about this resource or something under it, of every level"
+    },
+    "eventsForOtherResources": {
+      "type": "integer"
     },
     "counts": {
       "type": "object",
@@ -60,6 +70,10 @@
               "level": {
                 "type": "string"
               },
+              "target": {
+                "type": "string",
+                "description": "resource for the virtual machine or scale set itself, else the rest of the resource id (extensions/CustomScript)"
+              },
               "operation": {
                 "type": [
                   "string",
@@ -95,6 +109,7 @@
             "required": [
               "time",
               "level",
+              "target",
               "operation",
               "status",
               "subStatus",
@@ -126,8 +141,11 @@
     "resource",
     "resourceType",
     "windowSeconds",
-    "eventsRead",
-    "readCapReached",
+    "scanLimit",
+    "eventsScanned",
+    "scanCut",
+    "eventsForResource",
+    "eventsForOtherResources",
     "counts",
     "events"
   ],

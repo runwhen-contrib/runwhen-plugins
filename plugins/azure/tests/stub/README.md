@@ -90,7 +90,7 @@ Their directories are `vm-<scenario>` (a fixture of a scale-set target is named 
 | `vm-throttled` | batch02, jobs | `TooManyRequests` on every call |
 | `vm-not-found` | `nope` | `ResourceNotFound` (az exits 3) |
 | `vm-stopped` | vm-platform-legacy (RG-Platform) | deallocated: no agent report, run-os-check is skipped |
-| `vm-no-data` | batch02 | Azure Monitor datapoints with no value for available memory and disk reads |
+| `vm-no-data` | batch02 | available memory is Azure's 400 "Failed to find metric configuration"; disk reads are datapoints with no value |
 | `vm-instance-view-forbidden` | jobs | the instance view summary is `AuthorizationFailed`, the instance list answers: partial |
 | `vm-instances-forbidden` | jobs | the instance list is `AuthorizationFailed`, the summary answers: partial |
 | `vm-runcommand-forbidden` | web01 | the instance view answers, `runCommand/action` is `AuthorizationFailed` |
@@ -132,8 +132,9 @@ Canned CLI output must come from the pinned CLI, not from memory (plan Appendix 
   The REST bodies themselves, the metric datapoints and the Activity Log entries are representative, not
   Azure's.
 - The guest scripts' answers (`capture/guest/*.txt`) are what the scripts of `lib/azure_vm_health/guest_scripts.py`
-  print: `patches-*.txt` were produced by running the real script in a debian container against a stand-in
-  `apt-get` (`capture/guest.sh`); `disk-*`, `memory-*` and `uptime-*` have that real format with the
+  print: `patches-*.txt` were produced by running the real script in a debian container against a local apt repository
+  (`capture/apt-repo.sh`, real `apt-get -s dist-upgrade` output; `guest/apt-upgrade-vs-dist-upgrade.txt` shows `upgrade` keeping
+  the kernel back) by `capture/guest.sh`; `disk-*`, `memory-*` and `uptime-*` have the real format of the scripts' output with the
   container's figures replaced by the scenario's.
 
 They are representative, not recordings of a real account: re-record against a real subscription

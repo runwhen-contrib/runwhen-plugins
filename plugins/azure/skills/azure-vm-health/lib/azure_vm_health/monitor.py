@@ -6,6 +6,7 @@ operating system: CPU, disk and network are always published, `Available Memory 
 Azure has a memory reading for the resource. A metric with no datapoint is `hasData: false`, an
 interval without a value is counted, and neither is read as healthy or as zero."""
 
+import re
 import time
 
 from .common import window
@@ -13,6 +14,9 @@ from .errors import RwError
 from .metrics import read_series, summarize
 from .target import resolve
 
+# Azure's 400 for a metric it has no configuration for on this resource (memory on an image Azure
+# has no reading for): that is a metric which is not there, not a failed call
+NO_SUCH_METRIC = re.compile(r"Failed to find metric configuration|metric .* is not supported", re.I)
 BUDGET = 240  # seconds in which a new metric call may still start (the task timeout is 360s)
 MB = 1024 * 1024
 # field -> (metric, unit, aggregations to ask for, the aggregation that is reported, the others
@@ -30,7 +34,13 @@ METRICS = (
 
 def series_facts(ctx, subscription, resource_id, spec, th, interval, seconds):
     field, metric, unit, aggregations, key, extra, rule = spec
-    data = read_series(ctx, subscription, resource_id, metric, aggregations, interval, seconds)
+    unavailable = False
+    try:
+        data = read_series(ctx, subscription, resource_id, metric, aggregations, interval, seconds)
+    except RwError as exc:
+        if not NO_SUCH_METRIC.search(exc.message):
+            raise
+        data, unavailable = [], True  # no data, said so: never a healthy reading
     if rule == "cpu":
         out = summarize(data, key, extra=extra, threshold=th.cpu_threshold_percent, above=True)
     elif rule == "memory":
@@ -43,6 +53,7 @@ def series_facts(ctx, subscription, resource_id, spec, th, interval, seconds):
     out["unit"] = unit
     out["aggregation"] = key
     out["hasData"] = out["withData"] > 0
+    out["unavailable"] = unavailable
     return out
 
 

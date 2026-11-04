@@ -10,8 +10,7 @@ does everything but the invocation."""
 from types import SimpleNamespace
 
 from . import guest
-from .az import az_json, command_timeout
-from .common import number
+from .az import az_json, command_timeout, parse_duration
 from .errors import RwError
 from .guest_scripts import CHECKS, SCRIPTS, sha256
 from .instance_view import agent_facts, dicts, state_of
@@ -26,13 +25,20 @@ class GuestCtx:
 
     def __init__(self, ctx, seconds):
         self._ctx = ctx
-        self.settings = SimpleNamespace(command_timeout=f"{seconds}s")
+        self.settings = SimpleNamespace(command_timeout=f"{int(seconds)}s")
         self.run = ctx.run
 
 
+MAX_TIMEOUT = 240  # seconds: the instance view (up to commandTimeout) and this fit the task's 300s
+
+
 def read_timeout(settings):
-    """Seconds an invocation may take, from the osCheckTimeout setting (a number of seconds)."""
-    return int(number(settings, "osCheckTimeout", "os_check_timeout", 10, 900))
+    """Seconds an invocation may take, from the osCheckTimeout duration setting (like
+    commandTimeout), at most MAX_TIMEOUT."""
+    seconds = parse_duration(getattr(settings, "os_check_timeout", "180s"), "osCheckTimeout")
+    if not 10 <= seconds <= MAX_TIMEOUT:
+        raise RwError("invalid_input", f"osCheckTimeout must be from 10s to {MAX_TIMEOUT}s")
+    return seconds
 
 
 def check_name(check):
@@ -62,8 +68,10 @@ def run(ctx, check, th, limit):
         why = f"the {check} check runs a shell script and supports Linux VMs; this VM is {os_type or 'of unknown OS type'}"
     elif power != "running":
         why = f"the VM is not running (power state {power or 'unknown'}): a run command cannot be delivered"
-    elif agent["ready"] is False:
-        why = "the VM agent is not ready: a run command cannot be delivered"
+    elif agent["ready"] is not True:
+        # only Azure's own "Ready" lets a run command through; no report is not a ready agent
+        state = "not ready" if agent["ready"] is False else "has not reported a status"
+        why = f"the VM agent {state}: a run command cannot be delivered"
     if why:
         ctx.skip(why)  # raises: the run ends `skipped` with the reason
     plan = {

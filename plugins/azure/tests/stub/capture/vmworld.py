@@ -733,71 +733,135 @@ def event(
     }
 
 
-def events_for(resource_id, group, broken):
-    base = [
-        event(
-            resource_id,
-            group,
-            "Microsoft.Compute/virtualMachines/write",
-            "Create or Update Virtual Machine",
-            "Informational",
-            "Succeeded",
-            "",
-            "",
-            "2026-11-04T01:02:03.4560000Z",
+def group_events(group, broken):
+    """The Activity Log of one resource group: every resource's events, as the log files them (an
+    extension's operations under the extension's own id, spelled with the group in capitals)."""
+    vm = {"vm-orders-web01": "rg-orders-prod", "vm-orders-batch02": "rg-orders-dev"}
+    vmss = {"vmss-orders-api": "rg-orders-prod", "vmss-orders-jobs": "rg-orders-dev"}
+    caps = f"/subscriptions/{SUB}/resourceGroups/{GROUP_SPELLING[group].upper()}/providers/Microsoft.Compute"
+    out = []
+    for name, g in vm.items():
+        if g != group:
+            continue
+        rid_ = rid(group, "virtualMachines", name)
+        out.append(
+            event(
+                rid_,
+                group,
+                "Microsoft.Compute/virtualMachines/write",
+                "Create or Update Virtual Machine",
+                "Informational",
+                "Succeeded",
+                "",
+                "",
+                "2026-11-04T01:02:03.4560000Z",
+            )
         )
-    ]
-    if not broken:
-        return base
-    return [
-        event(
-            resource_id,
-            group,
-            "Microsoft.Compute/virtualMachines/extensions/write",
-            "Create or Update Virtual Machine Extension",
-            "Error",
-            "Failed",
-            "Conflict",
-            json.dumps(
-                {
-                    "status": "Failed",
-                    "error": {
-                        "code": "ResourceDeploymentFailure",
-                        "message": "The resource operation completed with terminal provisioning state 'Failed'.",
-                        "details": [
-                            {
-                                "code": "VMExtensionProvisioningError",
-                                "message": "VM has reported a failure when processing extension 'CustomScript'. Error message: \"Enable failed: failed to execute command: command terminated with exit status=3\".",
-                            }
-                        ],
-                    },
-                }
-            ),
-            "2026-11-04T01:12:09.1230000Z",
-        ),
-        event(
-            resource_id,
-            group,
-            "Microsoft.Compute/virtualMachines/restart/action",
-            "Restart Virtual Machine",
-            "Warning",
-            "Failed",
-            "",
-            "The VM agent did not respond within the allotted time.",
-            "2026-11-04T02:41:55.0000000Z",
-        ),
-        event(
-            resource_id,
-            group,
-            "Microsoft.Compute/virtualMachines/write",
-            "Create or Update Virtual Machine",
-            "Critical",
-            "Failed",
-            "InternalServerError",
-            "An internal execution error occurred.",
-            "2026-11-04T03:05:20.0000000Z",
-        ),
-    ] + base
+        if broken:
+            out += [
+                event(
+                    f"{caps}/virtualMachines/{name}/extensions/CustomScript",
+                    group,
+                    "Microsoft.Compute/virtualMachines/extensions/write",
+                    "Create or Update Virtual Machine Extension",
+                    "Error",
+                    "Failed",
+                    "Conflict",
+                    json.dumps(
+                        {
+                            "status": "Failed",
+                            "error": {
+                                "code": "ResourceDeploymentFailure",
+                                "message": "The resource operation completed with terminal provisioning state 'Failed'.",
+                                "details": [
+                                    {
+                                        "code": "VMExtensionProvisioningError",
+                                        "message": "VM has reported a failure when processing extension 'CustomScript'. Error message: \"Enable failed: failed to execute command: command terminated with exit status=3\".",
+                                    }
+                                ],
+                            },
+                        }
+                    ),
+                    "2026-11-04T01:12:09.1230000Z",
+                ),
+                event(
+                    rid_,
+                    group,
+                    "Microsoft.Compute/virtualMachines/restart/action",
+                    "Restart Virtual Machine",
+                    "Warning",
+                    "Failed",
+                    "",
+                    "The VM agent did not respond within the allotted time.",
+                    "2026-11-04T02:41:55.0000000Z",
+                ),
+                event(
+                    rid_,
+                    group,
+                    "Microsoft.Compute/virtualMachines/write",
+                    "Create or Update Virtual Machine",
+                    "Critical",
+                    "Failed",
+                    "InternalServerError",
+                    "An internal execution error occurred.",
+                    "2026-11-04T03:05:20.0000000Z",
+                ),
+                # another resource of the group whose name starts with this one's: not this VM's
+                event(
+                    f"{rid_}-old",
+                    group,
+                    "Microsoft.Compute/virtualMachines/write",
+                    "Create or Update Virtual Machine",
+                    "Error",
+                    "Failed",
+                    "Conflict",
+                    "The VM is deallocated.",
+                    "2026-11-04T02:00:00.0000000Z",
+                ),
+            ]
+    for name, g in vmss.items():
+        if g != group:
+            continue
+        rid_ = rid(group, "virtualMachineScaleSets", name)
+        out.append(
+            event(
+                rid_,
+                group,
+                "Microsoft.Compute/virtualMachineScaleSets/write",
+                "Create or Update Virtual Machine Scale Set",
+                "Informational",
+                "Succeeded",
+                "",
+                "",
+                "2026-11-04T01:03:03.4560000Z",
+            )
+        )
+        if broken:
+            out += [
+                event(
+                    f"{caps}/virtualMachineScaleSets/{name}/virtualMachines/3",
+                    group,
+                    "Microsoft.Compute/virtualMachineScaleSets/virtualMachines/write",
+                    "Create or Update Virtual Machine Scale Set VM",
+                    "Error",
+                    "Failed",
+                    "Conflict",
+                    "VMExtensionProvisioningError: CustomScript exited with status 3.",
+                    "2026-11-04T01:20:09.0000000Z",
+                ),
+                event(
+                    rid_,
+                    group,
+                    "Microsoft.Compute/virtualMachineScaleSets/delete/action",
+                    "Delete Virtual Machine Scale Set Instances",
+                    "Warning",
+                    "Failed",
+                    "",
+                    "The instance is protected from scale in.",
+                    "2026-11-04T02:50:00.0000000Z",
+                ),
+            ]
+    return out
 
 
 # --- resource health ---------------------------------------------------------------------------------
@@ -1012,7 +1076,14 @@ def answer(scenario, method, url, body=None):
         ]
         vm = "/virtualmachines/" in low
         broken = scenario in ("broken", "no-data")
-        missing = scenario == "no-data" and metric in ("Available Memory Bytes", "Disk Read Bytes")
+        if scenario == "no-data" and metric == "Available Memory Bytes":
+            return error(
+                400,
+                "BadRequest",
+                "Failed to find metric configuration for provider: Microsoft.Compute, resource Type: "
+                f"{'virtualMachines' if vm else 'virtualMachineScaleSets'}, metric: Available Memory Bytes",
+            )
+        missing = scenario == "no-data" and metric == "Disk Read Bytes"
         return (
             200,
             {},
@@ -1029,11 +1100,16 @@ def answer(scenario, method, url, body=None):
             ),
         )
     if low.endswith("/providers/microsoft.insights/eventtypes/management/values"):
-        rid_ = re.search(
-            r"resourceId eq '([^']+)'", __import__("urllib.parse").parse.unquote(query)
-        ).group(1)
-        group = re.match(r"/subscriptions/[^/]+/resourcegroups/([^/]+)/", rid_.lower()).group(1)
-        return 200, {}, {"value": events_for(rid_, group, scenario == "broken")}
+        from urllib.parse import unquote
+
+        decoded = unquote(query)
+        group = re.search(r"resourceGroupName eq '([^']+)'", decoded).group(1).lower()
+        events = group_events(group, scenario == "broken")
+        select = re.search(r"\$select=([^&]+)", decoded)
+        if select:  # the log returns only the fields asked for
+            keep = {k.strip().lower() for k in select.group(1).split(",")}
+            events = [{k: v for k, v in e.items() if k.lower() in keep} for e in events]
+        return 200, {}, {"value": events}
     return error(404, "NotFound", f"No route for {method} {path}")
 
 

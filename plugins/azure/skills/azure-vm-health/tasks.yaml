@@ -1,6 +1,6 @@
 apiVersion: runwhen.com/tasks/v1
 runtime: azure@1              # ships az (runtimes/azure)
-defaults: { credentials: azure/cli, timeout: 120s }
+defaults: { credentials: azure/cli, timeout: 180s }          # at least 3x commandTimeout: a task that makes one az call still gets three tries' worth
 settings:
   maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
   commandTimeout: { type: duration, default: 60s, description: "How long one az command may run before it is stopped (timeout)" }
@@ -10,7 +10,8 @@ settings:
   diskUsedPercent: { type: number, default: 85, min: 0, max: 100, description: "run-os-check disk: a filesystem used above this percentage is over the threshold" }
   memoryUsedPercent: { type: number, default: 90, min: 0, max: 100, description: "run-os-check memory: used memory (total minus MemAvailable) above this percentage is over the threshold" }
   uptimeDays: { type: number, default: 30, min: 0, max: 36500, description: "run-os-check uptime: an uptime above this many days is over the threshold" }
-  osCheckTimeout: { type: integer, default: 180, min: 10, max: 900, description: "Seconds the run-command invocation of run-os-check may take before it is stopped (timeout)" }
+  osCheckTimeout: { type: duration, default: 180s, description: "How long the run-command invocation of run-os-check may take before the client stops waiting (timeout); from 10s to 240s, so that with the instance view it fits the task's 300s. The script already running in the guest is not cancelled by this: its commands are bounded by timeout 30 there" }
+  activityScanLimit: { type: integer, default: 500, min: 1, max: 5000, description: "Most activity-log events read for the resource's resource group; the log is read by group, so this bounds the work, and a cut is reported (scanCut)" }
 tasks:
   - name: instance-view
     title: Power, provisioning, agent, extensions and boot diagnostics
@@ -25,8 +26,7 @@ tasks:
     tags: [health, vm, agent, extensions]
     readOnly: true
     permissions:
-      - { action: Microsoft.Compute/virtualMachines/read }
-      - { action: Microsoft.Compute/virtualMachines/instanceView/read }
+      - { action: Microsoft.Compute/virtualMachines/read }       # GET virtualMachines/<name>?$expand=instanceView
     outputs:
       instanceView: { schema: ./schemas/instance-view.v1.json, description: "Power and provisioning state, statuses, VM agent, extensions and boot diagnostics" }
   - name: resource-health
@@ -72,11 +72,13 @@ tasks:
   - name: activity-errors
     title: Critical, error and warning entries in the activity log
     description: >-
-      Reads the Azure Activity Log for the virtual machine or scale set over the window (az monitor
-      activity-log list, at most 1000 events) and returns the entries at level Critical, Error or
-      Warning, worst level and newest first, with counts per level. Each entry has its time, level,
-      operation, status, sub-status, message (cut to 1024 characters) and correlation id; who did it
-      is not returned. readCapReached says the log held more events than were read. Read-only.
+      Reads the Azure Activity Log of the resource group (az monitor activity-log list -g, at most
+      activityScanLimit events, without the caller or the claims) and returns the entries about the
+      virtual machine or scale set, or something under it such as an extension (ids compared without
+      case), at level Critical, Error or Warning, worst level and newest first, with counts per level.
+      Each entry has its time, level, target, operation, status, sub-status, message (redacted of
+      identifiers and secrets, cut to 1024 characters) and correlation id. scanCut says the group had
+      more events than were read, so the list may be incomplete. Read-only.
     script: scripts/activity_errors.py
     tags: [events, activity-log, audit]
     readOnly: true
@@ -121,8 +123,7 @@ tasks:
     permissions:
       - { action: Microsoft.Compute/virtualMachineScaleSets/read }
       - { action: Microsoft.Compute/virtualMachineScaleSets/instanceView/read }
-      - { action: Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read }
-      - { action: Microsoft.Compute/virtualMachineScaleSets/virtualMachines/instanceView/read }
+      - { action: Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read }   # list-instances --expand instanceView
     outputs:
       instances: { schema: ./schemas/instances.v1.json, description: "Instance view summary, counts and the instances (problem instances first, cut to maxItems)" }
   - name: autoscale
@@ -159,15 +160,17 @@ tasks:
     destructive: false
     idempotent: true
     dryRun: true
-    timeout: 300s                                  # the instance view (60s) and the invocation (osCheckTimeout, at most 900s: raise this with it)
+    timeout: 300s                                  # the instance view (commandTimeout, 60s) and the invocation (osCheckTimeout, at most 240s)
     effects:
       - "Runs a fixed read-only shell script as root inside the VM through the VM agent (Microsoft.Compute/virtualMachines/runCommand/action). The script reads /proc, runs df, or queries the package manager's local database; it writes nothing, installs nothing and refreshes no package index."
       - "The VM agent runs one run command at a time: the invocation can take tens of seconds and delays any other run command or extension operation on the VM until it ends."
+      - "Stopping the client (osCheckTimeout, or a cancelled task) does not cancel a script that is already running in the guest: it ends on its own, each of its commands bounded by timeout 30. Run command results are also kept by the VM agent on the VM."
+      - "The first run command ever invoked on a Linux VM installs the RunCommandLinux handler, a VM extension, which downloads it from Azure and so needs outbound access from the VM; later invocations reuse it."
+      - "The package manager checks append lines to the package manager's own log in the guest (dnf and yum write to /var/log/dnf.log or yum.log even for a cache-only query; apt-get -s writes nothing)."
       - "The invocation is recorded in the Azure Activity Log against the VM and the connection's identity."
       - "The script's output (disk usage, memory figures, uptime, update counts and package names) travels through Azure's run command service; no file contents, environment or secrets are printed."
     permissions:
-      - { action: Microsoft.Compute/virtualMachines/read }
-      - { action: Microsoft.Compute/virtualMachines/instanceView/read }
+      - { action: Microsoft.Compute/virtualMachines/read }       # the instance view is the same GET with $expand
       - { action: Microsoft.Compute/virtualMachines/runCommand/action }
     inputs:
       check: { type: string, enum: [disk, memory, uptime, patches], description: "Which fixed script to run: disk (df), memory (/proc/meminfo), uptime (/proc/uptime, /proc/loadavg) or patches (the package manager's local update list)" }

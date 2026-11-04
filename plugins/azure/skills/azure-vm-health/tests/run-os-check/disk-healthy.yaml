@@ -6,7 +6,7 @@
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/virtual-machines/vm-orders-web01
 inputs:
   check: disk
-now: '2026-11-04T03:59:04.146Z'
+now: '2026-11-04T05:06:23.162Z'
 calls:
 - argv:
   - az
@@ -166,12 +166,19 @@ calls:
   - --scripts
   - |
     #!/bin/sh
-    # runwhen azure-vm-health run-os-check: disk v1. Read-only: df and nothing else.
+    # runwhen azure-vm-health run-os-check: disk v2. Read-only: df and nothing else.
     LC_ALL=C
     export LC_ALL
     echo "RW_BEGIN disk"
-    df -P -k -x tmpfs -x devtmpfs -x squashfs -x overlay
+    out=$(timeout 30 df -P -k -l -x tmpfs -x devtmpfs -x squashfs -x overlay 2>&1)
     rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "error=$(printf '%s\n' "$out" | head -n 3)"
+    else
+      printf '%s\n' "$out" | head -n 1
+      printf '%s\n' "$out" | tail -n +2 | sort -k5 -n -r | head -n 40
+      echo "rows_total=$(printf '%s\n' "$out" | tail -n +2 | wc -l | tr -d ' ')"
+    fi
     echo "RW_END disk rc=$rc"
     exit 0
   - --subscription
@@ -186,7 +193,7 @@ calls:
           "code": "ProvisioningState/succeeded",
           "displayStatus": "Provisioning succeeded",
           "level": "Info",
-          "message": "Enable succeeded: \n[stdout]\nRW_BEGIN disk\nFilesystem     1024-blocks     Used Available Capacity Mounted on\n/dev/root         30298176  9174820  21107356      31% /\n/dev/sda16          901520    63864    774532       8% /boot\n/dev/sda15          106832     6186    100646       6% /boot/efi\nRW_END disk rc=0\n\n[stderr]\n\n"
+          "message": "Enable succeeded: \n[stdout]\nRW_BEGIN disk\nFilesystem     1024-blocks     Used Available Capacity Mounted on\n/dev/root         30298176  9174820  21107356      31% /\n/dev/sda16          901520    63864    774532       8% /boot\n/dev/sda15          106832     6186    100646       6% /boot/efi\nrows_total=3\nRW_END disk rc=0\n\n[stderr]\n\n"
         }
       ]
     }
@@ -200,13 +207,15 @@ expect:
       check: disk
       executed: true
       dryRun: false
-      scriptSha256: 7a2d702123b13e8a52a336ac9bc5b9abbac85cab0ec349bbb5dac876794b8868
+      scriptSha256: 883ab4f96f6068c6fd975712fb2183f26ed76c98038da67ea25e4445bd77485e
       invocation:
         code: ProvisioningState/succeeded
         level: Info
       disk:
         threshold: 85
         overThreshold: false
+        rowsTotal: 3
+        cutInGuest: false
         filesystems:
           total: 3
       memory: null

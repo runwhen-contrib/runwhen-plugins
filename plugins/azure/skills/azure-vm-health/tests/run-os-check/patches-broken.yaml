@@ -6,7 +6,7 @@
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/virtual-machines/vm-orders-web01
 inputs:
   check: patches
-now: '2026-11-04T03:59:15.186Z'
+now: '2026-11-04T05:06:41.906Z'
 calls:
 - argv:
   - az
@@ -166,25 +166,26 @@ calls:
   - --scripts
   - |
     #!/bin/sh
-    # runwhen azure-vm-health run-os-check: patches v1. Read-only: simulation and cache-only queries.
+    # runwhen azure-vm-health run-os-check: patches v2. Read-only: simulation and cache-only queries.
     LC_ALL=C
     export LC_ALL
     echo "RW_BEGIN patches"
     rc=0
     if command -v apt-get >/dev/null 2>&1; then
       echo "manager=apt"
-      out=$(apt-get -s -o Debug::NoLocking=1 upgrade 2>&1)
+      out=$(timeout 30 apt-get -s -o Debug::NoLocking=1 dist-upgrade 2>&1)
       rc=$?
       if [ "$rc" -ne 0 ]; then
         echo "error=$(printf '%s\n' "$out" | head -n 3)"
       else
         echo "pending=$(printf '%s\n' "$out" | grep -c '^Inst ')"
         echo "security=$(printf '%s\n' "$out" | grep '^Inst ' | grep -c -i 'security')"
+        echo "kept_back=$(printf '%s\n' "$out" | awk '/have been kept back/{f=1;next} /^The following|^[0-9]+ upgraded/{f=0} f{n+=NF} END{print n+0}')"
         printf '%s\n' "$out" | grep '^Inst ' | head -n 10 | awk '{print "package=" $2}'
       fi
       stamp=/var/lib/apt/periodic/update-success-stamp
       if [ -e "$stamp" ]; then
-        echo "index_age_seconds=$(( $(date +%s) - $(stat -c %Y "$stamp") ))"
+        echo "index_age_seconds=$(( $(date +%s) - $(timeout 30 stat -c %Y "$stamp") ))"
       else
         echo "index_age_seconds=unknown"
       fi
@@ -192,7 +193,7 @@ calls:
     elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
       if command -v dnf >/dev/null 2>&1; then tool=dnf; else tool=yum; fi
       echo "manager=$tool"
-      out=$($tool -C -q check-update 2>&1)
+      out=$(timeout 30 $tool -C -q check-update 2>&1)
       rc=$?
       if [ "$rc" -eq 0 ]; then
         echo "pending=0"
@@ -221,7 +222,7 @@ calls:
           "code": "ProvisioningState/succeeded",
           "displayStatus": "Provisioning succeeded",
           "level": "Info",
-          "message": "Enable succeeded: \n[stdout]\nRW_BEGIN patches\nmanager=apt\npending=3\nsecurity=2\npackage=libssl3t64\npackage=openssl\npackage=linux-image-azure\nindex_age_seconds=3456000\nreboot_required=yes\nRW_END patches rc=0\n\n[stderr]\n\n"
+          "message": "Enable succeeded: \n[stdout]\nRW_BEGIN patches\nmanager=apt\npending=4\nsecurity=4\nkept_back=0\npackage=newdep\npackage=kernel-demo-azure\npackage=libdemo\npackage=openssl-demo\nindex_age_seconds=3456000\nreboot_required=yes\nRW_END patches rc=0\n\n[stderr]\n\n"
         }
       ]
     }
@@ -235,7 +236,7 @@ expect:
       check: patches
       executed: true
       dryRun: false
-      scriptSha256: 9da6794f279bdbb425eb1c9252a591f3eccb5531d7991504b09a1a80d49c9155
+      scriptSha256: 11ab97dedcf6f13c5d5f336256e42b2a2bb537401a7cd5f1a8784aa68046a256
       invocation:
         code: ProvisioningState/succeeded
         level: Info
@@ -244,11 +245,13 @@ expect:
       uptime: null
       patches:
         packageManager: apt
-        pending: 3
-        security: 2
+        pending: 4
+        security: 4
+        heldBack: 0
         packages:
-        - libssl3t64
-        - openssl
-        - linux-image-azure
+        - newdep
+        - kernel-demo-azure
+        - libdemo
+        - openssl-demo
         indexAgeSeconds: 3456000
         rebootRequired: true

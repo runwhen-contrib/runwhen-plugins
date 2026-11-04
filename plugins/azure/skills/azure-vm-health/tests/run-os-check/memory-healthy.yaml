@@ -6,7 +6,7 @@
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/virtual-machines/vm-orders-web01
 inputs:
   check: memory
-now: '2026-11-04T03:59:07.758Z'
+now: '2026-11-04T05:06:28.120Z'
 calls:
 - argv:
   - az
@@ -166,11 +166,11 @@ calls:
   - --scripts
   - |
     #!/bin/sh
-    # runwhen azure-vm-health run-os-check: memory v1. Read-only: reads /proc/meminfo.
+    # runwhen azure-vm-health run-os-check: memory v2. Read-only: reads /proc/meminfo.
     LC_ALL=C
     export LC_ALL
     echo "RW_BEGIN memory"
-    grep -E '^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree):' /proc/meminfo
+    timeout 30 grep -E '^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree):' /proc/meminfo
     rc=$?
     echo "RW_END memory rc=$rc"
     exit 0
@@ -200,7 +200,7 @@ expect:
       check: memory
       executed: true
       dryRun: false
-      scriptSha256: b1affddd039e669c4583dcf1c02136b92b7c7bb9c55a69f452fe2ed11c4bac3e
+      scriptSha256: 884409078b334a6514df84c71ab6f49eb1abb3dff79beb0f748bbbe72b4b2ac1
       invocation:
         code: ProvisioningState/succeeded
         level: Info

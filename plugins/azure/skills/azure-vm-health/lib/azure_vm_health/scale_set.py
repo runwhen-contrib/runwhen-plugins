@@ -9,9 +9,10 @@ data or extension settings."""
 import time
 
 from .az import az_json
-from .common import NESTED_LIMIT, clip, listing
+from .common import NESTED_LIMIT, listing
 from .errors import RwError
 from .instance_view import state_of
+from .text import safe_clip
 from .target import VMSS, resolve
 
 LIST_BUDGET = 240  # seconds in which a new call of the instance task may still start
@@ -127,7 +128,7 @@ def instance_row(inst):
     )
     provisioning = inst.get("provisioningState") or None
     latest = inst.get("latestModelApplied")
-    message, cut = clip(health.get("message"))
+    message, cut = safe_clip(health.get("message"))
     return {
         "instanceId": str(inst.get("instanceId") or ""),
         "name": str(inst.get("name") or ""),
@@ -148,7 +149,7 @@ def problem_rank(row):
     bad = (
         (row["provisioningState"] or "").lower() == "failed"
         or row["latestModelApplied"] is False
-        or row["health"] not in (None, "healthy")
+        or row["health"] == "unhealthy"
         or row["failedExtensions"] > 0
     )
     iid = row["instanceId"]
@@ -169,8 +170,11 @@ def counts_of(rows):
         ),
         "modelOutdated": sum(1 for r in rows if r["latestModelApplied"] is False),
         "modelUnknown": sum(1 for r in rows if r["latestModelApplied"] is None),
-        "unhealthy": sum(1 for r in rows if r["health"] not in (None, "healthy")),
-        "healthUnknown": sum(1 for r in rows if r["health"] is None),
+        # healthy + unhealthy + healthUnknown = total: a state Azure reports as unknown, or none at
+        # all (no health extension or probe), is unknown, never counted in either of the others
+        "healthy": sum(1 for r in rows if r["health"] == "healthy"),
+        "unhealthy": sum(1 for r in rows if r["health"] == "unhealthy"),
+        "healthUnknown": sum(1 for r in rows if r["health"] not in ("healthy", "unhealthy")),
         "withFailedExtensions": sum(1 for r in rows if r["failedExtensions"] > 0),
         "byProvisioningState": dict(sorted(by_prov.items())),
         "byPowerState": dict(sorted(by_power.items())),
@@ -190,6 +194,7 @@ def read_instances(ctx, limit, *, clock=time.monotonic, budget=LIST_BUDGET):
         "statusesSummary": None,
         "extensionsSummary": None,
         "counts": None,
+        "listedMatchesCapacity": None,
         "instances": None,
     }
     base = ["--name", name, "-g", group, "--subscription", subscription]
@@ -227,6 +232,11 @@ def read_instances(ctx, limit, *, clock=time.monotonic, budget=LIST_BUDGET):
                 raise RwError("internal", "az vmss list-instances returned no list")
             parsed = sorted((instance_row(r) for r in rows), key=problem_rank)
             out["counts"] = counts_of(parsed)
+            # a listing that does not match the model's capacity is a scale operation in flight, a
+            # partial listing or a model that moved: say so rather than report a clean count
+            out["listedMatchesCapacity"] = (
+                len(parsed) == capacity if isinstance(capacity, int) else None
+            )
             out["instances"] = listing(parsed, limit)
         except RwError as exc:
             if view is None:

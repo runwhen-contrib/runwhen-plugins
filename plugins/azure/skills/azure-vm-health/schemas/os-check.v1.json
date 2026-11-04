@@ -153,6 +153,14 @@
               ],
               "additionalProperties": false
             },
+            "rowsTotal": {
+              "type": "integer",
+              "description": "Local file systems the guest listed before it kept the 40 fullest"
+            },
+            "cutInGuest": {
+              "type": "boolean",
+              "description": "rowsTotal is more than the rows returned: the others were not read"
+            },
             "overThreshold": {
               "type": "boolean"
             }
@@ -160,6 +168,8 @@
           "required": [
             "threshold",
             "filesystems",
+            "rowsTotal",
+            "cutInGuest",
             "overThreshold"
           ],
           "additionalProperties": false
@@ -311,7 +321,7 @@
                 "integer",
                 "null"
               ],
-              "description": "Packages with an update according to the local package database; null when the manager is unknown (not zero)"
+              "description": "Packages the package manager would install or upgrade (apt-get -s dist-upgrade, so what `upgrade` keeps back counts) according to its local database; null when the manager is unknown (not zero)"
             },
             "security": {
               "type": [
@@ -319,6 +329,13 @@
                 "null"
               ],
               "description": "Of those, the apt simulation lines that name a security pocket; null for other managers"
+            },
+            "heldBack": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Packages that `apt-get -s dist-upgrade` still keeps back (held, or blocked); null for other managers"
             },
             "packages": {
               "type": "array",
@@ -345,6 +362,7 @@
             "packageManager",
             "pending",
             "security",
+            "heldBack",
             "packages",
             "indexAgeSeconds",
             "rebootRequired"

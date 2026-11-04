@@ -12,7 +12,16 @@ from pathlib import Path
 import jsonschema
 import pytest
 import yaml
-from azure_vm_health import activity, guest, guest_scripts, instance_view, monitor, scale_set
+from azure_vm_health import (
+    activity,
+    guest,
+    guest_scripts,
+    instance_view,
+    monitor,
+    oscheck,
+    scale_set,
+    text,
+)
 from azure_vm_health.common import read_settings
 from azure_vm_health.errors import RwError
 from azure_vm_health.target import read_thresholds, target  # noqa: F401
@@ -477,12 +486,16 @@ def test_metrics_asks_for_each_metric_over_the_window_that_ends_at_the_reference
 def test_a_metric_with_no_datapoint_is_no_data_and_neither_zero_nor_healthy(go):
     run = go("metrics", "no-data")
     assert run.envelope["status"] == "ok"
+    # Azure answers 400 "Failed to find metric configuration" for memory: a metric that is not there
     memory = out(run, "metrics")["availableMemory"]
-    assert memory["hasData"] is False and memory["missing"] == memory["grains"] == 24
+    assert memory["hasData"] is False and memory["unavailable"] is True and memory["grains"] == 0
     assert (memory["min"], memory["max"], memory["last"]) == (None, None, None)
     assert memory["points"] == [] and memory["crossed"] is False and memory["crossings"] == 0
-    assert memory["lastGrainMissing"] is True
-    assert out(run, "metrics")["diskRead"]["hasData"] is False
+    assert run.errors == []
+    # and datapoints with no value are no data too, counted
+    disk = out(run, "metrics")["diskRead"]
+    assert disk["hasData"] is False and disk["unavailable"] is False
+    assert disk["missing"] == disk["grains"] == 24 and disk["lastGrainMissing"] is True
     assert out(run, "metrics")["cpu"]["hasData"] is True
 
 
@@ -626,29 +639,50 @@ def test_the_thresholds_are_settings(go):
 
 def test_the_activity_log_of_a_healthy_vm_has_no_error_entries(go):
     run = go("activity-errors")
-    activity_out = out(run, "activity-errors")
-    assert activity_out["counts"] == {"Critical": 0, "Error": 0, "Warning": 0}
-    assert activity_out["eventsRead"] == 1 and activity_out["events"] == {
-        "items": [],
-        "total": 0,
-        "omitted": 0,
-    }
-    assert activity_out["readCapReached"] is False
+    result = out(run, "activity-errors")
+    assert result["counts"] == {"Critical": 0, "Error": 0, "Warning": 0}
+    assert result["events"] == {"items": [], "total": 0, "omitted": 0}
+    # the group's log holds the VM's and the scale set's informational events: one is the VM's
+    assert (result["eventsScanned"], result["eventsForResource"]) == (2, 1)
+    assert result["eventsForOtherResources"] == 1 and result["scanCut"] is False
 
 
 def test_the_activity_log_of_a_broken_vm_lists_the_worst_first_and_drops_informational(go):
     run = go("activity-errors", "broken")
     result = out(run, "activity-errors")
-    assert result["eventsRead"] == 4 and result["counts"] == {
-        "Critical": 1,
-        "Error": 1,
-        "Warning": 1,
-    }
+    assert result["counts"] == {"Critical": 1, "Error": 1, "Warning": 1}
     assert [e["level"] for e in result["events"]["items"]] == ["Critical", "Error", "Warning"]
     error = result["events"]["items"][1]
     assert error["operation"] == "Microsoft.Compute/virtualMachines/extensions/write"
     assert (error["status"], error["subStatus"]) == ("Failed", "Conflict")
     assert "VMExtensionProvisioningError" in error["message"]
+    # the extension's event is filed under the extension's id, spelled with the group in capitals
+    assert error["target"] == "extensions/CustomScript"
+    assert [e["target"] for e in result["events"]["items"] if e["level"] != "Error"] == [
+        "resource",
+        "resource",
+    ]
+
+
+def test_the_group_log_is_filtered_to_the_resource_by_id_with_a_boundary(go):
+    result = out(go("activity-errors", "broken"), "activity-errors")
+    # 8 events in the group: the VM's 4 (informational, extension, restart, critical), the scale
+    # set's 3 and `vm-orders-batch02-old`, whose id merely starts with the VM's name
+    assert (result["eventsScanned"], result["eventsForResource"]) == (8, 4)
+    assert result["eventsForOtherResources"] == 4
+    assert "batch02-old" not in json.dumps(result)
+    scale = out(go("activity-errors", "broken", vmss=True), "activity-errors")
+    assert scale["resourceType"] == "azure/vm-scale-set" and scale["eventsForResource"] == 3
+    assert scale["counts"] == {"Critical": 0, "Error": 1, "Warning": 1}
+    assert {e["target"] for e in scale["events"]["items"]} == {"virtualMachines/3", "resource"}
+
+
+def test_ids_are_compared_without_case_and_only_at_a_path_boundary():
+    base = "/subscriptions/s/resourceGroups/rg-a/providers/Microsoft.Compute/virtualMachines/vm1"
+    assert activity.under(base.upper(), base) == "resource"
+    assert activity.under(base.upper() + "/extensions/X", base) == "extensions/X"
+    assert activity.under(base + "-old", base) is None
+    assert activity.under(None, base) is None
 
 
 def test_the_identifiers_of_who_was_refused_are_redacted_from_a_message():
@@ -660,6 +694,14 @@ def test_the_identifiers_of_who_was_refused_are_redacted_from_a_message():
     event = {"level": "Error", "properties": {"statusMessage": text}}
     assert "9d2c5a10" not in activity.event_facts(event)["message"]
     assert activity.redact(None) is None
+    more = "user 'a@b.example' Caller: alice@contoso.example principal 'p-1' mailto bob@x.example"
+    cleaned = activity.redact(more)
+    for leaked in ("a@b.example", "alice", "p-1", "bob@"):
+        assert leaked not in cleaned
+    assert (
+        activity.event_facts({"level": "Error", "description": "token=abc123 failed"})["message"]
+        == "token=<redacted> failed"
+    )
 
 
 def test_the_activity_log_permission_is_a_subscription_scope_read():
@@ -675,63 +717,63 @@ def test_who_did_it_is_not_returned(go):
         assert leaked not in text
 
 
-def test_the_activity_log_is_read_for_the_resource_id_over_the_window(go):
+def test_the_activity_log_is_read_for_the_group_without_the_caller_over_the_window(go):
     run = go("activity-errors", "broken", window="3h")
     call = run.calls[1]
     assert call[:3] == ["monitor", "activity-log", "list"]
-    assert call[call.index("--resource-id") + 1].endswith(f"virtualMachines/{BATCH}")
+    assert call[call.index("-g") + 1] == "rg-orders-dev" and "--resource-id" not in call
     assert call[call.index("--start-time") + 1] == "2026-11-04T01:00:00Z"
     assert call[call.index("--end-time") + 1] == "2026-11-04T04:00:00Z"
-    assert call[call.index("--max-events") + 1] == "1000"
+    assert call[call.index("--max-events") + 1] == "501"  # activityScanLimit + 1: to see a cut
+    selected = call[call.index("--select") + 1 : call.index("--subscription")]
+    assert "caller" not in selected and "claims" not in selected and "resourceId" in selected
 
 
-def test_a_log_that_reaches_the_read_cap_says_the_counts_are_lower_bounds():
-    rows = [
-        {
-            "level": "Error",
-            "eventTimestamp": f"2026-11-04T0{i % 10}:00:00Z",
-            "operationName": {"value": "op"},
-        }
-        for i in range(activity.READ_CAP)
-    ]
-    from types import SimpleNamespace
+def test_the_group_is_passed_as_the_resource_ids_own_spelling(go):
+    show = json.loads(stub_json("vm-healthy", "vm-show.json"))
+    show["id"] = show["id"].replace("rg-orders-prod", "RG-Orders-Prod")
+    show_call = ("vm", "show", "--name", WEB, "-g", "rg-orders-prod", "--subscription", SUB)
+    runner = Replies({show_call: (0, json.dumps(show), "")})
+    base_call = runner.__call__
 
-    ctx = SimpleNamespace(
-        settings=SimpleNamespace(command_timeout="60s"),
-        resource=compute(WEB),
-        now=lambda: NOW,
-        run=Replies(
-            {
-                ("vm", "show", "--name", WEB, "-g", "rg-orders-prod", "--subscription", SUB): (
-                    0,
-                    stub_json("vm-healthy", "vm-show.json"),
-                    "",
-                ),
-                tuple(
-                    [
-                        "monitor",
-                        "activity-log",
-                        "list",
-                        "--resource-id",
-                        f"/subscriptions/{SUB}/resourceGroups/rg-orders-prod/providers/Microsoft.Compute/virtualMachines/{WEB}",
-                    ]
-                    + [
-                        "--start-time",
-                        "2026-11-04T03:00:00Z",
-                        "--end-time",
-                        "2026-11-04T04:00:00Z",
-                        "--max-events",
-                        "1000",
-                        "--subscription",
-                        SUB,
-                    ]
-                ): (0, json.dumps(rows), ""),
-            }
-        ),
+    def call(argv, **kw):
+        if argv[1:3] == ["monitor", "activity-log"]:
+            runner.calls.append(list(argv[1:-2]))
+            return subprocess.CompletedProcess(argv, 0, "[]", "")
+        return base_call(argv, **kw)
+
+    call.calls = runner.calls
+    go("activity-errors", runner=call)
+    assert runner.calls[1][runner.calls[1].index("-g") + 1] == "RG-Orders-Prod"
+
+
+def test_a_group_log_beyond_the_scan_limit_says_the_resources_list_may_be_incomplete(go):
+    rows = json.loads(stub_json("vm-broken", "vm-activity.json"))
+    show_call = ("vm", "show", "--name", BATCH, "-g", "rg-orders-dev", "--subscription", SUB)
+    runner = Replies({show_call: (0, stub_json("vm-broken", "vm-show.json"), "")})
+    base_call = runner.__call__
+
+    def call(argv, **kw):
+        if argv[1:3] == ["monitor", "activity-log"]:
+            runner.calls.append(list(argv[1:-2]))
+            asked = int(argv[argv.index("--max-events") + 1])
+            return subprocess.CompletedProcess(argv, 0, json.dumps(rows[:asked]), "")
+        return base_call(argv, **kw)
+
+    call.calls = runner.calls
+    result = out(
+        go("activity-errors", "broken", runner=call, settings={"activityScanLimit": 3}),
+        "activity-errors",
     )
-    result = activity.read(ctx, "1h", 10)
-    assert result["readCapReached"] is True and result["counts"]["Error"] == 1000
-    assert len(result["events"]["items"]) == 10 and result["events"]["omitted"] == 990
+    assert result["scanCut"] is True and result["scanLimit"] == 3 and result["eventsScanned"] == 3
+    assert runner.calls[1][runner.calls[1].index("--max-events") + 1] == "4"
+    assert out(go("activity-errors", "broken"), "activity-errors")["scanCut"] is False
+
+
+@pytest.mark.parametrize("bad", [0, 5001, "x", True])
+def test_a_bad_scan_limit_is_invalid_input_before_any_az_call(go, bad):
+    run = go("activity-errors", settings={"activityScanLimit": bad})
+    assert run.errors[0]["code"] == "invalid_input" and run.calls == []
 
 
 def test_an_activity_reply_that_is_not_a_list_is_an_error(go):
@@ -816,6 +858,7 @@ def test_the_instances_of_a_healthy_scale_set(go):
     result = out(run, "scale-set-instances")
     assert result["counts"]["total"] == 3 and result["counts"]["provisioningFailed"] == 0
     assert result["counts"]["modelOutdated"] == 0 and result["counts"]["unhealthy"] == 0
+    assert result["counts"]["healthy"] == 3 and result["listedMatchesCapacity"] is True
     assert result["counts"]["byProvisioningState"] == {"Succeeded": 3} and result["counts"][
         "byPowerState"
     ] == {"running": 3}
@@ -842,6 +885,7 @@ def test_the_instances_of_a_broken_scale_set_put_the_problems_first(go):
         and counts["healthUnknown"] == 0
         and counts["modelUnknown"] == 0
     )
+    assert counts["healthy"] + counts["unhealthy"] + counts["healthUnknown"] == counts["total"]
     assert counts["byProvisioningState"] == {"Failed": 1, "Succeeded": 3, "Updating": 1}
     items = result["instances"]["items"]
     assert [i["instanceId"] for i in items] == ["1", "2", "3", "4", "0"]  # 0 is the one thing clean
@@ -858,6 +902,44 @@ def test_the_instances_of_a_broken_scale_set_put_the_problems_first(go):
         "count": 1,
     }
     assert result["extensionsSummary"][0]["name"] == "CustomScript"
+
+
+def test_health_states_partition_the_instances_and_unknown_is_never_healthy_or_unhealthy():
+    rows = [
+        {"instanceId": str(i), "name": f"n{i}", "properties": {}, "instanceView": {}}
+        for i in range(4)
+    ]
+    health = ["HealthState/healthy", "HealthState/unhealthy", "HealthState/unknown", None]
+    for row, state in zip(rows, health):
+        if state:
+            row["instanceView"] = {"vmHealth": {"status": {"code": state}}}
+    counts = scale_set.counts_of([scale_set.instance_row(r) for r in rows])
+    assert (counts["healthy"], counts["unhealthy"], counts["healthUnknown"]) == (1, 1, 2)
+    assert counts["healthy"] + counts["unhealthy"] + counts["healthUnknown"] == counts["total"]
+
+
+def test_a_listing_that_does_not_match_the_models_capacity_is_flagged(go):
+    show = json.loads(stub_json("vm-healthy", "vmss-show.json"))
+    show["sku"]["capacity"] = 5  # the model says 5, the listing holds 3
+    base = ("--name", API, "-g", "rg-orders-prod", "--subscription", SUB)
+    runner = Replies(
+        {
+            ("vmss", "show", *base): (0, json.dumps(show), ""),
+            ("vmss", "get-instance-view", *base): (
+                0,
+                stub_json("vm-healthy", "vmss-instance-view.json"),
+                "",
+            ),
+            ("vmss", "list-instances", *base, "--expand", "instanceView"): (
+                0,
+                stub_json("vm-healthy", "vmss-instances.json"),
+                "",
+            ),
+        }
+    )
+    result = out(go("scale-set-instances", runner=runner), "scale-set-instances")
+    assert result["capacity"] == 5 and result["counts"]["total"] == 3
+    assert result["listedMatchesCapacity"] is False
 
 
 def test_max_items_cuts_the_instances_but_not_the_counts(go):
@@ -1067,13 +1149,17 @@ def test_uptime_check_reports_days_and_load(go):
 
 def test_patches_check_reports_pending_updates_and_the_index_age(go):
     patches = out(go("run-os-check", "guest-broken", check="patches"), "run-os-check")["patches"]
+    # real `apt-get -s dist-upgrade` output (capture/apt-repo.sh): the kernel that `upgrade` keeps
+    # back and the new dependency it pulls in are updates too
     assert (
-        patches["packageManager"] == "apt" and patches["pending"] == 3 and patches["security"] == 2
+        patches["packageManager"] == "apt" and patches["pending"] == 4 and patches["security"] == 4
     )
-    assert patches["packages"] == ["libssl3t64", "openssl", "linux-image-azure"]
+    assert patches["heldBack"] == 0
+    assert patches["packages"] == ["newdep", "kernel-demo-azure", "libdemo", "openssl-demo"]
     assert patches["indexAgeSeconds"] == 3456000 and patches["rebootRequired"] is True
     healthy = out(go("run-os-check", check="patches"), "run-os-check")["patches"]
     assert (healthy["pending"], healthy["security"], healthy["rebootRequired"]) == (0, 0, False)
+    assert healthy["indexAgeSeconds"] == 3600
 
 
 def test_the_guest_thresholds_are_settings(go):
@@ -1151,11 +1237,16 @@ def test_a_windows_vm_is_skipped_not_sent_a_shell_script(go):
     assert len(runner.calls) == 1
 
 
-def test_an_agent_that_is_not_ready_is_skipped_and_an_unreported_agent_is_tried(go):
+def test_an_agent_that_is_not_ready_or_not_reported_is_skipped_only_ready_runs(go):
     doc = json.loads(vm_view())
     doc["instanceView"]["vmAgent"]["statuses"][0]["displayStatus"] = "Not Ready"
     run = go("run-os-check", runner=Replies({IV: (0, json.dumps(doc), "")}), check="disk")
-    assert run.envelope["status"] == "skipped" and "agent is not ready" in run.envelope["reason"]
+    assert run.envelope["status"] == "skipped" and "agent not ready" in run.envelope["reason"]
+    del doc["instanceView"]["vmAgent"]
+    run = go("run-os-check", runner=Replies({IV: (0, json.dumps(doc), "")}), check="disk")
+    assert run.envelope["status"] == "skipped"
+    assert "has not reported a status" in run.envelope["reason"]
+    assert [c[:2] for c in run.calls] == [["vm", "get-instance-view"]]
 
 
 def test_a_run_command_the_identity_may_not_invoke_is_permission_denied_naming_the_action(go):
@@ -1225,7 +1316,10 @@ def test_a_command_that_failed_in_the_guest_is_an_error_with_its_exit_status(go)
     run = run_check(
         go, "disk", "RW_BEGIN disk\nRW_END disk rc=1", stderr="df: invalid option -- 'x'"
     )
-    assert run.errors[0]["code"] == "internal" and "df exited 1" in run.errors[0]["message"]
+    assert (
+        run.errors[0]["code"] == "internal"
+        and "df failed in the guest (exit 1)" in run.errors[0]["message"]
+    )
 
 
 def test_a_failed_run_command_is_an_error_carrying_the_guests_stderr(go):
@@ -1263,6 +1357,12 @@ def test_an_unknown_package_manager_is_pending_null_and_not_up_to_date(go):
     )
 
 
+@pytest.mark.parametrize("bad", ["241s", "5s", "soon", "0s", 180, "10m", ""])
+def test_the_guest_timeout_is_a_duration_of_10_to_240_seconds(go, bad):
+    run = go("run-os-check", settings={"osCheckTimeout": bad}, check="disk")
+    assert run.errors[0]["code"] == "invalid_input" and run.calls == []
+
+
 def test_the_guest_check_has_its_own_timeout_and_the_reads_keep_theirs(run_script):
     fake = Replies({IV: (0, vm_view(), "")})
     seen = []
@@ -1284,7 +1384,7 @@ def test_the_guest_check_has_its_own_timeout_and_the_reads_keep_theirs(run_scrip
         scenario="vm-healthy",
         resource=compute(WEB),
         now=NOW,
-        settings={**VM_SETTINGS, "osCheckTimeout": 90},
+        settings={**VM_SETTINGS, "osCheckTimeout": "90s"},
         runner=runner,
         check="uptime",
     )
@@ -1390,13 +1490,18 @@ def test_df_lines_with_spaces_in_the_mount_point_parse():
     lines = [
         "Filesystem 1024-blocks Used Available Capacity Mounted on",
         "/dev/sdb1 1000 400 600 40% /mnt/my data",
+        "rows_total=1",
     ]
     disk = guest.disk(lines, 0, 85, 10)
     assert disk["filesystems"]["items"][0]["mount"] == "/mnt/my data"
 
 
 def test_a_full_filesystem_with_no_blocks_is_unknown_not_over():
-    lines = ["Filesystem 1024-blocks Used Available Capacity Mounted on", "none 0 0 0 - /x"]
+    lines = [
+        "Filesystem 1024-blocks Used Available Capacity Mounted on",
+        "none 0 0 0 - /x",
+        "rows_total=1",
+    ]
     row = guest.disk(lines, 0, 85, 10)["filesystems"]["items"][0]
     assert row["usedPercent"] is None and row["overThreshold"] is None
 
@@ -1430,19 +1535,13 @@ def actions_of(argv):
     if c[:2] == ["vm", "show"]:
         return {"Microsoft.Compute/virtualMachines/read"}
     if c[:2] == ["vm", "get-instance-view"]:
-        return {
-            "Microsoft.Compute/virtualMachines/read",
-            "Microsoft.Compute/virtualMachines/instanceView/read",
-        }
+        return {"Microsoft.Compute/virtualMachines/read"}  # GET with $expand=instanceView
     if c[:2] == ["vmss", "show"]:
         return {"Microsoft.Compute/virtualMachineScaleSets/read"}
     if c[:2] == ["vmss", "get-instance-view"]:
         return {"Microsoft.Compute/virtualMachineScaleSets/instanceView/read"}
     if c[:2] == ["vmss", "list-instances"]:
-        return {
-            "Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read",
-            "Microsoft.Compute/virtualMachineScaleSets/virtualMachines/instanceView/read",
-        }
+        return {"Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read"}
     if c[:3] == ["monitor", "metrics", "list"]:
         return {"Microsoft.Insights/metrics/read"}
     if c[:3] == ["monitor", "activity-log", "list"]:
@@ -1504,6 +1603,9 @@ def test_the_write_task_declares_its_effects_and_a_dry_run_and_is_not_destructiv
     assert task["dryRun"] is True and len(task["effects"]) >= 3
     assert any("as root" in e and "read-only" in e for e in task["effects"])
     assert any("one run command at a time" in e for e in task["effects"])
+    assert any("does not cancel a script that is already running" in e for e in task["effects"])
+    assert any("RunCommandLinux" in e and "outbound" in e for e in task["effects"])
+    assert all(len(e) <= 1024 for e in task["effects"])
     assert task["inputs"]["check"]["enum"] == list(guest_scripts.CHECKS)
     assert (
         "required" not in task["inputs"]["check"] and "default" not in task["inputs"]["check"]
@@ -1532,12 +1634,17 @@ def test_the_lookback_defaults_are_hours_not_minutes():
 def test_task_timeouts_cover_their_calls():
     assert monitor.BUDGET + 60 <= int(task_doc("metrics")["timeout"].rstrip("s"))
     assert scale_set.LIST_BUDGET + 60 <= int(task_doc("scale-set-instances")["timeout"].rstrip("s"))
-    maximum = doc()["settings"]["osCheckTimeout"]["max"]
-    # the default invocation fits the task timeout beside the instance view; a larger one needs a larger timeout
-    assert 60 + doc()["settings"]["osCheckTimeout"]["default"] <= int(
-        task_doc("run-os-check")["timeout"].rstrip("s")
-    )
-    assert maximum == 900
+    # the instance view (commandTimeout) and the longest invocation fit the write task's timeout
+    assert 60 + oscheck.MAX_TIMEOUT <= int(task_doc("run-os-check")["timeout"].rstrip("s"))
+    assert doc()["settings"]["osCheckTimeout"]["type"] == "duration"
+    assert doc()["settings"]["osCheckTimeout"]["default"] == "180s"
+
+
+def test_every_task_may_run_three_az_commands_of_the_default_command_timeout():
+    command = int(doc()["settings"]["commandTimeout"]["default"].rstrip("s"))
+    for task in doc()["tasks"]:
+        seconds = int(str(task.get("timeout", doc()["defaults"]["timeout"])).rstrip("s"))
+        assert seconds >= 3 * command, task["name"]
 
 
 def test_the_skill_applies_to_the_two_types_and_they_exist_under_the_resource_group():
@@ -1603,3 +1710,125 @@ def test_the_scenario_calls_are_the_calls_the_render_plan_makes():
             for i in items
         ]
         assert [c["argv"] for c in recorded] == want, scenario
+
+
+# --- the guest scripts: bounded, and what they report about a cut ---------------------------------------
+
+BLOCKING = re.compile(r"\b(df -P|apt-get -s|\$tool -C|stat -c|cat /proc|grep -E '\^\(Mem)")
+
+
+@pytest.mark.parametrize("check", guest_scripts.CHECKS)
+def test_every_guest_command_that_can_block_runs_under_timeout_30(check):
+    seen = 0
+    for line in guest_scripts.SCRIPTS[check].splitlines():
+        if line.lstrip().startswith("#") or "command -v" in line:
+            continue
+        if BLOCKING.search(line):
+            seen += 1
+            assert re.search(
+                r"timeout 30 (df -P|apt-get -s|\$tool -C|stat -c|cat /proc|grep -E)", line
+            ), line
+    assert seen >= 1
+
+
+def test_df_asks_only_for_local_file_systems_and_keeps_the_fullest_rows():
+    script = guest_scripts.DISK
+    assert "df -P -k -l " in script and "sort -k5 -n -r" in script and "head -n 40" in script
+    assert "rows_total=" in script
+
+
+def test_rows_cut_in_the_guest_are_reported_not_hidden():
+    lines = ["Filesystem 1024-blocks Used Available Capacity Mounted on"]
+    lines += [f"/dev/x{i} 1000 {i} {1000 - i} {i}% /m{i}" for i in range(40)] + ["rows_total=75"]
+    disk = guest.disk(lines, 0, 85, 200)
+    assert disk["rowsTotal"] == 75 and disk["cutInGuest"] is True
+    assert disk["filesystems"]["total"] == 40
+
+
+def test_a_disk_listing_without_rows_total_is_output_cut_short():
+    with pytest.raises(RwError, match="rows_total"):
+        guest.disk(["Filesystem 1024-blocks Used Available Capacity Mounted on"], 0, 85, 10)
+
+
+def test_a_df_that_timed_out_is_an_error_with_the_exit_status():
+    with pytest.raises(RwError, match=r"exit 124"):
+        guest.disk(["error=df: cannot read table of mounted file systems"], 124, 85, 10)
+
+
+def test_the_package_script_counts_what_dist_upgrade_would_do():
+    assert "dist-upgrade" in guest_scripts.PATCHES and " upgrade " not in guest_scripts.PATCHES
+    assert "kept_back=" in guest_scripts.PATCHES
+
+
+# --- text from outside is redacted before it is cut ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "gone"),
+    [
+        ("pull https://deploy:s3cr3tpass@git.example.invalid/x.git failed", "s3cr3tpass"),
+        ("curl https://tokenvalue123@host.example.invalid/", "tokenvalue123"),
+        ("DB_PASSWORD=hunter2 and more", "hunter2"),
+        ('{"clientSecret": "abcdef123456"}', "abcdef123456"),
+        ("Authorization: Bearer abcdefghijklmnop", "abcdefghijklmnop"),
+        ("AccountKey=QUJDREVGR0g=;EndpointSuffix=x", "QUJDREVGR0g="),
+        ("api_key: 'sk-live-123'", "sk-live-123"),
+        ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc", "eyJhbGci"),
+        ("sas sig=abc%2Fdef", "abc%2Fdef"),
+    ],
+)
+def test_secrets_in_outside_text_are_redacted_before_the_cut(raw, gone):
+    cut, _ = text.safe_clip(raw)
+    assert gone not in cut and "<redacted>" in cut
+
+
+def test_a_secret_cannot_survive_by_straddling_the_cut():
+    raw = "x" * 1010 + " password=hunter2hunter2"
+    cut, truncated = text.safe_clip(raw)
+    assert "hunter2" not in cut and truncated is True and len(cut) == 1024
+
+
+def test_ordinary_text_is_not_changed_and_who_is_redacted_only_where_asked():
+    plain = "mkdir: cannot create directory '/data/app': No space left on device"
+    assert text.safe_clip(plain) == (plain, False)
+    mail = "refused for alice@contoso.example"
+    assert text.safe_clip(mail)[0] == mail
+    assert "alice" not in text.safe_clip(mail, who=True)[0]
+
+
+def test_guest_stderr_and_extension_messages_are_redacted(go):
+    leak = "PASSWORD=hunter2 https://u:pw123456@h.example.invalid/"
+    run = run_check(
+        go,
+        "uptime",
+        "RW_BEGIN uptime\n100.5 90.0\n0.1 0.2 0.3 1/2 3\nRW_END uptime rc=0",
+        stderr=leak,
+    )
+    stderr = out(run, "run-os-check")["stderr"]
+    assert "hunter2" not in stderr and "pw123456" not in stderr
+    doc = json.loads(vm_view())
+    doc["instanceView"]["extensions"][0]["statuses"][0]["message"] = "ran with " + leak
+    run = go("instance-view", runner=Replies({IV: (0, json.dumps(doc), "")}))
+    assert "hunter2" not in json.dumps(out(run, "instance-view"))
+    assert "pw123456" not in json.dumps(out(run, "instance-view"))
+
+
+def test_nothing_secret_in_the_vm_document_reaches_the_instance_view_output(go):
+    """The reply is a whole VM: its OS profile, custom data, extension settings and secrets are
+    planted with recognisable values, and none may appear in the output or an error."""
+    doc = json.loads(vm_view())
+    doc["osProfile"] = {
+        "adminUsername": "PLANTED-admin",
+        "adminPassword": "PLANTED-password",
+        "customData": "PLANTED-customdata",
+        "linuxConfiguration": {"ssh": {"publicKeys": [{"keyData": "PLANTED-sshkey"}]}},
+        "secrets": [{"vaultCertificates": [{"certificateUrl": "https://PLANTED-vault.example/s"}]}],
+    }
+    doc["resources"] = [{"name": "ext", "settings": {"commandToExecute": "PLANTED-command"}}]
+    doc["instanceView"]["extensions"][0]["settings"] = {"protectedSettings": "PLANTED-protected"}
+    boot = doc["instanceView"]["bootDiagnostics"]
+    boot["serialConsoleLogBlobUri"] = "https://PLANTED.blob.example/x?sig=PLANTED-sas"
+    run = go("instance-view", runner=Replies({IV: (0, json.dumps(doc), "")}))
+    assert run.envelope["status"] == "ok"
+    everything = json.dumps(out(run, "instance-view")) + json.dumps(run.errors)
+    assert "PLANTED" not in everything

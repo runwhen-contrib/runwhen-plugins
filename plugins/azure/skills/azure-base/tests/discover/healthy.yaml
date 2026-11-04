@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
-now: '2026-11-04T04:43:38.157Z'
+now: '2026-11-04T05:04:17.805Z'
 calls:
 - argv:
   - az
@@ -1420,6 +1420,12 @@ expect:
     resourceGroups:
       total: 3
       omitted: 0
+      items:
+        $containsWhere:
+          name: rg-orders-dev
+          keyvaults: 1
+          virtualMachines: 1
+          vmScaleSets: 1
     keyvaults:
       total: 2
       omitted: 0
@@ -1432,7 +1438,7 @@ expect:
         virtual-machine: 3
         vm-scale-set: 2
       partitions:
-        complete: 13
+        complete: 10
         failed: 0
         forbidden: 0
       root:
@@ -1449,12 +1455,12 @@ expect:
       total: 3
       omitted: 0
       items:
-        $contains:
-        - name: vm-orders-web01
+        $containsWhere:
+          name: vm-orders-web01
           osType: Linux
     vmScaleSets:
       total: 2
       omitted: 0
       items:
-        $contains:
-        - name: vmss-orders-api
+        $containsWhere:
+          name: vmss-orders-api

@@ -8,8 +8,9 @@ status."""
 
 import re
 
-from .common import NESTED_LIMIT, TEXT_LIMIT, clip, listing
+from .common import NESTED_LIMIT, TEXT_LIMIT, listing
 from .errors import RwError
+from .text import safe_clip
 
 _STDOUT = re.compile(r"\[stdout\]\n(.*?)(?:\n\[stderr\]\n(.*))?\Z", re.S)
 _KEY = re.compile(r"^([a-z_]+)=(.*)$")
@@ -71,20 +72,39 @@ def _num(text, name):
         raise RwError("internal", f"the guest printed a {name} that is not a number") from None
 
 
+def _error_text(lines):
+    """The text after `error=` in a script's output (and the lines that continue it), or None."""
+    text = []
+    for line in lines:
+        if line.startswith("error="):
+            text = [line[len("error=") :]]
+        elif text:
+            text.append(line)
+    return safe_clip(" ".join(text))[0] if text else None
+
+
 def disk(lines, rc, threshold, limit):
-    """Filesystems from `df -P -k`."""
-    if rc != 0:
-        raise RwError("internal", f"df exited {rc} in the guest")
+    """Filesystems from `df -P -k -l`, as the script prints them: the header, at most 40 rows sorted by
+    Use% and `rows_total=` with the number of rows before that cut."""
+    error = _error_text(lines)
+    if rc != 0 or error:
+        raise RwError("internal", f"df failed in the guest (exit {rc}): {error or 'no message'}")
     if not lines or not lines[0].startswith("Filesystem"):
         raise RwError("internal", "the guest's df printed no header line")
+    total = next((line for line in lines if line.startswith("rows_total=")), None)
+    if total is None:
+        raise RwError("internal", "the disk script printed no rows_total line: output cut short")
+    rows_total = _int(total.split("=", 1)[1].strip(), "row count")
     rows = []
     for line in lines[1:]:
+        if line.startswith("rows_total="):
+            continue
         parts = line.split(None, 5)
         if len(parts) < 6:
             raise RwError("internal", "the guest's df printed a line with too few columns")
         used, avail = _int(parts[2], "disk usage"), _int(parts[3], "disk usage")
-        total = used + avail
-        percent = round(used / total * 100, 1) if total else None
+        total_kb = used + avail
+        percent = round(used / total_kb * 100, 1) if total_kb else None
         rows.append(
             {
                 "filesystem": parts[0][:256],
@@ -100,6 +120,9 @@ def disk(lines, rc, threshold, limit):
     return {
         "threshold": threshold,
         "filesystems": listing(rows, limit),
+        "rowsTotal": rows_total,
+        # the script keeps the 40 fullest rows: more than that and the others were not read
+        "cutInGuest": rows_total > len(rows),
         "overThreshold": any(r["overThreshold"] for r in rows),
     }
 
@@ -172,7 +195,7 @@ def patches(lines, rc):
         elif current == "error":
             error.append(line)
     if rc != 0 or error:
-        text, _ = clip(" ".join(error) or f"the package manager exited {rc}")
+        text, _ = safe_clip(" ".join(error) or f"the package manager exited {rc}")
         raise RwError("internal", f"the guest's package manager failed: {text}")
     manager = facts.get("manager")
     if manager is None:
@@ -188,6 +211,7 @@ def patches(lines, rc):
         # no known package manager is "could not tell", not "up to date"
         "pending": number("pending"),
         "security": number("security"),
+        "heldBack": number("kept_back"),
         "packages": packages[:NESTED_LIMIT],
         "indexAgeSeconds": number("index_age_seconds"),
         "rebootRequired": {"yes": True, "no": False}.get(reboot),
@@ -195,5 +219,5 @@ def patches(lines, rc):
 
 
 def stderr_text(text):
-    cut, truncated = clip(text.strip(), TEXT_LIMIT)
+    cut, truncated = safe_clip(text.strip(), TEXT_LIMIT)
     return cut, truncated

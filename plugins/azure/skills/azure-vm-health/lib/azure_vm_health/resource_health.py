@@ -1,8 +1,8 @@
 """resource-health: Azure's own verdict on the virtual machine or scale set (Microsoft.ResourceHealth)."""
 
 from .az import az_json
-from .common import clip
 from .errors import RwError
+from .text import safe_clip
 from .target import resolve
 
 API_VERSION = "2022-10-01"
@@ -20,8 +20,8 @@ def read(ctx):
     if not isinstance(state, str) or not state:
         # a reply without a state is not "healthy": the platform did not say
         raise RwError("internal", "Resource Health returned no availability state")
-    summary, cut_summary = clip(props.get("summary"))
-    detail, cut_detail = clip(props.get("detailedStatus"))
+    summary, cut_summary = safe_clip(props.get("summary"))
+    detail, cut_detail = safe_clip(props.get("detailedStatus"))
     events = props.get("serviceImpactingEvents")
     return {
         "resource": name,
