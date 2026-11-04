@@ -35,10 +35,11 @@ pod serves S3 when its component is `s3`, or when its command or args enable it:
 ... -s3 ..."`. An all-in-one or filer pod without such a flag serves no S3. Ports are settings (9333,
 8080, 8888, 8333).
 
-All HTTP goes through `/api/v1/namespaces/<ns>/pods/<pod>:<port>/proxy/...`, so the identity needs
-`pods/proxy` `get` (and `update`, `delete` for `s3-check`) plus `list` on pods in the namespace. The
-API server prints **no body for a non-2xx answer**: a failure shows only as its status, never as
-SeaweedFS's explanation.
+All HTTP goes through the API server's pod proxy, so the identity needs `pods/proxy` `get` (and
+`update`, `delete` for `s3-check`) plus `list` on pods in the namespace. The reads (every GET) use
+`ctx.k8s_proxy_get`; the `s3-check` PUT and DELETE use `ctx.k8s_proxy_request`. Both return the
+workload's own status and body (a 403, 404 or 503 is data) and never follow a redirect: a redirect to
+another host is reported as a `dependency` error naming the host, and no request is re-sent.
 
 ## What each task tells you
 
@@ -85,9 +86,9 @@ failed, and the matching error says why. Lists stop at `maxItems`
 
 A master pod that is not Running is listed with `queried: false` and a reason, and when none is
 Running the result is `partial` with an `unreachable` error. A pod that answers a health endpoint
-with another non-2xx status is `unhealthy`; a 5xx (`ServiceUnavailable`, `InternalError`: kubectl cannot
-tell the workload's from the API server's), a timeout, `TooManyRequests` and every other proxy failure
-are errors, never `ok` and never `unhealthy`. A release whose
+with another non-2xx status (400, 500, 503 ...: the workload's own, the helper tells it from the API
+server's) is `unhealthy`; an API-server error (the pod unreachable or missing, a timeout, rate limiting)
+and a redirect to another host (never followed) are errors, never `ok` and never `unhealthy`. A release whose
 masters cannot be asked fails `volumes`, `filer-status` and `buckets` as `unreachable` (they have
 nothing else to report). `leaderCount: 0` while
 masters were queried is a cluster with no leader (members then show `leader: null`); `2` or more is

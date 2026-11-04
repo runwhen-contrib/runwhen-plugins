@@ -1,0 +1,126 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: azure@1              # ships az (runtimes/azure)
+defaults: { credentials: azure/cli, timeout: 120s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  commandTimeout: { type: duration, default: 60s, description: "How long one az command may run before it is stopped (timeout)" }
+  metricInterval: { type: enum, enum: [PT1M, PT5M, PT15M, PT30M, PT1H, PT6H, PT12H, P1D], default: PT1H, description: "Grain of the Azure Monitor metrics (ISO 8601); the window is cut into intervals of this size" }
+  availabilityMinPercent: { type: number, default: 100, min: 0, max: 100, description: "An interval whose Availability is below this percentage counts as below the threshold" }
+  requestThreshold: { type: integer, default: 1000, min: 0, max: 1000000000, description: "ServiceApiHit per metricInterval above which an interval counts as crossing" }
+  latencyThresholdMs: { type: number, default: 500, min: 0, max: 10000000, description: "Average ServiceApiLatency in milliseconds above which an interval counts as crossing" }
+tasks:
+  - name: resource-health
+    title: Azure Resource Health of the vault
+    description: >-
+      Reads Azure's own availability verdict for the Key Vault (Microsoft.ResourceHealth
+      availabilityStatuses/current): the state (Available, Degraded, Unavailable, Unknown), Azure's
+      summary and detailed status, the reason type and chronicity, when it occurred and was reported,
+      and how many service-impacting events Azure lists. Does not register the resource provider; if
+      the subscription has not registered Microsoft.ResourceHealth the run fails with dependency.
+      Read-only.
+    script: scripts/resource_health.py
+    tags: [health, availability, platform]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.KeyVault/vaults/read }                        # az keyvault show -g: the vault's resource id
+      - { action: Microsoft.ResourceHealth/availabilityStatuses/read }
+    outputs:
+      health: { schema: ./schemas/health.v1.json, description: "Availability state, Azure's summary and detailed status, reason, times and the number of service-impacting events" }
+  - name: availability
+    title: Availability metric over a window
+    description: >-
+      Reads the vault's Availability metric (average percent per interval) over the window that
+      ends at the run's reference time, and reports every interval: how many had a value, how many
+      had none, the minimum, maximum and last value (and whether the newest interval has no value, so
+      that "last" is stale), the newest 50 intervals, and whether any interval with a value is below
+      availabilityMinPercent. An interval with no value is counted, never read as healthy. Read-only.
+    script: scripts/availability.py
+    tags: [health, availability, metrics]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.KeyVault/vaults/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      availability: { schema: ./schemas/availability.v1.json, description: "Availability percent per interval over the window: counts, min, max, last, the newest 50 intervals and whether any is below the threshold" }
+  - name: configuration
+    title: Protection and network configuration
+    description: >-
+      Reads the vault's configuration: soft delete (and its retention), purge protection, the
+      authorization model (Azure RBAC or access policies), public network access, the firewall's
+      default action and whether trusted Azure services bypass it, how many IP and virtual network
+      rules, private endpoint connections (and how many are in each approval state) and access
+      policies it has, and the enabled-for flags. Facts only: access policy content is not returned.
+      Read-only.
+    script: scripts/configuration.py
+    tags: [config, security]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.KeyVault/vaults/read }
+    outputs:
+      configuration: { schema: ./schemas/configuration.v1.json, description: "Soft delete, purge protection, authorization model, network access and rule counts" }
+  - name: expiring-items
+    title: Expired and expiring secrets, certificates and keys
+    description: >-
+      Lists the vault's secrets, certificates and keys (names and attributes only, never a value)
+      and returns those that are already expired or expire within thresholdDays, soonest first,
+      with the days remaining. Also counts what it looked at, how many items have no expiry date and
+      names the items whose expiry date cannot be read. Secrets that Key Vault manages for a
+      certificate are left out (the certificate carries the date) and counted. Needs data-plane read
+      of item metadata, which Reader on the control plane does not include: a kind that cannot be
+      listed is reported with its own error and the others stand. Read-only.
+    script: scripts/expiring_items.py
+    tags: [expiry, secrets, certificates, keys]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.KeyVault/vaults/read }
+      - { dataAction: Microsoft.KeyVault/vaults/secrets/readMetadata/action }
+      - { dataAction: Microsoft.KeyVault/vaults/certificates/read }
+      - { dataAction: Microsoft.KeyVault/vaults/keys/read }
+    inputs:
+      thresholdDays: { type: integer, default: 31, min: 0, max: 3650, description: "Report items that expire within this many days (and those already expired)" }
+    outputs:
+      expiry: { schema: ./schemas/expiry.v1.json, description: "Expired and expiring items soonest first (cut to maxItems), how many of each kind were scanned, how many have no expiry" }
+  - name: audit-failures
+    title: Failed operations in the audit log
+    description: >-
+      Reads the vault's diagnostic settings and, for those that send the audit log (the AuditEvent
+      category, or the audit or allLogs category group) to a Log Analytics workspace (at most 3
+      workspace/table pairs), queries the window for operations that failed with HTTP status 400 or
+      above, grouped by operation and status with counts and first and last time. The table is
+      AZKVAuditLogs for a Dedicated destination type and AzureDiagnostics otherwise, and is reported.
+      A query keeps the 50 most frequent groups and reports when it cut some. A vault with no such
+      diagnostic setting is reported as such (failures is null: there is nothing to query, which is
+      not the same as no failures). Makes up to 9 az calls within a 540s budget. Read-only.
+    script: scripts/audit_failures.py
+    tags: [logs, audit, security]
+    readOnly: true
+    timeout: 600s                                  # up to 9 az calls of commandTimeout (audit.py BUDGET is 540s of it)
+    permissions:
+      - { action: Microsoft.KeyVault/vaults/read }
+      - { action: Microsoft.Insights/diagnosticSettings/read }
+      - { action: Microsoft.OperationalInsights/workspaces/read }          # az monitor log-analytics workspace show: the workspace's customerId
+      - { action: Microsoft.OperationalInsights/workspaces/query/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      audit: { schema: ./schemas/audit.v1.json, description: "Diagnostic settings, whether AuditEvent reaches a workspace, and the failed operations grouped by operation and status" }
+  - name: performance
+    title: Request volume and latency
+    description: >-
+      Reads the vault's ServiceApiHit (requests per interval) and ServiceApiLatency (average and
+      maximum milliseconds per interval) metrics over the window that ends at the run's reference
+      time, and for each reports the intervals with and without a value, min, max, last, the newest
+      50 intervals and how many cross requestThreshold or latencyThresholdMs. One metric that
+      cannot be read is reported with its own error and the other stands. Read-only.
+    script: scripts/performance.py
+    tags: [metrics, performance]
+    readOnly: true
+    permissions:
+      - { action: Microsoft.KeyVault/vaults/read }
+      - { action: Microsoft.Insights/metrics/read }
+    inputs:
+      window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
+    outputs:
+      performance: { schema: ./schemas/performance.v1.json, description: "Request count and latency per interval over the window with counts of intervals over the thresholds" }

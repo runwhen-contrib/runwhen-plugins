@@ -1,0 +1,62 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types live beside it in types.yaml.
+# Appendix C of the lane F plan (2026-11-03-lane-f-content.md) is the design.
+apiVersion: runwhen.com/integration/v1
+platform: azure
+title: Microsoft Azure
+docs: https://docs.runwhen.com/integrations/azure
+
+# --- what tools read (D38, D45, C2) -----------------------------------------
+# The az CLI's own state: AZURE_CONFIG_DIR is a directory holding the logged-in session (token
+# cache, profile) that an auth script created in the task's private secrets directory (the
+# directory the script's output file is in; it is deleted when the task ends). Env only: a task
+# script never handles a secret, it runs `az` against the session already in that directory.
+#
+# A credential type materializes only secrets and paths, and every materialized value is redacted
+# from all output. The subscription is not one: it is an identifier a result must be able to show,
+# so tasks take it from `ctx.resource` and pass `--subscription` to every az call.
+credentialTypes:
+  azure/cli:
+    title: Azure CLI session
+    description: "A logged-in az session: AZURE_CONFIG_DIR, the az config and token cache directory. It names no subscription: a task passes --subscription from the resource it targets."
+    materialize:
+      env: [AZURE_CONFIG_DIR]
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Both methods are script methods that run inside the azure@1 runtime (az is there), log in with
+# az into `azure/` beside the script's output file, and write the one variable. Each is
+# self-contained. The scripts read only the RW_AUTH_* variables of the auth-script contract, and
+# the inputs arrive as RW_AUTH_INPUT_<NAME> with the name from the SDK's input_env_name().
+authMethods:
+  service-principal:
+    title: Service principal
+    description: "A Microsoft Entra application's client secret, from a Secret, Vault or a file; the reference supplies the secret, the inputs supply tenant, application and subscription. The secret goes to az as -p @<file>, never on argv. The sign-in is checked against the subscription: a service principal with no role assignment there is refused as permission_denied."
+    produces: azure/cli
+    accepts: [k8s-secret, vault, file]       # the secret is the key clientSecret, AZURE_CLIENT_SECRET or value
+    script: auth/service_principal.py        # relative to this file: integration/auth/
+    inputs:
+      tenantId: { type: string, required: true, description: "Microsoft Entra tenant: its id or a verified domain" }
+      clientId: { type: string, required: true, description: "Application (client) id of the service principal" }
+      subscriptionId: { type: string, required: true, description: "Subscription the connection is for; the root's key" }
+  managed-identity:
+    title: Managed identity
+    description: "The managed identity of the pod or node the runner runs on (ambient: nothing to reference). Leave clientId empty for the system-assigned identity. The sign-in is checked against the subscription."
+    produces: azure/cli
+    accepts: [cloud-identity]
+    script: auth/managed_identity.py
+    inputs:
+      subscriptionId: { type: string, required: true, description: "Subscription the connection is for; the root's key" }
+      clientId: { type: string, required: false, description: "Client id of a user-assigned managed identity; empty = the system-assigned identity" }
+  # Workload identity (federated token) and certificate service principals come later, as more
+  # script methods of this type.
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/azure-permission.json    # one permission = an RBAC action or dataAction (D68)
+
+# --- how the platform plugs this integration in -------------------------------
+# check-permissions (simulating the declared actions against the identity's role assignments) comes
+# after the pilot (Appendix C4); until then permissions are declared and shown but unverified.
+entryPoints:
+  discovery: { task: azure-base/discover, schedule: "*/15 * * * *" }
+
+recognizers: []                              # nothing in Kubernetes or elsewhere says "this is an Azure subscription"

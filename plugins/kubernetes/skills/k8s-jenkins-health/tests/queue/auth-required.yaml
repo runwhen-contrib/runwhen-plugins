@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-locked
-now: '2026-11-04T00:31:13.208Z'
+now: '2026-11-04T01:58:13.940Z'
 calls:
 - argv:
   - kubectl
@@ -44,31 +44,51 @@ calls:
     s:metadata.deletionTimestamp=
     s:status.phase=Running
     j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-locked","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-locked-6c6fb4745b","statefulset.kubernetes.io/pod-name":"jenkins-locked-0"}
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:02Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:09Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:09Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:00Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:40Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:38Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:47Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:47Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:38Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
     i:jenkins=python:3.12-alpine
     p:jenkins=/login|http|HTTP
   stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-locked-0:8080/proxy/queue/api/json?tree=discoverableItems[id],items[id,blocked,buildable,stuck,inQueueSince,why,task[name,url]]
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (Forbidden): <html><body>Authentication required</body></html>
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-locked-0:8080/proxy/computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,numExecutors,offlineCauseReason]
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (Forbidden): <html><body>Authentication required</body></html>
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jenkins
+    kind: pods
+    name: jenkins-locked-0
+    port: 8080
+    path: /queue/api/json?tree=discoverableItems[id],items[id,blocked,buildable,stuck,inQueueSince,why,task[name,url]]
+    scheme: http
+  response:
+    status: 403
+    headers:
+      cache-control: no-cache, private
+      content-length: '49'
+      content-type: text/html;charset=utf-8
+      date: Wed, 04 Nov 2026 01:58:14 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: <html><body>Authentication required</body></html>
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jenkins
+    kind: pods
+    name: jenkins-locked-0
+    port: 8080
+    path: /computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,numExecutors,offlineCauseReason]
+    scheme: http
+  response:
+    status: 403
+    headers:
+      cache-control: no-cache, private
+      content-length: '49'
+      content-type: text/html;charset=utf-8
+      date: Wed, 04 Nov 2026 01:58:14 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: <html><body>Authentication required</body></html>
+    truncated: false
+    location: null
 expect:
   status: skipped
   errorCodes: []

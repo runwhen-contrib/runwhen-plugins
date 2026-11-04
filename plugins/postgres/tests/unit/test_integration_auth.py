@@ -197,7 +197,11 @@ def test_the_method_is_a_script_method_with_the_agreed_shape():
 
 def test_the_credential_type_is_env_only_and_the_script_writes_exactly_those_names(tmp_path):
     ctype = integration()["credentialTypes"]["postgres/libpq"]
-    assert ctype["materialize"] == {"env": ENV_NAMES}  # no file target, so no PGSSLROOTCERT
+    # no file target (so no PGSSLROOTCERT); only PGPASSWORD is secret (contracts-v5 nonSecret)
+    assert ctype["materialize"] == {
+        "env": ENV_NAMES,
+        "nonSecret": [n for n in ENV_NAMES if n != "PGPASSWORD"],
+    }
     assert "content" not in ctype  # a script method matches references by kind
     _, env, _, _ = run_script(tmp_path)
     assert list(env) == ctype["materialize"]["env"]

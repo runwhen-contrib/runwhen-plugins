@@ -19,8 +19,8 @@ tasks:
       GET /ready on each running pod of the StatefulSet or Deployment, through the API
       server's pod proxy (no exec, no port-forward). 200 with the text "ready" is ready,
       503 is not ready (Loki answers 503 while an ingester waits out its minimum ready
-      duration or its ring membership is not usable; the proxy does not forward the
-      body, so the reason is not available); any other reply (an HTML page, a 404, a
+      duration or its ring membership is not usable; its body is the reason and is returned
+      in body); any other reply (an HTML page, a 404, a
       timeout) is an error and the pod's ready is null, never true. A pod that is not
       Running is listed and not asked. Inputs port (default: the container port named
       http-metrics, http, else 3100) and scheme (http or https).
@@ -45,8 +45,9 @@ tasks:
       /compactor/ring, which is how Loki 3 single-binary and microservices expose the
       ingester, distributor and compactor rings): per ring the members by state
       (ACTIVE, LEAVING, UNHEALTHY, JOINING, PENDING), each member's address, zone, token
-      count, registration time and last heartbeat with its age. Through the proxy Loki 3.x
-      answers JSON; an HTML or other non-ring reply is an error, never an empty ring. A path every asked pod
+      count, registration time and last heartbeat with its age. It asks for JSON
+      (Accept) and reports each ring's format (json, or html for a Loki that ignores
+      Accept). A non-ring reply is an error, never an empty ring. A path every asked pod
       answers 404 for is reported served false (a component not run there); a ring no
       pod could be read for is served null with an error. Pods are asked in name order
       until one serves the path; the view is that pod's. Heartbeat ages use the

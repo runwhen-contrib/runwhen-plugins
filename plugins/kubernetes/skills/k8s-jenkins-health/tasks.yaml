@@ -12,11 +12,11 @@ tasks:
   - name: http-status
     title: Jenkins HTTP status
     description: >-
-      GET /login on each running pod through the API server's pod proxy (no exec, no port-forward,
-      no credential). A 200 whose page has the Jenkins footer ("Jenkins 2.452.3") is ok and the
-      footer is the version (versionSource login-footer); the bare word is not enough. A 200 login
-      page without the footer (an SSO identity provider) is ssoRedirect likely, ok null, with a
-      hint; any other 200 is an error, never ok. 503 and 404 are ok false. A version the page does
+      GET /login on each running pod through the API server's pod proxy (no exec, no
+      port-forward, no credential). A 200 whose page has the Jenkins footer ("Jenkins 2.452.3") is ok and the
+      footer is the version (versionSource login-footer); A 200 login
+      page without the footer (an SSO IdP) is ssoRedirect likely, ok null, with a
+      hint; a redirect to another host (never followed) is ssoRedirect redirect; any other 200 is an error, never ok. 503 and 404 are ok false. A version the page does
       not give is the container image's tag (versionSource image-tag), else null. A 401 or 403 is
       authRequired with a permission_denied error; skipped when every pod answers so. Pods not
       Running are listed, not asked; replicas wanted with none Running is an unreachable error.

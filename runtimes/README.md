@@ -8,6 +8,9 @@ runtime: a `Dockerfile` and a `runtime.yaml` that the plugin registry reads (tag
 | Runtime | Image | For |
 | --- | --- | --- |
 | `kubernetes` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes` | `kubernetes` plugin tasks |
+| `aws` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-aws` | `aws` plugin tasks |
+| `azure` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-azure` | `azure` plugin tasks |
+| `gcp` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-gcp` | `gcp` plugin tasks |
 
 ## kubernetes
 
@@ -15,7 +18,9 @@ Built on the rw-task image from `runwhen-contrib/rw-tasks-codecollection` (branc
 python 3.12, the `runwhen-capability` SDK with `google-re2`, `kubectl`, `jq`, `curl`, and the
 non-root `runwhen` user (uid 1000; the runner runs it as uid 65532 with a read-only root and
 `/work` writable). The Dockerfile adds `git` and `tzdata` (CronJob `spec.timeZone` is resolved
-with `zoneinfo`). `oc`, `helm`, `flux` and `argocd` are left out on purpose.
+with `zoneinfo`), and `gke-gcloud-auth-plugin` (the kubernetes plugin's `gke` auth method writes a
+kubeconfig that runs it) from Google's pinned Cloud SDK component tarball, checked against the sha256
+Google publishes. `oc`, `helm`, `flux` and `argocd` are left out on purpose.
 
 `FROM` is pinned by the base's multi-arch index digest (`v13-plugins-d1c7d04`). To move the base,
 re-resolve it:
@@ -36,6 +41,77 @@ docker run --rm -i --entrypoint sh rwp-runtime-kubernetes:dev -s < runtimes/kube
 python ci/check_runtime.py validate --allow-placeholder
 ```
 
+## aws
+
+Same base pin as `kubernetes` (`v13-plugins-d1c7d04`), plus the AWS CLI v2 and nothing else: the
+Dockerfile downloads `awscli-exe-linux-<arch>-<version>.zip` from `awscli.amazonaws.com` at the
+pinned version, checks it against the sha256 recorded in the Dockerfile (one per architecture),
+installs it to `/usr/local/aws-cli` and removes `unzip` again. To move the CLI, change `AWSCLI_VERSION` and both
+checksums together, bump `runtime.yaml` (`tools.aws` and `version`) and run the local check below.
+`AWS_PAGER` is set empty so a task never waits on a pager. The AWS SDKs, `sam`, `cdk` and `eksctl`
+are left out on purpose; an EKS kubeconfig is built by the kubernetes plugin, in `kubernetes@1`.
+The versions, digests, release flow and workflow are the same as for `kubernetes` with `aws` for the name.
+
+```
+docker build -t rwp-runtime-aws:dev runtimes/aws
+docker run --rm -i --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
+# as the runner runs it (the smoke also makes one CLI call against a fake endpoint)
+docker run --rm -i --user 65532 --read-only --tmpfs /work:rw,mode=1777 --entrypoint sh rwp-runtime-aws:dev -s < runtimes/aws/smoke.sh
+python ci/check_runtime.py validate --allow-placeholder --runtime-dir runtimes/aws
+## azure
+
+The same rw-task base pin as `kubernetes`, plus the Azure CLI (`az`) and nothing else: no `aws`,
+no `gcloud`. `az` is installed from PyPI into its own virtualenv (`/opt/az`,
+`azure-cli==<AZURE_CLI_VERSION>`, linked to `/usr/local/bin/az`) so its dependencies cannot replace
+what the SDK in `/opt/venv` imports. The install is hash-locked: `runtimes/azure/requirements.txt`
+holds every dependency of `azure-cli==<AZURE_CLI_VERSION>` with the hashes of its files, the Dockerfile
+installs it with `pip install --require-hashes --no-deps`, and the header of that file says how to
+regenerate it. The image sets no `AZURE_CONFIG_DIR`: the `azure/cli` auth scripts create the az
+session in the task's private secrets directory and the credential points `AZURE_CONFIG_DIR` at it
+(the token cache lives for one task run). Telemetry and dynamic extension install are off.
+To move `az`, change `AZURE_CLI_VERSION` in the Dockerfile and `requirements.in`, regenerate
+`requirements.txt`, update `runtime.yaml` `tools`, and bump the runtime version.
+
+```
+docker build -t rwp-runtime-azure:dev runtimes/azure
+docker run --rm -i --entrypoint sh rwp-runtime-azure:dev -s < runtimes/azure/smoke.sh
+python ci/check_runtime.py validate --runtime-dir runtimes/azure --allow-placeholder
+```
+
+## gcp
+
+The same rw-task base pin as `kubernetes`, plus only the Google Cloud CLI: `google-cloud-cli`
+from Google's apt repository at an exact version (`GCLOUD_VERSION` in the Dockerfile), whose signing
+key is pinned by sha256 (`GCLOUD_APT_REPO_SHA256`: a key Google rotates fails the build until the new
+one is checked against Google's install page). The package also ships `gsutil`, `bq` and its own
+python 3.14; the Dockerfile removes all three in the same `RUN`, and gcloud runs on the base's
+python3 (`CLOUDSDK_PYTHON=python3`). gcp tasks use `gcloud storage`; a task that needs `bq` or
+`gsutil` must add them to the image on purpose (and `rwtask test --shim bq` for its fixtures, as
+`bq` is not shimmed by default). Nothing else is added: the base
+image's kubectl and psql are still there but no gcp task uses them; az, aws, oc, helm, flux and
+argocd are absent. The image sets `CLOUDSDK_CONFIG=/work/.config/gcloud` (the
+runner's root is read-only; `/work` is the writable mount) and turns off gcloud's update check,
+usage reporting and prompts. A blank `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` counts as unset
+(checked with `gcloud config get auth/credential_file_override`); the cloud-identity connection
+relies on that. Credentials never come from `gcloud auth login`: the `gcp/adc` type
+materializes `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`.
+
+To move gcloud, change `GCLOUD_VERSION` and `runtime.yaml` `tools.gcloud`, and bump `version`
+(`gcloud --version` is the check; the tool version list of the apt repository is
+`https://packages.cloud.google.com/apt/dists/cloud-sdk/main/binary-amd64/Packages`).
+
+Local check, native architecture (the smoke test never contacts Google and uses a throwaway
+gcloud config directory):
+
+```
+docker build -t rwp-runtime-gcp:dev runtimes/gcp
+docker run --rm -i --entrypoint sh rwp-runtime-gcp:dev -s < runtimes/gcp/smoke.sh
+python ci/check_runtime.py validate --runtime-dir runtimes/gcp --allow-placeholder
+```
+
+`check_runtime.py validate` and `compare` read `runtimes/kubernetes` unless `--runtime-dir` says
+otherwise, so every runtime workflow passes its own directory.
+
 ## Versions
 
 `runtime.yaml` `version` is a semver; the git tag is `runtimes/kubernetes/v<version>` and must
@@ -54,6 +130,9 @@ Never move a published tag: the registry rejects a tag whose content changed.
 The digests in `runtime.yaml` are the pin that reaches customer clusters, and a rebuild does not
 reproduce a digest. So the image is built and pushed first, and the digests are committed before
 the tag. The `runtime-kubernetes` workflow does the checks at each step.
+
+(The `ci/check_runtime.py` commands below default to `runtimes/kubernetes`; pass
+`--runtime-dir runtimes/<name>` for another runtime. The `runtime-azure` workflow does.)
 
 1. **Change the image** (Dockerfile, base pin, `smoke.sh`) and bump `version` in `runtime.yaml`
    (the `digests` block keeps its all-zero placeholder, or the previous release's digests, for now).

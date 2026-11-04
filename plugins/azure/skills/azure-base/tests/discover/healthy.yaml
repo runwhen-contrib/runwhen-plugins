@@ -1,0 +1,260 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+now: '2026-11-04T02:19:22.847Z'
+calls:
+- argv:
+  - az
+  - account
+  - show
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "environmentName": "AzureCloud",
+      "homeTenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "id": "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71",
+      "isDefault": true,
+      "managedByTenants": [],
+      "name": "rw-pilot-subscription",
+      "state": "Enabled",
+      "tenantDefaultDomain": "contoso.onmicrosoft.com",
+      "tenantDisplayName": "Contoso",
+      "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+      "user": {
+        "name": "00000000-0000-4000-8000-0000000000aa",
+        "type": "servicePrincipal"
+      }
+    }
+  stderr: |
+    WARNING: A new Azure CLI version is available. Run `az upgrade` to update.
+- argv:
+  - az
+  - group
+  - list
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev",
+        "location": "westeurope",
+        "managedBy": null,
+        "name": "rg-orders-dev",
+        "properties": {
+          "provisioningState": "Succeeded"
+        },
+        "tags": {
+          "env": "dev",
+          "team": "orders"
+        },
+        "type": "Microsoft.Resources/resourceGroups"
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod",
+        "location": "eastus",
+        "managedBy": null,
+        "name": "rg-orders-prod",
+        "properties": {
+          "provisioningState": "Succeeded"
+        },
+        "tags": {
+          "env": "prod",
+          "team": "orders"
+        },
+        "type": "Microsoft.Resources/resourceGroups"
+      },
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/RG-Platform",
+        "location": "northeurope",
+        "managedBy": null,
+        "name": "RG-Platform",
+        "properties": {
+          "provisioningState": "Succeeded"
+        },
+        "tags": {
+          "team": "platform"
+        },
+        "type": "Microsoft.Resources/resourceGroups"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - list
+  - -g
+  - rg-orders-dev
+  - --resource-type
+  - vault
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev",
+        "location": "westeurope",
+        "name": "kv-orders-dev",
+        "properties": {
+          "accessPolicies": [],
+          "createMode": null,
+          "enablePurgeProtection": null,
+          "enableRbacAuthorization": true,
+          "enableSoftDelete": true,
+          "enabledForDeployment": false,
+          "enabledForDiskEncryption": false,
+          "enabledForTemplateDeployment": false,
+          "hsmPoolResourceId": null,
+          "networkAcls": null,
+          "privateEndpointConnections": null,
+          "provisioningState": "Succeeded",
+          "publicNetworkAccess": "Enabled",
+          "sku": {
+            "family": "A",
+            "name": "standard"
+          },
+          "softDeleteRetentionInDays": 7,
+          "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+          "vaultUri": "https://kv-orders-dev.vault.azure.net/"
+        },
+        "resourceGroup": "rg-orders-dev",
+        "systemData": null,
+        "tags": {
+          "env": "dev",
+          "team": "orders"
+        },
+        "type": "Microsoft.KeyVault/vaults"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - list
+  - -g
+  - rg-orders-prod
+  - --resource-type
+  - vault
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    [
+      {
+        "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod",
+        "location": "eastus",
+        "name": "kv-orders-prod",
+        "properties": {
+          "accessPolicies": [],
+          "createMode": null,
+          "enablePurgeProtection": true,
+          "enableRbacAuthorization": true,
+          "enableSoftDelete": true,
+          "enabledForDeployment": false,
+          "enabledForDiskEncryption": false,
+          "enabledForTemplateDeployment": false,
+          "hsmPoolResourceId": null,
+          "networkAcls": {
+            "bypass": "AzureServices",
+            "defaultAction": "Deny",
+            "ipRules": [
+              {
+                "value": "203.0.113.0/24"
+              }
+            ],
+            "virtualNetworkRules": []
+          },
+          "privateEndpointConnections": [
+            {
+              "etag": null,
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/privateEndpointConnections/pe-orders",
+              "privateEndpoint": {
+                "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/privateEndpoints/pe-orders",
+                "resourceGroup": "rg-orders-prod"
+              },
+              "privateLinkServiceConnectionState": {
+                "actionsRequired": "None",
+                "description": "Auto-Approved",
+                "status": "Approved"
+              },
+              "provisioningState": "Succeeded",
+              "resourceGroup": "rg-orders-prod"
+            }
+          ],
+          "provisioningState": "Succeeded",
+          "publicNetworkAccess": "Disabled",
+          "sku": {
+            "family": "A",
+            "name": "standard"
+          },
+          "softDeleteRetentionInDays": 90,
+          "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+          "vaultUri": "https://kv-orders-prod.vault.azure.net/"
+        },
+        "resourceGroup": "rg-orders-prod",
+        "systemData": null,
+        "tags": {
+          "env": "prod",
+          "team": "orders"
+        },
+        "type": "Microsoft.KeyVault/vaults"
+      }
+    ]
+  stderr: ''
+- argv:
+  - az
+  - keyvault
+  - list
+  - -g
+  - RG-Platform
+  - --resource-type
+  - vault
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    []
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    subscription:
+      subscriptionId: 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+      displayName: rw-pilot-subscription
+      state: Enabled
+    resourceGroups:
+      total: 3
+      omitted: 0
+    keyvaults:
+      total: 2
+      omitted: 0
+    summary:
+      counts:
+        subscription: 1
+        resourcegroup: 3
+        keyvault: 2
+      partitions:
+        complete: 4
+        failed: 0
+        forbidden: 0
+      root:
+        canonicalKey:
+          name: subscriptionId
+          value: 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71

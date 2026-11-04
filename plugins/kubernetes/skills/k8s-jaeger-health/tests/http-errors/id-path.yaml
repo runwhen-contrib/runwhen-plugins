@@ -7,7 +7,7 @@ resource: kubernetes/clusters/kind/namespaces/rw-jaeger/deployments/jaeger
 inputs:
   services:
   - checkout
-now: '2026-11-04T00:25:19.858Z'
+now: '2026-11-04T01:47:26.830Z'
 calls:
 - argv:
   - kubectl
@@ -43,138 +43,270 @@ calls:
   rc: 0
   stdout: |
     @
-    s:metadata.name=jaeger-f6bd9dd68-j59qx
+    s:metadata.name=jaeger-f6bd9dd68-pdjp5
     s:metadata.deletionTimestamp=
     s:status.phase=Running
-    s:status.startTime=2026-11-04T00:13:08Z
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:10Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:10Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    s:status.startTime=2026-11-04T01:46:54Z
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:54Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:54Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:55Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:55Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:54Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     c:jaeger=jaegertracing/all-in-one:1.76.0
     p:query=16686
     p:otlp-http=4318
     p:admin=14269
-    r:jaeger=0|2026-11-04T00:13:09Z
+    r:jaeger=0|2026-11-04T01:46:54Z
   stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/services
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":["jaeger-all-in-one","checkout","catalog","gateway","inventory"],"total":5,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22error%22%3A%22true%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[{"traceID":"186dca0922051074d05b33ad19b8ae83","spans":[{"traceID":"186dca0922051074d05b33ad19b8ae83","spanID":"cc4054f4c75aa260","operationName":"POST
-    /pay","references":[],"startTime":1793751158268378,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"43b207ff536240f94aef86e1a43e4b33","spans":[{"traceID":"43b207ff536240f94aef86e1a43e4b33","spanID":"ec52f4b2e15dbf77","operationName":"POST
-    /pay","references":[],"startTime":1793751148315330,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"09e833f1bb3458aafb7248f4ed995045","spans":[{"traceID":"09e833f1bb3458aafb7248f4ed995045","spanID":"6b076880f8aad5a4","operationName":"POST
-    /pay","references":[],"startTime":1793751160268371,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"95690da1ad15a2be4ee3f6ec839c4dea","spans":[{"traceID":"95690da1ad15a2be4ee3f6ec839c4dea","spanID":"b5d39afd54f685c8","operationName":"POST
-    /pay","references":[],"startTime":1793751156315320,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"c46acd7c45eed9068256a001faf6fed3","spans":[{"traceID":"c46acd7c45eed9068256a001faf6fed3","spanID":"7e6656c0c87b4ecc","operationName":"POST
-    payments","references":[],"startTime":1793751173317276,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://payments:8080/charge"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"client"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"376f899f5a404f4511f118b9bc003a72","spans":[{"traceID":"376f899f5a404f4511f118b9bc003a72","spanID":"cd6b7ffb64e29ff9","operationName":"POST
-    /pay","references":[],"startTime":1793751149268358,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"612361451cbe1a182347aefcb4893b8a","spans":[{"traceID":"612361451cbe1a182347aefcb4893b8a","spanID":"8dd20b71262d7619","operationName":"POST
-    payments","references":[],"startTime":1793751160317283,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://payments:8080/charge"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"client"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"1982eb99900026ae659bca0917e30bb4","spans":[{"traceID":"1982eb99900026ae659bca0917e30bb4","spanID":"ea5f343fa74fadc4","operationName":"POST
-    /pay","references":[],"startTime":1793751144268375,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22400%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22401%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22403%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22404%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[{"traceID":"c5d8f5d2375579561e25c4d143d9bd59","spans":[{"traceID":"c5d8f5d2375579561e25c4d143d9bd59","spanID":"f8648ef14b49471a","operationName":"GET
-    /cart","references":[],"startTime":1793751181316202,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"56dae3fcb1e0bb437bd2401df6a66457","spans":[{"traceID":"56dae3fcb1e0bb437bd2401df6a66457","spanID":"898aada294196549","operationName":"GET
-    /cart","references":[],"startTime":1793751157316193,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"6013335a6819222fe02e2aecf57c7738","spans":[{"traceID":"6013335a6819222fe02e2aecf57c7738","spanID":"cdc0b3a6e64c7f15","operationName":"GET
-    /reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code","references":[],"startTime":1793751163316972,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"4504a4e939e5ef1f0ebda83764498e41","spans":[{"traceID":"4504a4e939e5ef1f0ebda83764498e41","spanID":"9f91a94598bdee01","operationName":"GET
-    /reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code","references":[],"startTime":1793751178316968,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"8e276a1d8d01cd8f95d1b183df07e3db","spans":[{"traceID":"8e276a1d8d01cd8f95d1b183df07e3db","spanID":"bd6207b4438cc6eb","operationName":"GET
-    /cart","references":[],"startTime":1793751143316200,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.status_code%22%3A%22429%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22400%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22401%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22403%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22404%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=checkout&start=1793748319858000&end=1793751919858000&limit=100&tags=%7B%22http.response.status_code%22%3A%22429%22%7D
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
-  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/services
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '118'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-54d4b0cb6efc6dfcaf3c297301bd09cf-66a04021710e7b61-01
+      connection: close
+    body: '{"data":["checkout","catalog","gateway","inventory","jaeger-all-in-one"],"total":5,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22error%22%3A%22true%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-43ebceb2e0aad34cb7dc502ee92ef26b-d5a8379d69b2b8cc-01
+      connection: close
+      transfer-encoding: chunked
+    body: '{"data":[{"traceID":"b1c7571d7e62a5071eb86c32eda8005f","spans":[{"traceID":"b1c7571d7e62a5071eb86c32eda8005f","spanID":"eddb3ae0a3b2b6c8","operationName":"POST
+      payments","references":[],"startTime":1793756779128874,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://payments:8080/charge"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"client"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"b47825a2f6ef7798bc15711ccd06f276","spans":[{"traceID":"b47825a2f6ef7798bc15711ccd06f276","spanID":"ea68c8c978083357","operationName":"POST
+      /pay","references":[],"startTime":1793756797109509,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"bd4652c5be3c8c3e8e36ff677f417390","spans":[{"traceID":"bd4652c5be3c8c3e8e36ff677f417390","spanID":"24eae87bbb51c129","operationName":"POST
+      /pay","references":[],"startTime":1793756799126844,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"3b9838ce8524ba12c7c1ee976133108f","spans":[{"traceID":"3b9838ce8524ba12c7c1ee976133108f","spanID":"ab4e46b33865c1a7","operationName":"POST
+      /pay","references":[],"startTime":1793756802109529,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"fad63b0507aab401d23b857e47c4c65e","spans":[{"traceID":"fad63b0507aab401d23b857e47c4c65e","spanID":"e17867b411df0e14","operationName":"POST
+      payments","references":[],"startTime":1793756775128869,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://payments:8080/charge"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"client"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"301195368dce56b856e592ec19929993","spans":[{"traceID":"301195368dce56b856e592ec19929993","spanID":"7f5bb5baed984cc8","operationName":"POST
+      /pay","references":[],"startTime":1793756783109521,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"32bfa0673724e69f01638c2a6f5700b1","spans":[{"traceID":"32bfa0673724e69f01638c2a6f5700b1","spanID":"42f2b39f9e036eb1","operationName":"POST
+      /pay","references":[],"startTime":1793756771126826,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":503},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"6a6dc9f8fd7de6def8fc9f022046f870","spans":[{"traceID":"6a6dc9f8fd7de6def8fc9f022046f870","spanID":"425cf2e0cfa43e87","operationName":"POST
+      /pay","references":[],"startTime":1793756768109526,"duration":5000,"tags":[{"key":"error","type":"bool","value":true},{"key":"http.method","type":"string","value":"POST"},{"key":"http.status_code","type":"int64","value":500},{"key":"http.url","type":"string","value":"http://checkout:8080/pay"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"otel.status_code","type":"string","value":"ERROR"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.status_code%22%3A%22400%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-d7279bebef7b12b24c5a18932c574431-c764fd850ee99500-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.status_code%22%3A%22401%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-43f1a8f76fc674eefbeffc067919866d-5b6ae9c7bd3db307-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.status_code%22%3A%22403%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-fc1023acb7685491e735d936032a5044-6361d0a7e788573f-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.status_code%22%3A%22404%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-430d6f5d4fa419bfa199c6733d6e68d3-c23b4ef5ef1b8870-01
+      connection: close
+      transfer-encoding: chunked
+    body: '{"data":[{"traceID":"331ec1215dee747b069ada4fe3ed9fb7","spans":[{"traceID":"331ec1215dee747b069ada4fe3ed9fb7","spanID":"bc7b889012deef55","operationName":"GET
+      /cart","references":[],"startTime":1793756810127709,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"b4977e146713e7e9ecabc76c483990ec","spans":[{"traceID":"b4977e146713e7e9ecabc76c483990ec","spanID":"309a2b68f52cd61e","operationName":"GET
+      /cart","references":[],"startTime":1793756815127700,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"3ca5f89d4d27932b718c0e6a05b47880","spans":[{"traceID":"3ca5f89d4d27932b718c0e6a05b47880","spanID":"44b2910afda15bff","operationName":"GET
+      /reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code","references":[],"startTime":1793756804128543,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"6c1cb2aa12972c2e948c775fb34d88d8","spans":[{"traceID":"6c1cb2aa12972c2e948c775fb34d88d8","spanID":"39a9d326616634bf","operationName":"GET
+      /cart","references":[],"startTime":1793756796127712,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.url","type":"string","value":"http://checkout:8080/cart/items?user=42\u0026token=not-a-real-token"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null},{"traceID":"0996a70b1089c39dce3b621f72c52adc","spans":[{"traceID":"0996a70b1089c39dce3b621f72c52adc","spanID":"49d72cc1d90582ec","operationName":"GET
+      /reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code","references":[],"startTime":1793756775128537,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/reset/9f86d081884c7d659a2feaa0c55ad015/confirm?code=not-a-real-code"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"checkout","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.status_code%22%3A%22429%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-465ffdd6c540ff174b88ec021c606b0e-d89d4fd07b785092-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.response.status_code%22%3A%22400%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-8b97badb6a99ad00853eb953d6929b84-4f2933950125683b-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.response.status_code%22%3A%22401%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-2acc5478fd9d2d6eabc32a221a060e0a-354b8f58e42608a3-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.response.status_code%22%3A%22403%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-c913816bf142a0795aec72811bae92c9-bb2947a4ead6a881-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.response.status_code%22%3A%22404%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-6afbad439fe9f7ca46b125fd74229b33-10e5349b453ad733-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=checkout&start=1793753246830000&end=1793756846830000&limit=100&tags=%7B%22http.response.status_code%22%3A%22429%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:27 GMT
+      traceresponse: 00-080c1ef92a619d5864e4dd4f40fb7c16-bc8a87551c40fc7d-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
 expect:
   status: ok
   errorCodes: []

@@ -3,7 +3,8 @@
 (plugins/kubernetes/tests/kind/scenarios/30-k8s-prometheus-health.*): a plain prom/prometheus
 Deployment standing in for the operator's StatefulSet, with synthetic monitoring.coreos.com
 CRs. The scripts run through the SDK's test context (`ctx.run` raises on a non-zero exit like the
-real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails)."""
+real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails). The
+proxied HTTP reads go through `ctx.k8s_proxy_get`, stood in for by `proxy_fake.ProxyFake`."""
 
 import importlib.util
 import json
@@ -25,6 +26,7 @@ from k8s_prometheus_health import (
     targets,
 )
 from k8s_prometheus_health.errors import RwError
+from proxy_fake import ProxyFake, api_error, cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-prometheus-health"
@@ -57,10 +59,6 @@ FORBIDDEN = (
     'in API group "" in the namespace "rw-prometheus"'
 )
 UNREACHABLE = "Error from server (ServiceUnavailable): error trying to reach service: dial tcp 10.244.0.198:9090: connect: connection refused"
-UNAVAILABLE = (
-    "Error from server (ServiceUnavailable): the server is currently unable to handle the request"
-)
-NO_ROUTE = "Error from server (NotFound): the server could not find the requested resource"
 
 
 def script(name):
@@ -70,16 +68,6 @@ def script(name):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.main
-
-
-def raw(pod, path):
-    return (
-        "kubectl",
-        "get",
-        "--raw",
-        f"/api/v1/namespaces/{NS}/pods/http:{pod}:9090/proxy{path}",
-        "--request-timeout=30s",
-    )
 
 
 def review_output(argv_order, deny_namespace="rw-prometheus-apps"):
@@ -92,11 +80,12 @@ def review_output(argv_order, deny_namespace="rw-prometheus-apps"):
 
 
 def stubs(cr="rw-prom", fail=None, replies=None, pods=None, sms=None, namespaces=None):
-    """kubectl answers for a run on Prometheus `cr`. `fail` maps a key to stderr (exit 1);
-    `replies` overrides the body of a proxied path (or maps it to ('fail', stderr))."""
+    """(kubectl answers, proxied answers) for a run on Prometheus `cr`. `fail` maps a key to stderr
+    (exit 1); `replies` overrides the body of a proxied path (a str is a 200 body, ('fail', stderr)
+    is an API-server error, a dict is a whole reply)."""
     fail = fail or {}
     replies = replies or {}
-    out = {}
+    out, served = {}, {}
     cr_argv = ("kubectl", "-n", NS, "get", "prometheuses.monitoring.coreos.com", cr, "-o", "json")
     out[cr_argv] = (
         (1, "", fail["cr"]) if "cr" in fail else (0, json.dumps(load(f"prometheus_{cr}.json")), "")
@@ -129,11 +118,11 @@ def stubs(cr="rw-prom", fail=None, replies=None, pods=None, sms=None, namespaces
         for path, body in defaults.items():
             reply = replies.get((name, path), replies.get(path, body))
             if isinstance(reply, tuple):
-                out[raw(name, path)] = (1, "", reply[1])
+                served[(name, path)] = api_error(reply[1], k8s.classify)
             elif "proxy" in fail:
-                out[raw(name, path)] = (1, "", fail["proxy"])
+                served[(name, path)] = api_error(fail["proxy"], k8s.classify)
             else:
-                out[raw(name, path)] = (0, reply, "")
+                served[(name, path)] = reply
     sm_doc = load("servicemonitors_all.json") if sms is None else sms
     all_argv = ("kubectl", "get", "servicemonitors.monitoring.coreos.com", "-A", "-o", "json")
     own_argv = ("kubectl", "-n", NS, "get", "servicemonitors.monitoring.coreos.com", "-o", "json")
@@ -145,7 +134,7 @@ def stubs(cr="rw-prom", fail=None, replies=None, pods=None, sms=None, namespaces
     out[ns_argv] = (
         (1, "", fail["namespaces"]) if "namespaces" in fail else (0, json.dumps(ns_doc), "")
     )
-    return out
+    return out, served
 
 
 LAST = {}  # facts about the last run() that its return value does not carry
@@ -161,10 +150,12 @@ def run(task, cr="rw-prom", now=CAPTURED, res=None, settings=None, review=None, 
         "path": f"kubernetes/clusters/kind/namespaces/{NS}/prometheuses/{cr}",
     }
     with make_context(resource=resource, settings=settings or SETTINGS, now=now) as tc:
-        table = stubs(cr, **kw)
+        table, served = stubs(cr, **kw)
+        fake = ProxyFake(lambda r: served[(r["name"], r["path"])])
         review_argv = ("kubectl", "create", "-f", "sar-0.json", "-o", "json")
         table[review_argv] = review or (0, "", "")
         calls = stub_commands(tc, table)
+        tc.ctx.k8s_proxy_get = fake
         if review is None and task == "servicemonitor-coverage":
             # answer the review call from the List the script wrote (the file is in ctx.workdir)
             original = tc.ctx.run
@@ -182,6 +173,7 @@ def run(task, cr="rw-prom", now=CAPTURED, res=None, settings=None, review=None, 
             tc.ctx.run = run_with_reviews
         env = run_main(script(task), tc)
         LAST["sar_left"] = (tc.ctx.workdir / "sar-0.json").exists()
+        LAST["proxy"] = fake.requests
     return env, calls
 
 
@@ -266,26 +258,90 @@ def test_classify():
 # ------------------------------------------------------------ lib: proxy ----
 
 
-class FakeRun:
-    def __init__(self, rc, out="", err=""):
-        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
-
-    def run(self, argv, check=True, **_):
-        return self.result
+def ask(answer, path="/x"):
+    return proxy.proxy_get(FakeProxyCtx(answer), "ns", "p-0", "http", 9090, path)
 
 
-def test_proxy_get_tells_the_statuses_apart():
-    assert proxy.proxy_get(FakeRun(0, "ok"), "/x") == proxy.Reply(200, "ok")
-    assert proxy.proxy_get(FakeRun(1, "", NO_ROUTE), "/x").status == 404
-    assert proxy.proxy_get(FakeRun(1, "", UNAVAILABLE), "/x").status == 503
+class FakeProxyCtx:
+    def __init__(self, answer):
+        self.k8s_proxy_get = ProxyFake(answer)
+
+
+def test_proxy_get_returns_the_backends_own_status_and_body():
+    assert ask("ok") == proxy.Reply(200, "ok")
+    assert ask(reply(404, "page not found")) == proxy.Reply(404, "page not found")
+    assert ask(reply(503, "Service Unavailable")) == proxy.Reply(503, "Service Unavailable")
+
+
+def test_proxy_get_asks_the_pod_proxy_with_scheme_port_path_and_timeout():
+    ctx = FakeProxyCtx("ok")
+    proxy.proxy_get(ctx, "ns", "p-0", "https", 9091, "/-/ready?x=1", 7)
+    assert ctx.k8s_proxy_get.requests == [
+        {
+            "namespace": "ns",
+            "kind": "pods",
+            "name": "p-0",
+            "port": 9091,
+            "path": "/-/ready?x=1",
+            "scheme": "https",
+            "timeout": 7,
+        }
+    ]
+
+
+def test_proxy_get_raises_what_the_api_server_answers_itself():
     for stderr, code in (
         (UNREACHABLE, "unreachable"),
         (FORBIDDEN.format(r="pods/proxy", v="get"), "permission_denied"),
         ('Error from server (NotFound): pods "x" not found', "not_found"),
     ):
         with pytest.raises(RwError) as exc:
-            proxy.proxy_get(FakeRun(1, "", stderr), "/x")
+            ask(api_error(stderr, k8s.classify))
         assert exc.value.code == code
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = FakeProxyCtx(
+        lambda r: reply(301, "", location="/prom/-/ready") if r["path"] == "/-/ready" else "ready"
+    )
+    assert proxy.proxy_get(ctx, "ns", "p-0", "http", 9090, "/-/ready") == proxy.Reply(200, "ready")
+    assert ctx.k8s_proxy_get.paths() == ["/-/ready", "/prom/-/ready"]
+    loop = FakeProxyCtx(lambda r: reply(302, "", location="/again"))
+    assert proxy.proxy_get(loop, "ns", "p-0", "http", 9090, "/a").status == 302
+    assert len(loop.k8s_proxy_get.requests) == 2  # one hop, then the 302 is the answer
+
+
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location; the skill reports the host and asks nothing more."""
+    ctx = FakeProxyCtx(cross_host_redirect("sso.example.invalid"))
+    got = proxy.proxy_get(ctx, "ns", "p-0", "http", 9090, "/-/ready")
+    assert got.status == 302 and got.redirect_dropped == "sso.example.invalid"
+    assert len(ctx.k8s_proxy_get.requests) == 1
+    with pytest.raises(RwError) as exc:
+        proxy.expect_200(got, "targets on pod p-0")
+    assert exc.value.code == "dependency"
+    assert "off cluster to sso.example.invalid (not followed)" in exc.value.message
+
+
+def test_a_redirected_probe_is_an_error_never_ready():
+    got = proxy.Reply(302, "", "sso.example.invalid")
+    with pytest.raises(RwError) as exc:
+        status.ready_reply(got, "/-/ready")
+    assert "sso.example.invalid" in exc.value.message
+
+
+def test_a_cross_host_redirect_through_a_task_is_an_error_and_asks_once_per_pod():
+    redirect = cross_host_redirect("sso.example.invalid")
+    env, _ = run("targets", replies={"/api/v1/targets?state=active": redirect})
+    assert env["status"] == "failed" and codes(env)[0][0] == "dependency"
+    assert "sso.example.invalid" in env["errors"][0]["message"]
+    assert LAST["proxy"] and len(LAST["proxy"]) == len({r["name"] for r in LAST["proxy"]})
+
+
+def test_a_cut_body_is_internal_never_a_partial_parse():
+    with pytest.raises(RwError) as exc:
+        ask(reply(200, '{"status":"succ', truncated=True))
+    assert exc.value.code == "internal" and exc.value.hint
 
 
 def test_api_json_rejects_what_is_not_prometheus_json():
@@ -295,21 +351,22 @@ def test_api_json_rejects_what_is_not_prometheus_json():
             proxy.api_json(proxy.Reply(200, body), "w")
         assert exc.value.code == "internal"
     with pytest.raises(RwError) as exc:
-        proxy.api_json(proxy.Reply(404, ""), "w")
-    assert exc.value.code == "dependency"
+        proxy.api_json(proxy.Reply(404, "page not found"), "w")
+    assert exc.value.code == "dependency" and "404" in exc.value.message
+    assert "page not found" in exc.value.message  # the backend's body is shown
 
 
 def test_probe_replies_are_never_true_for_unexpected_text():
     assert status.healthy_reply(proxy.Reply(200, "Prometheus Server is Healthy.\n"), "w") is True
     assert status.ready_reply(proxy.Reply(200, "Prometheus Server is Ready.\n"), "w") is True
     assert status.ready_reply(proxy.Reply(503, ""), "w") is False
-    for reply in (
+    for bad in (
         proxy.Reply(200, "<html>sign in</html>"),
         proxy.Reply(200, "Prometheus Server is not Ready"),
         proxy.Reply(404, ""),
     ):
         with pytest.raises(RwError):
-            status.ready_reply(reply, "w")
+            status.ready_reply(bad, "w")
 
 
 # ------------------------------------------------------------ lib: selectors ----
@@ -526,7 +583,7 @@ def test_server_status_uses_ctx_now_for_ages():
 
 
 def test_server_status_not_ready_is_false_not_an_error():
-    env, _ = run("server-status", replies={"/-/ready": ("fail", UNAVAILABLE)})
+    env, _ = run("server-status", replies={"/-/ready": reply(503, "Service Unavailable")})
     assert (
         env["status"] == "ok" and pod_of(env)["ready"] is False and pod_of(env)["healthy"] is True
     )
@@ -641,7 +698,7 @@ def test_server_status_a_pod_that_is_not_running_is_listed_and_not_asked():
     pods[0]["status"]["phase"] = "Pending"
     env, calls = run("server-status", pods=pods)
     assert pod_of(env)["queried"] is False and pod_of(env)["healthy"] is None
-    assert not [c for c in calls if "--raw" in c]
+    assert not [c for c in calls if "--raw" in c] and LAST["proxy"] == []
 
 
 def test_scheme_port_and_route_prefix_follow_the_cr():
@@ -950,7 +1007,7 @@ def test_tasks_report_pod_count_and_pods_skipped_beyond_ten():
         out = env["outputs"][output]
         assert (out["podCount"], out["podsSkipped"], len(out["queriedPods"])) == (12, 2, 10)
         assert {"prometheus-s0-0", "prometheus-s1-0"} <= set(out["queriedPods"])
-        assert len([c for c in calls if path in c[3]]) == 10
+        assert len([r for r in LAST["proxy"] if r["path"] == path]) == 10
     env, _ = run("server-status", pods=pods)
     server = env["outputs"]["server"]
     assert (server["podCount"], server["podsSkipped"]) == (12, 2)
@@ -959,8 +1016,8 @@ def test_tasks_report_pod_count_and_pods_skipped_beyond_ten():
 
 
 class Clocked:
-    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock and answer
-    through `answer(index, argv)` -> (returncode, stdout, stderr)."""
+    """A ctx whose `k8s_proxy_get` calls each take `step` seconds of a fake clock and answer
+    through `answer(index, request)` -> a reply dict, a body str or an exception."""
 
     def __init__(self, answer, step=30):
         self.now = 0.0
@@ -972,20 +1029,21 @@ class Clocked:
     def clock(self):
         return self.now
 
-    def run(self, argv, check=True, **_):
-        self.calls.append(list(argv))
-        rc, out, err = self.answer(len(self.calls) - 1, argv)
-        self.now += self.step
-        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        def answer(request):
+            self.calls.append(request)
+            out = self.answer(len(self.calls) - 1, request)
+            self.now += self.step
+            return out
+
+        return ProxyFake(answer)(namespace, kind, name, port, path, scheme=scheme, timeout=timeout)
 
     def error(self, code, message, scope=None, **_):
         self.errors.append((code, scope, message))
 
 
 OK_TARGETS = json.dumps({"status": "success", "data": {"activeTargets": []}})
-CLIENT_TIMEOUT = (
-    "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)"
-)
+CLIENT_TIMEOUT = RwError("timeout", "the proxy did not answer in time")
 
 
 def pods_named(n):
@@ -993,14 +1051,14 @@ def pods_named(n):
 
 
 def test_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
-    ctx = Clocked(lambda i, argv: (0, OK_TARGETS, ""))
+    ctx = Clocked(lambda i, request: OK_TARGETS)
     budget = fetch.Budget(clock=ctx.clock)
     answers = fetch.query_pods(
         ctx, prom_with(), pods_named(6), targets.PATH, "targets", targets.parse_reply, budget
     )
     # 0s, 30s, 60s, 90s: four asks; the fourth is limited to what is left of the 100s
     assert [a[0] for a in answers] == [f"prometheus-rw-prom-{i}" for i in range(4)]
-    assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
+    assert [c["timeout"] for c in ctx.calls] == [30, 30, 30, 10]
     assert [(c, s) for c, s, _ in ctx.errors] == [
         ("timeout", "pod/prometheus-rw-prom-4"),
         ("timeout", "pod/prometheus-rw-prom-5"),
@@ -1009,8 +1067,8 @@ def test_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
 
 
 def test_three_consecutive_timeouts_stop_asking_the_path():
-    def answer(i, argv):
-        return (0, OK_TARGETS, "") if i == 0 else (1, "", CLIENT_TIMEOUT)
+    def answer(i, request):
+        return OK_TARGETS if i == 0 else CLIENT_TIMEOUT
 
     ctx = Clocked(answer, step=1)
     budget = fetch.Budget(clock=ctx.clock)
@@ -1030,8 +1088,8 @@ def test_three_consecutive_timeouts_stop_asking_the_path():
 
 
 def test_an_answer_resets_the_consecutive_timeout_count():
-    replies = [(1, "", CLIENT_TIMEOUT)] * 2 + [(0, OK_TARGETS, "")] + [(1, "", CLIENT_TIMEOUT)] * 2
-    ctx = Clocked(lambda i, argv: replies[i], step=1)
+    replies = [CLIENT_TIMEOUT] * 2 + [OK_TARGETS] + [CLIENT_TIMEOUT] * 2
+    ctx = Clocked(lambda i, request: replies[i], step=1)
     budget = fetch.Budget(clock=ctx.clock)
     answers = fetch.query_pods(
         ctx, prom_with(), pods_named(5), targets.PATH, "targets", targets.parse_reply, budget
@@ -1109,10 +1167,7 @@ def rbac_needs(argv):
             continue
         elif not a.startswith("-") or a == "-A":
             positional.append(a)
-    if "--raw" in argv:
-        path = argv[argv.index("--raw") + 1]
-        assert "/pods/" in path and "/proxy/" in path, path
-        return {("", "pods/proxy", "get")}
+    assert "--raw" not in argv, argv  # pod proxy reads go through ctx.k8s_proxy_get (S17)
     if positional[0] == "create":
         assert flags["-f"].startswith("sar-"), argv
         return {("authorization.k8s.io", "subjectaccessreviews", "create")}
@@ -1149,10 +1204,12 @@ def test_declared_permissions_are_exactly_what_the_scripts_call(task):
                 continue
             for argv in calls:
                 needed |= rbac_needs(list(argv))
+            needed |= {("", f"{r['kind']}/proxy", "get") for r in LAST["proxy"]}
     # the own-namespace servicemonitors list is made only for a CR with no namespace selector
     _, calls = run(task, cr="rw-prom-idle", pods=load("pods.json")["items"])
     for argv in calls:
         needed |= rbac_needs(list(argv))
+    needed |= {("", f"{r['kind']}/proxy", "get") for r in LAST["proxy"]}
     assert needed == granted(task), (
         f"{task}: calls {sorted(needed)}, declares {sorted(granted(task))}"
     )
@@ -1167,15 +1224,8 @@ def test_rbac_needs_maps_the_verbs():
     assert rbac_needs(
         ["kubectl", "get", "servicemonitors.monitoring.coreos.com", "-A", "-o", "json"]
     ) == {("monitoring.coreos.com", "servicemonitors", "list")}
-    assert rbac_needs(
-        [
-            "kubectl",
-            "get",
-            "--raw",
-            "/api/v1/namespaces/n/pods/http:p:9090/proxy/-/ready",
-            "--request-timeout=30s",
-        ]
-    ) == {("", "pods/proxy", "get")}
+    with pytest.raises(AssertionError):  # S17: a proxied read through kubectl get --raw
+        rbac_needs(["kubectl", "get", "--raw", "/api/v1/namespaces/n/pods/p:9090/proxy/-/ready"])
     with pytest.raises(AssertionError):
         rbac_needs(["kubectl", "delete", "pods", "p"])
 

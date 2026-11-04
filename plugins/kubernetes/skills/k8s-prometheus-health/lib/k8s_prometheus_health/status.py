@@ -5,7 +5,7 @@ import re
 from k8s_prometheus_health.common import MESSAGE_LIMIT, age_seconds, iso, parse_time, truncate
 from k8s_prometheus_health.errors import RwError
 from k8s_prometheus_health.fetch import Budget, endpoint, fetch_one, pod_stats, select_pods
-from k8s_prometheus_health.proxy import api_json
+from k8s_prometheus_health.proxy import api_json, status_error
 
 _HEALTHY = re.compile(r"\bhealthy\b")
 _READY = re.compile(r"\bready\b")
@@ -18,7 +18,7 @@ def probe_reply(reply, what, word, negative):
     if reply.status == 503:
         return False
     if reply.status != 200:
-        raise RwError("dependency", f"{what} answered HTTP {reply.status}")
+        raise status_error(reply, what)
     text = reply.body.lower()
     if word.search(text) and negative not in text:
         return True

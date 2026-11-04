@@ -7,7 +7,9 @@ blocked one, an offline node), `jenkins-locked` (anonymous read off: the JSON AP
 not a real Jenkins. The
 workload and pod data are the narrow `-o jsonpath` projections the scripts ask for (no env, no pod
 template). The scripts run through the SDK's test context (`ctx.run` raises on a non-zero exit like
-the real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails)."""
+the real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails). The pod
+proxy reads go through `ctx.k8s_proxy_get`, stood in for by `proxy_fake.ProxyFake`; a proxy answer
+written in the tables as kubectl's (rc, stdout, stderr) is turned into the helper's by `served_as`."""
 
 import importlib.util
 import json
@@ -19,6 +21,7 @@ import pytest
 import yaml
 from k8s_jenkins_health import build_queue, fetch, http_status, k8s, project, proxy
 from k8s_jenkins_health.errors import RwError
+from proxy_fake import ProxyFake, api_error, cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-jenkins-health"
@@ -67,13 +70,28 @@ def script(task):
 
 
 def raw(pod, path, scheme="http", port=8080):
-    return (
-        "kubectl",
-        "get",
-        "--raw",
-        f"/api/v1/namespaces/{NS}/pods/{scheme}:{pod}:{port}/proxy{path}",
-        "--request-timeout=30s",
-    )
+    """The key of one proxied request: a `ctx.k8s_proxy_get` call, recorded in `calls` as this tuple."""
+    return ("k8s_proxy_get", NS, pod, str(port), path, scheme)
+
+
+def served_as(answer):
+    """The ctx.k8s_proxy_get answer for a table entry (rc, stdout, stderr): a body for 0, the
+    backend's own 401/403/404/503 for the stderr kubectl printed for them, a dict as it is, else the
+    error `k8s.classify` names (the API server's)."""
+    if isinstance(answer, dict):
+        return answer
+    rc, out, err = answer
+    if rc == 0:
+        return out
+    if err == UNAVAILABLE:
+        return reply(503, "service unavailable")
+    if err == NO_ROUTE:
+        return reply(404, "404 page not found")
+    if err == BACKEND_401:
+        return reply(401, "Unauthorized")
+    if "(Forbidden)" in err and " is forbidden: User " not in err.split(":", 1)[1][:60]:
+        return reply(403, "Authentication required")
+    return api_error(err, k8s.classify)
 
 
 QUEUE = build_queue.QUEUE + build_queue.QUEUE_TREE
@@ -173,8 +191,21 @@ def run(
     }
     inputs = inputs or {}
     with make_context(resource=resource, settings=settings or SETTINGS, now=now) as tc:
-        calls = stub_commands(tc, stubs(name, kind=kind, **inputs, **kw))
+        table = stubs(name, kind=kind, **inputs, **kw)
+        calls = stub_commands(tc, {k: v for k, v in table.items() if k[0] == "kubectl"})
+        tc.ctx.k8s_proxy_get = ProxyFake(
+            lambda r: served_as(
+                table[
+                    ("k8s_proxy_get", r["namespace"], r["name"], str(r["port"]))
+                    + (r["path"], r["scheme"])
+                ]
+            )
+        )
         env = run_main(script(task), tc, **inputs)
+        calls += [
+            ("k8s_proxy_get", r["namespace"], r["name"], str(r["port"]), r["path"], r["scheme"])
+            for r in tc.ctx.k8s_proxy_get.requests
+        ]
     return env, calls
 
 
@@ -416,7 +447,7 @@ def test_the_prefix_comes_from_the_readiness_probe_when_no_input_is_given(task):
     assert (pod["urlPrefix"], pod["scheme"], pod["port"]) == ("/jenkins", "http", 8080)
     path = LOGIN if task == "http-status" else QUEUE
     assert raw("jenkins-prefix-0", "/jenkins" + path) in calls
-    assert not [c for c in calls if "proxy/login" in c[3] or "proxy/queue" in c[3]]
+    assert not [c for c in calls if c[0] == "k8s_proxy_get" and c[4] in (LOGIN, QUEUE)]
     check_schema(task, env)
 
 
@@ -809,7 +840,7 @@ def test_pods_that_are_not_running_are_listed_and_not_asked(task):
     assert [(e["code"], e["scope"]) for e in env["errors"]] == [("unreachable", "pods")]
     assert "1 replica(s) but no pod is Running" in env["errors"][0]["message"]
     assert pod_of(env, task)["queried"] is False and pod_of(env, task)["phase"] == "Pending"
-    assert not [c for c in calls if "--raw" in c]
+    assert not [c for c in calls if c[0] == "k8s_proxy_get"]
 
 
 @pytest.mark.parametrize("task", ["http-status", "queue"])
@@ -827,7 +858,7 @@ def test_no_running_pod_is_only_an_error_when_the_workload_wants_replicas(task):
     with make_context(resource=resource, settings=SETTINGS, now=CAPTURED) as tc:
         table = stubs(pods_text=text)
         table[next(a for a in table if "statefulsets.apps" in a)] = (0, zero, "")
-        stub_commands(tc, table)
+        stub_commands(tc, {k: v for k, v in table.items() if k[0] == "kubectl"})
         env = run_main(script(task), tc)
     assert env["status"] == "ok" and env["errors"] == []
 
@@ -904,37 +935,97 @@ def test_max_items_cuts_the_pods_and_the_stuck_items():
 # ------------------------------------------------------------ lib ----
 
 
-class Canned:
-    def __init__(self, rc, out, err):
-        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
-        self.argv = None
+class FakeProxyCtx:
+    def __init__(self, answer):
+        self.k8s_proxy_get = ProxyFake(answer)
 
-    def run(self, argv, check=True, **_):
-        assert check is False
-        self.argv = argv
-        return self.result
+
+def ask(answer, path="/x"):
+    return proxy.proxy_get(FakeProxyCtx(answer), NS, "jenkins-0", "http", 8080, path)
 
 
 def test_proxy_get_tells_the_statuses_apart():
-    assert proxy.proxy_get(Canned(0, "x", ""), "/x") == proxy.Reply(200, "x")
-    ctx = Canned(0, "x", "")
-    proxy.proxy_get(ctx, "/x")
-    assert ctx.argv[-1].startswith("--request-timeout=") and "-v=8" not in ctx.argv
-    # the recorded backend 403 is a 403, in its plain one-line form
-    assert proxy.proxy_get(Canned(1, "", load("queue-locked.stderr.txt")), "/x").status == 403
-    assert proxy.proxy_get(Canned(1, "", NO_ROUTE), "/x").status == 404
-    assert proxy.proxy_get(Canned(1, "", UNAVAILABLE), "/x").status == 503
-    assert proxy.proxy_get(Canned(1, "", BACKEND_401), "/x").status == 401
+    assert ask("x") == proxy.Reply(200, "x")
+    ctx = FakeProxyCtx("x")
+    proxy.proxy_get(ctx, NS, "jenkins-0", "https", 8443, "/jenkins/login", 7)
+    assert ctx.k8s_proxy_get.requests == [
+        {
+            "namespace": NS,
+            "kind": "pods",
+            "name": "jenkins-0",
+            "port": 8443,
+            "path": "/jenkins/login",
+            "scheme": "https",
+            "timeout": 7,
+        }
+    ]
+    assert ask(reply(403, "Authentication required")).status == 403
+    assert ask(reply(404, "not found")).status == 404
+    assert ask(reply(503, "starting")).status == 503
+    assert ask(reply(401, "Unauthorized")).status == 401
     for stderr, code in (
         (FORBIDDEN, "permission_denied"),
         (UNREACHABLE, "unreachable"),
         (ERROR_LINE, "not_found"),
         (CLIENT_TIMEOUT, "timeout"),
-        ("error: something odd", "internal"),
     ):
         with pytest.raises(RwError) as exc:
-            proxy.proxy_get(Canned(1, "", stderr), "/x")
+            ask(api_error(stderr, k8s.classify))
         assert exc.value.code == code, stderr
+    with pytest.raises(RwError) as exc:
+        ask(reply(500, "boom"))
+    assert exc.value.code == "internal" and "HTTP 500" in exc.value.message
+
+
+def test_a_cross_host_redirect_is_returned_with_its_host_and_never_followed():
+    """S17: the helper drops the Location and names the host; the skill reports it and asks once."""
+    ctx = FakeProxyCtx(cross_host_redirect("example.invalid"))
+    got = proxy.proxy_get(ctx, NS, "jenkins-0", "http", 8080, "/login")
+    assert got == proxy.Reply(302, "", "example.invalid") and got.redirected
+    assert len(ctx.k8s_proxy_get.requests) == 1
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = FakeProxyCtx(
+        lambda r: reply(301, "", location="/jenkins/login") if r["path"] == "/login" else "page"
+    )
+    assert proxy.proxy_get(ctx, NS, "j", "http", 8080, "/login") == proxy.Reply(200, "page")
+    assert ctx.k8s_proxy_get.paths() == ["/login", "/jenkins/login"]
+    loop = FakeProxyCtx(lambda r: reply(302, "", location="/again"))
+    got = proxy.proxy_get(loop, NS, "j", "http", 8080, "/login")
+    assert got.redirected and got.redirect_dropped is None and len(loop.k8s_proxy_get.requests) == 2
+
+
+def test_a_cut_body_is_internal_never_a_partial_parse():
+    with pytest.raises(RwError) as exc:
+        ask(reply(200, '{"items": [', truncated=True))
+    assert exc.value.code == "internal" and exc.value.hint
+
+
+def test_login_redirected_off_cluster_is_reported_as_sso_redirect_and_not_followed():
+    env, calls = run("http-status", replies={LOGIN: cross_host_redirect("example.invalid")})
+    assert env["status"] == "ok" and env["errors"] == []
+    pod = pod_of(env, "http-status")
+    assert (pod["httpStatus"], pod["ok"], pod["ssoRedirect"]) == (302, None, "redirect")
+    assert "example.invalid" in pod["hint"] and "not followed" in pod["hint"]
+    assert [c for c in calls if c[0] == "k8s_proxy_get"] == [raw("jenkins-0", LOGIN)]
+    check_schema("http-status", env)
+
+
+def test_a_redirect_with_no_target_to_report_is_an_error():
+    env, _ = run("http-status", replies={LOGIN: reply(302, "")})
+    assert env["status"] == "failed" and codes(env) == [("internal", "pod/jenkins-0")]
+
+
+def test_a_queue_redirected_off_cluster_is_a_dependency_error_naming_the_host():
+    env, calls = run("queue", replies={QUEUE: cross_host_redirect("example.invalid")})
+    assert env["status"] == "partial"
+    [err] = [e for e in env["errors"] if "example.invalid" in e["message"]]
+    assert err["code"] == "dependency" and err["scope"].endswith("/queue")
+    assert "off cluster to example.invalid (not followed)" in err["message"]
+    assert [c for c in calls if c[0] == "k8s_proxy_get" and c[4] == QUEUE] == [
+        raw("jenkins-0", QUEUE)
+    ]
 
 
 SPOOF_RBAC = (
@@ -943,21 +1034,15 @@ SPOOF_RBAC = (
 )
 
 
-def test_a_rbac_denial_is_told_by_the_anchored_wording_not_by_a_backends_body():
-    with pytest.raises(RwError) as exc:
-        proxy.proxy_get(Canned(1, "", FORBIDDEN), "/x")
-    assert exc.value.code == "permission_denied"
-    # a backend 403 whose body merely quotes the wording is the backend wanting credentials
-    assert proxy.proxy_get(Canned(1, "", SPOOF_RBAC), "/x").status == 403
-    body = "Error from server (Forbidden): sorry, cannot get resource: is forbidden: User nobody"
-    assert proxy.proxy_get(Canned(1, "", body), "/x").status == 403
+def test_a_backend_403_that_quotes_the_rbac_wording_is_still_the_backends():
+    # the helper tells the API server's refusal (an RwError) from the backend's status structurally
+    quoted = reply(403, 'pods "x" is forbidden: User "u" cannot get resource "pods/proxy"')
+    assert ask(quoted).status == 403
 
 
 def test_other_failures_are_mapped_from_the_error_from_server_reason():
     def code(stderr, rc=1):
-        with pytest.raises(RwError) as exc:
-            proxy.proxy_get(Canned(rc, "", stderr), "/x")
-        return exc.value.code
+        return k8s.classify(rc, stderr)
 
     assert code("Error from server (Timeout): request did not complete within 30s") == "timeout"
     assert code("Error from server (TooManyRequests): slow down") == "rate_limited"
@@ -990,13 +1075,11 @@ def test_a_failure_shows_only_the_first_line_of_a_backend_body_cut_at_256():
 
 def test_a_401_line_is_a_credential_failure_for_the_api_and_the_backends_401_on_a_proxy_call():
     assert k8s.classify(1, BACKEND_401) == "permission_denied"
-    assert proxy.proxy_get(Canned(1, "", BACKEND_401), "/x").status == 401
-    unauthorized = "Error from server (Unauthorized): Unauthorized"
-    assert proxy.proxy_get(Canned(1, "", unauthorized), "/x").status == 401
+    assert ask(reply(401, "Unauthorized")).status == 401  # on a proxy call it is the backend's
 
 
-def test_the_redirect_gap_is_marked_in_proxy_py():
-    assert "redirect-token test pending" in (SKILL / "lib/k8s_jenkins_health/proxy.py").read_text()
+def test_the_redirect_gap_is_closed_in_proxy_py():
+    assert "TODO" not in (SKILL / "lib/k8s_jenkins_health/proxy.py").read_text()
 
 
 def test_parse_duration():
@@ -1038,7 +1121,7 @@ def test_the_queue_calls_ask_for_a_narrow_tree_without_build_parameters():
 
 
 class Clocked:
-    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock."""
+    """A ctx whose `k8s_proxy_get` calls each take `step` seconds of a fake clock."""
 
     def __init__(self, answer, step=30):
         self.now, self.step, self.answer = 0.0, step, answer
@@ -1047,11 +1130,14 @@ class Clocked:
     def clock(self):
         return self.now
 
-    def run(self, argv, check=True, **_):
-        self.calls.append(list(argv))
-        rc, out, err = self.answer(len(self.calls) - 1, argv)
-        self.now += self.step
-        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        def answer(request):
+            self.calls.append(request)
+            out = served_as(self.answer(len(self.calls) - 1, request))
+            self.now += self.step
+            return out
+
+        return ProxyFake(answer)(namespace, kind, name, port, path, scheme=scheme, timeout=timeout)
 
     def error(self, code, message, scope=None, **_):
         self.errors.append((code, scope, message))
@@ -1080,7 +1166,7 @@ def test_the_task_deadline_leaves_the_remaining_pods_a_timeout_error():
     out = http_status.view(ctx, WORKLOAD, pods(6), "http", None, 200, fetch.Budget(clock=ctx.clock))
     # four asks at 0s, 30s, 60s, 90s (the fourth limited to the 10s left)
     assert out["okCount"] == 4
-    assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
+    assert [c["timeout"] for c in ctx.calls] == [30, 30, 30, 10]
     assert [(c, s) for c, s, _ in ctx.errors] == [("timeout", "pod/j-4"), ("timeout", "pod/j-5")]
     assert "100s deadline" in ctx.errors[0][2]
 
@@ -1107,9 +1193,8 @@ VALUE_FLAGS = {"-n", "-o", "-l"}
 def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs. Raises on anything it
     does not know, so a script that issues a new call has to extend this."""
-    if "--raw" in argv:
-        path = argv[argv.index("--raw") + 1]
-        assert "/pods/" in path and "/proxy/" in path, path
+    assert "--raw" not in argv, argv  # pod proxy reads go through ctx.k8s_proxy_get (S17)
+    if argv[0] == "k8s_proxy_get":  # ctx.k8s_proxy_get(ns, "pods", ...): pods/proxy get
         return {("", "pods/proxy", "get")}
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
@@ -1155,9 +1240,9 @@ def test_rbac_needs_maps_the_verbs():
     assert rbac_needs(["kubectl", "-n", "x", "get", "pods", "-l", "a=b", *tail]) == {
         ("", "pods", "list")
     }
-    assert rbac_needs(
-        ["kubectl", "get", "--raw", "/api/v1/namespaces/n/pods/http:p:80/proxy/x"]
-    ) == {("", "pods/proxy", "get")}
+    assert rbac_needs(list(raw("p", "/x"))) == {("", "pods/proxy", "get")}
+    with pytest.raises(AssertionError):  # S17: a proxied read through kubectl get --raw
+        rbac_needs(["kubectl", "get", "--raw", "/api/v1/namespaces/n/pods/http:p:80/proxy/x"])
     with pytest.raises(AssertionError):
         rbac_needs(["kubectl", "exec", "p"])
 
@@ -1167,7 +1252,7 @@ def test_both_tasks_only_read_and_send_no_credential():
     assert all(v in ("get", "list") for t in TASKS for (_, _, v) in granted(t))
     for task in SCRIPTS:
         _, calls = run(task, "jenkins-stuck")
-        assert all(c[1] in ("get", "-n") for c in calls)
+        assert all(c[1] in ("get", "-n") for c in calls if c[0] == "kubectl")
         argv_words = {a for c in calls for a in c}
         assert not argv_words & {"exec", "port-forward", "--user", "-u", "--token"}
         assert not any("secret" in a.lower() or "token" in a.lower() for a in argv_words)

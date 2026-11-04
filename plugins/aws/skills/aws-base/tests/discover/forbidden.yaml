@@ -1,0 +1,43 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012
+now: '2026-11-04T02:14:07.306Z'
+calls:
+- argv:
+  - aws
+  - sts
+  - get-caller-identity
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "UserId": "AIDACKCEVSQ6C2EXAMPLE",
+        "Account": "123456789012",
+        "Arn": "arn:aws:iam::123456789012:user/rw-monitor"
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-regions
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DescribeRegions operation: You are not authorized to perform this operation. User: arn:aws:iam::123456789012:user/rw-monitor is not authorized to perform: ec2:DescribeRegions because no identity-based policy allows the ec2:DescribeRegions action. Encoded authorization failure message: Z9mYfXkq0eN3wPq1vD7sTgHbJ2c8Ra5LwUo4nV6yMzE1xK0iA3dC9tBhOjQpFlS
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

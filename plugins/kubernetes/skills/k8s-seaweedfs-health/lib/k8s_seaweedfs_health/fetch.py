@@ -175,9 +175,9 @@ def get_json(ctx, rel, pod, role, path, what):
 
 
 def healthz(ctx, rel, pod, role, path):
-    """'ok' for a 2xx answer, 'unhealthy' when the process answered with an error status (the body
-    is not shown by the API server, so the reason is not known); an unreachable pod, a denial or a
-    missing endpoint raises."""
+    """'ok' for a 2xx answer, 'unhealthy' when the process answered with an error status (400, 500,
+    503 ...: the workload's own answer, since the proxy helper tells it from the API server's); an
+    unreachable pod, a denial, a redirect or a missing endpoint raises."""
     try:
         get_text(ctx, rel, pod, role, path)
     except ProxyError as exc:

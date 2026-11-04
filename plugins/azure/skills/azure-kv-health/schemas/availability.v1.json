@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The vault's Availability metric over a look-back window",
+  "type": "object",
+  "properties": {
+    "vault": {
+      "type": "string"
+    },
+    "metric": {
+      "const": "Availability"
+    },
+    "unit": {
+      "const": "Percent"
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "interval": {
+      "type": "string",
+      "description": "ISO 8601 grain: the metricInterval setting"
+    },
+    "thresholdPercent": {
+      "type": "number",
+      "description": "The availabilityMinPercent setting"
+    },
+    "hasData": {
+      "type": "boolean",
+      "description": "At least one interval has a value. False is no data, not a healthy vault"
+    },
+    "belowThreshold": {
+      "type": "boolean",
+      "description": "Some interval with a value is below thresholdPercent"
+    },
+    "grainsBelowThreshold": {
+      "type": "integer"
+    },
+    "grains": {
+      "type": "integer",
+      "description": "Intervals in the window"
+    },
+    "grainsWithData": {
+      "type": "integer"
+    },
+    "grainsMissing": {
+      "type": "integer",
+      "description": "Intervals without a datapoint"
+    },
+    "min": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "max": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "last": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "lastGrainMissing": {
+      "type": "boolean",
+      "description": "The newest interval has no value, so last is an older interval's reading: the metric stopped reporting"
+    },
+    "points": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "timestamp",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "description": "The newest 50 intervals that have a value, oldest first"
+    },
+    "pointsOmitted": {
+      "type": "integer",
+      "description": "Intervals with a value that are not in points; min, max and the counts cover them"
+    }
+  },
+  "required": [
+    "vault",
+    "metric",
+    "unit",
+    "windowSeconds",
+    "interval",
+    "thresholdPercent",
+    "hasData",
+    "belowThreshold",
+    "grainsBelowThreshold",
+    "grains",
+    "grainsWithData",
+    "grainsMissing",
+    "min",
+    "max",
+    "last",
+    "lastGrainMissing",
+    "points",
+    "pointsOmitted"
+  ],
+  "additionalProperties": false
+}

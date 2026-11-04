@@ -2,7 +2,10 @@
 kind-rw-plugins scenario rw-seaweedfs (two all-in-one `weed server -s3` pods: swfs-ok and swfs-broken).
 Scripts run through runwhen_capability.testing: a real Context with the V13 semantics (ctx.run raises on
 non-zero exit, ctx.error side channel, ctx.now fixed) and stubbed commands; no test reaches a cluster.
-The S3 write task runs against a small simulator of the gateway behind the pod proxy."""
+The S3 write task runs against a small simulator of the gateway behind the pod proxy. Proxied requests
+go through `ctx.k8s_proxy_get` and, for the PUT and DELETE of the S3 task, `ctx.k8s_proxy_request` (S17:
+neither follows a redirect), stood in for here by functions that answer from the same stub tables as
+`ctx.run`."""
 
 import copy
 import importlib.util
@@ -18,7 +21,7 @@ from jsonschema import Draft202012Validator
 from k8s_seaweedfs_health import api, discovery, k8s
 from k8s_seaweedfs_health import buckets as buckets_mod
 from k8s_seaweedfs_health.errors import RwError
-from k8s_seaweedfs_health.k8s import proxy_path
+from proxy_fake import cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-seaweedfs-health"
@@ -106,7 +109,11 @@ def get_workloads(rel, plural):
 
 
 def raw(pod, port, path, verb="get"):
-    return ("kubectl", verb, "--raw", proxy_path(NS, pod, port, path))
+    """The key of one proxied request as `calls` records it: a GET is a `ctx.k8s_proxy_get` call, a
+    PUT or DELETE a `ctx.k8s_proxy_request` call."""
+    if verb == "get":
+        return ("k8s_proxy_get", NS, pod, str(port), "/" + path.lstrip("/"))
+    return ("k8s_proxy_request", verb.upper(), NS, pod, str(port), "/" + path.lstrip("/"))
 
 
 def ok(doc):
@@ -153,6 +160,96 @@ UPSTREAM = {
 }
 
 
+# what a stub written as kubectl's (rc, stdout, stderr) is, as the helper answers it: the workload's
+# own 400/403/404/500/503 are replies, an error of the API server is an RwError
+BACKEND = {
+    "400": reply(400, "bad request"),
+    "403": reply(403, "Forbidden"),
+    "404": reply(404, "404 page not found"),
+    "500": reply(500, "internal error"),
+    "503": reply(503, "service unavailable"),
+}
+API_SERVER = {
+    "pod": RwError("not_found", 'pods "swfs-ok-0" not found'),
+    "refused": RwError("unreachable", "error trying to reach service: connection refused"),
+    "timeout": RwError("timeout", "request did not complete within requested timeout"),
+    "429": RwError("rate_limited", "slow down"),
+}
+
+
+def proxied(answer):
+    """The `ctx.k8s_proxy_get` answer (a reply dict or an RwError) for a stub (rc, out, err)."""
+    if isinstance(answer, dict):  # already a helper reply
+        return answer
+    rc, out, err = answer
+    if rc == 0:
+        return reply(200, out)
+    for name, response in BACKEND.items():
+        if answer == UPSTREAM[name]:
+            return response
+    for name, error in API_SERVER.items():
+        if answer == UPSTREAM[name]:
+            return error
+    if " cannot " in err and "forbidden" in err.lower():
+        return RwError("permission_denied", err)
+    raise AssertionError(f"no proxy equivalent for the stub {answer!r}")
+
+
+def install_proxy(tc, calls, stubs, gateway=None):
+    """Make `ctx.k8s_proxy_get` and `ctx.k8s_proxy_request` answer from `stubs` (keys made by raw())
+    or from the S3 `gateway`, and record each request in `calls` as raw() spells it. Returns the
+    requests as dicts (method, path, body, headers, timeout)."""
+    requests = []
+
+    def answer_for(key, method, path, body, timeout):
+        if gateway is not None:
+            answer = gateway.serve(method, path, body, timeout)
+        elif key in stubs:
+            answer = stubs[key]
+        else:
+            raise AssertionError(f"ctx.k8s_proxy_* called with an unstubbed request {key!r}")
+        out = proxied(answer)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    def k8s_proxy_get(
+        namespace, kind, name, port, path, *, headers=None, scheme="http", timeout=30
+    ):
+        assert (namespace, kind, scheme) == (NS, "pods", "http"), (namespace, kind, scheme)
+        key = ("k8s_proxy_get", namespace, name, str(port), path)
+        calls.append(key)
+        requests.append(
+            {"method": "GET", "path": path, "body": None, "headers": headers, "timeout": timeout}
+        )
+        return answer_for(key, "GET", path, None, timeout)
+
+    def k8s_proxy_request(
+        method,
+        namespace,
+        kind,
+        name,
+        port,
+        path,
+        *,
+        body=None,
+        headers=None,
+        scheme="http",
+        timeout=30,
+    ):
+        assert (namespace, kind, scheme) == (NS, "pods", "http"), (namespace, kind, scheme)
+        key = ("k8s_proxy_request", method, namespace, name, str(port), path)
+        calls.append(key)
+        requests.append(
+            {"method": method, "path": path, "body": body, "headers": headers, "timeout": timeout}
+        )
+        return answer_for(key, method, path, body, timeout)
+
+    tc.ctx.k8s_proxy_get = k8s_proxy_get
+    tc.ctx.k8s_proxy_request = k8s_proxy_request
+    return requests
+
+
 def release_stubs(rel, master=True, extra=None):
     """The kubectl answers every task needs, plus the master reads of a healthy release."""
     pod = POD[rel]
@@ -181,7 +278,8 @@ def run(task, resource, stubs, settings=None, dry_run=False, now=NOW, **inputs):
     with make_context(
         resource=resource, settings={**SETTINGS, **(settings or {})}, dry_run=dry_run, now=now
     ) as tc:
-        calls = stub_commands(tc, stubs)
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        install_proxy(tc, calls, stubs)
         env = run_main(script(task), tc, **inputs)
         return env, tc.errors, list(calls)
 
@@ -526,64 +624,191 @@ class Done:
         self.returncode, self.stderr, self.stdout = rc, err, ""
 
 
+class HelperCtx:
+    """A ctx whose k8s_proxy_get and k8s_proxy_request answer from `answer(path)` and record the
+    requests (a request's method, body and headers are kept in `writes`)."""
+
+    def __init__(self, answer):
+        self.requests = []
+        self.writes = []
+        self._answer = answer
+
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        self.requests.append((namespace, kind, name, port, path, scheme, timeout))
+        out = self._answer(path)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    def k8s_proxy_request(
+        self, method, namespace, kind, name, port, path, *, body=None, headers=None, **kw
+    ):
+        self.requests.append(
+            (namespace, kind, name, port, path, kw.get("scheme", "http"), kw.get("timeout", 30))
+        )
+        self.writes.append((method, body, headers))
+        out = self._answer(path)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+
+def test_proxy_get_returns_a_2xx_body_and_the_workloads_other_statuses_are_typed_errors():
+    assert k8s.proxy_get(HelperCtx(lambda p: reply(200, "{}")), NS, "p", 9333, "dir/status") == "{}"
+    for status, code, kind in (
+        (401, "permission_denied", "upstream_denied"),
+        (403, "permission_denied", "upstream_denied"),
+        (404, "dependency", "upstream_missing"),
+        (400, "internal", "upstream_error"),
+        (500, "internal", "upstream_error"),
+        (503, "internal", "upstream_error"),
+    ):
+        with pytest.raises(k8s.ProxyError) as exc:
+            k8s.proxy_get(HelperCtx(lambda p: reply(status, "nope")), NS, "p", 9333, "x")
+        assert (exc.value.code, exc.value.kind) == (code, kind)
+        assert f"HTTP {status}" in exc.value.message and "nope" in exc.value.message
+
+
+def test_proxy_get_raises_the_api_servers_own_errors_with_their_kind():
+    for code, kind in (
+        ("permission_denied", "rbac"),
+        ("not_found", "pod_missing"),
+        ("unreachable", "unreachable"),
+        ("timeout", "timeout"),
+    ):
+        with pytest.raises(k8s.ProxyError) as exc:
+            k8s.proxy_get(HelperCtx(lambda p: RwError(code, "api")), NS, "p", 9333, "x")
+        assert (exc.value.code, exc.value.kind) == (code, kind)
+
+
+def test_proxy_get_asks_the_helper_with_a_leading_slash_scheme_and_timeout():
+    ctx = HelperCtx(lambda p: reply(200, "ok"))
+    k8s.proxy_get(ctx, NS, "p", 8333, "b/?list-type=2", "https", timeout=7)
+    k8s.proxy_get(ctx, NS, "p", 8333, "")
+    assert ctx.requests == [
+        (NS, "pods", "p", 8333, "/b/?list-type=2", "https", 7),
+        (NS, "pods", "p", 8333, "/", "http", 20),
+    ]
+
+
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location and names the host; the skill reports it and asks once."""
+    ctx = HelperCtx(lambda p: cross_host_redirect("sso.example.invalid"))
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_get(ctx, NS, "p", 9333, "cluster/status")
+    assert (exc.value.code, exc.value.kind) == ("dependency", "upstream_redirect")
+    assert "off cluster to sso.example.invalid (not followed)" in exc.value.message
+    assert len(ctx.requests) == 1
+
+
+def test_proxy_put_sends_the_body_through_the_request_helper_and_returns_a_2xx_body():
+    ctx = HelperCtx(lambda p: reply(200, ""))
+    assert k8s.proxy_put(ctx, NS, "p", 8333, "b/k", "hello", "https", timeout=7) == ""
+    assert ctx.requests == [(NS, "pods", "p", 8333, "/b/k", "https", 7)]
+    assert ctx.writes == [("PUT", "hello", {"Content-Type": "text/plain"})]
+
+
 @pytest.mark.parametrize(
-    "result,code,kind",
+    "status,code,kind",
     [
-        (UPSTREAM["403"], "permission_denied", "upstream_denied"),
-        (rbac("pods/proxy"), "permission_denied", "rbac"),
-        (UPSTREAM["404"], "dependency", "upstream_missing"),
-        (UPSTREAM["pod"], "not_found", "pod_missing"),
-        (UPSTREAM["500"], "internal", "api_error"),
-        (UPSTREAM["400"], "internal", "upstream_error"),
-        (UPSTREAM["refused"], "unreachable", "unreachable"),
-        (
-            (
-                1,
-                "",
-                "Unable to connect to the server: dial tcp 127.0.0.1:6443: connect: connection refused",
-            ),
-            "unreachable",
-            "unreachable",
-        ),
-        (
-            (
-                1,
-                "",
-                "Error from server (Timeout): request did not complete within requested timeout",
-            ),
-            "timeout",
-            "timeout",
-        ),
-        ((1, "", "Error from server (GatewayTimeout): ..."), "timeout", "timeout"),
-        ((1, "", "Error from server (TooManyRequests): slow down"), "rate_limited", "rate_limited"),
-        (
-            (
-                1,
-                "",
-                "Error from server (ServiceUnavailable): the server is currently unable to handle the request",
-            ),
-            "unreachable",
-            "api_unavailable",
-        ),
-        ((1, "", "something else entirely"), "internal", "upstream_error"),
-        ((124, "", ""), "timeout", "timeout"),
+        (403, "permission_denied", "upstream_denied"),
+        (404, "dependency", "upstream_missing"),
+        (409, "internal", "upstream_error"),
+        (500, "internal", "upstream_error"),
     ],
 )
-def test_proxy_failures_are_classified_and_never_read_as_success(result, code, kind):
-    err = k8s.proxy_failure(["kubectl", "get", "--raw", "/x"], Done(result[0], result[2]))
-    assert (err.code, err.kind) == (code, kind)
+def test_proxy_put_and_delete_type_the_workloads_other_statuses(status, code, kind):
+    for call in (
+        lambda c: k8s.proxy_put(c, NS, "p", 8333, "b/k", "x"),
+        lambda c: k8s.proxy_delete(c, NS, "p", 8333, "b/k"),
+    ):
+        with pytest.raises(k8s.ProxyError) as exc:
+            call(HelperCtx(lambda p: reply(status, "nope")))
+        assert (exc.value.code, exc.value.kind) == (code, kind)
+        assert f"HTTP {status}" in exc.value.message
 
 
-def test_a_command_that_outlives_its_timeout_is_the_timeout_error():
-    import subprocess
+def test_proxy_delete_sends_a_bodyless_delete_through_the_request_helper():
+    ctx = HelperCtx(lambda p: reply(204, ""))
+    assert k8s.proxy_delete(ctx, NS, "p", 8333, "b/k") == ""
+    assert ctx.requests == [(NS, "pods", "p", 8333, "/b/k", "http", 20)]
+    assert ctx.writes == [("DELETE", None, None)]
 
-    class Ctx:
-        def run(self, argv, **kw):
-            raise subprocess.TimeoutExpired(argv, 20)
 
-    with pytest.raises(RwError) as exc:
-        k8s.proxy_get(Ctx(), NS, "p", 9333, "cluster/status")
-    assert exc.value.code == "timeout"
+@pytest.mark.parametrize("call", ["put", "delete"])
+def test_a_cross_host_redirect_on_a_write_is_a_dependency_error_naming_the_host_and_not_followed(
+    call,
+):
+    """S17: `kubectl replace|delete --raw` followed a 302 (delete a 307 too) carrying the bearer token."""
+    ctx = HelperCtx(lambda p: cross_host_redirect("sso.example.invalid", 307))
+    with pytest.raises(k8s.ProxyError) as exc:
+        if call == "put":
+            k8s.proxy_put(ctx, NS, "p", 8333, "b/k", "x")
+        else:
+            k8s.proxy_delete(ctx, NS, "p", 8333, "b/k")
+    assert (exc.value.code, exc.value.kind) == ("dependency", "upstream_redirect")
+    assert "sso.example.invalid" in exc.value.message and "not followed" in exc.value.message
+    assert len(ctx.requests) == 1
+
+
+def test_a_same_pod_redirect_on_a_write_is_not_followed_either():
+    ctx = HelperCtx(lambda p: reply(307, "", location="/b/other"))
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_delete(ctx, NS, "p", 8333, "b/k")
+    assert exc.value.kind == "upstream_redirect" and "/b/other" in exc.value.message
+    assert len(ctx.requests) == 1  # a write is never re-sent
+
+
+def test_proxy_put_and_delete_raise_the_api_servers_own_errors_with_their_kind():
+    for code, kind in (("permission_denied", "rbac"), ("timeout", "timeout")):
+        with pytest.raises(k8s.ProxyError) as exc:
+            k8s.proxy_put(HelperCtx(lambda p: RwError(code, "api")), NS, "p", 8333, "b/k", "x")
+        assert (exc.value.code, exc.value.kind) == (code, kind)
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = HelperCtx(
+        lambda p: reply(301, "", location="/new/status") if p == "/old" else reply(200, "moved")
+    )
+    assert k8s.proxy_get(ctx, NS, "p", 9333, "old") == "moved"
+    assert [r[4] for r in ctx.requests] == ["/old", "/new/status"]
+    loop = HelperCtx(lambda p: reply(302, "", location="/again"))
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_get(loop, NS, "p", 9333, "a")
+    assert exc.value.kind == "upstream_redirect" and len(loop.requests) == 2
+
+
+def test_a_cut_2xx_body_is_internal_never_parsed_in_part():
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_json(
+            HelperCtx(lambda p: reply(200, '{"a": ', truncated=True)), NS, "p", 9333, "x", "w"
+        )
+    assert exc.value.code == "internal"
+
+
+def test_a_redirected_health_endpoint_is_an_error_not_unhealthy_and_not_followed():
+    stubs = release_stubs("ok")
+    with make_context(resource=sts_resource("ok"), settings=SETTINGS, now=NOW) as tc:
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        install_proxy(tc, calls, stubs)
+        base = tc.ctx.k8s_proxy_get
+
+        def redirecting(namespace, kind, name, port, path, **kw):
+            if path == "/cluster/healthz":
+                calls.append(("k8s_proxy_get", namespace, name, str(port), path))
+                return cross_host_redirect("sso.example.invalid")
+            return base(namespace, kind, name, port, path, **kw)
+
+        tc.ctx.k8s_proxy_get = redirecting
+        env = run_main(script("cluster_status"), tc)
+        errors = tc.errors
+    assert env["status"] == "partial"
+    assert codes(errors) == [("dependency", f"master/{POD['ok']}/healthz")]
+    assert "sso.example.invalid" in errors[0]["message"]
+    assert env["outputs"]["master"]["members"][0]["healthz"] is None
+    assert [c for c in calls if c[-1] == "/cluster/healthz"] == [
+        raw(POD["ok"], 9333, "cluster/healthz")
+    ]
 
 
 def test_proxy_json_rejects_a_body_that_is_not_a_json_object():
@@ -591,8 +816,8 @@ def test_proxy_json_rejects_a_body_that_is_not_a_json_object():
         def __init__(self, out):
             self.out = out
 
-        def run(self, argv, **kw):
-            return SimpleNamespace(returncode=0, stdout=self.out, stderr="")
+        def k8s_proxy_get(self, *args, **kw):
+            return reply(200, self.out)
 
     for out in ("", "<html>login</html>", "[1]", "null", "3"):
         with pytest.raises(RwError) as exc:
@@ -708,17 +933,29 @@ def test_master_healthz_error_status_is_unhealthy_not_healthy():
     )
 
 
+@pytest.mark.parametrize("answer", [UPSTREAM["503"], UPSTREAM["500"], UPSTREAM["400"]])
+def test_health_endpoint_5xx_is_the_workloads_answer_so_it_is_unhealthy(answer):
+    # through ctx.k8s_proxy_get a 503/500 is the workload's own status (an API-server error is a typed
+    # error of its own), so it reads as "unhealthy", where `kubectl get --raw` could not tell them apart
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/healthz"): answer})
+    env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
+    assert env["status"] == "ok" and errors == []
+    assert env["outputs"]["master"]["members"][0]["healthz"] == "unhealthy"
+    stubs = release_stubs("ok", extra={raw(POD["ok"], 8888, "healthz"): answer})
+    env, errors, _ = run("filer_status", sts_resource("ok"), stubs)
+    assert errors == [] and env["outputs"]["filer"]["items"][0]["healthz"] == "unhealthy"
+
+
 @pytest.mark.parametrize(
     "answer,code",
     [
-        (UPSTREAM["503"], "unreachable"),
-        (UPSTREAM["500"], "internal"),
+        (UPSTREAM["refused"], "unreachable"),
         (UPSTREAM["timeout"], "timeout"),
         (UPSTREAM["429"], "rate_limited"),
+        (UPSTREAM["pod"], "not_found"),
     ],
 )
-def test_health_endpoint_5xx_timeout_and_429_are_typed_errors_before_unhealthy(answer, code):
-    # kubectl shows a 503/500 the same whether the workload or the API server sent it: an error, not "unhealthy"
+def test_health_endpoint_api_server_errors_are_typed_errors_never_unhealthy(answer, code):
     stubs = release_stubs("ok", extra={raw(POD["ok"], 9333, "cluster/healthz"): answer})
     env, errors, _ = run("cluster_status", sts_resource("ok"), stubs)
     assert env["status"] == "partial" and codes(errors) == [(code, f"master/{POD['ok']}/healthz")]
@@ -752,7 +989,8 @@ def test_master_read_errors_keep_the_pod_facts_and_make_the_result_partial(answe
     assert env["outputs"]["release"]["pods"]["count"] == 1
     m = env["outputs"]["master"]["members"][0]
     assert m["queried"] is False and m["isLeader"] is None
-    assert m["healthz"] is None  # no failure here is the process answering "unhealthy"
+    # only the workload's own 500 is it answering "unhealthy"; no other failure is
+    assert m["healthz"] == ("unhealthy" if answer == UPSTREAM["500"] else None)
     assert (
         m["notQueriedReason"] == code
     )  # the member says why: the error code of its failed status read
@@ -1256,8 +1494,8 @@ def test_buckets_when_the_master_cannot_be_read_fails_or_is_partial_never_empty(
 
 class Gateway:
     """The S3 gateway behind the pod proxy: buckets with objects, anonymous or not, with failures that
-    can be injected per operation (an Exception value is raised, as a timed-out command raises). Answers
-    like `kubectl get|replace|delete --raw` (body only on 2xx). Buckets are never created or deleted by
+    can be injected per operation (an Exception value is raised, as the helper raises an RwError). Answers
+    as the proxy helper does: the gateway's own status and body. Buckets are never created or deleted by
     a request: a PUT or DELETE of a bucket path is a test failure."""
 
     def __init__(self, pod, buckets=None, anonymous_write=True, anonymous_list=True, fail=None):
@@ -1272,17 +1510,18 @@ class Gateway:
         self.cost = {}  # label -> seconds the fake clock advances while it runs
         self.clock = None
 
-    def run(self, argv, cwd=None, check=None, timeout=None):
-        verb, uri = argv[1], argv[3]
-        path = uri.split("/proxy/", 1)[1]
+    def serve(self, method, path, body=None, timeout=None):
+        """One request (method GET, PUT or DELETE; `path` as the helper is given it) as the stub
+        table spells an answer: (rc, stdout, stderr), or an exception to raise."""
+        path = path.lstrip("/")
         bucket, _, key = path.split("?")[0].partition("/")
         op = {
-            "get": "list" if (not key or "list-type" in path) else "get",
-            "replace": "put",
-            "delete": "delete",
-        }[verb]
+            "GET": "list" if (not key or "list-type" in path) else "get",
+            "PUT": "put",
+            "DELETE": "delete",
+        }[method]
         label = op if op == "list" else f"{op}-object"
-        self.requests.append((verb, path, timeout))
+        self.requests.append((method, path, timeout))
         if op in ("put", "delete"):
             assert key, f"a request to {op} the bucket {bucket}: s3-check never does that"
             self.mutations.append((op, path))
@@ -1302,7 +1541,7 @@ class Gateway:
         if bucket not in self.buckets:
             return UPSTREAM["404"]
         if op == "put":
-            self.buckets[bucket][key] = (Path(cwd) / argv[argv.index("-f") + 1]).read_text()
+            self.buckets[bucket][key] = body
             return ok("")
         if op == "get":
             return ok(self.buckets[bucket][key]) if key in self.buckets[bucket] else UPSTREAM["404"]
@@ -1328,23 +1567,8 @@ def s3_run(
         dry_run=dry_run,
         now=NOW,
     ) as tc:
-        calls = stub_commands(tc, stubs)
-        base = tc.ctx.run
-
-        def run_(argv, cwd=None, timeout=None, env=None, *, inherit_env=True, check=None):
-            if argv[:3] in (
-                ["kubectl", "get", "--raw"],
-                ["kubectl", "replace", "--raw"],
-                ["kubectl", "delete", "--raw"],
-            ):
-                calls.append(tuple(argv))
-                rc, out, err = gateway.run(argv, cwd, timeout=timeout)
-                return tc.ctx._finish_run(list(argv), rc, out, err, check)
-            return base(
-                argv, cwd=cwd, timeout=timeout, env=env, inherit_env=inherit_env, check=check
-            )
-
-        tc.ctx.run = run_
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        gateway.sent = install_proxy(tc, calls, stubs, gateway)
         env = run_main(script("s3_check"), tc, **inputs)
         return env, tc.errors, list(calls), gateway
 
@@ -1352,6 +1576,11 @@ def s3_run(
 BUCKET = "runwhen-s3-check"
 KEY_RE = re.compile(rf"^{BUCKET}/20261103T230000000000Z-[0-9a-f]{{6}}\.txt$")
 MISSING = "bucket runwhen-s3-check does not exist; create it to enable the write check"
+
+
+def WRITE(call):
+    """A call of `ctx.k8s_proxy_request` that is not a GET."""
+    return call[0] == "k8s_proxy_request" and call[1] != "GET"
 
 
 def existing(**objects):
@@ -1387,7 +1616,7 @@ def test_s3_check_never_creates_a_bucket_and_skips_when_it_is_absent():
         env, errors, calls, gw = s3_run(Gateway(POD["ok"]), dry_run=dry)
         assert env["status"] == "skipped" and errors == [] and env["reason"] == MISSING
         assert gw.buckets == {} and gw.mutations == []
-        assert not [c for c in calls if c[1] in ("replace", "delete")]
+        assert not [c for c in calls if WRITE(c)]
     other = Gateway(POD["ok"], buckets={"other": {}})
     env, _, _, gw = s3_run(other, bucket="other")
     assert env["status"] == "ok" and env["outputs"]["probe"]["bucket"] == "other"
@@ -1400,7 +1629,7 @@ def test_s3_check_dry_run_lists_the_bucket_and_mutates_nothing():
     p = env["outputs"]["probe"]
     assert p["steps"] == [] and p["passed"] is None and p["plan"][0] == "put-object"
     assert p["bucketListing"] == "allowed"
-    assert gw.mutations == [] and not [c for c in calls if c[1] in ("replace", "delete")]
+    assert gw.mutations == [] and not [c for c in calls if WRITE(c)]
 
 
 def test_s3_check_skips_when_the_gateway_refuses_an_anonymous_write_and_writes_nothing():
@@ -1415,11 +1644,11 @@ def test_s3_check_skips_when_the_gateway_refuses_an_anonymous_write_and_writes_n
 def test_a_denied_listing_does_not_stop_the_write_check_and_is_reported_apart():
     # a write-only anonymous identity: the list is 403 but the PUT, GET and DELETE are accepted
     class WriteOnly(Gateway):
-        def run(self, argv, cwd=None, check=None, timeout=None):
-            if argv[1] == "get" and "list-type" in argv[3]:
-                self.requests.append(("get", argv[3], timeout))
+        def serve(self, method, path, body=None, timeout=None):
+            if method == "GET" and "list-type" in path:
+                self.requests.append(("GET", path.lstrip("/"), timeout))
                 return UPSTREAM["403"]
-            return super().run(argv, cwd, check, timeout)
+            return super().serve(method, path, body, timeout)
 
     env, errors, _, gw = s3_run(WriteOnly(POD["ok"], buckets=existing()))
     p = env["outputs"]["probe"]
@@ -1504,30 +1733,77 @@ def test_s3_check_a_failing_put_is_a_partial_result_and_the_delete_still_runs():
     assert steps["put-object"]["ok"] is False and steps["put-object"]["error"]["code"] == "internal"
     assert "get-object" not in steps  # nothing to read back: the delete comes first
     assert steps["cleanup-delete-object"]["ok"] is True and p["cleanedUp"] is True
-    assert [c[1] for c in calls if "--raw" in c][-2:] == ["replace", "delete"]
+    assert [c[1] for c in calls if c[0] == "k8s_proxy_request"][-2:] == ["PUT", "DELETE"]
 
 
 def test_s3_check_a_put_that_times_out_is_a_timeout_error_and_the_delete_comes_next():
-    import subprocess
-
     gw = Gateway(
         POD["ok"],
         buckets=existing(),
-        fail={"put-object": subprocess.TimeoutExpired(["kubectl"], 15)},
+        fail={"put-object": RwError("timeout", "request did not complete within 15s")},
     )
     env, errors, calls, gw = s3_run(gw)
     p = env["outputs"]["probe"]
     assert env["status"] == "partial" and codes(errors) == [("timeout", "s3-check/put-object")]
     assert [r[0] for r in gw.requests] == [
-        "get",
-        "replace",
-        "delete",
+        "GET",
+        "PUT",
+        "DELETE",
     ]  # list, PUT, then straight to DELETE
     assert (
         p["passed"] is False
         and p["cleanedUp"] is True
         and step_names(p) == ["put-object", "cleanup-delete-object"]
     )
+
+
+def test_s3_check_sends_the_object_through_ctx_k8s_proxy_request():
+    env, errors, calls, gw = s3_run(Gateway(POD["ok"], buckets=existing()))
+    assert env["status"] == "ok" and errors == []
+    key = env["outputs"]["probe"]["key"]
+    puts = [r for r in gw.sent if r["method"] == "PUT"]
+    deletes = [r for r in gw.sent if r["method"] == "DELETE"]
+    assert len(puts) == len(deletes) == 1
+    assert puts[0]["path"] == f"/{BUCKET}/{key}" and deletes[0]["path"] == puts[0]["path"]
+    assert puts[0]["body"] == "runwhen s3-check 2026-11-03T23:00:00Z"
+    assert puts[0]["headers"] == {"Content-Type": "text/plain"} and deletes[0]["body"] is None
+    assert not [c for c in calls if c[0] == "kubectl" and "--raw" in c]
+
+
+@pytest.mark.parametrize(
+    "step,sent",
+    [
+        ("put-object", ["GET", "PUT", "DELETE"]),  # the PUT may have landed: the cleanup deletes
+        ("get-object", ["GET", "PUT", "GET", "DELETE", "GET"]),
+        ("delete-object", ["GET", "PUT", "GET", "DELETE", "DELETE"]),
+    ],
+)
+def test_s3_check_a_cross_host_redirect_on_any_step_is_a_dependency_error_and_never_followed(
+    step, sent
+):
+    """S17: a redirect to another host is reported with the host and the request is not repeated."""
+    redirect = cross_host_redirect("sso.example.invalid", 302)
+    gw = Gateway(POD["ok"], buckets=existing(), fail={step: redirect})
+    env, errors, calls, gw = s3_run(gw)
+    assert env["status"] == "partial"
+    assert ("dependency", f"s3-check/{step}") in codes(errors)
+    assert all("sso.example.invalid" in e["message"] for e in errors if e["scope"].endswith(step))
+    assert [r["method"] for r in gw.sent] == sent  # each request once: none followed or re-sent
+    assert env["outputs"]["probe"]["passed"] is False
+
+
+def test_s3_check_the_confirmation_read_redirected_to_another_host_is_a_dependency_error():
+    class Redirecting(Gateway):
+        def serve(self, method, path, body=None, timeout=None):
+            out = super().serve(method, path, body, timeout)
+            if method == "GET" and not self.buckets[BUCKET] and "list-type" not in path:
+                return cross_host_redirect("sso.example.invalid")
+            return out
+
+    env, errors, _, gw = s3_run(Redirecting(POD["ok"], buckets=existing()))
+    assert codes(errors) == [("dependency", "s3-check/confirm-deleted")]
+    assert "sso.example.invalid" in errors[0]["message"]
+    assert [r["method"] for r in gw.sent] == ["GET", "PUT", "GET", "DELETE", "GET"]
 
 
 def test_s3_check_a_failed_read_back_is_an_error_and_the_object_is_still_deleted():
@@ -1541,10 +1817,10 @@ def test_s3_check_a_failed_read_back_is_an_error_and_the_object_is_still_deleted
 
 def test_s3_check_content_mismatch_is_an_error_and_not_an_accepted_write():
     class Wrong(Gateway):
-        def run(self, argv, cwd=None, check=None, timeout=None):
-            if argv[1] == "get" and "runwhen-s3-check/2026" in argv[3]:
+        def serve(self, method, path, body=None, timeout=None):
+            if method == "GET" and "runwhen-s3-check/2026" in path:
                 return ok("something else")
-            return super().run(argv, cwd, check, timeout)
+            return super().serve(method, path, body, timeout)
 
     env, errors, _, gw = s3_run(Wrong(POD["ok"], buckets=existing()))
     p = env["outputs"]["probe"]
@@ -1572,10 +1848,10 @@ def test_s3_check_a_failed_delete_is_an_error_and_the_leftover_is_named():
 
 def test_s3_check_an_object_that_survives_delete_fails_the_probe():
     class Stubborn(Gateway):
-        def run(self, argv, cwd=None, check=None, timeout=None):
-            if argv[1] == "delete" and "runwhen-s3-check/2026" in argv[3]:
+        def serve(self, method, path, body=None, timeout=None):
+            if method == "DELETE" and "runwhen-s3-check/2026" in path:
                 return ok("")  # claims success, keeps the object
-            return super().run(argv, cwd, check, timeout)
+            return super().serve(method, path, body, timeout)
 
     env, errors, _, gw = s3_run(Stubborn(POD["ok"], buckets=existing()))
     p = env["outputs"]["probe"]
@@ -1593,7 +1869,7 @@ def test_s3_check_rbac_denial_of_the_write_verbs_is_reported_with_permission_den
     ]
     p = env["outputs"]["probe"]
     assert p["passed"] is False and step_names(p) == ["put-object"]
-    assert [r[0] for r in gw.requests] == ["get", "replace"]  # nothing could have landed: no DELETE
+    assert [r[0] for r in gw.requests] == ["GET", "PUT"]  # nothing could have landed: no DELETE
 
 
 @pytest.mark.parametrize(
@@ -1646,13 +1922,13 @@ def test_the_delete_keeps_its_time_when_the_listing_and_the_put_run_long(monkeyp
     env, errors, _, gw = s3_run(gw, clock=clock)
     p = env["outputs"]["probe"]
     verbs = [(v, t) for v, _, t in gw.requests]
-    assert verbs[0] == ("get", 15.0) and verbs[1] == (
-        "replace",
+    assert verbs[0] == ("GET", 15.0) and verbs[1] == (
+        "PUT",
         15.0,
     )  # 30s left, 15 kept for DELETE
     # the read-back would leave less than 15s for DELETE: it is not sent, it times out
-    assert [v for v, _ in verbs] == ["get", "replace", "delete", "get"]
-    assert verbs[2] == ("delete", 10.0)
+    assert [v for v, _ in verbs] == ["GET", "PUT", "DELETE", "GET"]
+    assert verbs[2] == ("DELETE", 10.0)
     assert codes(errors)[0] == ("timeout", "s3-check/get-object")
     assert p["passed"] is False and p["cleanedUp"] is True
 
@@ -1663,7 +1939,7 @@ def test_a_put_that_would_not_leave_time_for_the_delete_is_not_sent(monkeypatch)
     gw.cost = {"list": 40}  # 10s left: under the 15s kept for the DELETE
     env, errors, _, gw = s3_run(gw, clock=clock)
     p = env["outputs"]["probe"]
-    assert [v for v, _, _ in gw.requests] == ["get"]  # only the listing: no PUT, hence no DELETE
+    assert [v for v, _, _ in gw.requests] == ["GET"]  # only the listing: no PUT, hence no DELETE
     assert codes(errors) == [("timeout", "s3-check/put-object")]
     assert p["passed"] is False and p["cleanedUp"] is True and gw.mutations == []
 
@@ -1676,12 +1952,17 @@ RESOURCES = {
     "deployments": ("apps", "deployments"),
 }
 VALUE_FLAGS = {"-n", "--namespace", "-o", "-l", "-f", "--context"}
-PROXY_VERBS = {"get": "get", "replace": "update", "delete": "delete"}
+# pods/proxy RBAC verb of a proxied request's HTTP method
+PROXY_VERBS = {"GET": "get", "PUT": "update", "DELETE": "delete"}
 
 
 def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs."""
     argv = list(argv)
+    if argv[0] == "k8s_proxy_get":  # ctx.k8s_proxy_get(ns, "pods", ...): pods/proxy get
+        return {("", "pods/proxy", "get")}
+    if argv[0] == "k8s_proxy_request":  # ctx.k8s_proxy_request(method, ns, "pods", ...)
+        return {("", "pods/proxy", PROXY_VERBS[argv[1]])}
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
         if a in VALUE_FLAGS:
@@ -1689,9 +1970,7 @@ def rbac_needs(argv):
         elif not a.startswith("-"):
             positional.append(a)
     verb = positional[0]
-    if "--raw" in argv:
-        assert "/pods/" in positional[1] and "/proxy/" in positional[1], argv
-        return {("", "pods/proxy", PROXY_VERBS[verb])}
+    assert "--raw" not in argv, argv  # S17: no skill reaches a backend through kubectl --raw
     assert verb == "get", argv
     group, plural = RESOURCES[positional[1]]
     named = len(positional) > 2 and "-l" not in flags
@@ -1755,6 +2034,7 @@ def test_no_read_task_issues_a_mutating_request():
             c
             for c in calls
             if {"replace", "delete", "create", "patch", "apply", "exec", "annotate"} & set(c)
+            or WRITE(c)
         ]
         assert not bad, (task, bad)
 
@@ -1767,9 +2047,7 @@ def test_rbac_needs_maps_the_verbs():
         ("apps", "statefulsets", "get")
     }
     assert rbac_needs(list(raw("p", 9333, "dir/status"))) == {("", "pods/proxy", "get")}
-    assert rbac_needs([*raw("p", 8333, "b/k", "replace"), "-f", "/tmp/x"]) == {
-        ("", "pods/proxy", "update")
-    }
+    assert rbac_needs(list(raw("p", 8333, "b/k", "put"))) == {("", "pods/proxy", "update")}
     assert rbac_needs(list(raw("p", 8333, "b/k", "delete"))) == {("", "pods/proxy", "delete")}
 
 

@@ -1,0 +1,7 @@
+#!/bin/sh
+# bq is a separate tool the gcp plugin does not use (and the runtime image does not ship it). This
+# guard sits first on PATH next to the stubs so that a task that reaches for bq never runs the real
+# one (which keeps its own credential store): it fails with rc 2. To use bq in a future skill, add it to the image on purpose and replay it
+# with `rwtask test --shim bq` (see ../README.md).
+echo "bq (stub): the gcp plugin does not use bq; refusing to run the real one." >&2
+exit 2

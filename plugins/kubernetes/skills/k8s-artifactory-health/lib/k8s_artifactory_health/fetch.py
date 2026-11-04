@@ -12,7 +12,7 @@ from k8s_artifactory_health.project import (
     kubectl_json_scoped_projected,
     kubectl_projected,
 )
-from k8s_artifactory_health.proxy import pod_path, proxy_get, service_path
+from k8s_artifactory_health.proxy import pod_target, proxy_get, service_target
 
 KINDS = {
     "kubernetes/statefulset": "statefulsets.apps",
@@ -60,8 +60,8 @@ class Budget:
             )
 
     def request_timeout(self):
-        """The kubectl --request-timeout for the next ask: never past the deadline."""
-        return f"{max(1, min(REQUEST_SECONDS, int(self.remaining())))}s"
+        """Seconds for the next ask: never past the deadline."""
+        return max(1, min(REQUEST_SECONDS, int(self.remaining())))
 
     def record(self, path, timed_out):
         self._timeouts[path] = self._timeouts.get(path, 0) + 1 if timed_out else 0
@@ -179,8 +179,10 @@ def pod_port(pod, kind, override=None):
 
 def service_port_for(service, number, names=()):
     """(proxy port, port number) of the Service port whose targetPort is the container port
-    `number` or one of its `names`: the proxy port is the Service port's name if it has one, else
-    its number. None when the Service does not expose that container port."""
+    `number` or one of its `names`: the proxy port is the Service port's name if it has one (a
+    Service port name is a DNS label of up to 63 characters, which the SDK helper takes whole, e.g.
+    the chart's `http-artifactory`), else its number (the proxy takes either). None when the
+    Service does not expose that container port."""
     for entry in (service.get("spec") or {}).get("ports") or []:
         target = entry.get("targetPort", entry.get("port"))
         if target == number or target in names:
@@ -207,12 +209,12 @@ def queried(pods):
     return [p for p in pods if running(p)][:MAX_QUERIED]
 
 
-def ask(ctx, api_path, budget, key):
-    """GET one URL through the proxy within the budget: a Reply or RwError. `key` names the
+def ask(ctx, target, budget, key):
+    """GET one target through the proxy within the budget: a Reply or RwError. `key` names the
     endpoint for the budget's timeout streak."""
     budget.check(key)
     try:
-        reply = proxy_get(ctx, api_path, budget.request_timeout())
+        reply = proxy_get(ctx, target, budget.request_timeout())
     except RwError as exc:
         budget.record(key, exc.code == "timeout")
         raise
@@ -221,11 +223,13 @@ def ask(ctx, api_path, budget, key):
 
 
 def pod_url(workload, pod, scheme, port, path):
-    return pod_path(workload["metadata"]["namespace"], pod["metadata"]["name"], scheme, port, path)
+    return pod_target(
+        workload["metadata"]["namespace"], pod["metadata"]["name"], scheme, port, path
+    )
 
 
 def service_url(workload, service, scheme, port, path):
-    return service_path(
+    return service_target(
         workload["metadata"]["namespace"], service["metadata"]["name"], scheme, port, path
     )
 

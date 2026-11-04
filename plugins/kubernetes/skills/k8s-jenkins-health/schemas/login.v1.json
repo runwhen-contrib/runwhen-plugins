@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Jenkins /login per pod",
-  "description": "What each pod of the workload answered on /login through the API server's pod proxy. ok is true for a 200 whose page carries the Jenkins footer, false for a 503 or 404, null when the pod was not asked, the answer was an error, or it is a login page that is not Jenkins's (ssoRedirect).",
+  "description": "What each pod of the workload answered on /login through the API server's pod proxy. ok is true for a 200 whose page carries the Jenkins footer, false for a 503 or 404, null when the pod was not asked, the answer was an error, or it is a login page that is not Jenkins's or a redirect to another host (ssoRedirect).",
   "type": "object",
   "properties": {
     "workload": {
@@ -93,7 +93,7 @@
               "integer",
               "null"
             ],
-            "description": "200, 401, 403, 404 or 503; null when the pod was not asked or the ask failed (see errors)"
+            "description": "200, 401, 403, 404, 503 or a 3xx redirect to another host (ssoRedirect); null when the pod was not asked or the ask failed (see errors)"
           },
           "ok": {
             "type": [
@@ -112,9 +112,10 @@
             ],
             "enum": [
               "likely",
+              "redirect",
               null
             ],
-            "description": "likely when /login answered 200 with a login page that has no 'Jenkins <version>' footer: Jenkins behind an SSO realm redirects anonymous requests to the identity provider (ok is then null and hint says so)"
+            "description": "likely when /login answered 200 with a login page that has no 'Jenkins <version>' footer, redirect when /login answered a redirect to another host (never followed; the hint names the host): Jenkins behind an SSO realm redirects anonymous requests to the identity provider (ok is then null and hint says so)"
           },
           "hint": {
             "type": [

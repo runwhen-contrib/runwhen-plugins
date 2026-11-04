@@ -1,7 +1,6 @@
 """kubectl access for this skill's scripts: objects, and HTTP through the API server's pod proxy."""
 
 import json
-import re
 import subprocess
 
 from k8s_seaweedfs_health.errors import RwError
@@ -121,12 +120,12 @@ def kubectl_json_scoped(ctx, scope, *args):
 
 # ---------------------------------------------------------------- pod proxy ----
 #
-# HTTP to a SeaweedFS process goes through the API server: GET/PUT/DELETE
-# /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/<path>, RBAC `pods/proxy`
-# (get, update for PUT, delete). `kubectl get --raw` prints the body of a 2xx answer and
-# NOTHING of any other: a non-2xx from the workload comes back as a bare "Error from server
-# (<Reason>): ..." line, so the HTTP status is known only as that reason. proxy_failure maps it,
-# and never lets a proxy error read as a healthy answer.
+# Every HTTP request to a SeaweedFS process goes through `ctx.k8s_proxy_get` (GET) or
+# `ctx.k8s_proxy_request` (the PUT and DELETE of `s3-check`): RBAC `pods/proxy` get, update, delete.
+# The answer is the backend's own status and body, and a redirect is never followed with a write and
+# never off the pod with a read (security finding S17: `kubectl get|replace|delete --raw` re-sent the
+# runner's bearer token to a redirect on another host). The API server's own errors are RwErrors
+# of the helper.
 
 
 class ProxyError(RwError):
@@ -135,11 +134,11 @@ class ProxyError(RwError):
     rbac              the API server refused this identity (pods/proxy)
     upstream_denied   the workload answered 401/403 (it wants credentials the task does not hold)
     upstream_missing  the workload answered 404 (no such endpoint, key or bucket)
-    upstream_error    the workload answered another non-2xx (400, 409, ...): a status that says nothing
-                      about the API server or the network, so a health endpoint may call it unhealthy
-    api_unavailable   `Error from server (ServiceUnavailable)`: a 503 that kubectl cannot tell from the
-                      API server's own
-    api_error         `Error from server (InternalError)`: a 500, likewise
+    upstream_error    the workload answered another non-2xx (400, 409, 500, 503 ...): a status that says
+                      nothing about the API server or the network, so a health endpoint may call it
+                      unhealthy
+    upstream_redirect the workload answered a redirect, which a write never follows and a read follows
+                      only to another path of the same pod
     pod_missing       the pod does not exist
     unreachable       the API server could not reach the pod and port
     timeout, rate_limited, other
@@ -150,95 +149,105 @@ class ProxyError(RwError):
         self.kind = kind
 
 
-def proxy_path(namespace, pod, port, path, scheme="http"):
-    return (
-        f"/api/v1/namespaces/{namespace}/pods/{scheme}:{pod}:{int(port)}/proxy/{path.lstrip('/')}"
-    )
+BODY_HINT = 80  # characters of a failing reply's body that an error message shows
+DROPPED = "x-rw-redirect-dropped"
+_API_KINDS = {
+    "permission_denied": "rbac",
+    "not_found": "pod_missing",
+    "unreachable": "unreachable",
+    "timeout": "timeout",
+    "rate_limited": "rate_limited",
+}
 
 
-_REASON = re.compile(r"error from server \((\w+)\)")
-
-
-def proxy_failure(argv, result):
-    """The ProxyError for a failed `kubectl <verb> --raw` result."""
-    stderr = (result.stderr or "").strip()
-    text = stderr.lower()
-    reason = (_REASON.search(text) or [None, ""])[1]
-    shown = _shown(stderr)[:MESSAGE_LIMIT]
-    msg = f"{argv[0]} {argv[1]} --raw exited {result.returncode}: {shown}"
-    if (
-        result.returncode == 124
-        or reason in ("timeout", "gatewaytimeout")
-        or "deadline exceeded" in text
-    ):
-        return ProxyError("timeout", msg, "timeout")
-    if reason in ("toomanyrequests",) or "too many requests" in text:
-        return ProxyError("rate_limited", msg, "rate_limited")
-    if reason in ("forbidden", "unauthorized") or "forbidden" in text:
-        if " cannot " in text or "is forbidden" in text or "you must be logged in" in text:
-            return ProxyError("permission_denied", msg, "rbac")
-        return ProxyError("permission_denied", msg, "upstream_denied")
-    if reason == "notfound" or "not found" in text:
-        if "could not find the requested resource" in text:
-            return ProxyError("dependency", msg, "upstream_missing")
-        return ProxyError("not_found", msg, "pod_missing")
-    if (
-        "error trying to reach service" in text
-        or "unable to connect" in text
-        or "connection refused" in text
-        or "no such host" in text
-        or "no route to host" in text
-        or "x509" in text
-        or "i/o timeout" in text
-    ):
-        return ProxyError("unreachable", msg, "unreachable")
-    # 5xx: the API server's own and the workload's both come back as these reasons, so they are
-    # typed errors, never an "unhealthy" the caller could read as the workload's answer
-    if reason == "serviceunavailable":
-        return ProxyError("unreachable", msg, "api_unavailable")
-    if reason == "internalerror":
-        return ProxyError("internal", msg, "api_error")
-    if result.returncode == 127:
-        return ProxyError("dependency", msg, "other")
-    return ProxyError("internal", msg, "upstream_error")
-
-
-def proxy_run(ctx, argv, timeout=PROXY_TIMEOUT, **run_kwargs):
-    try:
-        result = run_unchecked(ctx, argv, timeout=timeout, **run_kwargs)
-    except RwError as exc:
-        if (
-            exc.code == "timeout"
-        ):  # the command outlived its budget: the same kind as a gateway timeout
-            raise ProxyError("timeout", exc.message, "timeout") from None
-        raise
-    if result.returncode:
-        raise proxy_failure(argv, result)
-    return result.stdout or ""
+def proxy_request(
+    ctx,
+    method,
+    namespace,
+    pod,
+    port,
+    path,
+    body=None,
+    scheme="http",
+    timeout=PROXY_TIMEOUT,
+    headers=None,
+):
+    """The body of a 2xx answer to <method> <path> on the pod's port, as text. Anything else raises
+    ProxyError: an error of the API server (kind rbac, pod_missing, unreachable, timeout), or the
+    workload's own status (upstream_denied 401/403, upstream_missing 404, upstream_error, and
+    upstream_redirect for a redirect). A redirect to another host is a `dependency` error naming the
+    host and is never followed; a GET redirected to another path of the same pod is followed once; a
+    write is never re-sent anywhere. A 2xx body cut at the helper's size limit is `internal`, never
+    parsed in part."""
+    path = "/" + path.lstrip("/")
+    hops = 0
+    while True:
+        try:
+            if method == "GET":
+                reply = ctx.k8s_proxy_get(
+                    namespace, "pods", pod, port, path, scheme=scheme, timeout=timeout
+                )
+            else:
+                reply = ctx.k8s_proxy_request(
+                    method,
+                    namespace,
+                    "pods",
+                    pod,
+                    port,
+                    path,
+                    body=body,
+                    headers=headers,
+                    scheme=scheme,
+                    timeout=timeout,
+                )
+        except RwError as exc:
+            raise ProxyError(exc.code, exc.message, _API_KINDS.get(exc.code, "other")) from None
+        status = reply["status"]
+        if method == "GET" and 300 <= status < 400 and reply.get("location") and hops < 1:
+            path, hops = reply["location"], hops + 1
+            continue
+        break
+    text = reply.get("body") or ""
+    what = f"{method} {path} on pod {pod!r} answered HTTP {status}"
+    if 200 <= status < 300:
+        if reply.get("truncated"):
+            raise ProxyError(
+                "internal",
+                f"{method} {path} on pod {pod!r} was larger than the helper's limit",
+                "other",
+            )
+        return text
+    if 300 <= status < 400:
+        dropped = (reply.get("headers") or {}).get(DROPPED)
+        if dropped:
+            where = f"redirecting off cluster to {dropped}"
+        elif reply.get("location"):
+            where = f"redirecting to {reply['location']}"
+        else:
+            where = "redirecting"
+        raise ProxyError("dependency", f"{what}, {where} (not followed)", "upstream_redirect")
+    shown = f": {text.strip()[:BODY_HINT]!r}" if text.strip() else ""
+    if status in (401, 403):
+        raise ProxyError("permission_denied", f"{what}{shown}", "upstream_denied")
+    if status == 404:
+        raise ProxyError("dependency", f"{what}{shown}", "upstream_missing")
+    raise ProxyError("internal", f"{what}{shown}", "upstream_error")
 
 
 def proxy_get(ctx, namespace, pod, port, path, scheme="http", timeout=PROXY_TIMEOUT):
-    """The body of a 2xx answer to GET <path> on the pod's port, as text. Anything else raises
-    ProxyError."""
-    return proxy_run(
-        ctx,
-        ["kubectl", "get", "--raw", proxy_path(namespace, pod, port, path, scheme)],
-        timeout=timeout,
-    )
+    """The body of a 2xx answer to GET <path> (see proxy_request)."""
+    return proxy_request(ctx, "GET", namespace, pod, port, path, None, scheme, timeout)
 
 
-def proxy_put(ctx, namespace, pod, port, path, body_file, scheme="http", timeout=PROXY_TIMEOUT):
-    """PUT the content of `body_file` (a file name in ctx.workdir, which the command runs in, so the
-    argv does not depend on where the workdir is) to <path>: `kubectl replace --raw`, the API
-    server verb update."""
-    argv = ["kubectl", "replace", "--raw", proxy_path(namespace, pod, port, path, scheme)]
-    return proxy_run(ctx, [*argv, "-f", body_file], timeout=timeout, cwd=ctx.workdir)
+def proxy_put(ctx, namespace, pod, port, path, body, scheme="http", timeout=PROXY_TIMEOUT):
+    """PUT `body` (text) to <path>. `ctx.k8s_proxy_request`: RBAC `pods/proxy` update."""
+    headers = {"Content-Type": "text/plain"}
+    return proxy_request(ctx, "PUT", namespace, pod, port, path, body, scheme, timeout, headers)
 
 
 def proxy_delete(ctx, namespace, pod, port, path, scheme="http", timeout=PROXY_TIMEOUT):
-    """DELETE <path> (`kubectl delete --raw`: the API server verb is delete)."""
-    argv = ["kubectl", "delete", "--raw", proxy_path(namespace, pod, port, path, scheme)]
-    return proxy_run(ctx, argv, timeout=timeout)
+    """DELETE <path>. `ctx.k8s_proxy_request`: RBAC `pods/proxy` delete."""
+    return proxy_request(ctx, "DELETE", namespace, pod, port, path, None, scheme, timeout)
 
 
 def proxy_json(ctx, namespace, pod, port, path, what, scheme="http"):

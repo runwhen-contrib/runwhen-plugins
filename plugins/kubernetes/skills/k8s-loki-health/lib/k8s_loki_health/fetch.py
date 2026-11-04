@@ -6,7 +6,7 @@ import time
 from k8s_loki_health.common import MESSAGE_LIMIT
 from k8s_loki_health.errors import RwError
 from k8s_loki_health.k8s import kubectl_json
-from k8s_loki_health.proxy import pod_path, proxy_get
+from k8s_loki_health.proxy import proxy_get
 
 KINDS = {
     "kubernetes/statefulset": "statefulsets.apps",
@@ -53,8 +53,8 @@ class Budget:
             raise RwError("timeout", reason)
 
     def request_timeout(self):
-        """The kubectl --request-timeout for the next ask: never past the deadline."""
-        return f"{max(1, min(REQUEST_SECONDS, int(self.remaining())))}s"
+        """Seconds for the next ask: never past the deadline."""
+        return max(1, min(REQUEST_SECONDS, int(self.remaining())))
 
     def record(self, path, timed_out):
         self._timeouts[path] = self._timeouts.get(path, 0) + 1 if timed_out else 0
@@ -147,11 +147,11 @@ def pod_condition(pod, kind):
     return None
 
 
-def fetch_one(ctx, workload, pod, scheme, port, path, budget=None):
-    """GET `path` from one pod: a Reply (200, 404 or 503) or RwError. With a `budget`, an ask that
-    is past the deadline, or on a path that timed out for the last pods, raises `timeout`
-    without asking."""
-    api_path = pod_path(
+def fetch_one(ctx, workload, pod, scheme, port, path, budget=None, headers=None):
+    """GET `path` from one pod, with the request `headers`: a Reply (200, 404 or 503) or RwError.
+    With a `budget`, an ask that is past the deadline, or on a path that timed out for the last
+    pods, raises `timeout` without asking."""
+    where = (
         workload["metadata"]["namespace"],
         pod["metadata"]["name"],
         scheme,
@@ -159,10 +159,10 @@ def fetch_one(ctx, workload, pod, scheme, port, path, budget=None):
         path,
     )
     if budget is None:
-        return proxy_get(ctx, api_path)
+        return proxy_get(ctx, *where, headers=headers)
     budget.check(path)
     try:
-        reply = proxy_get(ctx, api_path, budget.request_timeout())
+        reply = proxy_get(ctx, *where, budget.request_timeout(), headers)
     except RwError as exc:
         budget.record(path, exc.code == "timeout")
         raise

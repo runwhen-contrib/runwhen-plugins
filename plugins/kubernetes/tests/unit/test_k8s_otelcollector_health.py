@@ -16,7 +16,7 @@ import yaml
 from jsonschema import Draft202012Validator
 from k8s_otelcollector_health import collector, exporter_queue, k8s, prom
 from k8s_otelcollector_health.errors import RwError
-from k8s_otelcollector_health.k8s import proxy_path
+from proxy_fake import cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-otelcollector-health"
@@ -76,8 +76,9 @@ def get_pods(rel):
     return ("kubectl", "-n", NS, "get", "pods", "-l", f"app=otel-{rel}", "-o", "json")
 
 
-def metrics(pod, port=8888):
-    return ("kubectl", "get", "--raw", proxy_path(NS, pod, port, "metrics"))
+def metrics(pod, port=8888, scheme="http"):
+    """The key of the metrics request: a `ctx.k8s_proxy_get` call, recorded in `calls` as this tuple."""
+    return ("k8s_proxy_get", NS, pod, str(port), "/metrics", scheme)
 
 
 def ok(doc):
@@ -97,6 +98,42 @@ NOT_FOUND = (
 )
 
 
+def proxied(answer):
+    """The `ctx.k8s_proxy_get` answer (a reply dict or an RwError) for a stub (rc, out, err): the
+    workload's own 403/404/500 are replies, an error of the API server is an RwError."""
+    rc, out, err = answer
+    if rc == 0:
+        return reply(200, out)
+    if "could not find the requested resource" in err:
+        return reply(404, "404 page not found")
+    if "Forbidden): unknown" in err:
+        return reply(403, "Forbidden")
+    if "InternalError" in err:
+        return reply(500, "internal error")
+    if " cannot get resource" in err:
+        return RwError("permission_denied", err)
+    if "error trying to reach service" in err:
+        return RwError("unreachable", err)
+    if "(Timeout)" in err:
+        return RwError("timeout", err)
+    raise AssertionError(f"no proxy equivalent for the stub {answer!r}")
+
+
+def install_proxy(tc, calls, stubs):
+    def k8s_proxy_get(namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        assert (namespace, kind) == (NS, "pods"), (namespace, kind)
+        key = ("k8s_proxy_get", namespace, name, str(port), path, scheme)
+        calls.append(key)
+        if key not in stubs:
+            raise AssertionError(f"ctx.k8s_proxy_get called with an unstubbed request {key!r}")
+        out = proxied(stubs[key])
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    tc.ctx.k8s_proxy_get = k8s_proxy_get
+
+
 def stubs_for(rel, extra=None):
     out = {
         get_workload(rel): ok(DEPLOY[rel]),
@@ -111,7 +148,8 @@ def run(stubs, res=None, settings=None):
     with make_context(
         resource=res or resource(), settings={**SETTINGS, **(settings or {})}, now=NOW
     ) as tc:
-        calls = stub_commands(tc, stubs)
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+        install_proxy(tc, calls, stubs)
         env = run_main(script(), tc)
         return env, tc.errors, list(calls)
 
@@ -394,7 +432,7 @@ def test_the_metrics_port_and_scheme_are_settings():
     }
     env, _, calls = run(stubs, resource("otel-ok"), {"metricsPort": 9464})
     assert env["status"] == "ok" and page in calls
-    https = ("kubectl", "get", "--raw", proxy_path(NS, POD["ok"], 8888, "metrics", "https"))
+    https = metrics(POD["ok"], 8888, "https")
     stubs = {
         get_workload("ok"): ok(DEPLOY["ok"]),
         get_pods("ok"): ok(PODS["ok"]),
@@ -612,6 +650,49 @@ def test_pods_beyond_max_pods_are_counted_but_not_asked_and_lists_are_capped():
     assert (c["count"], len(c["items"]), c["truncated"]) == (18, 5, True)
 
 
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location and names the host; the task reports it and asks once."""
+    stubs = stubs_for("ok")
+    key = metrics(POD["ok"])
+    del stubs[key]
+    with make_context(resource=resource(), settings=SETTINGS, now=NOW) as tc:
+        asked = []
+        calls = stub_commands(tc, {k: v for k, v in stubs.items() if k[0] == "kubectl"})
+
+        def k8s_proxy_get(namespace, kind, name, port, path, *, scheme="http", timeout=30):
+            asked.append(path)
+            return cross_host_redirect("sso.example.invalid")
+
+        tc.ctx.k8s_proxy_get = k8s_proxy_get
+        env = run_main(script(), tc)
+        errors = tc.errors
+    assert calls and env["status"] == "failed" and env["outputs"] == {}
+    assert errors[0]["code"] == "dependency"
+    assert "off cluster to sso.example.invalid (not followed)" in errors[0]["message"]
+    assert asked == ["/metrics"]
+
+
+def test_a_same_pod_redirect_is_followed_once_and_a_cut_body_is_internal():
+    class Ctx:
+        def __init__(self, answers):
+            self.answers, self.asked = list(answers), []
+
+        def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+            self.asked.append(path)
+            return self.answers.pop(0)
+
+    ctx = Ctx([reply(301, "", location="/m/metrics"), reply(200, "up 1\n")])
+    assert k8s.proxy_get(ctx, NS, "p", 8888, "metrics") == "up 1\n"
+    assert ctx.asked == ["/metrics", "/m/metrics"]
+    loop = Ctx([reply(302, "", location="/a"), reply(302, "", location="/b")])
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_get(loop, NS, "p", 8888, "metrics")
+    assert exc.value.kind == "upstream_redirect" and len(loop.asked) == 2
+    with pytest.raises(k8s.ProxyError) as exc:
+        k8s.proxy_get(Ctx([reply(200, "up", truncated=True)]), NS, "p", 8888, "metrics")
+    assert exc.value.code == "internal"
+
+
 def test_proxy_error_classification_reaches_the_kubectl_json_path_too():
     class Done:
         returncode, stdout, stderr = (
@@ -642,15 +723,15 @@ VALUE_FLAGS = {"-n", "--namespace", "-o", "-l"}
 
 def rbac_needs(argv):
     argv = list(argv)
+    if argv[0] == "k8s_proxy_get":  # ctx.k8s_proxy_get(ns, "pods", ...): pods/proxy get
+        return {("", "pods/proxy", "get")}
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
         if a in VALUE_FLAGS:
             flags[a] = next(it)
         elif not a.startswith("-"):
             positional.append(a)
-    if "--raw" in argv:
-        assert positional[0] == "get" and "/pods/" in positional[1] and "/proxy/" in positional[1]
-        return {("", "pods/proxy", "get")}
+    assert "--raw" not in argv, argv  # pod proxy reads go through ctx.k8s_proxy_get (S17)
     assert positional[0] == "get", argv
     group, plural = RESOURCES[positional[1]]
     return {(group, plural, "get" if len(positional) > 2 and "-l" not in flags else "list")}

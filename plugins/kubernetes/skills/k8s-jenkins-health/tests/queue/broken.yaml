@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-stuck
-now: '2026-11-04T00:31:09.429Z'
+now: '2026-11-04T01:58:16.716Z'
 calls:
 - argv:
   - kubectl
@@ -44,39 +44,61 @@ calls:
     s:metadata.deletionTimestamp=
     s:status.phase=Running
     j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-stuck","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-stuck-7bf4c4ffd8","statefulset.kubernetes.io/pod-name":"jenkins-stuck-0"}
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:02Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:01Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:10Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:10Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:30:01Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:41Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:38Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:47Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:47Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:38Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
     i:jenkins=python:3.12-alpine
     p:jenkins=/login|http|HTTP
   stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-stuck-0:8080/proxy/queue/api/json?tree=discoverableItems[id],items[id,blocked,buildable,stuck,inQueueSince,why,task[name,url]]
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"_class": "hudson.model.Queue", "discoverableItems": [], "items": [{"_class": "hudson.model.Queue$BuildableItem",
-    "blocked": false, "buildable": true, "id": 41, "inQueueSince": 1793493070108, "stuck": true, "pending":
-    false, "task": {"_class": "hudson.model.FreeStyleProject", "name": "nightly-build", "url": "http://jenkins:8080/job/nightly-build/"},
-    "url": "queue/item/41/", "why": "There are no nodes with the label ''arm64''"}, {"_class": "hudson.model.Queue$BlockedItem",
-    "blocked": true, "buildable": false, "id": 42, "inQueueSince": 1793752210108, "stuck": false, "pending":
-    false, "task": {"_class": "hudson.model.FreeStyleProject", "name": "deploy", "url": "http://jenkins:8080/job/deploy/"},
-    "url": "queue/item/42/", "why": "Build #17 is already in progress (ETA: 2 min 0 sec)"}]}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-jenkins/pods/http:jenkins-stuck-0:8080/proxy/computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,numExecutors,offlineCauseReason]
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"_class": "hudson.model.ComputerSet", "busyExecutors": 0, "computer": [{"_class": "hudson.model.Hudson$MasterComputer",
-    "displayName": "Built-In Node", "idle": true, "offline": false, "temporarilyOffline": false, "numExecutors":
-    2, "offlineCauseReason": ""}, {"_class": "hudson.slaves.SlaveComputer", "displayName": "agent-arm64-1",
-    "idle": true, "offline": true, "temporarilyOffline": true, "numExecutors": 1, "offlineCauseReason":
-    "Disconnected by admin: node maintenance"}], "displayName": "Nodes", "totalExecutors": 3}'
-  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jenkins
+    kind: pods
+    name: jenkins-stuck-0
+    port: 8080
+    path: /queue/api/json?tree=discoverableItems[id],items[id,blocked,buildable,stuck,inQueueSince,why,task[name,url]]
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '789'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:58:17 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '{"_class": "hudson.model.Queue", "discoverableItems": [], "items": [{"_class": "hudson.model.Queue$BuildableItem",
+      "blocked": false, "buildable": true, "id": 41, "inQueueSince": 1793498297517, "stuck": true, "pending":
+      false, "task": {"_class": "hudson.model.FreeStyleProject", "name": "nightly-build", "url": "http://jenkins:8080/job/nightly-build/"},
+      "url": "queue/item/41/", "why": "There are no nodes with the label ''arm64''"}, {"_class": "hudson.model.Queue$BlockedItem",
+      "blocked": true, "buildable": false, "id": 42, "inQueueSince": 1793757437517, "stuck": false, "pending":
+      false, "task": {"_class": "hudson.model.FreeStyleProject", "name": "deploy", "url": "http://jenkins:8080/job/deploy/"},
+      "url": "queue/item/42/", "why": "Build #17 is already in progress (ETA: 2 min 0 sec)"}]}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jenkins
+    kind: pods
+    name: jenkins-stuck-0
+    port: 8080
+    path: /computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,numExecutors,offlineCauseReason]
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '523'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:58:17 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '{"_class": "hudson.model.ComputerSet", "busyExecutors": 0, "computer": [{"_class": "hudson.model.Hudson$MasterComputer",
+      "displayName": "Built-In Node", "idle": true, "offline": false, "temporarilyOffline": false, "numExecutors":
+      2, "offlineCauseReason": ""}, {"_class": "hudson.slaves.SlaveComputer", "displayName": "agent-arm64-1",
+      "idle": true, "offline": true, "temporarilyOffline": true, "numExecutors": 1, "offlineCauseReason":
+      "Disconnected by admin: node maintenance"}], "displayName": "Nodes", "totalExecutors": 3}'
+    truncated: false
+    location: null
 expect:
   status: ok
   errorCodes: []
