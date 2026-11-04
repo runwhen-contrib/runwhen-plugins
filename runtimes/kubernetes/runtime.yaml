@@ -1,10 +1,12 @@
 # The plugin registry reads this file at tag runtimes/kubernetes/v<version> (see runtimes/README.md).
 name: kubernetes
-version: 1.0.0
-description: Runtime for V13 plugin tasks that drive a Kubernetes cluster (kubectl, jq, curl, git, psql, python 3.12 with the runwhen-capability SDK).
+version: 1.1.0
+description: Runtime for V13 plugin tasks that drive a Kubernetes cluster (kubectl, jq, curl, git, psql, gke-gcloud-auth-plugin, python 3.12 with the runwhen-capability SDK).
 image: ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes
 # Pushed by the runtime-kubernetes workflow, run 41731469309 (push to v13/plugins, commit 6c57ebb;
 # tags v13-plugins and sha-6c57ebb). Release flow: runtimes/README.md.
+# TODO(1.1.0): these are still the 1.0.0 digests (they do not carry gke-gcloud-auth-plugin). Re-pin
+# them from the build of this change before tagging runtimes/kubernetes/v1.1.0.
 digests:
   index: "sha256:f0597d1a5ea87a39cd49f04522f209022ca53bd06a5fb3144be054e33db83613"
   linux/amd64: "sha256:60ffd5ccb94f14a3bf21148b39f7d471c3d98334207999a818f6e53f1b98d3a3"
@@ -17,4 +19,5 @@ tools:
   python: "3.12.14"
   psql: "17.11"          # from the base image; the postgres plugin's tasks run here
   tzdata: "2026f"
+  gke-gcloud-auth-plugin: "0.5.21"   # Cloud SDK component, revision 20261030071842; `--version` prints the client-go version
   runwhen-capability: "0.4.0"
