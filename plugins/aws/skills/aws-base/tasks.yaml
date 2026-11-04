@@ -1,0 +1,23 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: aws@1
+defaults: { credentials: aws/sdk, timeout: 60s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  regions: { type: "string[]", default: [], description: "Regions discover reads. Empty: every region the account has enabled (ec2 describe-regions). A list narrows the scan and the sync no longer sweeps regions outside it" }
+tasks:
+  - name: discover
+    title: Discover account, regions and Lambda functions
+    description: Reads the account's identity and, in every enabled region (or the regions setting), lists the Lambda functions, as facts and as an rw.discovery.v1 sync. A region with functions, and a region that could not be read, is reported; a region that is forbidden or fails does not stop the others. Reports the account id as the root's canonical key. Read-only.
+    script: scripts/discover.py
+    tags: [discovery, inventory]
+    readOnly: true
+    timeout: 600s                                  # the calls and the push; the push is clamped to what is left (aws_base/budget.py)
+    credentials: [aws/sdk, runwhen/sync]           # runwhen/sync is platform-minted per run by the lease, not a connection
+    permissions:                                   # sts:GetCallerIdentity needs no permission
+      - { action: "ec2:DescribeRegions" }          # the enabled regions; not needed when the regions setting is set
+      - { action: "lambda:ListFunctions" }         # per region
+    outputs:
+      summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-region errors and root.canonicalKey (accountId)" }
+      account: { schema: ./schemas/account.v1.json, description: "Account id, the calling principal, the home region and how many regions were read" }
+      regions: { schema: ./schemas/regions.v1.json, description: "Each region read with its status and function count, cut to maxItems" }
+      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this account, its regions and their functions" }

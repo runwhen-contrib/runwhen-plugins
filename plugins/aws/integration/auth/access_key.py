@@ -48,7 +48,9 @@ def read_key(ref_dir, name):
         with open(path, encoding="utf-8", newline="") as handle:
             text = handle.read()
     except (OSError, UnicodeDecodeError):
-        raise AuthError("invalid_input", f"the credential key {name} cannot be read as text") from None
+        raise AuthError(
+            "invalid_input", f"the credential key {name} cannot be read as text"
+        ) from None
     # a value written with `echo` or an editor ends in one newline that is not part of it
     if text.endswith("\r\n"):
         text = text[:-2]

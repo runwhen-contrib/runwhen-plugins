@@ -100,10 +100,25 @@ def test_a_known_call_is_answered_with_its_canned_stdout_and_exit_code():
 
 
 def test_output_and_pager_flags_are_noise_and_the_order_of_the_rest_is_not():
-    noisy = ["sts", "get-caller-identity", "--region", "us-east-1", "--output", "json", "--no-cli-pager"]
+    noisy = [
+        "sts",
+        "get-caller-identity",
+        "--region",
+        "us-east-1",
+        "--output",
+        "json",
+        "--no-cli-pager",
+    ]
     assert run_stub("healthy", *noisy).returncode == 0
-    assert run_stub("healthy", "-o", "json", "sts", "get-caller-identity", "--region", "us-east-1").returncode == 0
-    swapped = run_stub("healthy", "sts", "get-caller-identity", "--region", "us-east-1", "--output", "text")
+    assert (
+        run_stub(
+            "healthy", "-o", "json", "sts", "get-caller-identity", "--region", "us-east-1"
+        ).returncode
+        == 0
+    )
+    swapped = run_stub(
+        "healthy", "sts", "get-caller-identity", "--region", "us-east-1", "--output", "text"
+    )
     assert swapped.returncode == 2  # --output text is not noise
     reordered = run_stub("healthy", "--region", "us-east-1", "sts", "get-caller-identity")
     assert reordered.returncode == 2
@@ -113,10 +128,15 @@ def test_start_and_end_times_match_whatever_the_run_clock_was():
     base = ["cloudwatch", "get-metric-statistics", "--namespace", "AWS/Lambda", "--metric-name", "Invocations",
             "--dimensions", "Name=FunctionName,Value=orders-api"]  # fmt: skip
     tail = ["--period", "300", "--statistics", "Sum", "--region", "eu-west-1"]
-    for start, end in (("2026-11-04T00:00:00Z", "2026-11-04T01:00:00Z"), ("1999-01-01T00:00:00Z", "x")):
+    for start, end in (
+        ("2026-11-04T00:00:00Z", "2026-11-04T01:00:00Z"),
+        ("1999-01-01T00:00:00Z", "x"),
+    ):
         done = run_stub("healthy", *base, "--start-time", start, "--end-time", end, *tail)
         assert done.returncode == 0 and json.loads(done.stdout)["Label"] == "Invocations"
-    other = run_stub("healthy", *base, "--start-time", "a", "--end-time", "b", *tail[:-1], "us-east-1")
+    other = run_stub(
+        "healthy", *base, "--start-time", "a", "--end-time", "b", *tail[:-1], "us-east-1"
+    )
     assert other.returncode == 2  # the region is part of the call
 
 
@@ -135,7 +155,16 @@ def test_a_missing_or_unknown_scenario_exits_2(scenario):
 
 def test_the_log_file_records_each_normalised_argv(tmp_path):
     log = tmp_path / "calls.log"
-    run_stub("healthy", "sts", "get-caller-identity", "--region", "us-east-1", "--output", "json", log=log)
+    run_stub(
+        "healthy",
+        "sts",
+        "get-caller-identity",
+        "--region",
+        "us-east-1",
+        "--output",
+        "json",
+        log=log,
+    )
     run_stub("healthy", "s3", "ls", log=log)
     lines = [json.loads(line) for line in log.read_text().splitlines()]
     assert lines == [["sts", "get-caller-identity", "--region", "us-east-1"], ["s3", "ls"]]
@@ -143,8 +172,18 @@ def test_the_log_file_records_each_normalised_argv(tmp_path):
 
 def test_the_rw_prefixed_names_are_aliases_for_direct_use():
     env = {"PATH": os.environ["PATH"], "RW_STUB_SCENARIO": "healthy"}
-    done = subprocess.run([str(AWS), "sts", "get-caller-identity", "--region", "us-east-1"], env=env, capture_output=True, text=True)
+    done = subprocess.run(
+        [str(AWS), "sts", "get-caller-identity", "--region", "us-east-1"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert done.returncode == 0 and "123456789012" in done.stdout
     env["AWS_STUB_SCENARIO"] = "forbidden"  # the AWS_ name wins
-    done = subprocess.run([str(AWS), "ec2", "describe-regions", "--region", "us-east-1"], env=env, capture_output=True, text=True)
+    done = subprocess.run(
+        [str(AWS), "ec2", "describe-regions", "--region", "us-east-1"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
     assert done.returncode == 254

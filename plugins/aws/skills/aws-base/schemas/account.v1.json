@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The AWS account the connection reaches",
+  "type": "object",
+  "properties": {
+    "accountId": {"type": "string", "pattern": "^[0-9]{12}$", "description": "sts get-caller-identity Account, the root's canonical key"},
+    "callerArn": {"type": ["string", "null"], "description": "The principal the credential runs as (sts get-caller-identity Arn)"},
+    "homeRegion": {"type": "string", "description": "The region used for the account-level calls (AWS_REGION of the credential, else us-east-1)"},
+    "regionsRead": {"type": "integer", "description": "Regions whose functions were listed"},
+    "regionsComplete": {"type": "boolean", "description": "true when the regions are every region the account has enabled (ec2 describe-regions); false when the regions setting narrowed them"}
+  },
+  "required": ["accountId", "callerArn", "homeRegion", "regionsRead", "regionsComplete"],
+  "additionalProperties": false
+}
