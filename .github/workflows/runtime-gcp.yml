@@ -1,7 +1,7 @@
 name: runtime-gcp
 
 # The gcp@1 runtime image (runtimes/gcp). PRs and branch pushes build it for
-# linux/amd64 and linux/arm64 and smoke-test both; pushes to main and v13/plugins also publish it.
+# linux/amd64 and linux/arm64 and smoke-test both; pushes to main, v13/plugins and the milestone branches v13/plugins-m<N> also publish it.
 # A tag runtimes/gcp/v<semver> publishes nothing new: it checks that runtime.yaml pins
 # exactly the digests already pushed and adds the version tag to that image (runtimes/README.md).
 
@@ -13,7 +13,7 @@ on:
       - "ci/tests/test_check_runtime.py"
       - ".github/workflows/runtime-gcp.yml"
   push:
-    branches: [main, v13/plugins]
+    branches: [main, v13/plugins, "v13/plugins-m*"]
     paths:
       - "runtimes/gcp/**"
       # Pinning the pushed digests must not rebuild (and re-push) a different image.

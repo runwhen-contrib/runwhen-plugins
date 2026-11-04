@@ -17,9 +17,18 @@ CLOUDSDK_CONFIG="$(mktemp -d "$dir/gcloud.XXXXXX")"
 export CLOUDSDK_CONFIG
 
 gcloud --version
-# gcloud storage replaces gsutil; gsutil still ships in the package and is listed for the record.
+# gcloud runs on the base's python3 (the bundled python is removed from the image).
+[ "${CLOUDSDK_PYTHON:-}" = "python3" ] || { echo "CLOUDSDK_PYTHON is not python3" >&2; exit 1; }
 gcloud storage --help >/dev/null
-gsutil version
+# gsutil and bq are not in the image: the plugin uses `gcloud storage`, and a missing tool cannot
+# be reached by mistake.
+for tool in gsutil bq; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "unexpected tool in the image: $tool" >&2
+    exit 1
+  fi
+done
+[ ! -e /usr/lib/google-cloud-sdk/platform/bundledpythonunix ] || { echo "bundled python is in the image" >&2; exit 1; }
 jq --version
 curl --version | head -n 1
 python3 --version

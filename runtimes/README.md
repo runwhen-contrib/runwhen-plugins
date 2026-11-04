@@ -42,8 +42,13 @@ python ci/check_runtime.py validate --allow-placeholder
 ## gcp
 
 The same rw-task base pin as `kubernetes`, plus only the Google Cloud CLI: `google-cloud-cli`
-from Google's apt repository at an exact version (`GCLOUD_VERSION` in the Dockerfile; the package
-carries its own python and ships `gcloud`, `gsutil` and `bq`). Nothing else is added: the base
+from Google's apt repository at an exact version (`GCLOUD_VERSION` in the Dockerfile), whose signing
+key is pinned by sha256 (`GCLOUD_APT_REPO_SHA256`: a key Google rotates fails the build until the new
+one is checked against Google's install page). The package also ships `gsutil`, `bq` and its own
+python 3.14; the Dockerfile removes all three in the same `RUN`, and gcloud runs on the base's
+python3 (`CLOUDSDK_PYTHON=python3`). gcp tasks use `gcloud storage`; a task that needs `bq` or
+`gsutil` must add them to the image on purpose (and `rwtask test --shim bq` for its fixtures, as
+`bq` is not shimmed by default). Nothing else is added: the base
 image's kubectl and psql are still there but no gcp task uses them; az, aws, oc, helm, flux and
 argocd are absent. The image sets `CLOUDSDK_CONFIG=/work/.config/gcloud` (the
 runner's root is read-only; `/work` is the writable mount) and turns off gcloud's update check,
