@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jenkins /login per pod",
+  "description": "What each pod of the workload answered on /login through the API server's pod proxy. ok is true for a 200 whose page carries the Jenkins footer, false for a 503 or 404, null when the pod was not asked, the answer was an error, or it is a login page that is not Jenkins's (ssoRedirect).",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods were cut at maxItems"
+    },
+    "okCount": {
+      "type": "integer"
+    },
+    "notOkCount": {
+      "type": "integer"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's Ready condition (the kubelet's probe, which may not be these endpoints)"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https"
+            ],
+            "description": "the scheme asked: the input, else the readiness probe's, else http"
+          },
+          "urlPrefix": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "the URL prefix put before /login: the input, else the readiness probe's path minus a trailing /login, else empty"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running (or beyond the first 10), which is not asked"
+          },
+          "httpStatus": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "200, 401, 403, 404 or 503; null when the pod was not asked or the ask failed (see errors)"
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "authRequired": {
+            "type": "boolean",
+            "description": "Jenkins answered 401 or 403 on /login"
+          },
+          "ssoRedirect": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "likely",
+              null
+            ],
+            "description": "likely when /login answered 200 with a login page that has no 'Jenkins <version>' footer: Jenkins behind an SSO realm redirects anonymous requests to the identity provider (ok is then null and hint says so)"
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "description": "the Jenkins version: from the login page's footer when it has one, else from the Jenkins container's image tag (see versionSource); null when neither gives one"
+          },
+          "versionSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "login-footer",
+              "image-tag",
+              null
+            ],
+            "description": "where version came from: the login page's 'Jenkins <version>' footer, or the image tag (what was deployed, which may differ from what runs); null when version is null"
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "port",
+          "scheme",
+          "urlPrefix",
+          "queried",
+          "httpStatus",
+          "ok",
+          "authRequired",
+          "ssoRedirect",
+          "hint",
+          "version",
+          "versionSource"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "podCount",
+    "truncated",
+    "okCount",
+    "notOkCount",
+    "pods"
+  ],
+  "additionalProperties": false
+}
