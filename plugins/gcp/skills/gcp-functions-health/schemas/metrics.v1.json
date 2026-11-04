@@ -6,50 +6,183 @@
     "window": {
       "type": "object",
       "properties": {
-        "start": {"type": "string"},
-        "end": {"type": "string"},
-        "seconds": {"type": "integer"}
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer"
+        }
       },
-      "required": ["start", "end", "seconds"],
+      "required": [
+        "start",
+        "end",
+        "seconds"
+      ],
       "additionalProperties": false
     },
-    "generation": {"type": "integer", "enum": [1, 2], "description": "Decides the metrics: 1st gen cloudfunctions.googleapis.com/function/*, 2nd gen run.googleapis.com/* of the backing Cloud Run service"},
-    "hasData": {"type": ["boolean", "null"], "description": "The executions query returned series with a positive count; false: Monitoring has nothing for the function in the window (not run, or the metrics are not in yet); null when the executions query failed"},
-    "idle": {"type": ["boolean", "null"], "description": "executions is 0: the function ran nothing in the window. An idle function says nothing about errors; null when the executions query failed"},
-    "executions": {"type": ["integer", "null"], "description": "Sum of execution_count (1st gen) or request_count (2nd gen); 0 with no series (hasData false); null when the query failed"},
-    "errors": {"type": ["integer", "null"], "description": "1st gen: executions with a status other than ok; 2nd gen: requests of class 5xx. null when the query failed or when there were no executions"},
-    "errorRate": {"type": ["number", "null"], "description": "errors / executions; null when there were no executions or a count is unknown"},
-    "byOutcome": {"type": ["object", "null"], "additionalProperties": {"type": "integer"}, "maxProperties": 50, "description": "Executions per outcome label value: 1st gen `status` (ok, error, timeout, crash, ...), 2nd gen `response_code_class` (2xx, 4xx, 5xx, ...); null when the query failed"},
+    "generation": {
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ],
+      "description": "Decides the metrics: 1st gen cloudfunctions.googleapis.com/function/*, 2nd gen run.googleapis.com/* of the backing Cloud Run service"
+    },
+    "hasData": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The executions query returned series with a positive count; false: Monitoring has nothing for the function in the window (not run, or the metrics are not in yet: they lag by minutes); null when the executions query failed"
+    },
+    "idle": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "The window had no executions (no series, or a zero count): the function ran nothing in it. An idle function says nothing about errors; null when the executions query failed"
+    },
+    "executions": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Sum of execution_count (1st gen) or request_count (2nd gen); null when the query failed, and null when there is no series (hasData false): Monitoring has no count, which is not 0 executions (it also lags by minutes)"
+    },
+    "errors": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "1st gen: executions with a status other than ok; 2nd gen: requests of class 5xx. null when the query failed or when there were no executions"
+    },
+    "errorRate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "errors / executions; null when there were no executions or a count is unknown"
+    },
+    "byOutcome": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "maxProperties": 50,
+      "description": "Executions per outcome label value: 1st gen `status` (ok, error, timeout, crash, ...), 2nd gen `response_code_class` (2xx, 4xx, 5xx, ...); null when the query failed"
+    },
     "latency": {
-      "type": ["object", "null"],
-      "description": "Percentiles over all the function's series in the window, in milliseconds (1st gen execution_times is converted from nanoseconds); null when all three queries failed, a percentile is null when its own query failed or there was no data",
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Percentiles over all the function's series in the window, in milliseconds (1st gen execution_times is converted from nanoseconds), estimated by Monitoring from distribution buckets, so approximate; null when all three queries failed, a percentile is null when its own query failed or there was no data",
       "properties": {
-        "p50Ms": {"type": ["number", "null"]},
-        "p95Ms": {"type": ["number", "null"]},
-        "p99Ms": {"type": ["number", "null"]}
+        "p50Ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95Ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p99Ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
       },
-      "required": ["p50Ms", "p95Ms", "p99Ms"],
+      "required": [
+        "p50Ms",
+        "p95Ms",
+        "p99Ms"
+      ],
       "additionalProperties": false
     },
-    "timeoutSeconds": {"type": ["integer", "null"], "description": "The function's configured timeout"},
+    "timeoutSeconds": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "The function's configured timeout"
+    },
     "series": {
       "type": "object",
       "properties": {
-        "executions": {"type": ["integer", "null"]},
-        "p50": {"type": ["integer", "null"]},
-        "p95": {"type": ["integer", "null"]},
-        "p99": {"type": ["integer", "null"]}
+        "executions": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "p50": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "p95": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "p99": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
       },
-      "required": ["executions", "p50", "p95", "p99"],
+      "required": [
+        "executions",
+        "p50",
+        "p95",
+        "p99"
+      ],
       "additionalProperties": false,
       "description": "Time series Monitoring returned per query; 0 means no data in the window; null means the query failed"
     },
-    "errorRateAboveThreshold": {"type": ["boolean", "null"], "description": "errorRate > the errorRateThreshold setting (strictly: equal is not above); null when the rate is unknown, which includes any window with no executions"},
-    "latencyNearTimeout": {"type": ["boolean", "null"], "description": "p99 reached latencyTimeoutRatio of the function's timeout; null when there is no p99 or no timeout"}
+    "errorRateAboveThreshold": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "errorRate > the errorRateThreshold setting (strictly: equal is not above); null when the rate is unknown, which includes any window with no executions"
+    },
+    "latencyNearTimeout": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "p99 reached latencyTimeoutRatio of the function's timeout; null when there is no p99 or no timeout"
+    }
   },
   "required": [
-    "window", "generation", "hasData", "idle", "executions", "errors", "errorRate", "byOutcome", "latency",
-    "timeoutSeconds", "series", "errorRateAboveThreshold", "latencyNearTimeout"
+    "window",
+    "generation",
+    "hasData",
+    "idle",
+    "executions",
+    "errors",
+    "errorRate",
+    "byOutcome",
+    "latency",
+    "timeoutSeconds",
+    "series",
+    "errorRateAboveThreshold",
+    "latencyNearTimeout"
   ],
   "additionalProperties": false
 }

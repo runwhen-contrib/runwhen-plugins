@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, "/plugin-lib")  # the gcp-functions-health lib: URLs and argv come from its code
+from gcp_functions_health import logs as plugin_logs  # noqa: E402
 from gcp_functions_health import metrics, monitoring  # noqa: E402
 
 OUT = "/stub/scenarios"
@@ -65,16 +66,18 @@ spec.loader.exec_module(stublib)
 
 # ---- the world: REST shapes ------------------------------------------------------------------
 
-CANARY = (
-    "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"  # must never reach an output
-)
+# Values that must never reach an output. They are in the canned answers of the `functions-leaky`
+# scenario only (test_fixture_hygiene.py enforces where RWCANARY may appear); the other worlds
+# have env values and log lines with nothing in them to scrub.
+CANARY_URL = "postgres://user:RWCANARY-1@example.invalid/db"
+LEAKY = {"billing-hook", "legacy-leak"}
 
 
 def build_name(region, suffix):
     return f"projects/{NUMBER}/locations/{region}/builds/a1b2c3d4-0000-4000-8000-{suffix:012d}"
 
 
-def fn2(name, region, *, state="ACTIVE", event=None, suffix=1, messages=None, revision=None,
+def fn2(name, region, *, leak=False, state="ACTIVE", event=None, suffix=1, messages=None, revision=None,
         max_instances=20, timeout=60, runtime="python312", entry="handler", updated="2026-10-30T14:02:11.123456Z"):  # fmt: skip
     """A 2nd gen function in the v2 REST shape (cloudfunctions v2 Function)."""
     row = {
@@ -95,7 +98,7 @@ def fn2(name, region, *, state="ACTIVE", event=None, suffix=1, messages=None, re
             "timeoutSeconds": timeout,
             "availableMemory": "512Mi",
             "availableCpu": "1",
-            "environmentVariables": {"LOG_EXECUTION_ID": "true", "ORDERS_DB_URL": CANARY},
+            "environmentVariables": {"LOG_EXECUTION_ID": "true", "LOG_LEVEL": "info"},
             "secretEnvironmentVariables": [
                 {"key": "STRIPE_KEY", "projectId": P, "secret": "stripe-key", "version": "latest"}
             ],
@@ -110,6 +113,12 @@ def fn2(name, region, *, state="ACTIVE", event=None, suffix=1, messages=None, re
         },
         "url": f"https://{region}-{P}.cloudfunctions.net/{name}",
     }
+    if leak:
+        row["serviceConfig"]["environmentVariables"].update(
+            ORDERS_DB_URL=CANARY_URL, API_TOKEN="RWCANARY-2"
+        )
+        row["serviceConfig"]["secretEnvironmentVariables"][0]["secret"] = "RWCANARY-3-secret"
+        row["buildConfig"]["environmentVariables"]["BUILD_PASSWORD"] = "RWCANARY-4"
     if max_instances is None:
         del row["serviceConfig"]["maxInstanceCount"]
     if event:
@@ -119,7 +128,17 @@ def fn2(name, region, *, state="ACTIVE", event=None, suffix=1, messages=None, re
     return row
 
 
-def fn1(name, region, *, status="ACTIVE", suffix=100, event=None, version="12", runtime="nodejs20"):
+def fn1(
+    name,
+    region,
+    *,
+    leak=False,
+    status="ACTIVE",
+    suffix=100,
+    event=None,
+    version="12",
+    runtime="nodejs20",
+):
     """A 1st gen function in the v1 REST shape (cloudfunctions v1 CloudFunction)."""
     row = {
         "name": f"projects/{P}/locations/{region}/functions/{name}",
@@ -132,13 +151,15 @@ def fn1(name, region, *, status="ACTIVE", suffix=100, event=None, version="12", 
         "updateTime": "2026-09-12T08:31:40.511Z",
         "versionId": version,
         "labels": {"team": "ops"},
-        "environmentVariables": {"REPORT_DB_URL": CANARY, "REGION": region},
+        "environmentVariables": {"REGION": region, "LOG_LEVEL": "info"},
         "maxInstances": 5,
         "ingressSettings": "ALLOW_ALL",
         "buildId": f"a1b2c3d4-0000-4000-8000-{suffix:012d}",
         "buildName": build_name(region, suffix),
         "sourceUploadUrl": "https://storage.googleapis.com/uploads-0000000000.us-east1.cloudfunctions.appspot.com/upload.zip",
     }
+    if leak:
+        row["environmentVariables"].update(REPORT_DB_URL=CANARY_URL, API_KEY="RWCANARY-2")
     if event:
         row["eventTrigger"] = event
     else:
@@ -178,7 +199,13 @@ CHECKOUT = fn2(
                "message": "Revision 'checkout-00003-abc' is not ready and cannot serve traffic."}],
 )  # fmt: skip
 REPORT = fn1("nightly-report", "us-east1", status="OFFLINE", suffix=101, version="4")
+BILLING = fn2(
+    "billing-hook", "us-central1", leak=True, state="FAILED", suffix=4,
+    messages=[{"severity": "ERROR", "type": "BuildFailed", "message": "build failed: password=RWCANARY-6 was rejected"}],
+)  # fmt: skip
+LEGACY_LEAK = fn1("legacy-leak", "us-east1", leak=True, status="OFFLINE", suffix=102)
 HEALTHY = [ORDERS, THUMBS, CRON]
+LEAKY_WORLD = [BILLING, LEGACY_LEAK]
 BROKEN = [ORDERS, CHECKOUT, THUMBS, CRON, REPORT]
 SPLIT = [ORDERS, fn2("orders-api", "europe-west1", suffix=9), CRON]  # one id in two regions
 
@@ -190,7 +217,7 @@ BUILD_FIELDS = {
     "logUrl": f"https://console.cloud.google.com/cloud-build/builds;region=us-central1/{{id}}?project={NUMBER}",
     "tags": ["gcf-deploy"],
     "steps": [{"name": "gcr.io/gae-runtimes/buildpacks/python312/builder",
-               "args": ["/cnb/lifecycle/builder"], "env": ["GOOGLE_ENTRYPOINT=handler", f"ORDERS_DB_URL={CANARY}"],
+               "args": ["/cnb/lifecycle/builder"], "env": ["GOOGLE_ENTRYPOINT=handler"],
                "status": "SUCCESS"}],
 }  # fmt: skip
 
@@ -202,12 +229,18 @@ def build_doc(fn):
     doc = dict(BUILD_FIELDS, id=bid)
     doc["logUrl"] = BUILD_FIELDS["logUrl"].format(id=bid)
     if fn.get("state") == "FAILED" or fn.get("status") == "OFFLINE":
+        leaks = fn["name"].rsplit("/", 1)[1] in LEAKY
         doc.update(
             status="FAILURE", statusDetail="build failed: step exited with non-zero status: 1",
             finishTime="2026-10-30T14:01:30.000000Z",
             failureInfo={"type": "USER_BUILD_STEP",
-                         "detail": "Build failed; check build logs for details: access_token=canary-build-token-5521 was rejected"},
+                         "detail": "Build failed; check build logs for details"
+                         + (": access_token=RWCANARY-5 was rejected" if leaks else "")},
         )  # fmt: skip
+        if leaks:
+            doc["steps"] = [
+                dict(doc["steps"][0], env=["GOOGLE_ENTRYPOINT=handler", "DB_PASSWORD=RWCANARY-4"])
+            ]
     return doc
 
 
@@ -230,12 +263,15 @@ def log_entry(fn, text, when, *, gen, http=None, payload="text"):
     if payload == "text":
         entry["textPayload"] = text
     elif payload == "json":
-        entry["jsonPayload"] = {"message": text, "environment": {"ORDERS_DB_URL": CANARY}}
+        entry["jsonPayload"] = {"message": text, "environment": {"LOG_LEVEL": "info"}}
+        if name in LEAKY:
+            entry["jsonPayload"]["environment"]["ORDERS_DB_URL"] = CANARY_URL
     if http:
         entry["httpRequest"] = {
             "requestMethod": "POST",
             "status": http,
-            "requestUrl": f"https://{name}.example.com/orders?token=canary-query-token",
+            "requestUrl": f"https://{name}.example.com/orders"
+            + ("?token=RWCANARY-10" if name in LEAKY else ""),
         }
     return entry
 
@@ -244,11 +280,18 @@ LONG = "x" * 1500
 LOGS = {
     "orders-api": [
         log_entry(ORDERS, "Traceback (most recent call last):\n  File \"main.py\", line 41, in handler\n    charge(order)\nstripe.error.APIConnectionError: connection reset by peer", "2026-11-04T00:41:12.481Z", gen=2),
-        log_entry(ORDERS, f"order 4411 failed: db error postgres://orders:canary-db-pass-7f3a@example.com:5432/orders password=canary-pass-9 {LONG}", "2026-11-04T00:38:02.100Z", gen=2, payload="json", http=500),
+        log_entry(ORDERS, f"order 4411 failed: db timeout while charging {LONG}", "2026-11-04T00:38:02.100Z", gen=2, payload="json", http=500),
         log_entry(ORDERS, "upstream timeout after 60s", "2026-11-04T00:22:45.907Z", gen=2, http=504),
     ],
     "checkout": [
         log_entry(CHECKOUT, "Container failed to start. Failed to start and then listen on the port defined by the PORT environment variable.", "2026-11-04T00:55:01.000Z", gen=2),
+    ],
+    "billing-hook": [
+        log_entry(BILLING, f"charge failed: db error {CANARY_URL} password=RWCANARY-8 Authorization: Bearer RWCANARY-7", "2026-11-04T00:44:00.000Z", gen=2, payload="json", http=500),
+        log_entry(BILLING, "stripe call failed STRIPE_SECRET=RWCANARY-9", "2026-11-04T00:40:00.000Z", gen=2),
+    ],
+    "legacy-leak": [
+        log_entry(LEGACY_LEAK, "boot failed API_KEY=RWCANARY-11", "2026-11-04T00:30:00.000Z", gen=1),
     ],
     "nightly-report": [
         log_entry(REPORT, "Function execution took 60001 ms, finished with status: 'timeout'", "2026-11-04T00:30:00.250Z", gen=1),
@@ -506,14 +549,15 @@ HINT = re.compile(r" ?This command is authenticated with an access token from th
                   r"CLOUDSDK_AUTH_ACCESS_TOKEN environment variable\.?")  # fmt: skip
 
 
-def gcloud(args, as_json=True):
+def gcloud(args, as_json=True, credentialed=True):
     """(rc, stdout, stderr) of the pinned gcloud against the fake server."""
     config = tempfile.mkdtemp(prefix="gcloud-config-")
     base = "http://127.0.0.1:8099/"
     env = {
         "PATH": os.environ["PATH"], "HOME": config, "TMPDIR": "/tmp", "CLOUDSDK_CONFIG": config,
-        "CLOUDSDK_AUTH_ACCESS_TOKEN": TOKEN, "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
-        "CLOUDSDK_CORE_ACCOUNT": SA, "CLOUDSDK_CORE_DISABLE_PROMPTS": "1",
+        "CLOUDSDK_AUTH_ACCESS_TOKEN": TOKEN if credentialed else "",
+        "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false",
+        "CLOUDSDK_CORE_ACCOUNT": SA if credentialed else "", "CLOUDSDK_CORE_DISABLE_PROMPTS": "1",
         "CLOUDSDK_CORE_DISABLE_USAGE_REPORTING": "true",
         "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK": "true", "CLOUDSDK_PYTHON": "python3",
         "CLOUDSDK_API_ENDPOINT_OVERRIDES_CLOUDFUNCTIONS": base,
@@ -555,8 +599,9 @@ MON_REST = "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.time
 
 
 class Scenario:
-    def __init__(self, name, world, new=True, header=None):
+    def __init__(self, name, world, new=True, header=None, unauthenticated=False):
         self.name, self.world = name, world
+        self.unauthenticated = unauthenticated  # gcloud has no credential at all
         self.dir = os.path.join(OUT, name)
         self.calls = []
         self.header = header
@@ -578,8 +623,9 @@ class Scenario:
             return None
         WORLD = self.world
         as_json = args[0] != "auth"
-        rc, out, err = gcloud(args, as_json)
+        rc, out, err = gcloud(args, as_json, not self.unauthenticated)
         argv = [*args, f"--billing-project={P}"] if billing else list(args)
+        argv = stublib.normalise("gcloud", argv)  # the log filter's window is stored as <T>
         call = {"argv": argv, "rc": rc}
         if rc == 0 or out.strip():
             call["stdout"] = filename
@@ -618,7 +664,7 @@ class Scenario:
         self.gcloud_call(
             "describe",
             ["functions", "describe", name, f"--region={region}", f"--project={P}"],
-            f"describe-{name}.json",
+            f"describe-{region}-{name}.json",
         )
 
     def build_call(self, fn):
@@ -628,14 +674,15 @@ class Scenario:
         self.gcloud_call(
             "build",
             ["builds", "describe", bid, f"--region={region}", f"--project={P}"],
-            f"build-{name}.json",
+            f"build-{region}-{name}.json",
         )
 
     def logs_call(self, fn, limit=50):
         _, region, name = stublib_name(fn)
         gen = 2 if fn.get("environment") == "GEN_2" else 1
-        flt = log_filter(gen, name, region)
-        self.gcloud_call("logging", ["logging", "read", flt, f"--project={P}", f"--freshness={SINCE}s",
+        start, end = plugin_logs.window(NOW, SINCE)
+        flt = plugin_logs.log_filter(gen, name, region, name, start, end)
+        self.gcloud_call("logging", ["logging", "read", flt, f"--project={P}",
                                      f"--limit={limit + 1}", "--order=desc"], f"logs-{name}.json")  # fmt: skip
 
     def metrics_calls(self, fn, docs=None, faults=None):
@@ -646,7 +693,7 @@ class Scenario:
         sp = metrics.spec_for(gen)
         series_name = name if gen == 1 else name
         if not self.token_read:  # one token for the run, like the plugin
-            self.gcloud_call("token", ["auth", "print-access-token"], "token.txt", billing=False)
+            self.gcloud_call("token", ["auth", "print-access-token"], "token.txt")
             self.token_read = True
         for query, metric, aggregation in metrics.queries(sp, SINCE):
             flt = metrics.metric_filter(sp, metric, series_name, region)
@@ -683,14 +730,6 @@ def stublib_name(fn):
     return parts[1], parts[3], parts[5]
 
 
-def log_filter(gen, name, region):
-    if gen == 2:
-        resource = f'resource.type="cloud_run_revision" AND resource.labels.service_name="{name}" AND resource.labels.location="{region}"'
-    else:
-        resource = f'resource.type="cloud_function" AND resource.labels.function_name="{name}" AND resource.labels.region="{region}"'
-    return f"{resource} AND severity>=ERROR"
-
-
 def curl_error(status, message, reason=None, host="monitoring.googleapis.com"):
     codes = {403: "PERMISSION_DENIED", 429: "RESOURCE_EXHAUSTED"}
     return error_body(
@@ -721,8 +760,8 @@ def failing_scenario(name, kind):
     return sc
 
 
-def append_functions_list(name, functions):
-    """Replace the `functions list` call of an existing (bucket pilot) scenario."""
+def append_functions_list(name, world, unauthenticated=False):
+    """Replace the `functions list` call of an existing (bucket pilot) scenario with this world's."""
     if not active(name):
         return
     directory = os.path.join(OUT, name)
@@ -730,26 +769,32 @@ def append_functions_list(name, functions):
     text = open(path, encoding="utf-8").read()
     header = [line for line in text.splitlines() if line.startswith("#")]
     calls = [c for c in stublib.parse_calls(text) if c["argv"][:2] != ["functions", "list"]]
-    sc = Scenario(name, World(functions), new=False, header=header)
+    sc = Scenario(name, world, new=False, header=header, unauthenticated=unauthenticated)
     sc.calls = calls
     sc.list_call()
     sc.save()
 
 
-def discover_scenario(name, world):
-    """The bucket pilot's project and bucket-list answers (healthy), then this world's functions
-    list: what gcp-base/discover calls."""
+def discover_scenario(name, world, buckets_from="healthy"):
+    """The bucket pilot's bucket-list answer (of `buckets_from`) and project answer (healthy), then
+    this world's functions list: what gcp-base/discover calls."""
     if not active(name):
         return
-    calls = [c for c in stublib.parse_calls(open(os.path.join(OUT, "healthy", "calls.yaml")).read())
-             if c["argv"][:2] in (["projects", "describe"], ["storage", "buckets"]) and c["argv"][2] == "list"
-             or c["argv"][:2] == ["projects", "describe"]]  # fmt: skip
+
+    def calls_of(scenario, wanted):
+        text = open(os.path.join(OUT, scenario, "calls.yaml")).read()
+        return [(scenario, c) for c in stublib.parse_calls(text) if c["argv"][:3] == wanted]
+
+    calls = calls_of(buckets_from, ["storage", "buckets", "list"]) + calls_of(
+        "healthy", ["projects", "describe", P]
+    )
     sc = Scenario(name, world)
-    for call in calls:
-        shutil.copy(
-            os.path.join(OUT, "healthy", call["stdout"]), os.path.join(sc.dir, call["stdout"])
-        )
-    sc.calls = calls
+    for scenario, call in calls:
+        if call.get("stdout"):
+            shutil.copy(
+                os.path.join(OUT, scenario, call["stdout"]), os.path.join(sc.dir, call["stdout"])
+            )
+    sc.calls = [c for _, c in calls]
     sc.list_call()
     sc.save()
 
@@ -803,6 +848,16 @@ def main():
         sc.build_call(fn)
     scenarios.append(sc)
 
+    # secrets in every place a task reads (env values, secret references, build steps and failure
+    # detail, state messages, log lines, structured payloads): none may reach an output
+    sc = Scenario("functions-leaky", World(LEAKY_WORLD))
+    sc.list_call()
+    for fn in LEAKY_WORLD:
+        sc.describe_call(fn)
+        sc.build_call(fn)
+        sc.logs_call(fn)
+    scenarios.append(sc)
+
     # the function is readable but this identity may not read its logs / metrics
     sc = Scenario(
         "functions-logging-denied", World(BROKEN, {"logging": denied("logging.logEntries.list")})
@@ -850,15 +905,22 @@ def main():
     # discover: the bucket pilot's scenarios get the functions list; two more for a failing one
     for sc in scenarios:
         sc.save()
-    append_functions_list("healthy", HEALTHY)
-    append_functions_list("broken", BROKEN)
-    append_functions_list("project-denied", BROKEN)
+    append_functions_list("healthy", World(HEALTHY))
+    append_functions_list("broken", World(BROKEN))
+    append_functions_list("project-denied", World(BROKEN))
+    # the bucket pilot's failing scenarios: every API fails the same way, so the functions list does
+    append_functions_list("forbidden", World(BROKEN, FAULTS["forbidden"]))
+    append_functions_list("throttled", World(BROKEN, FAULTS["throttled"]))
+    append_functions_list("api-disabled", World(BROKEN, FAULTS["api-disabled"]))
+    append_functions_list("unauthenticated", World(BROKEN), unauthenticated=True)
     discover_scenario("functions-discover-denied", World(BROKEN, FAULTS["forbidden"]))
     discover_scenario("functions-discover-disabled", World(BROKEN, FAULTS["api-disabled"]))
     unreachable = World(HEALTHY)
     unreachable.unreachable = ["asia-east1", "southamerica-east1"]
     discover_scenario("functions-discover-unreachable", unreachable)
     discover_scenario("functions-discover-split", World(SPLIT))
+    # the bucket list is denied and the functions list works: the other half of discover stands
+    discover_scenario("functions-discover-buckets-denied", World(BROKEN), buckets_from="forbidden")
 
 
 if __name__ == "__main__":

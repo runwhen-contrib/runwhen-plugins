@@ -133,8 +133,10 @@ def test_the_root_declares_the_key_discover_reports():
     assert types["project"]["canonicalKey"] == dc.CANONICAL_KEY
     assert types["project"]["rootKey"] == "projectId"
     assert types["bucket"]["parent"] == "project"
-    assert types["cloud-function"] == {"parent": "project", "plural": "cloud-functions"}
-    assert set(types) == {"project", "bucket", "cloud-function"}
+    # the same function id can exist in two regions: the region is part of a function's identity
+    assert types["region"] == {"parent": "project", "plural": "regions"}
+    assert types["cloud-function"] == {"parent": "region", "plural": "cloud-functions"}
+    assert set(types) == {"project", "bucket", "region", "cloud-function"}
 
 
 @pytest.mark.parametrize("skill", all_skills())

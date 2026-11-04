@@ -224,12 +224,12 @@ EXPECTED = {
     "build-denied": ("partial", ["permission_denied"]),
     "idle": ("ok", []),
     "partial-metrics": ("partial", ["rate_limited"]),
-    "split": ("failed", ["invalid_input"]),
-    "unreachable": ("failed", ["unreachable"]),
+    "leaky": ("ok", []),
+    "buckets-denied": ("partial", ["permission_denied"]),
     "functions-denied": ("partial", ["permission_denied"]),
     "functions-disabled": ("partial", ["dependency"]),
     "functions-unreachable": ("partial", ["unreachable"]),
-    "functions-split": ("partial", ["internal"]),
+    "functions-split": ("ok", []),
     "healthy": ("ok", []),
     "broken": ("ok", []),
 }
@@ -292,3 +292,49 @@ def test_the_recorded_error_messages_name_no_server_of_the_capture():
             and "BaseHTTP" not in text
             and "CLOUDSDK_AUTH_ACCESS_TOKEN" not in text
         ), path
+
+
+# ---- canaries: synthetic secrets that prove a task returns none ---------------------------------
+CANARY = "RWCANARY"
+CANARY_HOMES = {"functions-leaky"}  # the one stub scenario whose answers hold them
+
+
+def canary_files():
+    return sorted(
+        p for p in PLUGIN.rglob("*") if p.is_file() and CANARY in p.read_text(errors="ignore")
+    )
+
+
+def test_canaries_are_only_where_they_are_allowed():
+    """In the leaky stub scenario, in the leaky fixtures' recorded stdout, and in the code that
+    makes or checks them (the capture script, the unit tests); nowhere in a skill's code, schemas
+    or docs, in any other scenario or fixture, or in a fixture's `expect`."""
+    found = canary_files()
+    assert any(p.parent.name == "functions-leaky" for p in found), (
+        "the leaky scenario has no canary"
+    )
+    for path in found:
+        rel = path.relative_to(PLUGIN)
+        parts = rel.parts
+        if parts[:3] == ("tests", "stub", "scenarios"):
+            assert parts[3] in CANARY_HOMES, f"{rel}: a canary outside {sorted(CANARY_HOMES)}"
+        elif parts[:3] == ("tests", "stub", "capture") or parts[:2] == ("tests", "unit"):
+            continue
+        elif parts[0] == "skills" and "tests" in parts and path.suffix == ".yaml":
+            assert path.stem == "leaky", f"{rel}: a canary in a fixture that is not a leaky one"
+            doc = yaml.safe_load(path.read_text())
+            assert CANARY not in json.dumps(doc["expect"]), f"{rel}: a canary in expect"
+            assert CANARY not in json.dumps(
+                {k: v for k, v in doc.items() if k not in ("calls", "expect")}
+            )
+            for call in doc["calls"]:
+                assert CANARY not in json.dumps(call["argv"]), f"{rel}: a canary in an argv"
+        else:
+            raise AssertionError(f"{rel}: a canary where none may be")
+
+
+def test_the_leaky_fixtures_exist_and_are_the_only_ones_with_canaries():
+    leaky = sorted(p.relative_to(PLUGIN).as_posix() for p in fixtures() if p.stem == "leaky")
+    assert leaky, "no leaky fixture"
+    holding = {p.relative_to(PLUGIN).as_posix() for p in canary_files() if p.stem == "leaky"}
+    assert holding == set(leaky)

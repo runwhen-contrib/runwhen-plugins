@@ -7,14 +7,14 @@ settings:
 tasks:
   - name: discover
     title: Discover project, buckets and functions
-    description: Reads the project and lists its Cloud Storage buckets (name, location, storage class, creation time) and its Cloud Functions, 1st and 2nd generation (id, region, generation, state, runtime, update time), as facts and as an rw.discovery.v1 sync. A functions list that fails leaves the buckets and the project and makes the run partial (an error scoped functions); a list that skipped regions or found one id in several is reported and not swept. Reports the project id as the root's canonical key. Read-only.
+    description: Reads the project, lists its Cloud Storage buckets (name, location, storage class, creation time) and its Cloud Functions, 1st and 2nd generation (id, region, generation, state, runtime, update time), as facts and as an rw.discovery.v1 sync (project -> bucket; project -> region -> cloud-function, one partition per type and region). Each type is read on its own - a list that fails is an error scoped to it, a partition that is not complete and read false, and the run is partial; only when both lists fail does the task fail. A functions list that skipped regions is reported and those regions' partitions are failed. Reports the project id as the root's canonical key. Read-only.
     script: scripts/discover.py
     tags: [discovery, inventory]
     readOnly: true
     timeout: 600s                                  # the gcloud calls and the push; the push is clamped to what is left (gcp_base/budget.py)
     credentials: [gcp/adc, runwhen/sync]           # runwhen/sync is platform-minted per run by the lease, not a connection
     permissions:
-      - { permission: storage.buckets.list }               # the bucket list; without it discover fails with permission_denied
+      - { permission: storage.buckets.list }               # the bucket list; without it the buckets are unread (partial); discover fails only if the functions list fails too
       - { permission: storage.buckets.getIamPolicy }       # gcloud storage buckets list always asks for the FULL projection (ACLs, IAM settings), which the JSON API gates on this permission
       - { permission: resourcemanager.projects.get }       # the project's number, name and state; without it the run is partial and the project id alone is reported
       - { permission: cloudfunctions.functions.list }      # the functions list; without it the run is partial and the functions partition is forbidden
@@ -23,6 +23,6 @@ tasks:
     outputs:
       summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-step errors and root.canonicalKey (projectId)" }
       project: { schema: ./schemas/project.v1.json, description: "Project id, number, display name and lifecycle state" }
-      buckets: { schema: ./schemas/buckets.v1.json, description: "Name, location, storage class and creation time of each bucket, cut to maxItems" }
+      buckets: { schema: ./schemas/buckets.v1.json, description: "Name, location, storage class and creation time of each bucket, cut to maxItems; read false when the list failed" }
       functions: { schema: ./schemas/functions.v1.json, description: "Id, region, generation, state, runtime and update time of each function, cut to maxItems; read false when the list failed" }
       sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this project, all its buckets and its functions" }

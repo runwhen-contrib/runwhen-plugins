@@ -1,12 +1,19 @@
-"""discover: the project and its buckets, as facts and as an rw.discovery.v1 sync.
+"""discover: the project, its buckets and its Cloud Functions, as facts and as an rw.discovery.v1 sync.
+
+Each type is read and partitioned on its own: a bucket list that fails does not stop the functions
+from being listed, and the other way round. Only when both fail does the task fail (with the bucket
+list's error); otherwise the failed type is an error scoped to it, a partition that is not
+`complete` (so nothing is swept for it) and an output with `read: false`.
 
 The gcloud calls return plain facts; `build_sync` turns them into the recorded sync (open, item
-batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync")."""
+batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync"). A function is
+project -> region -> cloud-function (integration/types.yaml): the sync has an item for each region
+that holds a function or was unreachable, and one cloud-function partition per region."""
 
 import time
 
 from .errors import RwError
-from .fnlist import generation, list_functions, parse_name, state
+from .fnlist import UNKNOWN_REGION, generation, list_functions, parse_name, state
 from .gcloud import gcloud_json, target_path
 
 PLATFORM = "gcp"
@@ -29,7 +36,7 @@ def target_project(resource):
 
 def read_buckets(ctx, project, timeout):
     """The project's buckets as reported by `gcloud storage buckets list --raw` (the API's own
-    bucket resources). A failure raises: with no list there is nothing to report."""
+    bucket resources). A failure raises (discover decides whether that fails the task)."""
     rows = gcloud_json(
         ctx, "storage", "buckets", "list", f"--project={project}", "--raw", timeout=timeout
     )
@@ -100,6 +107,29 @@ def read_project(ctx, project, errors, timeout):
     }
 
 
+class Read:
+    """What one type's read came to: `rows` (None: it failed), `exc` (the RwError, or None) and,
+    for functions, the regions gcloud could not reach."""
+
+    def __init__(self, rows=None, exc=None, unreachable=()):
+        self.rows, self.exc, self.unreachable = rows, exc, list(unreachable)
+
+    @property
+    def ok(self):
+        return self.exc is None
+
+
+def attempt(read, *args):
+    """A Read of `read(*args)`: an RwError is the read's failure, not the task's."""
+    try:
+        out = read(*args)
+    except RwError as exc:
+        return Read(exc=exc)
+    if isinstance(out, tuple):
+        return Read(rows=out[0], unreachable=out[1])
+    return Read(rows=out)
+
+
 def function_fact(row):
     """The `functions` output entry of one function row (either generation's format)."""
     _, region, name = parse_name(row)
@@ -117,90 +147,86 @@ def function_fact(row):
     }
 
 
-def split_ambiguous(rows):
-    """(rows whose id is unique in the project, the ids found in more than one region). A function
-    is named by its id alone, so an id in two regions cannot be two resources; neither is synced."""
-    regions = {}
-    for row in rows:
-        _, region, name = parse_name(row)
-        regions.setdefault(name, set()).add(region)
-    ambiguous = sorted(n for n, r in regions.items() if len(r) > 1)
-    return [r for r in rows if parse_name(r)[2] not in ambiguous], ambiguous
-
-
-def read_functions(ctx, project, errors, timeout):
-    """(facts, rows, status): the project's functions, the rows to sync and the partition status.
-    The buckets were listed already, so a functions list that fails (denied, the Cloud Functions
-    API off, throttled ...) is an error scoped `functions` and the partition is `forbidden` /
-    `failed`, never an empty list: (None, [], status). A list that read only part of the project
-    (gcloud could not reach some regions) or found one id in several regions is returned with an
-    error and a `failed` partition: nothing is swept for it."""
-    try:
-        rows, unreachable = list_functions(ctx, project, timeout=timeout)
-    except RwError as exc:
-        errors.append(
-            {"code": exc.code, "message": f"functions: {exc.message}", "scope": "functions"}
-        )
-        return None, [], "forbidden" if exc.code == "permission_denied" else "failed"
-    complete = True
-    if unreachable:
-        complete = False
-        errors.append({
-            "code": "unreachable",
-            "message": "functions: gcloud could not reach " + ", ".join(unreachable)
-            + ": their functions are not in the list",
-            "scope": "functions",
-        })  # fmt: skip
-    synced, ambiguous = split_ambiguous(rows)
-    if ambiguous:
-        complete = False
-        errors.append({
-            "code": "internal",
-            "message": "functions: the same function id exists in several regions and cannot be "
-            "named by its id alone: " + ", ".join(ambiguous[:20]),
-            "scope": "functions",
-        })  # fmt: skip
-    facts = {
-        "items": [function_fact(r) for r in rows],
-        "unreachableRegions": unreachable,
-        "ambiguousIds": ambiguous[:50],
-    }
-    return facts, synced, "complete" if complete else "failed"
-
-
 def bound(items, limit):
     """(first `limit` items, total, omitted)."""
     return items[:limit], len(items), max(len(items) - limit, 0)
 
 
-def bucket_listing(buckets, limit):
-    items, total, omitted = bound(buckets, limit)
-    return {"items": items, "total": total, "omitted": omitted}
+def listing(read, facts, limit, **extra):
+    """A type's output: `read` is False (items empty, counts null) when its list failed."""
+    if not read.ok:
+        return {"read": False, "items": [], "total": None, "omitted": None, **extra}
+    items, total, omitted = bound(facts, limit)
+    return {"read": True, "items": items, "total": total, "omitted": omitted, **extra}
 
 
-def function_listing(functions, limit):
-    """The `functions` output: `read` is False (items empty, counts null) when the list failed."""
-    if functions is None:
-        return {"read": False, "items": [], "total": None, "omitted": None,
-                "unreachableRegions": [], "ambiguousIds": []}  # fmt: skip
-    items, total, omitted = bound(functions["items"], limit)
-    return {"read": True, "items": items, "total": total, "omitted": omitted,
-            "unreachableRegions": functions["unreachableRegions"],
-            "ambiguousIds": functions["ambiguousIds"]}  # fmt: skip
+def regions_of(functions):
+    """The regions of the sync: those with a function, and those gcloud could not reach (named by
+    their own name; the `unknown` placeholder is no region)."""
+    names = {parse_name(r)[1] for r in functions.rows or []}
+    names |= {r for r in functions.unreachable if r != UNKNOWN_REGION}
+    return sorted(names)
 
 
-def bucket_partitions(path, count):
-    """The partition a full sync of a project sweeps for its buckets."""
-    return [{"type": "bucket", "parentPath": path, "status": "complete", "count": count}]
+def failure(read, what):
+    """(status, reason) of a partition whose read failed."""
+    status = "forbidden" if read.exc.code == "permission_denied" else "failed"
+    return status, f"{what}: {read.exc.message}"[:4096]
 
 
-def partitions_of(path, bucket_count, function_status, function_count):
-    """The partitions of a full sync: the buckets and the cloud functions of the project."""
-    return [
-        *bucket_partitions(path, bucket_count),
-        {"type": "cloud-function", "parentPath": path, "status": function_status,
-         "count": function_count},
-    ]  # fmt: skip
+def partitions_of(path, buckets, functions):
+    """The partitions of a full sync: the buckets, the regions, and the cloud-functions of each
+    region. A type whose read failed has its partition `forbidden` / `failed` with the reason (and
+    no count), so nothing is swept for it; a region gcloud could not reach, or any region when it
+    could not say which, is `failed`."""
+    out = []
+    if buckets.ok:
+        out.append(
+            {"type": "bucket", "parentPath": path, "status": "complete", "count": len(buckets.rows)}
+        )
+    else:
+        status, reason = failure(buckets, "bucket list")
+        out.append({"type": "bucket", "parentPath": path, "status": status, "reason": reason})
+    if not functions.ok:
+        status, reason = failure(functions, "functions list")
+        out.append({"type": "region", "parentPath": path, "status": status, "reason": reason})
+        return out
+    regions = regions_of(functions)
+    unknown = UNKNOWN_REGION in functions.unreachable
+    if unknown:
+        out.append({"type": "region", "parentPath": path, "status": "failed",
+                    "reason": "gcloud could not reach some regions and did not name them"})  # fmt: skip
+    else:
+        out.append(
+            {"type": "region", "parentPath": path, "status": "complete", "count": len(regions)}
+        )
+    for region in regions:
+        parent = f"{path}/regions/{region}"
+        count = sum(1 for r in functions.rows if parse_name(r)[1] == region)
+        if region in functions.unreachable or unknown:
+            reason = (
+                f"gcloud could not reach {region}"
+                if region in functions.unreachable
+                else "gcloud could not reach some regions and did not name them"
+            )
+            out.append(
+                {
+                    "type": "cloud-function",
+                    "parentPath": parent,
+                    "status": "failed",
+                    "reason": reason,
+                }
+            )
+        else:
+            out.append(
+                {
+                    "type": "cloud-function",
+                    "parentPath": parent,
+                    "status": "complete",
+                    "count": count,
+                }
+            )
+    return out
 
 
 def summarize(counts, partitions, errors, duration_ms, project):
@@ -225,10 +251,10 @@ def labels_of(row):
     return {k[:LABEL_LIMIT]: v[:LABEL_LIMIT] for k, v in sorted(kept.items())[:MAX_LABELS]}
 
 
-def build_sync(path, project, project_facts, rows, summary, functions=(), partitions=None):
+def build_sync(path, project, project_facts, buckets, functions, summary, partitions):
     """The rw.discovery.v1 document for one full sync of the project at `path`: the project, its
-    buckets and the function rows to sync."""
-    partitions = partitions or bucket_partitions(path, len(rows))
+    buckets, the regions that hold functions (or were unreachable) and the functions. A type whose
+    read failed has no items."""
     root = {"type": "project", "name": project}
     root_item = {
         "identity": {"platform": PLATFORM, "chain": [root]},
@@ -242,7 +268,7 @@ def build_sync(path, project, project_facts, rows, summary, functions=(), partit
     if project_facts["projectNumber"]:
         root_item["providerUid"] = project_facts["projectNumber"]
     items = [root_item]
-    for row in rows:
+    for row in buckets.rows or []:
         fact = bucket_fact(row)
         item = {
             "identity": {
@@ -256,20 +282,36 @@ def build_sync(path, project, project_facts, rows, summary, functions=(), partit
         if labels:
             item["labels"] = labels
         items.append(item)
-    for row in functions:
-        fact = function_fact(row)
-        item = {
-            "identity": {
-                "platform": PLATFORM,
-                "chain": [root, {"type": "cloud-function", "name": fact["name"]}],
-            },
-            "displayName": fact["name"],
-            "document": {k: v for k, v in fact.items() if k != "name" and v is not None},
-        }
-        labels = labels_of(row)
-        if labels:
-            item["labels"] = labels
-        items.append(item)
+    if functions.ok:
+        for region in regions_of(functions):
+            items.append(
+                {
+                    "identity": {
+                        "platform": PLATFORM,
+                        "chain": [root, {"type": "region", "name": region}],
+                    },
+                    "displayName": region,
+                    "document": {"name": region},
+                }
+            )
+        for row in functions.rows:
+            fact = function_fact(row)
+            item = {
+                "identity": {
+                    "platform": PLATFORM,
+                    "chain": [
+                        root,
+                        {"type": "region", "name": fact["region"]},
+                        {"type": "cloud-function", "name": fact["name"]},
+                    ],
+                },
+                "displayName": fact["name"],
+                "document": {k: v for k, v in fact.items() if k != "name" and v is not None},
+            }
+            labels = labels_of(row)
+            if labels:
+                item["labels"] = labels
+            items.append(item)
     batches = [
         {"seq": i // BATCH + 1, "items": items[i : i + BATCH]} for i in range(0, len(items), BATCH)
     ]
@@ -281,33 +323,68 @@ def build_sync(path, project, project_facts, rows, summary, functions=(), partit
     }
 
 
-def discover(ctx, max_items, timeout):
+def discover(ctx, max_items, timeout, deadline=None):
     """Run discovery on the project this task targets; returns the task's outputs and the sync
-    document. A failure to list buckets raises; a project resource this identity may not read, or
-    a functions list that fails, is a ctx.error and discovery goes on (the id is the root's
-    canonical key either way)."""
+    document. The buckets, the project resource and the functions are read independently: a
+    failure of one is an error scoped to it (`buckets`, `project`, `functions`) and discovery goes
+    on with the others (the project id is the root's canonical key either way). If both the
+    bucket list and the functions list fail, the task fails with the bucket list's error."""
     started = time.monotonic()
     project = target_project(ctx.resource)
     path = ctx.resource["path"]
     errors = []
-    rows = read_buckets(ctx, project, timeout)  # first: a failure here fails the task
+    buckets = attempt(read_buckets, ctx, project, timeout)
     project_facts = read_project(ctx, project, errors, timeout)
-    functions, fn_rows, fn_status = read_functions(ctx, project, errors, timeout)
+    functions = attempt(lambda: list_functions(ctx, project, timeout=timeout, deadline=deadline))
+    if not buckets.ok and not functions.ok:
+        raise buckets.exc
+    if not buckets.ok:
+        errors.append(
+            {
+                "code": buckets.exc.code,
+                "message": f"buckets: {buckets.exc.message}",
+                "scope": "buckets",
+            }
+        )
+    if not functions.ok:
+        errors.append(
+            {
+                "code": functions.exc.code,
+                "message": f"functions: {functions.exc.message}",
+                "scope": "functions",
+            }
+        )
+    if functions.unreachable:
+        named = [r for r in functions.unreachable if r != UNKNOWN_REGION]
+        errors.append({
+            "code": "unreachable",
+            "message": "functions: gcloud could not reach "
+            + (", ".join(named) if named else "some regions")
+            + ": their functions are not in the list",
+            "scope": "functions",
+        })  # fmt: skip
     for error in errors:
         ctx.error(error["code"], error["message"], scope=error["scope"])
-    counts = {"project": 1, "bucket": len(rows)}
-    if functions is not None:
-        counts["cloud-function"] = len(fn_rows)
-    partitions = partitions_of(path, len(rows), fn_status, len(fn_rows))
+    counts = {"project": 1}
+    if buckets.ok:
+        counts["bucket"] = len(buckets.rows)
+    if functions.ok:
+        counts["region"] = len(regions_of(functions))
+        counts["cloud-function"] = len(functions.rows)
+    partitions = partitions_of(path, buckets, functions)
     summary = summarize(
         counts, partitions, errors, int((time.monotonic() - started) * 1000), project
     )
-    sync = build_sync(path, project, project_facts, rows, summary, fn_rows, partitions)
-    buckets = [bucket_fact(r) for r in rows]
+    sync = build_sync(path, project, project_facts, buckets, functions, summary, partitions)
     outputs = {
         "summary": summary,
         "project": project_facts,
-        "buckets": bucket_listing(buckets, max_items),
-        "functions": function_listing(functions, max_items),
+        "buckets": listing(buckets, [bucket_fact(r) for r in buckets.rows or []], max_items),
+        "functions": listing(
+            functions,
+            [function_fact(r) for r in functions.rows or []],
+            max_items,
+            unreachableRegions=functions.unreachable,
+        ),
     }
     return outputs, sync

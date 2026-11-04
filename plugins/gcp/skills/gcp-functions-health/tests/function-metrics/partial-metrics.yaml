@@ -3,10 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: gcp/projects/shop-prod-1234/cloud-functions/orders-api
-identity:
-  region: us-central1
-now: '2026-11-04T04:06:17.468Z'
+resource: gcp/projects/shop-prod-1234/regions/us-central1/cloud-functions/orders-api
+now: '2026-11-04T04:58:23.152Z'
 calls:
 - argv:
   - gcloud
@@ -42,7 +40,7 @@ calls:
         "availableMemory": "512Mi",
         "environmentVariables": {
           "LOG_EXECUTION_ID": "true",
-          "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+          "LOG_LEVEL": "info"
         },
         "ingressSettings": "ALLOW_ALL",
         "maxInstanceCount": 20,
@@ -71,6 +69,7 @@ calls:
   - gcloud
   - auth
   - print-access-token
+  - --billing-project=shop-prod-1234
   - --quiet
   rc: 0
   stdout: |
@@ -84,7 +83,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_count%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A06%3A17Z&interval.startTime=2026-11-04T03%3A06%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.response_code_class&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_count%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A23Z&interval.startTime=2026-11-04T03%3A58%3A23Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.response_code_class&pageSize=1000
   rc: 0
   stdout: |
     {
@@ -151,7 +150,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A06%3A17Z&interval.startTime=2026-11-04T03%3A06%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A23Z&interval.startTime=2026-11-04T03%3A58%3A23Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000
   rc: 0
   stdout: |
     {
@@ -190,7 +189,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A06%3A17Z&interval.startTime=2026-11-04T03%3A06%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A23Z&interval.startTime=2026-11-04T03%3A58%3A23Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000
   rc: 22
   stdout: |
     {
@@ -221,7 +220,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A06%3A17Z&interval.startTime=2026-11-04T03%3A06%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=2026-11-04T04%3A58%3A23Z&interval.startTime=2026-11-04T03%3A58%3A23Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000
   rc: 22
   stdout: |
     {

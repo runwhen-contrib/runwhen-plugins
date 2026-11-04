@@ -3,10 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: gcp/projects/shop-prod-1234/cloud-functions/legacy-cron
-identity:
-  region: us-east1
-now: '2026-11-04T04:05:42.662Z'
+resource: gcp/projects/shop-prod-1234/regions/us-east1/cloud-functions/legacy-cron
+now: '2026-11-04T04:57:25.611Z'
 calls:
 - argv:
   - gcloud
@@ -26,8 +24,8 @@ calls:
       "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000100",
       "entryPoint": "run",
       "environmentVariables": {
-        "REGION": "us-east1",
-        "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+        "LOG_LEVEL": "info",
+        "REGION": "us-east1"
       },
       "eventTrigger": {
         "eventType": "google.pubsub.topic.publish",
@@ -76,8 +74,7 @@ calls:
             "/cnb/lifecycle/builder"
           ],
           "env": [
-            "GOOGLE_ENTRYPOINT=handler",
-            "ORDERS_DB_URL=postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+            "GOOGLE_ENTRYPOINT=handler"
           ],
           "name": "gcr.io/gae-runtimes/buildpacks/python312/builder",
           "status": "SUCCESS"

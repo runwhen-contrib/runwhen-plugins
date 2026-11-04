@@ -18,8 +18,10 @@ The metrics differ by generation, because a 2nd gen function is a Cloud Run serv
 
 One query that fails (throttled, forbidden) leaves its numbers null and is reported by the caller as
 an error scoped to the query; the others stand. No data is not health: a function that ran nothing
-in the window publishes no series, so `executions` is 0 with `hasData: false` and errors, the error
-rate and the threshold booleans are null (not 0, not false)."""
+in the window publishes no series, so `hasData` is false, `executions` is null (Monitoring has no
+count; the metrics also lag by minutes, so a function that ran just now can have none yet) and
+errors, the error rate and the threshold booleans are null (not 0, not false). `idle` is true:
+there was nothing to count. The percentiles are Monitoring's estimates from distribution buckets."""
 
 from datetime import timedelta, timezone
 
@@ -27,7 +29,7 @@ from .errors import RwError
 
 PERCENTILES = (50, 95, 99)
 MAX_OUTCOMES = 50
-TASK_BUDGET = 120  # seconds: function-metrics' `timeout` in tasks.yaml (a test keeps them equal)
+TASK_BUDGET = 180  # seconds: function-metrics' `timeout` in tasks.yaml (a test keeps them equal)
 RESERVE = 10.0  # seconds kept free after the last call for the result
 GEN1 = {
     "resource": 'resource.type="cloud_function" AND resource.labels.function_name="{name}"'
@@ -135,10 +137,11 @@ def summarize(spec, generation, results, start, end, timeout_seconds, st):
     """The `metrics` output. `results` maps a query name to its series, or None when it failed."""
     counted = results.get("executions")
     outcomes = None if counted is None else outcome_counts(counted, spec)
-    executions = None if outcomes is None else sum(outcomes.values())
-    has_data = None if outcomes is None else bool(outcomes) and executions > 0
+    total = None if outcomes is None else sum(outcomes.values())
+    has_data = None if outcomes is None else bool(outcomes) and total > 0
+    executions = total if has_data else None  # no series: no count, not "0 executions"
     errors = None
-    if outcomes and executions:
+    if has_data:
         errors = sum(n for o, n in outcomes.items() if is_error(o, generation))
     rate = round(errors / executions, 4) if errors is not None and executions else None
     pcts = {}
@@ -155,7 +158,7 @@ def summarize(spec, generation, results, start, end, timeout_seconds, st):
         },
         "generation": generation,
         "hasData": has_data,
-        "idle": None if executions is None else executions == 0,
+        "idle": None if total is None else total == 0,
         "executions": executions,
         "errors": errors,
         "errorRate": rate,

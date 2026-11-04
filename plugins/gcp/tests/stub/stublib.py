@@ -24,6 +24,8 @@ REQUIRED = ("source", "argv")
 # the Monitoring query's time window moves with the run's reference time; the recorded argv keeps
 # the real values, the canned one has a placeholder
 TIME = re.compile(r"(interval\.(?:start|end)Time=)[^&]*")
+# so does the window of a log filter (`timestamp>="2026-11-04T00:00:00Z"`)
+LOG_TIME = re.compile(r'(timestamp[<>]=")[^"]*(")')
 
 
 def fail(program, message, rc=2):
@@ -33,8 +35,8 @@ def fail(program, message, rc=2):
 
 def normalise(tool, argv):
     """argv without what does not change the question. gcloud: `--format=json`, `--format json`,
-    `--quiet`, `-q` (nothing is sorted: flag order is part of the question). curl: the query's
-    time window."""
+    `--quiet`, `-q` (nothing is sorted: flag order is part of the question), the time window of a
+    log filter. curl: the query's time window."""
     if tool == "curl":
         return [TIME.sub(r"\1<T>", a) for a in argv]
     out, skip = [], False
@@ -44,7 +46,7 @@ def normalise(tool, argv):
         elif arg == "--format" and argv[index + 1 : index + 2] == ["json"]:
             skip = True
         elif arg not in NOISE:
-            out.append(arg)
+            out.append(LOG_TIME.sub(r"\1<T>\2", arg))
     return out
 
 

@@ -16,13 +16,13 @@ def main(ctx, since="1h"):
     target = function_target(ctx.resource)
     # the function first: Monitoring answers a function that does not exist with no series, which
     # would read as "never ran"; a missing function is not_found here
-    row = locate(ctx, target, st.command_timeout)
+    row = locate(ctx, target, st.command_timeout, deadline)
     _, region, name = fnlist.parse_name(row)
     generation = fnlist.generation(row)
     spec = mx.spec_for(generation)
     series_name = (service_name(row) or name.lower()) if generation == 2 else name
     start, end = mx.window(ctx.now(), seconds)
-    token = access_token(ctx, st.command_timeout)
+    token = access_token(ctx, target.project, st.command_timeout, deadline)
     reader = Reader(ctx, token, target.project, st.command_timeout, deadline)
     results, failures = {}, []
     try:

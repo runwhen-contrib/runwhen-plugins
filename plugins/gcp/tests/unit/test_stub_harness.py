@@ -504,4 +504,5 @@ def test_the_scenarios_the_fixtures_need_exist():
         "functions-monitoring-disabled", "functions-partial-metrics", "functions-logging-denied",
         "functions-monitoring-denied", "functions-discover-denied", "functions-discover-disabled",
         "functions-discover-unreachable", "functions-discover-split",
+        "functions-leaky", "functions-discover-buckets-denied",
     }  # fmt: skip

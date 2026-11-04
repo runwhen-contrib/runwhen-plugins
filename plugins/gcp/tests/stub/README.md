@@ -80,15 +80,17 @@ task, would never see it.
 | `functions-forbidden`, `functions-throttled`, `functions-api-disabled` | the Cloud Functions, Cloud Build and Cloud Logging APIs answer 403 / 429 / `SERVICE_DISABLED` |
 | `functions-build-denied` | functions work, Cloud Build is denied: function-state is partial |
 | `functions-not-found` | function `nope` does not exist (describe 404, absent from the list) |
-| `functions-empty`, `functions-unreachable`, `functions-split` | no function at all; the list works but gcloud warns about regions it could not reach; one id in two regions |
+| `functions-empty`, `functions-unreachable`, `functions-split` | no function at all; the list works but gcloud warns about regions it could not reach; one id in two regions (two functions, each under its region) |
+| `functions-leaky` | two failing functions whose env values, secret references, build steps and failure detail, state message, log lines and structured payloads all hold synthetic secrets ("canaries", a fixed marker plus a number): nothing of them may reach an output. The only place canaries live (test_fixture_hygiene.py enforces it) |
 | `functions-idle`, `functions-monitoring-disabled`, `functions-partial-metrics` | Monitoring has no series for `orders-api`; Cloud Monitoring is off; two percentile queries are throttled |
 | `functions-discover-denied`, `-disabled`, `-unreachable`, `-split` | the bucket pilot's project and bucket answers, then a functions list that is denied / disabled / skipped regions / has an id in two regions: gcp-base/discover |
+| `functions-discover-buckets-denied` | the bucket list is denied (the `forbidden` scenario's answer), the project and the functions list work: discover still lists the functions |
 
 Project, buckets, members and the service account are invented. The token is
 `identities.json`'s fake one.
 
-The `functions list` call is also in the bucket pilot's `healthy`, `broken` and `project-denied`
-scenarios (gcp-base/discover lists functions after the buckets); `capture/capture_functions.sh`
+The `functions list` call is also in the bucket pilot's `healthy`, `broken`, `project-denied`, `forbidden`,
+`throttled`, `api-disabled` and `unauthenticated` scenarios (failing the same way there) (gcp-base/discover lists functions after the buckets); `capture/capture_functions.sh`
 adds it and writes all `functions-*` scenarios (the other scenarios are `capture/capture.sh`'s).
 
 ## Matching

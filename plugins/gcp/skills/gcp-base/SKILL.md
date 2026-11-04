@@ -50,21 +50,23 @@ of the budget (less a 10s margin), and a request that would start with nothing l
   `partial`; the buckets stand. A response in a shape this task does not know (neither Resource
   Manager v1's `lifecycleState`/`name` nor v3's `state`/`displayName`) is an `internal` error
   scoped `project`, not silent nulls.
-- `functions.read` false, with an error scoped `functions` (`permission_denied`, `dependency` for a
-  disabled Cloud Functions API, `rate_limited`, ...): the functions could not be listed; the buckets
-  and the project stand and the run is `partial`. Its sync partition is `forbidden` / `failed`, so
-  nothing is swept: it is never "the project has no functions". `functions.items` empty with
-  `total` 0 and `read` true is a project with none.
+- Each type is read on its own. `buckets.read` or `functions.read` false, with an error scoped
+  `buckets` / `functions` (`permission_denied`, `dependency` for a disabled API, `rate_limited`,
+  ...): that list could not be read; the other type and the project stand and the run is `partial`.
+  Its sync partition is `forbidden` / `failed` with a `reason`, so nothing is swept: it is never
+  "the project has no functions" (or no buckets). Only when both lists fail does the task fail, with
+  the bucket list's error. `items` empty with `total` 0 and `read` true is a project with none.
+- The sync is project -> bucket and project -> region -> cloud-function: a region item for each
+  region that holds a function (or was unreachable), and one `cloud-function` partition per region.
+  The same function id in two regions is two functions.
 - `functions.unreachableRegions` not empty: gcloud exits 0 but could not reach those regions
-  (it only warns); their functions are missing, the run is `partial` (`unreachable`) and the
-  partition is `failed`. `functions.ambiguousIds`: the same function id exists in more than one
-  region; a function is named by its id alone, so those are listed in `items` (with their regions)
-  but not synced as resources (`internal` error scoped `functions`); the target needs its region.
+  (it only warns; `unknown` when it did not say which); their functions are missing, the run is
+  `partial` (`unreachable`) and the partitions of those regions are `failed` (all of them, for
+  `unknown`).
 - `state` is the generation's own field: 2nd gen `state` (`ACTIVE`, `FAILED`, `DEPLOYING`, ...),
-  1st gen `status` (`ACTIVE`, `OFFLINE`, ...); null when the row carries neither. A bucket list that
-  fails fails the task before the functions are read.
-- `buckets.items` empty and `total` 0: the project has no buckets (an identity that may not list
-  them fails with `permission_denied`; it never returns an empty list).
+  1st gen `status` (`ACTIVE`, `OFFLINE`, ...); null when the row carries neither.
+- `buckets.items` empty and `total` 0 with `read` true: the project has no buckets (an identity
+  that may not list them gets `read: false` and an error; it never returns an empty list).
 - `buckets.omitted` above zero: the list was cut at `maxItems`; raise the setting, or read the
   `sync` artifact for the whole list.
 - `lifecycleState: DELETE_REQUESTED`: the project is scheduled for deletion.

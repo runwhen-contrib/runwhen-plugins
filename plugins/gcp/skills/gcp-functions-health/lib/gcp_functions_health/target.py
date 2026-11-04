@@ -8,28 +8,33 @@ from .fnlist import valid_function_id, valid_region
 from .gcloud import command_timeout, parse_duration, valid_project
 
 TYPE = "gcp/cloud-function"
+TASK_BUDGET = 180  # seconds: every task's `timeout` in tasks.yaml, 3x the default commandTimeout
+RESERVE = 10.0  # seconds kept free after the last call for the result
 MAX_SINCE_SECONDS = 14 * 86400  # Cloud Monitoring keeps most metrics 6 weeks; logs 30 days
 
 
 class Target(NamedTuple):
     project: str
     name: str
-    region: str | None  # the target's `region` identity field; None: found by listing
+    region: str | None  # the region ancestor of the target's path; None: found by listing
 
 
 def function_target(resource):
-    """The function a run targets as Target(project, name, region). The project is the path's
-    (`gcp/projects/<project>/cloud-functions/<name>`), the name too; the region is the optional
-    `region` identity field of the target (the discovered function's region). Anything but a
-    gcp/cloud-function is refused."""
+    """The function a run targets as Target(project, name, region). A function's path is
+    `gcp/projects/<project>/regions/<region>/cloud-functions/<name>`: its region is the chain's
+    (the `region` ancestor), never an input. A path with no region ancestor
+    (`gcp/projects/<project>/cloud-functions/<name>`) is accepted, and then the function is found
+    by listing the project (locate.py). Anything but a gcp/cloud-function is refused."""
     resource = resource or {}
     parts = str(resource.get("path", "")).split("/")
-    if resource.get("type") != TYPE or len(parts) != 5 or parts[:2] != ["gcp", "projects"]:
+    if resource.get("type") != TYPE or parts[:2] != ["gcp", "projects"]:
         raise RwError("invalid_input", f"this task runs on a {TYPE}, got {resource.get('type')!r}")
-    if parts[3] != "cloud-functions":
+    if len(parts) == 7 and parts[3] == "regions" and parts[5] == "cloud-functions":
+        project, region, name = parts[2], parts[4], parts[6]
+    elif len(parts) == 5 and parts[3] == "cloud-functions":
+        project, region, name = parts[2], None, parts[4]
+    else:
         raise RwError("invalid_input", f"not the path of a {TYPE}: {resource.get('path')!r}")
-    project, name = parts[2], parts[4]
-    region = resource.get("region") or None
     if not valid_project(project):
         raise RwError("invalid_input", "the target's project is not a valid project id")
     if not valid_function_id(name):

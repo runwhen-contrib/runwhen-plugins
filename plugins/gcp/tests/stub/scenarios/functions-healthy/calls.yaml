@@ -8,20 +8,20 @@
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/list.py (2nd gen from the v2 API with filter environment=\"GEN_2\", 1st gen from v1; unreachable regions are only warned about)"
 - argv: ["functions", "describe", "orders-api", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 0
-  stdout: "describe-orders-api.json"
+  stdout: "describe-us-central1-orders-api.json"
   source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
 - argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000001", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 0
-  stdout: "build-orders-api.json"
+  stdout: "build-us-central1-orders-api.json"
   source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
-- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"orders-api\" AND resource.labels.location=\"us-central1\" AND severity>=ERROR", "--project=shop-prod-1234", "--freshness=3600s", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"orders-api\" AND resource.labels.location=\"us-central1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
   rc: 0
   stdout: "logs-orders-api.json"
   source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"
-- argv: ["auth", "print-access-token"]
+- argv: ["auth", "print-access-token", "--billing-project=shop-prod-1234"]
   rc: 0
   stdout: "token.txt"
   source: "https://cloud.google.com/sdk/gcloud/reference/auth/print-access-token"
@@ -52,15 +52,15 @@
   cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
 - argv: ["functions", "describe", "thumbnailer", "--region=europe-west1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 0
-  stdout: "describe-thumbnailer.json"
+  stdout: "describe-europe-west1-thumbnailer.json"
   source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
 - argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000002", "--region=europe-west1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 0
-  stdout: "build-thumbnailer.json"
+  stdout: "build-europe-west1-thumbnailer.json"
   source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
-- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"thumbnailer\" AND resource.labels.location=\"europe-west1\" AND severity>=ERROR", "--project=shop-prod-1234", "--freshness=3600s", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"thumbnailer\" AND resource.labels.location=\"europe-west1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
   rc: 0
   stdout: "logs-thumbnailer.json"
   source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
@@ -91,15 +91,15 @@
   cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
 - argv: ["functions", "describe", "legacy-cron", "--region=us-east1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 0
-  stdout: "describe-legacy-cron.json"
+  stdout: "describe-us-east1-legacy-cron.json"
   source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
 - argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000100", "--region=us-east1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
   rc: 0
-  stdout: "build-legacy-cron.json"
+  stdout: "build-us-east1-legacy-cron.json"
   source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
   cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
-- argv: ["logging", "read", "resource.type=\"cloud_function\" AND resource.labels.function_name=\"legacy-cron\" AND resource.labels.region=\"us-east1\" AND severity>=ERROR", "--project=shop-prod-1234", "--freshness=3600s", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+- argv: ["logging", "read", "resource.type=\"cloud_function\" AND resource.labels.function_name=\"legacy-cron\" AND resource.labels.region=\"us-east1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
   rc: 0
   stdout: "logs-legacy-cron.json"
   source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"

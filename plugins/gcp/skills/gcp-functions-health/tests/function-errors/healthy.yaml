@@ -3,10 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: gcp/projects/shop-prod-1234/cloud-functions/orders-api
-identity:
-  region: us-central1
-now: '2026-11-04T04:05:57.656Z'
+resource: gcp/projects/shop-prod-1234/regions/us-central1/cloud-functions/orders-api
+now: '2026-11-04T04:57:48.798Z'
 calls:
 - argv:
   - gcloud
@@ -42,7 +40,7 @@ calls:
         "availableMemory": "512Mi",
         "environmentVariables": {
           "LOG_EXECUTION_ID": "true",
-          "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+          "LOG_LEVEL": "info"
         },
         "ingressSettings": "ALLOW_ALL",
         "maxInstanceCount": 20,
@@ -72,9 +70,8 @@ calls:
   - logging
   - read
   - resource.type="cloud_run_revision" AND resource.labels.service_name="orders-api" AND resource.labels.location="us-central1"
-    AND severity>=ERROR
+    AND severity>=ERROR AND timestamp>="2026-11-04T03:57:48Z" AND timestamp<="2026-11-04T04:57:48Z"
   - --project=shop-prod-1234
-  - --freshness=3600s
   - --limit=51
   - --order=desc
   - --billing-project=shop-prod-1234
@@ -89,8 +86,6 @@ expect:
   errorCodes: []
   outputs:
     logs:
-      filter: resource.type="cloud_run_revision" AND resource.labels.service_name="orders-api"
-        AND resource.labels.location="us-central1" AND severity>=ERROR
-      matched: 0
+      returned: 0
       truncated: false
       entries: []

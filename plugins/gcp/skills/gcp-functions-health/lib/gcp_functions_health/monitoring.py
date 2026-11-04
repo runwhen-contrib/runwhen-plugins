@@ -23,7 +23,8 @@ import time
 from urllib.parse import quote, urlencode
 
 from .errors import RwError
-from .gcloud import classify_error, error_text, gcloud_text
+from .fnlist import text_call
+from .gcloud import classify_error, error_text
 
 ENDPOINT = "https://monitoring.googleapis.com/v3/projects/{project}/timeSeries"
 PAGE_SIZE = 1000
@@ -38,10 +39,12 @@ _BY_HTTP = {400: "invalid_input", 401: "permission_denied", 403: "permission_den
             404: "not_found", 429: "rate_limited"}  # fmt: skip
 
 
-def access_token(ctx, timeout):
+def access_token(ctx, project, timeout, deadline=None):
     """The connection's access token, from gcloud. A failure is classified like any gcloud
     failure; a token of an unexpected shape is `internal` (and is not echoed)."""
-    token = gcloud_text(ctx, "auth", "print-access-token", timeout=timeout).strip()
+    token = text_call(
+        ctx, ["auth", "print-access-token"], project, timeout=timeout, deadline=deadline
+    ).strip()
     if not TOKEN.fullmatch(token):
         raise RwError("internal", "gcloud auth print-access-token printed no usable token")
     return token

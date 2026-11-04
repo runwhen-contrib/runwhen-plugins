@@ -3,10 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: gcp/projects/shop-prod-1234/cloud-functions/nightly-report
-identity:
-  region: us-east1
-now: '2026-11-04T04:06:13.376Z'
+resource: gcp/projects/shop-prod-1234/regions/us-east1/cloud-functions/nightly-report
+now: '2026-11-04T04:58:17.087Z'
 calls:
 - argv:
   - gcloud
@@ -26,8 +24,8 @@ calls:
       "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000101",
       "entryPoint": "run",
       "environmentVariables": {
-        "REGION": "us-east1",
-        "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+        "LOG_LEVEL": "info",
+        "REGION": "us-east1"
       },
       "httpsTrigger": {
         "securityLevel": "SECURE_ALWAYS",
@@ -52,6 +50,7 @@ calls:
   - gcloud
   - auth
   - print-access-token
+  - --billing-project=shop-prod-1234
   - --quiet
   rc: 0
   stdout: |
@@ -65,7 +64,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_count%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A13Z&interval.startTime=2026-11-04T03%3A06%3A13Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.status&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_count%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A58%3A17Z&interval.startTime=2026-11-04T03%3A58%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.status&pageSize=1000
   rc: 0
   stdout: |
     {
@@ -157,7 +156,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A13Z&interval.startTime=2026-11-04T03%3A06%3A13Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A58%3A17Z&interval.startTime=2026-11-04T03%3A58%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000
   rc: 0
   stdout: |
     {
@@ -196,7 +195,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A13Z&interval.startTime=2026-11-04T03%3A06%3A13Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A58%3A17Z&interval.startTime=2026-11-04T03%3A58%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000
   rc: 0
   stdout: |
     {
@@ -235,7 +234,7 @@ calls:
   - '0'
   - -H
   - '@.gcp-monitoring-header'
-  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A06%3A13Z&interval.startTime=2026-11-04T03%3A06%3A13Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22cloudfunctions.googleapis.com%2Ffunction%2Fexecution_times%22%20AND%20resource.type%3D%22cloud_function%22%20AND%20resource.labels.function_name%3D%22nightly-report%22%20AND%20resource.labels.region%3D%22us-east1%22&interval.endTime=2026-11-04T04%3A58%3A17Z&interval.startTime=2026-11-04T03%3A58%3A17Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000
   rc: 0
   stdout: |
     {

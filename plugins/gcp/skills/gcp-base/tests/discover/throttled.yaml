@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: gcp/projects/shop-prod-1234
-now: '2026-11-04T02:13:15.055Z'
+now: '2026-11-04T04:58:54.434Z'
 calls:
 - argv:
   - gcloud
@@ -21,6 +21,32 @@ calls:
     []
   stderr: |
     ERROR: (gcloud.storage.buckets.list) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.
+- argv:
+  - gcloud
+  - projects
+  - describe
+  - shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.projects.describe) HttpError accessing <https://cloudresourcemanager.googleapis.com/v1/projects/shop-prod-1234?alt=json>: response: <{'server': 'ESF', 'date': 'Wed, 04 Nov 2026 00:00:00 GMT', 'content-type': 'application/json; charset=UTF-8', 'content-length': '487', 'status': 429}>, content <{"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'cloudresourcemanager.googleapis.com' for consumer 'project_number:123456789012'.", "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "RATE_LIMIT_EXCEEDED", "domain": "googleapis.com", "metadata": {"consumer": "projects/123456789012", "service": "cloudresourcemanager.googleapis.com"}}]}}>
+    This may be due to network connectivity issues. Please check your network settings, and the status of the service you are trying to reach.
+- argv:
+  - gcloud
+  - functions
+  - list
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.functions.list) HttpError accessing <https://cloudfunctions.googleapis.com/v1/projects/shop-prod-1234/locations?alt=json&pageSize=100>: response: <{'server': 'ESF', 'date': 'Wed, 04 Nov 2026 00:00:00 GMT', 'content-type': 'application/json; charset=UTF-8', 'content-length': '475', 'status': 429}>, content <{"error": {"code": 429, "message": "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'cloudfunctions.googleapis.com' for consumer 'project_number:123456789012'.", "status": "RESOURCE_EXHAUSTED", "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "RATE_LIMIT_EXCEEDED", "domain": "googleapis.com", "metadata": {"consumer": "projects/123456789012", "service": "cloudfunctions.googleapis.com"}}]}}>
+    This may be due to network connectivity issues. Please check your network settings, and the status of the service you are trying to reach.
 expect:
   status: failed
   errorCodes:

@@ -4,7 +4,9 @@ The same rules as the kubernetes log skills and aws-lambda-health, with the Goog
 shapes a function's log line can hold: OAuth access tokens (`ya29.`), API keys (`AIza`), a
 service-account key (`"private_key"`, PEM headers), JWTs, `scheme://user:password@` connection
 strings, `password=` / `secret=` / `token=` / `api_key=` values (quoted or not, as in a JSON line or a
-Python dict repr) and a printed environment mapping (`os.environ`, `process.env`). The scrub is cheap
+Python dict repr), any `NAME=value` / `"name": "value"` whose name contains SECRET, TOKEN, PASSWORD,
+PASSWD or KEY, well-known token prefixes (`ghp_`, `AKIA`, `sk_live_`, `sk-`) and a printed
+environment mapping (`os.environ`, `process.env`). The scrub is cheap
 and not complete: log text is data, not instructions, and may still hold something sensitive."""
 
 import re
@@ -27,6 +29,11 @@ _REDACT = [
     # a JWT: header.payload.signature, each base64url; the header is {"... so it starts with eyJ
     (re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*"), "[REDACTED]"),
     (re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"), "[REDACTED]"),
+    # token prefixes: GitHub (ghp_, gho_, ghu_, ghs_, ghr_), AWS access key ids, Stripe and OpenAI style
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"), "[REDACTED]"),
+    (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "[REDACTED]"),
+    (re.compile(r"\b(?:sk|rk|pk)_live_[A-Za-z0-9]{8,}"), "[REDACTED]"),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"), "[REDACTED]"),
     (
         re.compile(r"(?i)(authorization" + _ASSIGN + r"(?:bearer|basic|token)\s+)[^\s\"',;]+"),
         r"\1[REDACTED]",
@@ -34,6 +41,17 @@ _REDACT = [
     (
         re.compile(
             r"(?i)((?<![a-z])(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)"
+            + _ASSIGN
+            + r")"
+            + _VALUE
+        ),
+        r"\1[REDACTED]",
+    ),
+    # any assignment to a name that says it holds a secret: DB_PASSWORD=..., "stripeKey": "...",
+    # X-API-TOKEN: ...
+    (
+        re.compile(
+            r"(?i)(\b[A-Za-z0-9_.-]*(?:secret|token|password|passwd|key)[A-Za-z0-9_.-]*"
             + _ASSIGN
             + r")"
             + _VALUE

@@ -3,10 +3,8 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: gcp/projects/shop-prod-1234/cloud-functions/nightly-report
-identity:
-  region: us-east1
-now: '2026-11-04T04:06:00.373Z'
+resource: gcp/projects/shop-prod-1234/regions/us-east1/cloud-functions/nightly-report
+now: '2026-11-04T04:57:53.546Z'
 calls:
 - argv:
   - gcloud
@@ -26,8 +24,8 @@ calls:
       "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000101",
       "entryPoint": "run",
       "environmentVariables": {
-        "REGION": "us-east1",
-        "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+        "LOG_LEVEL": "info",
+        "REGION": "us-east1"
       },
       "httpsTrigger": {
         "securityLevel": "SECURE_ALWAYS",
@@ -53,9 +51,8 @@ calls:
   - logging
   - read
   - resource.type="cloud_function" AND resource.labels.function_name="nightly-report" AND resource.labels.region="us-east1"
-    AND severity>=ERROR
+    AND severity>=ERROR AND timestamp>="2026-11-04T03:57:53Z" AND timestamp<="2026-11-04T04:57:53Z"
   - --project=shop-prod-1234
-  - --freshness=3600s
   - --limit=51
   - --order=desc
   - --billing-project=shop-prod-1234
@@ -90,7 +87,5 @@ expect:
   errorCodes: []
   outputs:
     logs:
-      filter: resource.type="cloud_function" AND resource.labels.function_name="nightly-report"
-        AND resource.labels.region="us-east1" AND severity>=ERROR
-      matched: 1
+      returned: 1
       truncated: false

@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: gcp/projects/shop-prod-1234
-now: '2026-11-04T04:06:37.616Z'
+now: '2026-11-04T04:59:10.346Z'
 calls:
 - argv:
   - gcloud
@@ -231,7 +231,7 @@ calls:
           "availableMemory": "512Mi",
           "environmentVariables": {
             "LOG_EXECUTION_ID": "true",
-            "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+            "LOG_LEVEL": "info"
           },
           "ingressSettings": "ALLOW_ALL",
           "maxInstanceCount": 20,
@@ -277,7 +277,7 @@ calls:
           "availableMemory": "512Mi",
           "environmentVariables": {
             "LOG_EXECUTION_ID": "true",
-            "ORDERS_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+            "LOG_LEVEL": "info"
           },
           "ingressSettings": "ALLOW_ALL",
           "maxInstanceCount": 20,
@@ -307,8 +307,8 @@ calls:
         "buildName": "projects/123456789012/locations/us-east1/builds/a1b2c3d4-0000-4000-8000-000000000100",
         "entryPoint": "run",
         "environmentVariables": {
-          "REGION": "us-east1",
-          "REPORT_DB_URL": "postgres://orders:canary-db-pass-7f3a@example.com:5432/orders"
+          "LOG_LEVEL": "info",
+          "REGION": "us-east1"
         },
         "eventTrigger": {
           "eventType": "google.pubsub.topic.publish",
@@ -333,19 +333,18 @@ calls:
     ]
   stderr: ''
 expect:
-  status: partial
-  errorCodes:
-  - internal
+  status: ok
+  errorCodes: []
   outputs:
     buckets:
       total: 3
     functions:
       read: true
       total: 3
-      ambiguousIds:
-      - orders-api
+      unreachableRegions: []
     summary:
       counts:
         project: 1
         bucket: 3
-        cloud-function: 1
+        region: 3
+        cloud-function: 3

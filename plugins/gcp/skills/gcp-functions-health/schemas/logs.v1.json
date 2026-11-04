@@ -6,37 +6,134 @@
     "window": {
       "type": "object",
       "properties": {
-        "start": {"type": "string"},
-        "end": {"type": "string"},
-        "seconds": {"type": "integer"}
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "seconds": {
+          "type": "integer"
+        }
       },
-      "required": ["start", "end", "seconds"],
+      "required": [
+        "start",
+        "end",
+        "seconds"
+      ],
       "additionalProperties": false
     },
-    "filter": {"type": "string", "description": "The Logging filter that was read (resource names and severity>=ERROR)"},
-    "order": {"type": "string", "enum": ["newest-first"]},
+    "filter": {
+      "type": "string",
+      "description": "The Logging filter that was read (resource names and severity>=ERROR)",
+      "maxLength": 2048
+    },
+    "order": {
+      "type": "string",
+      "enum": [
+        "newest-first"
+      ]
+    },
     "entries": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "timestamp": {"type": ["string", "null"]},
-          "severity": {"type": ["string", "null"]},
-          "message": {"type": ["string", "null"], "description": "Scrubbed of credentials, at most 1024 characters; null when the entry has no text (a structured payload is not dumped)"},
-          "messageTruncated": {"type": "boolean"},
-          "payload": {"type": ["string", "null"], "enum": ["textPayload", "jsonPayload", "protoPayload", null], "description": "Which payload the message came from"},
-          "revision": {"type": ["string", "null"], "description": "2nd gen: the Cloud Run revision that logged it"},
-          "executionId": {"type": ["string", "null"]},
-          "httpStatus": {"type": ["integer", "null"]}
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Scrubbed of credentials, at most 1024 characters; null when the entry has no text (a structured payload is not dumped)",
+            "maxLength": 1024
+          },
+          "messageTruncated": {
+            "type": "boolean"
+          },
+          "payload": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "textPayload",
+              "jsonPayload",
+              "protoPayload",
+              null
+            ],
+            "description": "Which payload the message came from"
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "2nd gen: the Cloud Run revision that logged it",
+            "maxLength": 128
+          },
+          "executionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "httpStatus": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
         },
-        "required": ["timestamp", "severity", "message", "messageTruncated", "payload", "revision", "executionId", "httpStatus"],
+        "required": [
+          "timestamp",
+          "severity",
+          "message",
+          "messageTruncated",
+          "payload",
+          "revision",
+          "executionId",
+          "httpStatus"
+        ],
         "additionalProperties": false
-      }
+      },
+      "maxItems": 1000
     },
-    "matched": {"type": "integer", "description": "Entries in `entries`"},
-    "truncated": {"type": "boolean", "description": "More entries matched than maxLogEntries: the older ones are not shown; narrow `since` to see them"},
-    "messagesTruncated": {"type": "boolean", "description": "At least one message was cut to 1024 characters"}
+    "truncated": {
+      "type": "boolean",
+      "description": "More entries matched than maxLogEntries: the older ones are not shown; narrow `since` to see them"
+    },
+    "messagesTruncated": {
+      "type": "boolean",
+      "description": "At least one message was cut to 1024 characters"
+    },
+    "returned": {
+      "type": "integer",
+      "description": "Entries in `entries`"
+    }
   },
-  "required": ["window", "filter", "order", "entries", "matched", "truncated", "messagesTruncated"],
+  "required": [
+    "window",
+    "filter",
+    "order",
+    "entries",
+    "returned",
+    "truncated",
+    "messagesTruncated"
+  ],
   "additionalProperties": false
 }

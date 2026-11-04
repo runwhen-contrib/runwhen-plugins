@@ -3,28 +3,93 @@
   "title": "The project's Cloud Functions (both generations)",
   "type": "object",
   "properties": {
-    "read": {"type": "boolean", "description": "false: the functions list could not be read (an error scoped `functions` says why); items is then empty and total/omitted are null - not a project without functions"},
+    "read": {
+      "type": "boolean",
+      "description": "false: the functions list could not be read (an error scoped `functions` says why); items is then empty and total/omitted are null - not a project without functions"
+    },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "name": {"type": "string", "description": "The function id"},
-          "region": {"type": "string"},
-          "generation": {"type": ["integer", "null"], "enum": [1, 2, null]},
-          "state": {"type": ["string", "null"], "description": "2nd gen state or 1st gen status, as Google reports it"},
-          "runtime": {"type": ["string", "null"]},
-          "updateTime": {"type": ["string", "null"]}
+          "name": {
+            "type": "string",
+            "description": "The function id"
+          },
+          "region": {
+            "type": "string",
+            "description": "The region (the function's parent in the resource tree)"
+          },
+          "generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              1,
+              2,
+              null
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "2nd gen state or 1st gen status, as Google reports it"
+          },
+          "runtime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updateTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
-        "required": ["name", "region", "generation", "state", "runtime", "updateTime"],
+        "required": [
+          "name",
+          "region",
+          "generation",
+          "state",
+          "runtime",
+          "updateTime"
+        ],
         "additionalProperties": false
       }
     },
-    "total": {"type": ["integer", "null"], "description": "Functions found"},
-    "omitted": {"type": ["integer", "null"], "description": "Functions left out of items by maxItems"},
-    "unreachableRegions": {"type": "array", "items": {"type": "string"}, "description": "Regions gcloud could not reach: their functions are missing from items and the sync's partition is failed"},
-    "ambiguousIds": {"type": "array", "items": {"type": "string"}, "description": "Function ids found in more than one region (up to 50): in items, but not synced as resources"}
+    "total": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Functions found"
+    },
+    "omitted": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Functions left out of items by maxItems"
+    },
+    "unreachableRegions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Regions gcloud could not reach (`unknown` when it did not say which): their functions are missing from items and the sync's partitions for them are failed"
+    }
   },
-  "required": ["read", "items", "total", "omitted", "unreachableRegions", "ambiguousIds"],
+  "required": [
+    "read",
+    "items",
+    "total",
+    "omitted",
+    "unreachableRegions"
+  ],
   "additionalProperties": false
 }

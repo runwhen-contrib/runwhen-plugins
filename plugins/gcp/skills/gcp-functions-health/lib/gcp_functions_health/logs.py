@@ -1,8 +1,11 @@
 """function-errors: the error-level log entries of one function, newest first.
 
-`gcloud logging read` takes a Logging query language filter, `--freshness` (how far back),
-`--limit` and `--order` (default desc, newest first: a result cut at the limit shows the end of
-the window, where the problem is now). The filter names the function's own resource: a 1st gen
+`gcloud logging read` takes a Logging query language filter, `--limit` and `--order` (default
+desc, newest first: a result cut at the limit shows the end of the window, where the problem is
+now). The window is two `timestamp` clauses in the filter, from the run's reference time: gcloud
+adds its own `--freshness` (default 1d) only when the filter does not mention "timestamp", so
+relying on it would be wrong for a window other than a day and would depend on the wall clock
+(and a function named `timestamp-sync` would switch it off by accident). The filter names the function's own resource: a 1st gen
 function logs as `cloud_function` (labels function_name, region), a 2nd gen one as the
 `cloud_run_revision` of its Cloud Run service (labels service_name, location). Names are
 validated before they enter the filter.
@@ -28,8 +31,13 @@ def window(now, since_seconds):
     return end - timedelta(seconds=since_seconds), end
 
 
-def log_filter(generation, name, region, service):
-    """The Logging filter for the ERROR-and-above entries of the function."""
+def stamp(moment):
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def log_filter(generation, name, region, service, start, end):
+    """The Logging filter for the ERROR-and-above entries of the function between `start` and
+    `end` (datetimes from `window()`)."""
     if generation == 2:
         resource = (
             'resource.type="cloud_run_revision" '
@@ -42,10 +50,10 @@ def log_filter(generation, name, region, service):
             f'AND resource.labels.function_name="{name}" '
             f'AND resource.labels.region="{region}"'
         )
-    return f"{resource} AND severity>=ERROR"
+    return f'{resource} AND severity>=ERROR AND timestamp>="{stamp(start)}" AND timestamp<="{stamp(end)}"'
 
 
-def read_entries(ctx, project, flt, since_seconds, limit, timeout):
+def read_entries(ctx, project, flt, limit, timeout, deadline=None):
     """Up to `limit` + 1 entries (the extra one tells the caller the list was cut), newest first."""
     rows, _ = json_call(
         ctx,
@@ -54,12 +62,12 @@ def read_entries(ctx, project, flt, since_seconds, limit, timeout):
             "read",
             flt,
             f"--project={project}",
-            f"--freshness={since_seconds}s",
             f"--limit={limit + 1}",
             "--order=desc",
         ],
         project,
         timeout=timeout,
+        deadline=deadline,
     )
     if not isinstance(rows, list):
         raise RwError("internal", "gcloud logging read returned no list")
@@ -114,14 +122,14 @@ def log_facts(flt, start, end, rows, limit):
     entries = [entry_facts(r) for r in rows[:limit]]
     return {
         "window": {
-            "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "start": stamp(start),
+            "end": stamp(end),
             "seconds": int((end - start).total_seconds()),
         },
         "filter": flt,
         "order": "newest-first",
         "entries": entries,
-        "matched": len(entries),
+        "returned": len(entries),
         "truncated": truncated,
         "messagesTruncated": any(e["messageTruncated"] for e in entries),
     }

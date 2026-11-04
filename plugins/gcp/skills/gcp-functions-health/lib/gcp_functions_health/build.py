@@ -54,7 +54,7 @@ def build_facts(doc, build_id):
     }
 
 
-def read_build(ctx, project, ref, timeout):
+def read_build(ctx, project, ref, timeout, deadline=None):
     """The facts of the build `ref` = (id, location); a failure raises RwError."""
     build_id, location = ref
     doc, _ = json_call(
@@ -62,5 +62,6 @@ def read_build(ctx, project, ref, timeout):
         ["builds", "describe", build_id, f"--region={location}", f"--project={project}"],
         project,
         timeout=timeout,
+        deadline=deadline,
     )
     return build_facts(doc, build_id)

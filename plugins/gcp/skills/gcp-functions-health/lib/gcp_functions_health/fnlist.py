@@ -26,6 +26,7 @@ or bucket target; a function target is neither) and runs with the ambient creden
 import json
 import re
 import subprocess
+import time
 
 from .errors import RwError
 from .gcloud import (
@@ -62,14 +63,34 @@ def valid_region(name):
     return isinstance(name, str) and bool(REGION.fullmatch(name))
 
 
-def run_capture(ctx, args, project, *, timeout=None):
-    """(stdout, stderr) of `gcloud <args> --billing-project=<project> --format=json --quiet`; a
-    non-zero exit raises RwError with the code classified from stderr (the same rules as
-    `gcloud.run_gcloud`)."""
+MIN_REMAINING = 2.0  # seconds a call needs to be worth starting
+
+
+def clamp(seconds, deadline, clock=time.monotonic):
+    """`seconds` cut to what is left before the monotonic `deadline` (None: no deadline). A call
+    that would start with (almost) nothing left is a `timeout`, not a call that cannot finish."""
+    if deadline is None:
+        return seconds
+    remaining = deadline - clock()
+    if remaining < MIN_REMAINING:
+        raise RwError("timeout", "the task's time budget ran out before this call")
+    return min(seconds, remaining)
+
+
+def run_capture(ctx, args, project, *, timeout=None, deadline=None, json_output=True):
+    """(stdout, stderr) of `gcloud <args> --billing-project=<project> [--format=json] --quiet`;
+    a non-zero exit raises RwError with the code classified from stderr (the same rules as
+    `gcloud.run_gcloud`). The call may take `timeout` seconds (default 60s) or what is left before
+    the monotonic `deadline`, whichever is less."""
     if not valid_project(project):
         raise RwError("invalid_input", "the target's project is not a valid project id")
-    argv = ["gcloud", *args, f"--billing-project={project}", "--format=json", "--quiet"]
-    seconds = timeout if timeout is not None else parse_duration(DEFAULT_COMMAND_TIMEOUT)
+    argv = ["gcloud", *args, f"--billing-project={project}"]
+    if json_output:
+        argv.append("--format=json")
+    argv.append("--quiet")
+    seconds = clamp(
+        timeout if timeout is not None else parse_duration(DEFAULT_COMMAND_TIMEOUT), deadline
+    )
     try:
         result = ctx.run(argv, timeout=seconds, env=gcloud_env(ctx), check=False)
     except subprocess.TimeoutExpired:
@@ -89,9 +110,14 @@ def run_capture(ctx, args, project, *, timeout=None):
     return result.stdout or "", stderr
 
 
-def json_call(ctx, args, project, *, timeout=None):
+def text_call(ctx, args, project, *, timeout=None, deadline=None):
+    """The text a gcloud command without a JSON form prints (`auth print-access-token`)."""
+    return run_capture(ctx, args, project, timeout=timeout, deadline=deadline, json_output=False)[0]
+
+
+def json_call(ctx, args, project, *, timeout=None, deadline=None):
     """(parsed JSON, stderr). Empty output is an error, never an empty result."""
-    out, err = run_capture(ctx, args, project, timeout=timeout)
+    out, err = run_capture(ctx, args, project, timeout=timeout, deadline=deadline)
     if not out.strip():
         raise RwError("internal", "gcloud printed no JSON")
     try:
@@ -109,23 +135,34 @@ def parse_name(row):
     return match.groups()
 
 
+UNKNOWN_REGION = "unknown"
+
+
 def unreachable_regions(stderr):
-    """The locations gcloud said it could not reach (it exits 0 and warns), as region names."""
+    """The locations gcloud said it could not reach (it exits 0 and warns), as region names. A
+    warning that says "unreachable" but names no region gcloud's way is `["unknown"]`: the list
+    is still not complete."""
     found = []
     for match in _UNREACHABLE.finditer(str(stderr)):
         for part in match.group(1).split(","):
             region = part.strip().rsplit("/", 1)[-1]
             if valid_region(region) and region not in found:
                 found.append(region)
+    if not found and re.search(r"unreachable", str(stderr), re.I):
+        return [UNKNOWN_REGION]
     return found[:MAX_UNREACHABLE]
 
 
-def list_functions(ctx, project, *, timeout=None):
+def list_functions(ctx, project, *, timeout=None, deadline=None):
     """(rows, unreachable): every function of the project in every location, 1st and 2nd gen,
     each in its generation's own format, and the regions gcloud could not reach (whose functions
     are missing: the caller must not call the list complete)."""
     rows, err = json_call(
-        ctx, ["functions", "list", f"--project={project}"], project, timeout=timeout
+        ctx,
+        ["functions", "list", f"--project={project}"],
+        project,
+        timeout=timeout,
+        deadline=deadline,
     )
     if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
         raise RwError("internal", "gcloud returned no function list")
@@ -134,7 +171,7 @@ def list_functions(ctx, project, *, timeout=None):
     return rows, unreachable_regions(err)
 
 
-def describe_function(ctx, project, region, name, *, timeout=None):
+def describe_function(ctx, project, region, name, *, timeout=None, deadline=None):
     """One function's row, in its generation's format (gcloud picks the generation). A function
     that does not exist is `not_found`."""
     if not valid_region(region) or not valid_function_id(name):
@@ -144,6 +181,7 @@ def describe_function(ctx, project, region, name, *, timeout=None):
         ["functions", "describe", name, f"--region={region}", f"--project={project}"],
         project,
         timeout=timeout,
+        deadline=deadline,
     )
     if not isinstance(row, dict):
         raise RwError("internal", "gcloud returned no function")

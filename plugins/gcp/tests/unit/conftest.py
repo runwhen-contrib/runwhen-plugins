@@ -42,15 +42,14 @@ def bucket_target(name, project="shop-prod-1234"):
 
 
 def function_target(name, project="shop-prod-1234", region=None):
-    """A gcp/cloud-function target; `region` is the optional identity field."""
-    target = {
-        "path": f"gcp/projects/{project}/cloud-functions/{name}",
-        "type": "gcp/cloud-function",
-        "project": project,
-        "name": name,
-    }
+    """A gcp/cloud-function target: `gcp/projects/<p>/regions/<region>/cloud-functions/<name>`, or
+    (no region) `gcp/projects/<p>/cloud-functions/<name>`, a target with no region ancestor."""
+    target = {"type": "gcp/cloud-function", "project": project, "name": name}
     if region:
-        target["region"] = region
+        target["path"] = f"gcp/projects/{project}/regions/{region}/cloud-functions/{name}"
+        target["region"] = region  # the chain's `region` identity
+    else:
+        target["path"] = f"gcp/projects/{project}/cloud-functions/{name}"
     return target
 
 

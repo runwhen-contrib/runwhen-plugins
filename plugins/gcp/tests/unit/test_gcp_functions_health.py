@@ -18,14 +18,8 @@ from gcp_functions_health.gcloud import classify_error
 SKILL = PLUGIN / "skills" / "gcp-functions-health"
 P = "shop-prod-1234"
 BILL = f"--billing-project={P}"
-CANARIES = (
-    "canary-db-pass",
-    "canary-query-token",
-    "canary-build-token",
-    "canary-pass",
-    "STRIPE_KEY",
-    "stripe-key",
-)
+# the synthetic secrets of the functions-leaky scenario (and of tests): nothing may return them
+CANARIES = ("RWCANARY", "STRIPE_KEY", "stripe-key", "ORDERS_DB_URL", "API_TOKEN")
 ORDERS = function_target("orders-api", region="us-central1")
 BID = "a1b2c3d4-0000-4000-8000-{:012d}"
 
@@ -39,16 +33,25 @@ def build_argv(number, region):
 
 
 FLIST = ["functions", "list", f"--project={P}", BILL]
-TOKEN = ["auth", "print-access-token"]
+TOKEN = ["auth", "print-access-token", BILL]
+STAMPS = ' AND timestamp>="<T>" AND timestamp<="<T>"'  # the stub masks the window of a filter
 
 
-def logs_argv(flt, limit=51, freshness="3600s"):
+def windowed(flt, result=None):
+    """`flt` with the window clauses: the stub's masked ones, or the result's real ones."""
+    if result is None:
+        return flt + STAMPS
+    w = result["window"]
+    return f'{flt} AND timestamp>="{w["start"]}" AND timestamp<="{w["end"]}"'
+
+
+def logs_argv(flt, limit=51):
+    flt = windowed(flt)
     return [
         "logging",
         "read",
         flt,
         f"--project={P}",
-        f"--freshness={freshness}",
         f"--limit={limit}",
         "--order=desc",
         BILL,
@@ -164,12 +167,8 @@ def test_environment_variables_and_secret_references_are_counted_never_returned(
     out, stub = state(run_script, stub_run, "orders-api", "us-central1")
     fn = out.envelope["outputs"]["function"]
     assert fn["environmentVariableCount"] == 2 and fn["secretReferenceCount"] == 1
-    # the canned describe holds a connection string with a password and a secret reference
-    assert "canary-db-pass-7f3a" in (stub.directory / "describe-orders-api.json").read_text()
     assert_no_secrets(out.envelope)
-    assert "ORDERS_DB_URL" not in json.dumps(out.envelope) and "LOG_EXECUTION_ID" not in json.dumps(
-        out.envelope
-    )
+    assert "LOG_EXECUTION_ID" not in json.dumps(out.envelope)  # not even the names
 
 
 def test_an_event_triggered_second_gen_function_has_no_url_and_no_instance_cap(
@@ -222,9 +221,7 @@ def test_a_failed_second_gen_function_shows_its_messages_and_its_failed_build(ru
     assert "No module named 'stripe_client'" in fn["stateMessages"][0]["message"]
     build = fn["build"]
     assert build["status"] == "FAILURE" and build["failureType"] == "USER_BUILD_STEP"
-    assert "was rejected" in build["failureDetail"] and "canary-build-token" not in json.dumps(
-        build
-    )  # scrubbed
+    assert build["failureDetail"] == "Build failed; check build logs for details"
     assert build["logUrl"].startswith("https://console.cloud.google.com/cloud-build/builds")
     assert "steps" not in build and "env" not in json.dumps(build)
     check_schema("function", fn)
@@ -256,7 +253,7 @@ def test_the_function_stands_when_its_build_cannot_be_read(run_script, stub_run)
 
 def test_a_function_that_names_no_build_has_a_null_deployment_and_no_error(run_script, stub_run):
     stub = stub_run("functions-healthy")
-    row = json.loads((stub.directory / "describe-orders-api.json").read_text())
+    row = json.loads((stub.directory / "describe-us-central1-orders-api.json").read_text())
     del row["buildConfig"]["build"]
     stub.set(describe_argv("orders-api", "us-central1"), stdout=json.dumps(row))
     out = run(run_script, "function_state", stub)
@@ -267,7 +264,7 @@ def test_a_function_that_names_no_build_has_a_null_deployment_and_no_error(run_s
 
 def test_a_row_with_no_state_is_null_never_active(run_script, stub_run):
     stub = stub_run("functions-healthy")
-    row = json.loads((stub.directory / "describe-orders-api.json").read_text())
+    row = json.loads((stub.directory / "describe-us-central1-orders-api.json").read_text())
     del row["state"]
     stub.set(describe_argv("orders-api", "us-central1"), stdout=json.dumps(row))
     fn = run(run_script, "function_state", stub).envelope["outputs"]["function"]
@@ -276,9 +273,9 @@ def test_a_row_with_no_state_is_null_never_active(run_script, stub_run):
 
 def test_state_messages_are_capped_and_each_message_is_scrubbed_and_cut(run_script, stub_run):
     stub = stub_run("functions-broken")
-    row = json.loads((stub.directory / "describe-checkout.json").read_text())
+    row = json.loads((stub.directory / "describe-us-central1-checkout.json").read_text())
     row["stateMessages"] = [
-        {"severity": "ERROR", "type": "T", "message": "password=canary-pass-9 " + "y" * 2000}
+        {"severity": "ERROR", "type": "T", "message": "password=RWCANARY-p9 " + "y" * 2000}
         for _ in range(60)
     ]
     stub.set(describe_argv("checkout", "us-central1"), stdout=json.dumps(row))
@@ -293,7 +290,7 @@ def test_state_messages_are_capped_and_each_message_is_scrubbed_and_cut(run_scri
     assert (
         len(first["message"]) == 1024
         and first["messageTruncated"]
-        and "canary-pass" not in first["message"]
+        and "RWCANARY" not in first["message"]
     )
 
 
@@ -364,7 +361,8 @@ def test_a_function_missing_from_the_list_is_not_found_unless_regions_were_unrea
         stub_run("functions-unreachable"),
         resource=function_target("orders-api"),
     )
-    assert found.envelope["status"] == "ok"  # found in what was listed
+    # found in what was listed, but a twin may sit in a region that could not be reached
+    assert [e["code"] for e in found.envelope["errors"]] == ["invalid_input"]
 
 
 @pytest.mark.parametrize(
@@ -438,8 +436,12 @@ def test_error_entries_come_newest_first_scrubbed_and_cut(run_script, stub_run):
     assert env["status"] == "ok" and out.errors == []
     result = env["outputs"]["logs"]
     check_schema("logs", result)
-    assert result["filter"] == GEN2_FILTER and result["order"] == "newest-first"
-    assert (result["matched"], result["truncated"], result["messagesTruncated"]) == (3, False, True)
+    assert result["filter"] == windowed(GEN2_FILTER, result) and result["order"] == "newest-first"
+    assert (result["returned"], result["truncated"], result["messagesTruncated"]) == (
+        3,
+        False,
+        True,
+    )
     assert result["window"]["seconds"] == 3600 and result["window"]["end"].endswith("Z")
     first, second, third = result["entries"]
     assert [e["timestamp"] for e in result["entries"]] == sorted(
@@ -449,7 +451,6 @@ def test_error_entries_come_newest_first_scrubbed_and_cut(run_script, stub_run):
     assert first["revision"] == "orders-api-00007-xaz" and first["httpStatus"] is None
     assert second["payload"] == "jsonPayload" and second["httpStatus"] == 500
     assert second["messageTruncated"] and len(second["message"]) == 1024
-    assert "[REDACTED]" in second["message"] and "canary-db-pass" not in second["message"]
     assert (third["httpStatus"], third["message"]) == (504, "upstream timeout after 60s")
     assert_no_secrets(env)
     # a structured payload is never dumped: the environment inside jsonPayload is not in the output
@@ -462,7 +463,7 @@ def test_a_first_gen_function_is_read_from_the_cloud_function_resource(run_scrip
         run_script, stub_run, resource=function_target("nightly-report", region="us-east1")
     )
     result = out.envelope["outputs"]["logs"]
-    assert result["filter"] == GEN1_FILTER
+    assert result["filter"] == windowed(GEN1_FILTER, result)
     assert result["entries"][0]["message"].startswith("Function execution took 60001 ms")
     assert (
         result["entries"][0]["executionId"] == "7f1k2l9x0p3q"
@@ -475,7 +476,7 @@ def test_a_healthy_function_has_no_entries_and_says_only_that(run_script, stub_r
     out, _ = errors_run(run_script, stub_run, scenario="functions-healthy")
     result = out.envelope["outputs"]["logs"]
     assert out.envelope["status"] == "ok"
-    assert (result["entries"], result["matched"], result["truncated"]) == ([], 0, False)
+    assert (result["entries"], result["returned"], result["truncated"]) == ([], 0, False)
 
 
 def test_a_list_longer_than_max_log_entries_is_cut_and_says_so(run_script, stub_run):
@@ -486,15 +487,16 @@ def test_a_list_longer_than_max_log_entries_is_cut_and_says_so(run_script, stub_
     )
     out = run(run_script, "function_errors", stub, settings={"maxLogEntries": 2})
     result = out.envelope["outputs"]["logs"]
-    assert (result["matched"], result["truncated"]) == (2, True)
+    assert (result["returned"], result["truncated"]) == (2, True)
     assert result["entries"][1]["httpStatus"] == 500  # the oldest entry is the one left out
 
 
-def test_since_is_the_freshness_and_is_bounded(run_script, stub_run):
+def test_since_is_the_window_and_is_bounded(run_script, stub_run):
     stub = stub_run("functions-broken")
-    stub.set(logs_argv(GEN2_FILTER, freshness="86400s"), stdout="[]\n")
+    stub.set(logs_argv(GEN2_FILTER), stdout="[]\n")
     out = run(run_script, "function_errors", stub, since="1d")
-    assert out.envelope["outputs"]["logs"]["window"]["seconds"] == 86400
+    window = out.envelope["outputs"]["logs"]["window"]
+    assert window["seconds"] == 86400 and window["start"][:10] != window["end"][:10]
     for bad in ("15d", "30s", "soon", "0s"):
         stub = stub_run("functions-broken")
         out = run(run_script, "function_errors", stub, since=bad)
@@ -506,7 +508,7 @@ def test_an_entry_without_text_has_a_null_message_and_no_payload_dump(run_script
     entry = {
         "severity": "ERROR",
         "timestamp": "2026-11-04T00:10:00Z",
-        "jsonPayload": {"code": 7, "env": {"K": "canary-pass-1"}},
+        "jsonPayload": {"code": 7, "env": {"K": "RWCANARY-x1"}},
     }
     stub.set(
         logs_argv(GEN2_FILTER),
@@ -528,7 +530,7 @@ def test_an_entry_without_text_has_a_null_message_and_no_payload_dump(run_script
         result["entries"][1]["message"] == "deadline exceeded"
         and result["entries"][1]["payload"] == "protoPayload"
     )
-    assert "canary" not in json.dumps(result)
+    assert "RWCANARY" not in json.dumps(result)
 
 
 @pytest.mark.parametrize(
@@ -579,7 +581,7 @@ def test_the_log_text_scrub_removes_the_google_credential_shapes_and_cuts(run_sc
         '{"private_key": "abc", "client_secret": "def"}': '"abc"',
         "psql postgres://u:hunter2@db.example.com/x": "hunter2",
         "API_KEY=abcd1234 token: 'zzzz9999'": "abcd1234",
-        "environ({'A': 'canary-env-1', 'B': 'canary-env-2'})": "canary-env",
+        "environ({'A': 'RWCANARY-e1', 'B': 'RWCANARY-e2'})": "RWCANARY-e",
     }
     for text, leaked in samples.items():
         assert leaked not in lt.redact(text), text
@@ -670,7 +672,7 @@ def test_a_window_with_no_series_is_idle_and_says_nothing_about_errors(run_scrip
     env = out.envelope
     m = env["outputs"]["metrics"]
     assert env["status"] == "ok"
-    assert (m["hasData"], m["idle"], m["executions"]) == (False, True, 0)
+    assert (m["hasData"], m["idle"], m["executions"]) == (False, True, None)  # no count, not 0
     # no data is not zero errors and not healthy: null, not 0 and not false
     assert (m["errors"], m["errorRate"], m["errorRateAboveThreshold"], m["latencyNearTimeout"]) == (
         None,
@@ -976,3 +978,245 @@ def test_the_window_helpers_use_the_runs_reference_time():
         "2026-11-04T01:00:00+00:00",
     )
     assert metrics.window(now, 60)[0].isoformat() == "2026-11-04T00:59:00+00:00"
+
+
+# ---- review fixes: the log window, the region chain, deadlines, scrub, canaries -----------------
+
+STUB_SCENARIOS = PLUGIN / "tests" / "stub" / "scenarios"
+TARGETS = [  # every function the stub's worlds hold, with its region, and without (list and pick)
+    ("orders-api", "us-central1"), ("thumbnailer", "europe-west1"), ("legacy-cron", "us-east1"),
+    ("checkout", "us-central1"), ("nightly-report", "us-east1"), ("billing-hook", "us-central1"),
+    ("legacy-leak", "us-east1"), ("nope", "us-central1"), ("orders-api", None), ("legacy-leak", None),
+]  # fmt: skip
+
+
+def leaky(task, name, region, **kwargs):
+    return task, function_target(name, region=region), kwargs
+
+
+def test_the_log_window_is_explicit_timestamp_clauses_not_freshness(run_script, stub_run):
+    out, stub = errors_run(run_script, stub_run)
+    flt = out.envelope["outputs"]["logs"]["filter"]
+    w = out.envelope["outputs"]["logs"]["window"]
+    assert flt.endswith(f'AND timestamp>="{w["start"]}" AND timestamp<="{w["end"]}"')
+    argv = next(c["argv"] for c in stub.log if c["asked"][:2] == ["logging", "read"])
+    assert not any(
+        a.startswith("--freshness") for a in argv
+    )  # gcloud skips it when the filter says timestamp
+    assert flt in argv
+
+
+def test_a_function_named_timestamp_sync_still_gets_its_window(run_script, stub_run):
+    stub = stub_run("functions-broken")
+    row = json.loads((stub.directory / "describe-us-central1-orders-api.json").read_text())
+    row["name"] = row["name"].replace("orders-api", "timestamp-sync")
+    row["serviceConfig"]["service"] = row["serviceConfig"]["service"].replace(
+        "orders-api", "timestamp-sync"
+    )
+    stub.set(describe_argv("timestamp-sync", "us-central1"), stdout=json.dumps(row))
+    base = GEN2_FILTER.replace("orders-api", "timestamp-sync")
+    stub.set(logs_argv(base), stdout="[]\n")
+    out = run(
+        run_script,
+        "function_errors",
+        stub,
+        resource=function_target("timestamp-sync", region="us-central1"),
+        since="2h",
+    )
+    logs_out = out.envelope["outputs"]["logs"]
+    assert out.envelope["status"] == "ok" and logs_out["window"]["seconds"] == 7200
+    assert logs_out["filter"] == windowed(base, logs_out)
+    assert logs_out["window"]["start"] < logs_out["window"]["end"]
+
+
+def test_the_region_is_the_targets_chain_and_a_twin_id_is_another_target(run_script, stub_run):
+    for region, number in (("us-central1", 1), ("europe-west1", 9)):
+        stub = stub_run("functions-split")
+        out = run(
+            run_script,
+            "function_state",
+            stub,
+            resource=function_target("orders-api", region=region),
+        )
+        fn = out.envelope["outputs"]["function"]
+        assert (fn["region"], fn["build"]["id"]) == (region, BID.format(number))
+        assert stub.asked()[0] == describe_argv(
+            "orders-api", region
+        )  # no list, no "set the region"
+
+
+def test_a_target_without_a_region_ancestor_is_found_by_listing_and_twins_are_refused(
+    run_script, stub_run
+):
+    out = run(
+        run_script,
+        "function_state",
+        stub_run("functions-split"),
+        resource=function_target("orders-api"),
+    )
+    assert [e["code"] for e in out.envelope["errors"]] == ["invalid_input"]
+    assert "europe-west1, us-central1" in out.envelope["errors"][0]["message"]
+    # one match is not enough when regions could not be reached: the id may be there too
+    out = run(
+        run_script,
+        "function_state",
+        stub_run("functions-unreachable"),
+        resource=function_target("orders-api"),
+    )
+    assert [e["code"] for e in out.envelope["errors"]] == ["invalid_input"]
+    assert "asia-east1" in out.envelope["errors"][0]["message"]
+
+
+def test_a_warning_that_names_no_region_is_an_unknown_one_so_the_list_is_not_complete():
+    assert fnlist.unreachable_regions("WARNING: some regions were unreachable for the query") == [
+        "unknown"
+    ]
+    assert fnlist.unreachable_regions("WARNING: nothing to see") == []
+
+
+class FakeCtx:
+    workdir = "."
+
+    def __init__(self):
+        self.timeouts = []
+
+    def run(self, argv, timeout=None, env=None, check=None):
+        import subprocess
+
+        self.timeouts.append(timeout)
+        return subprocess.CompletedProcess(argv, 0, "[]", "")
+
+
+def test_every_call_is_clamped_to_what_is_left_of_the_budget():
+    ctx = FakeCtx()
+    now = [100.0]
+    clock = lambda: now[0]  # noqa: E731
+    assert fnlist.clamp(60, None, clock) == 60 and fnlist.clamp(60, 130.0, clock) == 30.0
+    assert fnlist.clamp(60, 400.0, clock) == 60
+    with pytest.raises(RwError) as exc:
+        fnlist.clamp(60, 101.0, clock)  # under the 2s a call needs
+    assert exc.value.code == "timeout"
+    fnlist.run_capture(ctx, ["functions", "list"], P, timeout=60, deadline=time_ahead(25))
+    assert 20 < ctx.timeouts[0] <= 25
+    fnlist.run_capture(ctx, ["functions", "list"], P, timeout=60, deadline=time_ahead(500))
+    assert ctx.timeouts[1] == 60
+    with pytest.raises(RwError):
+        fnlist.run_capture(ctx, ["functions", "list"], P, timeout=60, deadline=time_ahead(0.5))
+    assert len(ctx.timeouts) == 2  # not started
+
+
+def time_ahead(seconds):
+    import time
+
+    return time.monotonic() + seconds
+
+
+def test_the_monitoring_reads_take_what_is_left_too(tmp_path):
+    seen = []
+
+    class Ctx:
+        workdir = tmp_path
+
+        def run(self, argv, timeout=None, check=None):
+            import subprocess
+
+            seen.append(timeout)
+            return subprocess.CompletedProcess(argv, 0, "{}", "")
+
+    reader = monitoring.Reader(Ctx(), "fake-token-12345", P, 60, deadline=100.0, clock=lambda: 80.0)
+    try:
+        reader.series("a", "b", "f", [])
+    finally:
+        reader.close()
+    assert seen == [20.0]
+
+
+def test_every_task_may_make_several_calls_the_timeout_is_three_command_timeouts():
+    doc = yaml.safe_load((SKILL / "tasks.yaml").read_text())
+    default = 60 * 3
+    assert doc["defaults"]["timeout"] == "180s"
+    for task in doc["tasks"]:
+        assert int(task["timeout"].removesuffix("s")) >= default
+    assert tg.TASK_BUDGET >= default and metrics.TASK_BUDGET >= default
+
+
+def test_the_scrub_has_a_generic_secret_rule_and_the_token_prefixes():
+    samples = {
+        "DB_PASSWORD=RWCANARY-a1 and more": "RWCANARY-a1",
+        '"stripeKey": "RWCANARY-a2"': "RWCANARY-a2",
+        "X-API-TOKEN: RWCANARY-a3": "RWCANARY-a3",
+        "MY_SECRET_THING = 'RWCANARY-a4'": "RWCANARY-a4",
+        "found ghp_" + "a1B2" * 8: "ghp_",
+        "id AKIA" + "ABCDEFGH12345678": "AKIAABCD",
+        "stripe sk_live_" + "abcDEF123456": "sk_live_",
+        "openai sk-" + "proj" * 8: "sk-proj",
+        "postgres://user:RWCANARY-a5@example.invalid/db": "RWCANARY-a5",
+    }
+    for text, leaked in samples.items():
+        assert leaked not in lt.redact(text), text
+    assert lt.redact("ordinary words and a key=value pair") != "ordinary words and a key=value pair"
+    assert lt.redact("plain text: nothing to hide") == "plain text: nothing to hide"
+
+
+def test_nothing_secret_returns_from_the_leaky_function_in_any_task(run_script, stub_run):
+    """The leaky world holds a canary in its env values, secret reference, build step and failure
+    detail, state message, log lines (text, structured payload, request URL) and nothing of it
+    may come back: only counts and scrubbed text."""
+    for name, region in (("billing-hook", "us-central1"), ("legacy-leak", "us-east1")):
+        resource = function_target(name, region=region)
+        stub = stub_run("functions-leaky")
+        state_out = run(run_script, "function_state", stub, resource=resource)
+        fn = state_out.envelope["outputs"]["function"]
+        assert fn["environmentVariableCount"] >= 3 or name == "legacy-leak"
+        stub = stub_run("functions-leaky")
+        logs_out = run(run_script, "function_errors", stub, resource=resource)
+        for out in (state_out, logs_out):
+            assert_no_secrets(out.envelope, out.errors, out.files)
+    # the canned answers do hold them (the test would prove nothing otherwise)
+    held = "".join(p.read_text() for p in (STUB_SCENARIOS / "functions-leaky").iterdir())
+    assert all(f"RWCANARY-{n}" in held for n in range(1, 12)), (
+        "a canary went missing from the world"
+    )
+    billing = run(
+        run_script,
+        "function_state",
+        stub_run("functions-leaky"),
+        resource=function_target("billing-hook", region="us-central1"),
+    )
+    messages = billing.envelope["outputs"]["function"]["stateMessages"]
+    assert messages[0]["message"] == "build failed: password=[REDACTED] was rejected"
+    assert (
+        billing.envelope["outputs"]["function"]["build"]["failureDetail"]
+        == "Build failed; check build logs for details: access_token=[REDACTED] was rejected"
+    )
+
+
+def stub_scenarios():
+    return sorted(p.name for p in STUB_SCENARIOS.iterdir() if p.is_dir())
+
+
+@pytest.mark.parametrize("scenario", stub_scenarios())
+def test_no_canary_reaches_an_envelope_in_any_task_over_any_scenario(
+    run_script, stub_run, scenario
+):
+    """Every task over every scenario that has a canned answer for its calls (a call a scenario
+    has no answer for is a pairing that does not exist)."""
+    ran = 0
+    for task in ("function_state", "function_errors", "function_metrics"):
+        for name, region in TARGETS:
+            stub = stub_run(scenario)
+            try:
+                out = run(run_script, task, stub, resource=function_target(name, region=region))
+            except AssertionError as exc:
+                assert "has no answer for" in str(exc), exc
+                continue
+            ran += 1
+            assert_no_secrets(out.envelope, out.errors, out.files)
+    if scenario in ("functions-leaky", "functions-healthy", "functions-broken"):
+        assert ran, scenario
+    try:
+        discover = run_script("discover", skill="gcp-base", stub=stub_run(scenario))
+    except AssertionError as exc:
+        assert "has no answer for" in str(exc), exc
+    else:
+        assert "RWCANARY" not in json.dumps([discover.envelope, discover.errors, discover.files])
