@@ -10,6 +10,8 @@ Documentation ranges only for addresses (RFC 5737), GUIDs from the stub's list
 (tests/unit/test_fixture_hygiene.py), no real names.
 """
 
+import json
+
 SUB = "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"
 TENANT = "c0ffee00-1234-4abc-8def-0123456789ab"
 CALLER = "9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d"
@@ -165,7 +167,6 @@ def cluster_body(name, group, location, *, pools, **overrides):
         "supportPlan": "KubernetesOfficial",
         "enableRBAC": True,
         "agentPoolProfiles": [{"name": n, **p} for n, p in pools.items()],
-        "servicePrincipalProfile": {"clientId": "msi"},
         "networkProfile": {
             "networkPlugin": "azure",
             "networkPluginMode": "overlay",
@@ -213,6 +214,20 @@ def cluster_body(name, group, location, *, pools, **overrides):
             }
         },
         "maxAgentPools": 100,
+        # fields that carry secrets or endpoints in a real answer, planted with markers: no task
+        # may return any of them (test_azure_aks_health asserts "PLANTED" never leaves a task)
+        "servicePrincipalProfile": {"clientId": "msi", "secret": "PLANTED-SP-SECRET"},
+        "windowsProfile": {"adminUsername": "azureuser", "adminPassword": "PLANTED-WIN-ADMIN-PW"},
+        "linuxProfile": {
+            "adminUsername": "azureuser",
+            "ssh": {"publicKeys": [{"keyData": "ssh-rsa AAAAB3PLANTEDKEYDATA"}]},
+        },
+        "httpProxyConfig": {
+            "httpProxy": "http://198.51.100.7:3128",
+            "httpsProxy": "http://198.51.100.7:3128",
+            "noProxy": ["localhost"],
+            "trustedCa": "UExBTlRFRC1DQQ==",
+        },
     }
     props.update(overrides)
     return prune(
@@ -418,7 +433,7 @@ METRICS = {  # metric -> (display name, description)
     ),
     "node_disk_usage_percentage": (
         "Disk Used Percentage",
-        "Percentage of the disk used by the nodes",
+        "Percentage of the disk used on the node device",
     ),
 }
 FIRST_GRAIN = "2026-11-03T04:00:00Z"  # the captured window: 24 hourly grains from here
@@ -503,7 +518,12 @@ def local(value):
     return {"value": value, "localizedValue": value}
 
 
-def event(when, operation, resource_id, *, sub_status, code, message, level="Error"):
+def event(when, operation, resource_id, *, sub_status, code, message, level="Error", details=None):
+    """A failed operation. `details` nests the error the way ARM does for a deployment-style
+    failure: the outer code is generic and `error.details[]` holds the cause (which may nest)."""
+    error = {"code": code, "message": message}
+    if details:
+        error["details"] = details
     return {
         "eventTimestamp": when,
         "level": level,
@@ -514,8 +534,9 @@ def event(when, operation, resource_id, *, sub_status, code, message, level="Err
         "properties": {
             "statusCode": sub_status,
             "serviceRequestId": "",
-            "statusMessage": '{"status":"Failed","error":{"code":"%s","message":"%s"}}'
-            % (code, message),
+            "statusMessage": json.dumps(
+                {"status": "Failed", "error": error}, separators=(",", ":")
+            ),
         },
     }
 
@@ -555,8 +576,20 @@ def events_broken():
                 f"{RP}/managedClusters/write",
                 upper,
                 sub_status="Conflict",
-                code="VMExtensionProvisioningError",
-                message="VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.",
+                code="ResourceOperationFailure",
+                message="The resource operation completed with terminal provisioning state 'Failed'.",
+                details=[
+                    {
+                        "code": "ReconcilingFailed",
+                        "message": "Reconciling the cluster failed.",
+                        "details": [
+                            {
+                                "code": "VMExtensionProvisioningError",
+                                "message": "VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.",
+                            }
+                        ],
+                    }
+                ],
             ),
             event(
                 "2026-11-04T01:52:18.2200000Z",
@@ -571,8 +604,34 @@ def events_broken():
                 f"{RP}/managedClusters/write",
                 cid,
                 sub_status="Conflict",
-                code="VMExtensionProvisioningError",
-                message="VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.",
+                code="ResourceOperationFailure",
+                message="The resource operation completed with terminal provisioning state 'Failed'.",
+                details=[
+                    {
+                        "code": "ReconcilingFailed",
+                        "message": "Reconciling the cluster failed.",
+                        "details": [
+                            {
+                                "code": "VMExtensionProvisioningError",
+                                "message": "VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.",
+                            }
+                        ],
+                    }
+                ],
+            ),
+            event(
+                "2026-11-03T22:40:00.0000000Z",
+                f"{RP}/managedClusters/agentPools/delete",
+                f"{cid}/agentPools/old",
+                sub_status="Forbidden",
+                code="DeploymentFailed",
+                message="At least one resource deployment operation failed.",
+                details=[
+                    {
+                        "code": "AuthorizationFailed",
+                        "message": f"The client '{CALLER}' with object id '{CALLER}' does not have authorization to perform action '{RP}/managedClusters/agentPools/delete' over scope '{cid}/agentPools/old' or the scope is invalid.",
+                    }
+                ],
             ),
             event(
                 "2026-11-03T22:05:10.0000000Z",

@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 
 from .az import az_json
-from .cluster import resolve
+from .cluster import CLUSTER_ID, resolve
 from .common import clip, listing, span, window
 from .errors import RwError
 
@@ -21,7 +21,14 @@ SELECT = (
 )  # fmt: skip
 
 
-_STAMP = re.compile(r"^(?P<head>[^.Z+]+)(?:\.(?P<frac>\d+))?(?P<zone>Z|[+-]\d\d:\d\d)?$")
+_STAMP = re.compile(
+    r"^(?P<head>\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d)(?:\.(?P<frac>\d+))?"
+    r"(?P<zone>Z|[+-]\d\d:\d\d)?$"
+)
+ID_LIMIT = 256  # operation, target and the codes are names; a longer one is cut
+MAX_DEPTH = 8  # error.details nesting that is followed
+# who the operation was refused for: a person's or principal's identifiers in the message
+_WHO = re.compile(r"\b(client|object id)\s+'[^']*'", re.I)
 
 
 def moment(text):
@@ -58,27 +65,68 @@ def localized(value):
     )
 
 
+def redact(text):
+    """The message without the identifiers of who was refused (`client '...'`, `object id '...'`)."""
+    return _WHO.sub(lambda m: f"{m.group(1)} '<redacted>'", text)
+
+
+def short(value):
+    """A name cut to ID_LIMIT characters (None stays None)."""
+    return value[:ID_LIMIT] if isinstance(value, str) else None
+
+
+def _error(node):
+    return node if isinstance(node, dict) else None
+
+
+def _leaf(error, depth=0):
+    """(code, message) of the deepest cause in an ARM error. ARM wraps the cause: the outer code is
+    generic (DeploymentFailed, ResourceOperationFailure) and the first of `details[]` holds what
+    went wrong, which may nest again, or be a message that is itself an error document. A level
+    without a code or a message hands the nearest outer one down."""
+    code = error.get("code") if isinstance(error.get("code"), str) else None
+    message = error.get("message") if isinstance(error.get("message"), str) else ""
+    if message.lstrip().startswith("{") and depth < MAX_DEPTH:
+        try:
+            embedded = _error(json.loads(message))
+        except ValueError:
+            embedded = None
+        embedded = _error(embedded.get("error")) if embedded else None
+        if embedded:
+            inner_code, inner_message = _leaf(embedded, depth + 1)
+            return inner_code or code, inner_message or message
+    details = error.get("details")
+    if depth < MAX_DEPTH and isinstance(details, list):
+        for detail in details:
+            if _error(detail):
+                inner_code, inner_message = _leaf(detail, depth + 1)
+                return inner_code or code, inner_message or message
+    return code, message
+
+
 def reason(properties):
-    """(error code, message) from an event's statusMessage, which holds the error as JSON when
-    the operation failed ({"status":"Failed","error":{"code":..,"message":..}}) and plain text
-    otherwise."""
+    """(outer code, leaf code, leaf message) from an event's statusMessage, which holds the error as
+    JSON when the operation failed ({"status":"Failed","error":{"code":..,"message":..,
+    "details":[..]}}) and plain text otherwise. The leaf is the deepest cause in error.details; the
+    outer code is the one on the error itself. Both codes are None for plain text."""
     message = properties.get("statusMessage") if isinstance(properties, dict) else None
     if not isinstance(message, str) or not message:
-        return None, ""
+        return None, None, ""
     try:
         body = json.loads(message)
     except ValueError:
-        return None, message
-    error = body.get("error") if isinstance(body, dict) else None
-    if isinstance(error, dict):
-        code, text = error.get("code"), error.get("message")
-        return (code if isinstance(code, str) else None), (text if isinstance(text, str) else "")
-    return None, message
+        return None, None, message
+    error = _error(body.get("error")) if isinstance(body, dict) else None
+    if error:
+        outer = error.get("code") if isinstance(error.get("code"), str) else None
+        leaf_code, leaf_message = _leaf(error)
+        return outer, leaf_code, leaf_message
+    return None, None, message
 
 
 def group_failures(events, cluster_id):
     """(groups, events for the cluster, events for other resources). A group is the events with the
-    same operation, target, level, sub-status and error code."""
+    same operation, target, level, sub-status and (leaf, outer) error codes."""
     groups, mine, other = {}, 0, 0
     for event in events:
         target = under(event.get("resourceId"), cluster_id)
@@ -86,13 +134,14 @@ def group_failures(events, cluster_id):
             other += 1
             continue
         mine += 1
-        code, message = reason(event.get("properties"))
+        outer, code, message = reason(event.get("properties"))
         label = (
             localized(event.get("operationName")) or "",
             target,
             event.get("level") if isinstance(event.get("level"), str) else None,
             localized(event.get("subStatus")),
             code,
+            outer,
         )
         when = event.get("eventTimestamp") if isinstance(event.get("eventTimestamp"), str) else None
         entry = groups.setdefault(label, {"count": 0, "stamps": [], "message": "", "at": None})
@@ -103,16 +152,17 @@ def group_failures(events, cluster_id):
             if entry["at"] is None or stamp >= entry["at"]:
                 entry["at"], entry["message"] = stamp, message  # the newest event's text
     out = []
-    for (operation, target, level, sub_status, code), entry in groups.items():
-        text, cut = clip(entry["message"])
+    for (operation, target, level, sub_status, code, outer), entry in groups.items():
+        text, cut = clip(redact(entry["message"]))
         stamps = sorted(entry["stamps"])
         out.append(
             {
-                "operation": operation,
-                "target": target,
-                "level": level,
-                "subStatus": sub_status,
-                "errorCode": code,
+                "operation": short(operation),
+                "target": short(target),
+                "level": short(level),
+                "subStatus": short(sub_status),
+                "errorCode": short(code),
+                "outerCode": short(outer),
                 "message": text,
                 "truncated": cut,
                 "count": entry["count"],
@@ -126,7 +176,10 @@ def group_failures(events, cluster_id):
 
 def read(ctx, window_input, max_items, scan_limit):
     seconds = window(window_input)
-    subscription, group, name, cluster_id, _ = resolve(ctx)
+    subscription, _, name, cluster_id, _ = resolve(ctx)
+    # the group as the cluster's own id spells it: the log's filter on a group name need not be
+    # case-insensitive, and the identity keeps the group lower case
+    group = CLUSTER_ID.match(cluster_id)["group"]
     start, end = span(ctx.now(), seconds)
     reply = az_json(
         ctx,

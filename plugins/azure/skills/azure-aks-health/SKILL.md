@@ -54,12 +54,21 @@ see pods, Kubernetes nodes or events (D72): see "What to try next" for the kuber
 - `activity-failures` returns `activity`: failed operations of the cluster's resource group that
   concern the cluster or a node pool, grouped by operation, target, sub-status and error code, with
   counts, first and last time and the error message Azure recorded; `eventsScanned`, `scanCut`.
-- `node-metrics` returns `metrics`: `cpu`, `memory` and `disk`, each the node usage percentage per
+  `errorCode` is the deepest cause in the error's `details` (ARM wraps the cause in a generic
+  `DeploymentFailed` or `ResourceOperationFailure`, kept as `outerCode`); the message is that cause's,
+  with `client '...'` and `object id '...'` redacted and cut to 1024 characters.
+- `node-metrics` returns `metrics`: `cpu`, `memory` and `disk` (the node/device disk), each the node usage percentage per
   `metricInterval` (default 1h), average and busiest node, with the intervals with and without a
   value, `averageMax`, `peakMax`, the newest 50 intervals and how many go over the setting's
   threshold (`cpuThresholdPercent`, `memoryThresholdPercent`, `diskThresholdPercent`, default 80).
 
 ## How to read the result
+
+- A permission with `scope: subscription` in `tasks.yaml` (the Activity Log read in `activity-failures`,
+  the list of Kubernetes versions in `version-support`) is read at the subscription, not at the
+  cluster: a role assigned only on the cluster's resource group does not grant it, and a permission
+  check evaluates it at subscription scope. Without it the task fails `permission_denied` with the
+  action named.
 
 - `provisioningState: Failed` or `Canceled` is final: the last operation did not complete, and
   `activity-failures` has its error. `transitioning: true` (Updating, Upgrading, Scaling, Starting,

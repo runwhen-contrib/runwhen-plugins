@@ -7,7 +7,7 @@ settings:
   metricInterval: { type: enum, enum: [PT1M, PT5M, PT15M, PT30M, PT1H, PT6H, PT12H, P1D], default: PT1H, description: "Grain of the Azure Monitor metrics (ISO 8601); the window is cut into intervals of this size" }
   cpuThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node CPU usage percentage above which an interval counts as over the threshold (average and busiest node are counted separately)" }
   memoryThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node memory working set percentage above which an interval counts as over the threshold" }
-  diskThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node disk usage percentage above which an interval counts as over the threshold" }
+  diskThresholdPercent: { type: number, default: 80, min: 0, max: 100, description: "Node/device disk usage percentage above which an interval counts as over the threshold" }
   activityScanLimit: { type: integer, default: 500, min: 1, max: 5000, description: "Most failed activity-log events read for the cluster's resource group; the log is read by group, so this bounds the work, and a cut is reported" }
 tasks:
   - name: resource-health
@@ -82,7 +82,7 @@ tasks:
     timeout: 240s                                  # three az commands of commandTimeout
     permissions:
       - { action: Microsoft.ContainerService/managedClusters/read }
-      - { action: Microsoft.ContainerService/locations/kubernetesVersions/read }
+      - { action: Microsoft.ContainerService/locations/kubernetesVersions/read, scope: subscription }   # a read of the subscription's provider data for the region, not of the cluster
       - { action: Microsoft.ContainerService/managedClusters/upgradeProfiles/read }
     outputs:
       version: { schema: ./schemas/version.v1.json, description: "The cluster's version against the offered minors, and the upgrades AKS offers" }
@@ -92,7 +92,8 @@ tasks:
       Reads the failed operations of the cluster's resource group in the Azure Activity Log over the
       window and keeps those about the cluster or something under it (a node pool), grouped by
       operation, target, level, sub-status and error code, with the count, first and last time and
-      the error message Azure recorded (cut to 1024 characters). Reports how many events it read,
+      the error message Azure recorded (cut to 1024 characters, who was refused redacted). The error code
+      is the deepest cause in the error's details; the outer code is kept as `outerCode`. Reports how many events it read,
       how many belonged to other resources, and whether the read stopped at activityScanLimit (then
       the cluster's list may be incomplete). The caller of an operation is not read. Read-only.
     script: scripts/activity_failures.py
@@ -100,16 +101,16 @@ tasks:
     readOnly: true
     permissions:
       - { action: Microsoft.ContainerService/managedClusters/read }
-      - { action: Microsoft.Insights/eventtypes/management/values/read }
+      - { action: Microsoft.Insights/eventtypes/management/values/read, scope: subscription }   # the Activity Log is read per subscription (filtered to the group)
     inputs:
       window: { type: duration, default: 24h, description: "How far back to look, from 1m to 30d" }
     outputs:
       activity: { schema: ./schemas/activity.v1.json, description: "Failed operations on the cluster and its node pools over the window, grouped, with the read's bounds" }
   - name: node-metrics
-    title: Node CPU, memory and disk from Azure Monitor
+    title: Node CPU, memory and node/device disk from Azure Monitor
     description: >-
       Reads the cluster's node_cpu_usage_percentage, node_memory_working_set_percentage and
-      node_disk_usage_percentage platform metrics over the window that ends at the run's reference
+      node_disk_usage_percentage (node/device disk) platform metrics over the window that ends at the run's reference
       time, average and busiest node per interval. For each it reports the intervals with and without
       a value, the lowest, highest and last average, the highest peak, the newest 50 intervals and
       how many intervals have an average or a peak above the setting's threshold. An interval with no

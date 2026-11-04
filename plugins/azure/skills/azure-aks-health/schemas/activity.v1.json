@@ -43,33 +43,47 @@
             "type": "object",
             "properties": {
               "operation": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               "target": {
                 "type": "string",
-                "description": "cluster, or the rest of the resource id under it (agentPools/<pool>)"
+                "description": "cluster, or the rest of the resource id under it (agentPools/<pool>)",
+                "maxLength": 256
               },
               "level": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "maxLength": 256
               },
               "subStatus": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "maxLength": 256
               },
               "errorCode": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "maxLength": 256,
+                "description": "The code of the deepest cause in the error's details (what went wrong), cut to 256 characters"
+              },
+              "outerCode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256,
+                "description": "The code on the error itself, often generic (DeploymentFailed, ResourceOperationFailure); equal to errorCode when the error does not nest"
               },
               "message": {
                 "type": "string",
-                "description": "The newest event's error message, cut to 1024 characters"
+                "description": "The newest event's deepest error message, with who was refused (client and object id) redacted, cut to 1024 characters"
               },
               "truncated": {
                 "type": "boolean"
@@ -96,6 +110,7 @@
               "level",
               "subStatus",
               "errorCode",
+              "outerCode",
               "message",
               "truncated",
               "count",

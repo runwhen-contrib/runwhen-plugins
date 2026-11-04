@@ -776,11 +776,12 @@ def test_activity_of_a_healthy_cluster_says_none_and_means_it(go):
 
 def test_activity_groups_the_failures_of_the_cluster_and_its_pools(go):
     a = out(go("activity-failures", "broken"), "activity-failures")
-    assert (a["eventsScanned"], a["eventsForCluster"], a["eventsForOtherResources"]) == (6, 4, 2)
+    assert (a["eventsScanned"], a["eventsForCluster"], a["eventsForOtherResources"]) == (7, 5, 2)
     groups = {(g["operation"], g["target"]): g for g in a["failures"]["items"]}
     assert set(groups) == {
         ("Microsoft.ContainerService/managedClusters/write", "cluster"),
         ("Microsoft.ContainerService/managedClusters/agentPools/write", "agentPools/batch"),
+        ("Microsoft.ContainerService/managedClusters/agentPools/delete", "agentPools/old"),
     }
     cluster_write = groups[("Microsoft.ContainerService/managedClusters/write", "cluster")]
     assert (
@@ -799,7 +800,27 @@ def test_activity_groups_the_failures_of_the_cluster_and_its_pools(go):
         "BadRequest",
     )
     assert "quota" in pool["message"] and pool["truncated"] is False
-    assert [g["count"] for g in a["failures"]["items"]] == [2, 2]
+    assert [g["count"] for g in a["failures"]["items"]] == [2, 2, 1]
+    # ARM nests the cause: the leaf is what went wrong, the outer code is kept beside it
+    assert (cluster_write["errorCode"], cluster_write["outerCode"]) == (
+        "VMExtensionProvisioningError",
+        "ResourceOperationFailure",
+    )
+    assert "cse-agent-0" in cluster_write["message"]  # the leaf's text, not the generic outer one
+    assert "terminal provisioning state" not in cluster_write["message"]
+    assert (pool["errorCode"], pool["outerCode"]) == ("QuotaExceeded", "QuotaExceeded")  # flat
+    old = groups[("Microsoft.ContainerService/managedClusters/agentPools/delete", "agentPools/old")]
+    assert (old["errorCode"], old["outerCode"]) == ("AuthorizationFailed", "DeploymentFailed")
+
+
+def test_who_was_refused_is_redacted_from_the_message(go):
+    text = json.dumps(go("activity-failures", "broken").envelope["outputs"])
+    assert "9d2c5a10" not in text
+    a = out(go("activity-failures", "broken"), "activity-failures")
+    old = next(g for g in a["failures"]["items"] if g["target"] == "agentPools/old")
+    assert old["message"].startswith(
+        "The client '<redacted>' with object id '<redacted>' does not have authorization"
+    )
 
 
 def test_a_cluster_whose_name_starts_like_this_ones_is_not_this_cluster(go):
@@ -916,7 +937,7 @@ def test_exactly_the_limit_is_not_a_cut(go):
 def test_max_items_cuts_the_groups_and_reports_the_rest(go):
     run = go("activity-failures", "broken", settings={"maxItems": 1})
     failures = out(run, "activity-failures")["failures"]
-    assert (len(failures["items"]), failures["total"], failures["omitted"]) == (1, 2, 1)
+    assert (len(failures["items"]), failures["total"], failures["omitted"]) == (1, 3, 2)
 
 
 def test_the_message_is_cut_to_1024_characters(go):
@@ -935,11 +956,107 @@ def test_the_message_is_cut_to_1024_characters(go):
 def test_the_status_message_is_read_as_json_or_as_text():
     assert activity.reason(
         {"statusMessage": '{"status":"Failed","error":{"code":"C","message":"m"}}'}
-    ) == ("C", "m")
-    assert activity.reason({"statusMessage": "plain text"}) == (None, "plain text")
-    assert activity.reason({"statusMessage": "[1]"}) == (None, "[1]")
-    assert activity.reason({"statusMessage": '{"error":"s"}'}) == (None, '{"error":"s"}')
-    assert activity.reason(None) == (None, "") and activity.reason({}) == (None, "")
+    ) == ("C", "C", "m")
+    assert activity.reason({"statusMessage": "plain text"}) == (None, None, "plain text")
+    assert activity.reason({"statusMessage": "[1]"}) == (None, None, "[1]")
+    assert activity.reason({"statusMessage": '{"error":"s"}'}) == (None, None, '{"error":"s"}')
+    assert activity.reason(None) == (None, None, "") and activity.reason({}) == (None, None, "")
+
+
+def nested(error):
+    return {"statusMessage": json.dumps({"status": "Failed", "error": error})}
+
+
+def test_the_deepest_leaf_of_error_details_is_the_reported_cause():
+    deep = {
+        "code": "DeploymentFailed",
+        "message": "At least one resource deployment operation failed.",
+        "details": [
+            {
+                "code": "ResourceOperationFailure",
+                "message": "The resource operation completed with terminal provisioning state 'Failed'.",
+                "details": [{"code": "ReconcileVMSSError", "message": "the cause"}],
+            },
+            {"code": "SecondDetail", "message": "not followed"},
+        ],
+    }
+    assert activity.reason(nested(deep)) == ("DeploymentFailed", "ReconcileVMSSError", "the cause")
+
+
+def test_a_level_without_a_code_or_message_hands_the_outer_one_down():
+    error = {"code": "Outer", "message": "outer text", "details": [{"details": [{"code": "Leaf"}]}]}
+    assert activity.reason(nested(error)) == ("Outer", "Leaf", "outer text")
+    error = {"code": "Outer", "message": "outer text", "details": [{"message": "inner text"}]}
+    assert activity.reason(nested(error)) == ("Outer", "Outer", "inner text")
+    error = {"code": "Outer", "message": "outer text", "details": ["x", 1, None]}
+    assert activity.reason(nested(error)) == ("Outer", "Outer", "outer text")  # nothing to follow
+
+
+def test_a_message_that_is_itself_an_error_document_is_followed():
+    inner = json.dumps({"error": {"code": "QuotaExceeded", "message": "no cores"}})
+    error = {
+        "code": "DeploymentFailed",
+        "message": "failed",
+        "details": [{"code": "BadRequest", "message": inner}],
+    }
+    assert activity.reason(nested(error)) == ("DeploymentFailed", "QuotaExceeded", "no cores")
+    assert activity.reason(nested({"code": "X", "message": "{not json"})) == ("X", "X", "{not json")
+
+
+def test_nesting_is_followed_to_a_bounded_depth():
+    error = {"code": "L0", "message": "m0"}
+    for level in range(1, 40):
+        error = {"code": f"L{level}", "message": f"m{level}", "details": [error]}
+    outer, leaf, _ = activity.reason(nested(error))
+    assert outer == "L39" and leaf == "L31"  # MAX_DEPTH levels below the outer one
+
+
+def test_the_identifiers_of_who_was_refused_are_redacted():
+    text = "The client 'a' with object id 'b' has no right. Client 'c' and OBJECT ID 'd'; Caller: x"
+    assert activity.redact(text) == (
+        "The client '<redacted>' with object id '<redacted>' has no right. "
+        "Client '<redacted>' and OBJECT ID '<redacted>'; Caller: x"
+    )
+
+
+def test_long_names_and_codes_are_cut_to_256_characters(go):
+    long = events(1)
+    long[0]["operationName"] = {"value": "O" * 400}
+    long[0]["subStatus"] = {"value": "S" * 400}
+    long[0]["resourceId"] = DEV_ID + "/agentPools/" + "p" * 400
+    long[0]["properties"]["statusMessage"] = json.dumps(
+        {"error": {"code": "C" * 400, "details": [{"code": "D" * 400, "message": "m"}]}}
+    )
+    a = out(
+        go("activity-failures", "broken", runner=activity_runner(long, limit=500)),
+        "activity-failures",
+    )
+    (group,) = a["failures"]["items"]
+    for field in ("operation", "target", "subStatus", "errorCode", "outerCode"):
+        assert len(group[field]) == 256, field
+    jsonschema.validate(a, schema_of("activity-failures"))
+    props = schema_of("activity-failures")["properties"]["failures"]["properties"]["items"][
+        "items"
+    ]["properties"]
+    assert all(
+        props[f]["maxLength"] == 256
+        for f in ("operation", "target", "level", "subStatus", "errorCode", "outerCode")
+    )
+
+
+def test_the_activity_log_is_asked_for_the_group_as_the_clusters_id_spells_it(go):
+    show = stub_json("broken", "aks-show.json").replace("rg-orders-dev", "RG-Orders-Dev")
+    runner = activity_runner([], limit=500)
+    runner.answers = {
+        (k if k[:2] != ("monitor", "activity-log") else (*k[:4], "RG-Orders-Dev", *k[5:])): v
+        for k, v in runner.answers.items()
+    }
+    runner.answers[SHOW_DEV] = (0, show, "")
+    run = go("activity-failures", "broken", runner=runner)
+    assert run.envelope["status"] == "ok", run.errors
+    assert (
+        run.calls[1][run.calls[1].index("-g") + 1] == "RG-Orders-Dev"
+    )  # not the identity's lower case
 
 
 def test_timestamps_with_seven_fraction_digits_and_any_zone_are_read():
@@ -950,6 +1067,14 @@ def test_timestamps_with_seven_fraction_digits_and_any_zone_are_read():
     assert activity.moment("2026-11-04T03:12:30+02:00") == datetime(
         2026, 11, 4, 1, 12, 30, tzinfo=UTC
     )
+    # a zone behind UTC: the dash is the offset's sign, not part of the date
+    assert activity.moment("2026-11-04T01:12:30-05:00") == datetime(
+        2026, 11, 4, 6, 12, 30, tzinfo=UTC
+    )
+    assert activity.moment("2026-11-04T01:12:30.5-03:30") == datetime(
+        2026, 11, 4, 4, 42, 30, 500000, tzinfo=UTC
+    )
+    assert activity.moment("2026-11-04 01:12:30Z") == datetime(2026, 11, 4, 1, 12, 30, tzinfo=UTC)
     assert activity.moment("yesterday") is None and activity.moment(None) is None
 
 
@@ -1231,7 +1356,61 @@ def test_each_task_declares_exactly_the_permissions_its_az_calls_need(go, task):
     run = go(task, "healthy")
     needed = set().union(*(az_actions(c) for c in run.calls))
     declared = next(t for t in doc()["tasks"] if t["name"] == task)["permissions"]
-    assert {(k, v) for p in declared for k, v in p.items()} == needed
+    assert {(k, v) for p in declared for k, v in p.items() if k != "scope"} == needed
+
+
+SUBSCRIPTION_SCOPE = {
+    "Microsoft.ContainerService/locations/kubernetesVersions/read",
+    "Microsoft.Insights/eventtypes/management/values/read",
+}
+
+
+def test_the_subscription_level_reads_say_so_and_nothing_else_does():
+    for t in doc()["tasks"]:
+        for p in t["permissions"]:
+            assert set(p) <= {"action", "scope"}
+            assert (p.get("scope") == "subscription") == (p["action"] in SUBSCRIPTION_SCOPE), p
+    used = {p["action"] for t in doc()["tasks"] for p in t["permissions"] if "scope" in p}
+    assert used == SUBSCRIPTION_SCOPE
+
+
+def test_the_permission_schema_takes_only_the_subscription_scope():
+    schema = json.loads((PLUGIN / "integration" / "schemas" / "azure-permission.json").read_text())
+    jsonschema.validate(
+        {"action": "Microsoft.Insights/metrics/read", "scope": "subscription"}, schema
+    )
+    jsonschema.validate(
+        {"dataAction": "Microsoft.KeyVault/vaults/keys/read", "scope": "subscription"}, schema
+    )
+    jsonschema.validate({"action": "Microsoft.Insights/metrics/read"}, schema)
+    for bad in ("resourceGroup", "", None, True):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"action": "Microsoft.Insights/metrics/read", "scope": bad}, schema)
+
+
+@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("scenario", ["healthy", "broken", "stopped", "monitor-forbidden"])
+def test_nothing_planted_in_the_cluster_document_reaches_an_output_or_an_error(go, task, scenario):
+    """aks show carries a service principal secret, a Windows admin password, an SSH public key and a
+    proxy configuration: the stub plants a PLANTED marker in each, and no task may return any."""
+    covered = {  # the tasks whose calls the scenario answers
+        "stopped": ("cluster-status", "node-pools", "node-metrics"),
+        "monitor-forbidden": ("cluster-status", "activity-failures", "node-metrics"),
+    }
+    if task not in covered.get(scenario, TASKS):
+        return
+    run = go(task, scenario)
+    text = json.dumps([run.envelope, run.errors, run.files])
+    for marker in ("PLANTED", "UExBTlRFRC1DQQ", "198.51.100.7", "keyData", "adminPassword"):
+        assert marker not in text, marker
+
+
+def test_the_planted_markers_really_are_in_the_documents_the_tasks_read():
+    show = json.loads(stub_json("broken", "aks-show.json"))
+    assert show["servicePrincipalProfile"]["secret"] == "PLANTED-SP-SECRET"
+    assert show["windowsProfile"]["adminPassword"] == "PLANTED-WIN-ADMIN-PW"
+    assert "PLANTED" in show["linuxProfile"]["ssh"]["publicKeys"][0]["keyData"]
+    assert show["httpProxyConfig"]["trustedCa"] and show["httpProxyConfig"]["httpProxy"]
 
 
 def test_every_declared_permission_is_a_valid_azure_permission():

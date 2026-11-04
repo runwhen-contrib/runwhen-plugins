@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/aks-clusters/aks-orders-dev
-now: '2026-11-04T03:54:11.253Z'
+now: '2026-11-04T04:33:29.201Z'
 calls:
 - argv:
   - az
@@ -252,7 +252,15 @@ calls:
       "fqdn": "aks-orders-dev-dns-1a2b3c4d.hcp.westeurope.azmk8s.io",
       "fqdnSubdomain": null,
       "hostedSystemProfile": null,
-      "httpProxyConfig": null,
+      "httpProxyConfig": {
+        "enabled": null,
+        "httpProxy": "http://198.51.100.7:3128",
+        "httpsProxy": "http://198.51.100.7:3128",
+        "noProxy": [
+          "localhost"
+        ],
+        "trustedCa": "UExBTlRFRC1DQQ=="
+      },
       "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.ContainerService/managedClusters/aks-orders-dev",
       "identity": {
         "delegatedResources": null,
@@ -271,7 +279,16 @@ calls:
       "ingressProfile": null,
       "kind": null,
       "kubernetesVersion": "1.29.9",
-      "linuxProfile": null,
+      "linuxProfile": {
+        "adminUsername": "azureuser",
+        "ssh": {
+          "publicKeys": [
+            {
+              "keyData": "ssh-rsa AAAAB3PLANTEDKEYDATA"
+            }
+          ]
+        }
+      },
       "location": "westeurope",
       "maxAgentPools": 100,
       "metricsProfile": null,
@@ -327,7 +344,7 @@ calls:
       "serviceMeshProfile": null,
       "servicePrincipalProfile": {
         "clientId": "msi",
-        "secret": null
+        "secret": "PLANTED-SP-SECRET"
       },
       "sku": {
         "name": "Base",
@@ -343,7 +360,13 @@ calls:
       },
       "type": "Microsoft.ContainerService/ManagedClusters",
       "upgradeSettings": null,
-      "windowsProfile": null,
+      "windowsProfile": {
+        "adminPassword": "PLANTED-WIN-ADMIN-PW",
+        "adminUsername": "azureuser",
+        "enableCsiProxy": null,
+        "gmsaProfile": null,
+        "licenseType": null
+      },
       "workloadAutoScalerProfile": null
     }
   stderr: ''
@@ -357,9 +380,9 @@ calls:
   - --status
   - Failed
   - --start-time
-  - '2026-11-03T03:54:11Z'
+  - '2026-11-03T04:33:29Z'
   - --end-time
-  - '2026-11-04T03:54:11Z'
+  - '2026-11-04T04:33:29Z'
   - --max-events
   - '501'
   - --select
@@ -409,7 +432,7 @@ calls:
         "properties": {
           "serviceRequestId": "",
           "statusCode": "Conflict",
-          "statusMessage": "{\"status\":\"Failed\",\"error\":{\"code\":\"VMExtensionProvisioningError\",\"message\":\"VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.\"}}"
+          "statusMessage": "{\"status\":\"Failed\",\"error\":{\"code\":\"ResourceOperationFailure\",\"message\":\"The resource operation completed with terminal provisioning state 'Failed'.\",\"details\":[{\"code\":\"ReconcilingFailed\",\"message\":\"Reconciling the cluster failed.\",\"details\":[{\"code\":\"VMExtensionProvisioningError\",\"message\":\"VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.\"}]}]}}"
         },
         "resourceId": "/SUBSCRIPTIONS/4B1D1F7E-6F0A-4C5E-9A43-0C8A2D9E5B71/RESOURCEGROUPS/RG-ORDERS-DEV/PROVIDERS/MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/AKS-ORDERS-DEV",
         "status": {
@@ -453,7 +476,7 @@ calls:
         "properties": {
           "serviceRequestId": "",
           "statusCode": "Conflict",
-          "statusMessage": "{\"status\":\"Failed\",\"error\":{\"code\":\"VMExtensionProvisioningError\",\"message\":\"VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.\"}}"
+          "statusMessage": "{\"status\":\"Failed\",\"error\":{\"code\":\"ResourceOperationFailure\",\"message\":\"The resource operation completed with terminal provisioning state 'Failed'.\",\"details\":[{\"code\":\"ReconcilingFailed\",\"message\":\"Reconciling the cluster failed.\",\"details\":[{\"code\":\"VMExtensionProvisioningError\",\"message\":\"VM has reported a failure when processing extension 'cse-agent-0'. Error message: Enable failed: failed to execute command: command terminated with exit status=50.\"}]}]}}"
         },
         "resourceId": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.ContainerService/managedClusters/aks-orders-dev",
         "status": {
@@ -463,6 +486,28 @@ calls:
         "subStatus": {
           "localizedValue": "Conflict",
           "value": "Conflict"
+        }
+      },
+      {
+        "eventTimestamp": "2026-11-03T22:40:00.0000000Z",
+        "level": "Error",
+        "operationName": {
+          "localizedValue": "Microsoft.ContainerService/managedClusters/agentPools/delete",
+          "value": "Microsoft.ContainerService/managedClusters/agentPools/delete"
+        },
+        "properties": {
+          "serviceRequestId": "",
+          "statusCode": "Forbidden",
+          "statusMessage": "{\"status\":\"Failed\",\"error\":{\"code\":\"DeploymentFailed\",\"message\":\"At least one resource deployment operation failed.\",\"details\":[{\"code\":\"AuthorizationFailed\",\"message\":\"The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.ContainerService/managedClusters/agentPools/delete' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.ContainerService/managedClusters/aks-orders-dev/agentPools/old' or the scope is invalid.\"}]}}"
+        },
+        "resourceId": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.ContainerService/managedClusters/aks-orders-dev/agentPools/old",
+        "status": {
+          "localizedValue": "Failed",
+          "value": "Failed"
+        },
+        "subStatus": {
+          "localizedValue": "Forbidden",
+          "value": "Forbidden"
         }
       },
       {
@@ -517,17 +562,29 @@ expect:
   outputs:
     activity:
       cluster: aks-orders-dev
-      eventsScanned: 6
-      eventsForCluster: 4
+      eventsScanned: 7
+      eventsForCluster: 5
       eventsForOtherResources: 2
       scanCut: false
       failures:
-        total: 2
+        total: 3
         omitted: 0
         items:
-          $containsWhere:
-            operation: Microsoft.ContainerService/managedClusters/agentPools/write
+          $contains:
+          - operation: Microsoft.ContainerService/managedClusters/agentPools/write
             target: agentPools/batch
             errorCode: QuotaExceeded
+            outerCode: QuotaExceeded
             subStatus: BadRequest
             count: 2
+          - operation: Microsoft.ContainerService/managedClusters/write
+            target: cluster
+            errorCode: VMExtensionProvisioningError
+            outerCode: ResourceOperationFailure
+            count: 2
+          - operation: Microsoft.ContainerService/managedClusters/agentPools/delete
+            target: agentPools/old
+            errorCode: AuthorizationFailed
+            outerCode: DeploymentFailed
+            subStatus: Forbidden
+            count: 1
