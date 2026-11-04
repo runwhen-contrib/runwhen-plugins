@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: aws/accounts/123456789012
-now: '2026-11-04T02:14:11.227Z'
+now: '2026-11-04T03:42:18.956Z'
 calls:
 - argv:
   - aws
@@ -73,6 +73,30 @@ calls:
   stdout: |
     {
         "Functions": [],
+        "NextToken": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - ap-south-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Instances": [],
         "NextToken": null
     }
   stderr: ''
@@ -159,6 +183,82 @@ calls:
   stderr: ''
 - argv:
   - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Instances": [
+            {
+                "InstanceId": "i-0a1b2c3d4e5f60718",
+                "InstanceType": "t3.medium",
+                "State": "running",
+                "LaunchTime": "2026-10-20T08:15:42+00:00",
+                "AvailabilityZone": "eu-west-1a",
+                "Name": "orders-web-1"
+            },
+            {
+                "InstanceId": "i-0b7c1d2e3f4a5b6c7",
+                "InstanceType": "t3.small",
+                "State": "running",
+                "LaunchTime": "2026-10-02T10:01:05+00:00",
+                "AvailabilityZone": "eu-west-1a",
+                "Name": "orders-batch-2"
+            }
+        ],
+        "NextToken": "eyJOZXh0VG9rZW4iOiAiYWJjIiwgImJvdG9fdHJ1bmNhdGVfYW1vdW50IjogMTAwMH0="
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --starting-token
+  - eyJOZXh0VG9rZW4iOiAiYWJjIiwgImJvdG9fdHJ1bmNhdGVfYW1vdW50IjogMTAwMH0=
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Instances": [
+            {
+                "InstanceId": "i-0c0ffee0123456789",
+                "InstanceType": "m5.large",
+                "State": "stopped",
+                "LaunchTime": "2026-10-20T08:15:42+00:00",
+                "AvailabilityZone": "eu-west-1a",
+                "Name": "batch-runner"
+            }
+        ],
+        "NextToken": null
+    }
+  stderr: ''
+- argv:
+  - aws
   - lambda
   - list-functions
   - --query
@@ -179,6 +279,30 @@ calls:
         "NextToken": null
     }
   stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Instances": [],
+        "NextToken": null
+    }
+  stderr: ''
 expect:
   status: ok
   errorCodes: []
@@ -190,14 +314,18 @@ expect:
       - name: ap-south-1
         status: ok
         functions: 0
+        instances: 0
       - name: eu-west-1
         status: ok
         functions: 3
+        instances: 3
       - name: us-east-1
         status: ok
         functions: 0
+        instances: 0
     summary:
       counts:
         account: 1
         region: 3
         lambda-function: 3
+        ec2-instance: 3

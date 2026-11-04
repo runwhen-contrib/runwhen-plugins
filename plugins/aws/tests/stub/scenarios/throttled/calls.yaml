@@ -42,6 +42,24 @@
     },
     {
       "argv": [
+        "ec2",
+        "describe-instances",
+        "--filters",
+        "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped",
+        "--query",
+        "{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State: State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key=='Name'] | [0].Value}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "ap-south-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instances.html",
+      "rc": 0,
+      "stdout": "../_shared/ec2-describe-instances-empty.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
         "lambda",
         "list-functions",
         "--query",
@@ -54,6 +72,24 @@
       "doc": "https://docs.aws.amazon.com/cli/latest/reference/lambda/list-functions.html",
       "rc": 0,
       "stdout": "../_shared/lambda-list-functions-empty.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ec2",
+        "describe-instances",
+        "--filters",
+        "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped",
+        "--query",
+        "{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State: State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key=='Name'] | [0].Value}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instances.html",
+      "rc": 0,
+      "stdout": "../_shared/ec2-describe-instances-empty.json",
       "stderr": ""
     },
     {
@@ -71,6 +107,24 @@
       "rc": 254,
       "stdout": "",
       "stderr": "\naws: [ERROR]: An error occurred (TooManyRequestsException) when calling the ListFunctions operation (reached max retries: 2): Rate exceeded\n"
+    },
+    {
+      "argv": [
+        "ec2",
+        "describe-instances",
+        "--filters",
+        "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped",
+        "--query",
+        "{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State: State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key=='Name'] | [0].Value}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instances.html",
+      "rc": 0,
+      "stdout": "ec2-describe-instances-eu-west-1.json",
+      "stderr": ""
     },
     {
       "argv": [

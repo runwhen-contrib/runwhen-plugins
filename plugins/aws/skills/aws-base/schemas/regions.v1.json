@@ -9,10 +9,11 @@
         "type": "object",
         "properties": {
           "name": {"type": "string"},
-          "status": {"enum": ["ok", "forbidden", "failed"], "description": "ok: the list was read to its end; forbidden: the credential may not list Lambda functions there (an SCP, a missing permission); failed: any other error, with a matching entry in the run's errors"},
-          "functions": {"type": ["integer", "null"], "description": "Lambda functions in the region (0 for a region that was read and is empty); null when the region could not be read"}
+          "status": {"enum": ["ok", "forbidden", "failed"], "description": "The worst of the region's lists. ok: every list was read to its end; forbidden: the credential may not list something there (an SCP, a missing permission) and nothing else failed; failed: any other error, with a matching entry in the run's errors. A null count says which list"},
+          "functions": {"type": ["integer", "null"], "description": "Lambda functions in the region (0 for a region that was read and has none); null when that list could not be read"},
+          "instances": {"type": ["integer", "null"], "description": "EC2 instances in the region that are not terminated (0 for a region that was read and has none); null when that list could not be read"}
         },
-        "required": ["name", "status", "functions"],
+        "required": ["name", "status", "functions", "instances"],
         "additionalProperties": false
       }
     },

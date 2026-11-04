@@ -31,6 +31,15 @@ FUNCTION = {
 }
 
 
+INSTANCE = {
+    "path": "aws/accounts/123456789012/regions/eu-west-1/ec2-instances/i-0a1b2c3d4e5f60718",
+    "type": "aws/ec2-instance",
+    "name": "i-0a1b2c3d4e5f60718",
+    "account": "123456789012",
+    "region": "eu-west-1",
+}
+
+
 def load_script(skill, name):
     spec = importlib.util.spec_from_file_location(
         f"{skill.replace('-', '_')}_{name}", PLUGIN / "skills" / skill / "scripts" / f"{name}.py"
@@ -119,6 +128,11 @@ DEFAULT_SETTINGS = {
         "errorRateThreshold": 0.05,
         "throttleThreshold": 1,
         "durationTimeoutRatio": 0.9,
+    },
+    "aws-ec2-health": {
+        "maxItems": 200,
+        "cpuUtilizationThreshold": 80,
+        "cpuCreditBalanceThreshold": 20,
     },
 }
 

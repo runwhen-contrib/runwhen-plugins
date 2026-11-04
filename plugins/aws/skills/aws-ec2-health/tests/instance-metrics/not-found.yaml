@@ -1,0 +1,41 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/ec2-instances/i-0123456789abcdef9
+now: '2026-11-04T03:41:54.629Z'
+calls:
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --instance-ids
+  - i-0123456789abcdef9
+  - --query
+  - '{OwnerId: Reservations[0].OwnerId, Instance: Reservations[0].Instances[0].{InstanceId: InstanceId,
+    InstanceType: InstanceType, State: State.Name, StateCode: State.Code, StateReasonCode: StateReason.Code,
+    StateReasonMessage: StateReason.Message, StateTransitionReason: StateTransitionReason, LaunchTime:
+    LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Tenancy: Placement.Tenancy, Architecture:
+    Architecture, PlatformDetails: PlatformDetails, VirtualizationType: VirtualizationType, InstanceLifecycle:
+    InstanceLifecycle, EbsOptimized: EbsOptimized, Monitoring: Monitoring.State, RootDeviceType: RootDeviceType,
+    ImageId: ImageId, IamInstanceProfileArn: IamInstanceProfile.Arn, VpcId: VpcId, SubnetId: SubnetId,
+    PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, SecurityGroupIds: SecurityGroups[].GroupId,
+    NetworkInterfaceCount: length(NetworkInterfaces || `[]`), HttpTokens: MetadataOptions.HttpTokens,
+    HttpEndpoint: MetadataOptions.HttpEndpoint, BlockDevices: BlockDeviceMappings[].{DeviceName: DeviceName,
+    VolumeId: Ebs.VolumeId, Status: Ebs.Status, DeleteOnTermination: Ebs.DeleteOnTermination, AttachTime:
+    Ebs.AttachTime}, Tags: Tags[].{Key: Key, Value: Value}}}'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (InvalidInstanceID.NotFound) when calling the DescribeInstances operation: The instance ID 'i-0123456789abcdef9' does not exist
+expect:
+  status: failed
+  errorCodes:
+  - not_found

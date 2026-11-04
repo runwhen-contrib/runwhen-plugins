@@ -661,7 +661,7 @@ def test_a_compiled_auth_plan_for_each_method_fits_the_auth_plan_schema(method):
 # ---- types and the permission schema ----------------------------------------------------------
 
 
-def test_the_types_are_account_region_function_with_a_canonical_account_id():
+def test_the_types_are_account_region_and_their_resources_with_a_canonical_account_id():
     types = yaml.safe_load((INTEGRATION / "types.yaml").read_text())["types"]
     assert types["account"] == {
         "root": True,
@@ -671,7 +671,8 @@ def test_the_types_are_account_region_function_with_a_canonical_account_id():
     }
     assert types["region"]["parent"] == "account"
     assert types["lambda-function"]["parent"] == "region"
-    assert set(types) == {"account", "region", "lambda-function"}
+    assert types["ec2-instance"] == {"parent": "region", "plural": "ec2-instances"}
+    assert set(types) == {"account", "region", "lambda-function", "ec2-instance"}
 
 
 def permission_schema():

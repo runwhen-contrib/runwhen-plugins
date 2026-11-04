@@ -1,18 +1,23 @@
-"""discover: the account, its regions and their Lambda functions, as facts and as an
-rw.discovery.v1 sync.
+"""discover: the account, its regions and what lives in them (Lambda functions, EC2 instances), as
+facts and as an rw.discovery.v1 sync.
 
 The aws calls return plain facts; `build_sync` turns them into the recorded sync (open, item
 batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync").
 
-Region is a type (integrations/aws types.yaml). Every region that was tried is a region
-item with its own function partition: `complete` (also with count 0, so functions an earlier run
-found there are swept when they are gone), or `forbidden` / `failed` when it could not be read, in
-which case nothing under it is swept."""
+Region is a type (integrations/aws types.yaml). What lives under a region is a row of the KINDS
+table below, one per type a skill of this plugin targets: add the type to types.yaml and a Kind
+here, nothing else. Every region that was tried is a region item with, for every kind, its own
+partition: `complete` (also with count 0, so items an earlier run found there are swept when they
+are gone), or `forbidden` / `failed` when that list could not be read, in which case nothing under
+it is swept. One kind being forbidden does not stop the others in the region."""
 
+import subprocess
 import time
+from typing import Callable, NamedTuple
 
 from .awscli import DEFAULT_TIMEOUT, aws_json, aws_paged, check_region
 from .errors import RwError
+from .text import tag_facts
 
 PLATFORM = "aws"
 SOURCE = "aws-base/discover"
@@ -29,6 +34,30 @@ FUNCTIONS_QUERY = (
     "State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, "
     "NextToken: NextToken}"
 )
+# describe-instances returns far more (user data is not among it, but tags, network interfaces and
+# block devices are): only the fields below are kept. A terminated instance is described for about
+# an hour after it is gone; it is not listed, so it is swept from the inventory.
+INSTANCES_FILTER = "Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped"
+INSTANCES_QUERY = (
+    "{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, "
+    "State: State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, "
+    "Name: Tags[?Key=='Name'] | [0].Value}, NextToken: NextToken}"
+)
+# the ARN partition of a region: aws unless the region's prefix says otherwise
+_PARTITIONS = (
+    ("cn-", "aws-cn"),
+    ("us-gov-", "aws-us-gov"),
+    ("us-isob-", "aws-iso-b"),
+    ("us-iso-", "aws-iso"),
+    ("eusc-", "aws-eusc"),
+)
+
+
+def partition_of(region):
+    for prefix, partition in _PARTITIONS:
+        if region.startswith(prefix):
+            return partition
+    return "aws"
 
 
 def target_name(resource):
@@ -55,7 +84,7 @@ def read_identity(ctx, region):
 
 def check_target_account(name, identity):
     """The credential must be the target's: an aws/account is named by its 12-digit id, and a
-    credential for another account would otherwise sync that account's functions under this
+    credential for another account would otherwise sync that account's resources under this
     root. A name that is not an account id (an alias) cannot be compared and is let through."""
     if name.isdigit() and len(name) == 12 and name != identity["accountId"]:
         raise RwError(
@@ -78,10 +107,14 @@ def enabled_regions(ctx, region):
     return sorted(out, key=lambda r: r["name"])
 
 
-def function_facts(row):
-    """One function row of list-functions, kept to the fields discovery reports."""
-    return {
-        "name": row["FunctionName"],
+# --- the kinds: one row per type under a region -------------------------------------------------
+
+
+def function_node(row, account, region):
+    """One list-functions row as a sync node, kept to the fields discovery reports."""
+    if not row.get("FunctionName"):
+        return None
+    facts = {
         "arn": row.get("FunctionArn"),
         "runtime": row.get("Runtime"),
         "packageType": row.get("PackageType"),
@@ -91,42 +124,122 @@ def function_facts(row):
         "lastUpdateStatus": row.get("LastUpdateStatus"),
         "lastModified": row.get("LastModified"),
     }
+    status = {"state": facts["state"], "lastUpdateStatus": facts["lastUpdateStatus"]}
+    return {
+        "name": row["FunctionName"],
+        "uid": facts["arn"],
+        "document": {k: v for k, v in facts.items() if v is not None},
+        "status": {k: v for k, v in status.items() if v is not None},
+    }
 
 
-def read_region(ctx, region, timeout=None):
-    """The functions of one region: {name, status, functions[], error?}. A region the caller
-    cannot read is `forbidden` (permission_denied) or `failed` (anything else), with the error;
-    it does not stop the other regions."""
+def instance_node(row, account, region):
+    """One describe-instances row as a sync node. The display name is the Name tag unless its value
+    looks like a secret (tags are free text), else the instance id."""
+    instance_id = row.get("InstanceId")
+    if not isinstance(instance_id, str) or not instance_id:
+        return None
+    facts = {
+        "instanceType": row.get("InstanceType"),
+        "state": row.get("State"),
+        "availabilityZone": row.get("AvailabilityZone"),
+        "launchTime": row.get("LaunchTime"),
+    }
+    name = tag_facts("Name", row.get("Name"))["value"]  # None when the value looks like a secret
+    document = {k: v for k, v in facts.items() if v is not None}
+    if name:
+        document["name"] = name
+    return {
+        "name": instance_id,
+        "display": name or instance_id,
+        "uid": f"arn:{partition_of(region)}:ec2:{region}:{account}:instance/{instance_id}",
+        "document": document,
+        "status": {"state": facts["state"]} if facts["state"] else {},
+    }
+
+
+class Kind(NamedTuple):
+    type: str  # the type name in types.yaml
+    key: str  # the count field of the regions output
+    label: str  # what the list holds, for messages
+    action: str  # the IAM action the list needs, for the denied-regions message
+    scope: str  # the scope of the "denied in N regions" error
+    args: tuple  # the aws words of the list call, --query included
+    items_key: str
+    node: Callable  # (row, accountId, region) -> sync node or None
+
+
+KINDS = (
+    Kind(
+        "lambda-function", "functions", "functions", "lambda:ListFunctions", "regions",
+        ("lambda", "list-functions", "--query", FUNCTIONS_QUERY), "Functions", function_node,
+    ),
+    Kind(
+        "ec2-instance", "instances", "instances", "ec2:DescribeInstances", "regions:ec2-instance",
+        ("ec2", "describe-instances", "--filters", INSTANCES_FILTER, "--query", INSTANCES_QUERY),
+        "Instances", instance_node,
+    ),
+)  # fmt: skip
+
+
+class Bounded:
+    """ctx.run with a deadline, for the calls of the region loop: a call is given at most what is
+    left, and one started with nothing left (including the next page of a paged list) times out
+    instead of running. aws_json turns the TimeoutExpired into a `timeout` RwError."""
+
+    def __init__(self, ctx, deadline):
+        self._ctx = ctx
+        self._deadline = deadline
+
+    def run(self, argv, **kwargs):
+        left = self._deadline - time.monotonic()
+        if left < 1:
+            raise subprocess.TimeoutExpired(argv, 0)
+        kwargs["timeout"] = min(kwargs.get("timeout") or DEFAULT_TIMEOUT, left)
+        return self._ctx.run(argv, **kwargs)
+
+
+def read_kind(ctx, kind, region, account):
+    """One kind in one region: {status, items[], error?}. A list the caller cannot read is
+    `forbidden` (permission_denied) or `failed` (anything else), with the error; it does not stop
+    the other kinds or regions."""
     try:
-        rows, truncated = aws_paged(
-            ctx,
-            ["lambda", "list-functions", "--query", FUNCTIONS_QUERY],
-            region=region,
-            items_key="Functions",
-            timeout=timeout,
-        )
+        rows, truncated = aws_paged(ctx, list(kind.args), region=region, items_key=kind.items_key)
     except RwError as exc:
         status = "forbidden" if exc.code == "permission_denied" else "failed"
         return {
-            "name": region,
             "status": status,
-            "functions": [],
+            "items": [],
             "error": {"code": exc.code, "message": f"{region}: {exc.message}", "scope": region},
         }
-    functions = [function_facts(r) for r in rows if isinstance(r, dict) and r.get("FunctionName")]
+    nodes = [n for n in (kind.node(r, account, region) for r in rows if isinstance(r, dict)) if n]
     if truncated:
         # never a "complete" partition for a list that was cut
         return {
-            "name": region,
             "status": "failed",
-            "functions": functions,
+            "items": nodes,
             "error": {
                 "code": "internal",
-                "message": f"{region}: more functions than could be read; the list is incomplete",
+                "message": f"{region}: more {kind.label} than could be read; the list is incomplete",
                 "scope": region,
             },
         }
-    return {"name": region, "status": "ok", "functions": functions}
+    return {"status": "ok", "items": nodes}
+
+
+def read_region(ctx, region, account, deadline):
+    """Every kind of one region: {name, kinds: {type: {status, items[], error?}}}."""
+    bounded = Bounded(ctx, deadline)
+    return {
+        "name": region,
+        "kinds": {k.type: read_kind(bounded, k, region, account) for k in KINDS},
+    }
+
+
+def region_status(scan):
+    """The worst status of the region's kinds: failed, else forbidden, else ok."""
+    statuses = {part["status"] for part in scan["kinds"].values()}
+    return "failed" if "failed" in statuses else "forbidden" if "forbidden" in statuses else "ok"
 
 
 def bound(items, limit):
@@ -135,11 +248,18 @@ def bound(items, limit):
 
 
 def region_listing(scans, limit):
+    """One row per region: its worst status and, per kind, how many were found (null when that list
+    could not be read; 0 for a region that was read and holds none)."""
     rows = [
         {
             "name": s["name"],
-            "status": s["status"],
-            "functions": len(s["functions"]) if s["status"] == "ok" else None,
+            "status": region_status(s),
+            **{
+                k.key: len(s["kinds"][k.type]["items"])
+                if s["kinds"][k.type]["status"] == "ok"
+                else None
+                for k in KINDS
+            },
         }
         for s in scans
     ]
@@ -147,9 +267,12 @@ def region_listing(scans, limit):
     return {"items": items, "total": total, "omitted": omitted}
 
 
+PART_STATUS = {"ok": "complete", "forbidden": "forbidden"}
+
+
 def partitions(path, scans, regions_complete):
-    """What a full sync of the account sweeps: its regions, and the functions of every region that
-    was tried (an `ok` region with no function is a complete partition of count 0)."""
+    """What a full sync of the account sweeps: its regions, and the resources of every kind in every
+    region that was tried (an `ok` list with no resource is a complete partition of count 0)."""
     out = [
         {
             "type": "region",
@@ -159,15 +282,17 @@ def partitions(path, scans, regions_complete):
         }
     ]
     for scan in scans:
-        part = {
-            "type": "lambda-function",
-            "parentPath": f"{path}/regions/{scan['name']}",
-            "status": {"ok": "complete", "forbidden": "forbidden"}.get(scan["status"], "failed"),
-            "count": len(scan["functions"]),
-        }
-        if scan["status"] != "ok":
-            part["reason"] = scan["error"]["code"]
-        out.append(part)
+        for kind in KINDS:
+            read = scan["kinds"][kind.type]
+            part = {
+                "type": kind.type,
+                "parentPath": f"{path}/regions/{scan['name']}",
+                "status": PART_STATUS.get(read["status"], "failed"),
+                "count": len(read["items"]),
+            }
+            if read["status"] != "ok":
+                part["reason"] = read["error"]["code"]
+            out.append(part)
     return out
 
 
@@ -206,29 +331,23 @@ def build_sync(path, name, identity, scans, regions_complete, summary):
                 **({"optInStatus": scan["optInStatus"]} if scan.get("optInStatus") else {}),
             },
         }
-        if scan["status"] != "ok":
-            item["status"] = {"discovery": scan["status"]}
+        if region_status(scan) != "ok":
+            item["status"] = {"discovery": region_status(scan)}
         items.append(item)
-        for fn in scan["functions"]:
-            items.append(
-                {
-                    "identity": {
-                        "platform": PLATFORM,
-                        "chain": [root, region, {"type": "lambda-function", "name": fn["name"]}],
-                    },
-                    **({"providerUid": fn["arn"]} if fn["arn"] else {}),
-                    "displayName": fn["name"],
-                    "document": {k: v for k, v in fn.items() if k != "name" and v is not None},
-                    "status": {
-                        k: v
-                        for k, v in (
-                            ("state", fn["state"]),
-                            ("lastUpdateStatus", fn["lastUpdateStatus"]),
-                        )
-                        if v is not None
-                    },
-                }
-            )
+        for kind in KINDS:
+            for node in scan["kinds"][kind.type]["items"]:
+                items.append(
+                    {
+                        "identity": {
+                            "platform": PLATFORM,
+                            "chain": [root, region, {"type": kind.type, "name": node["name"]}],
+                        },
+                        **({"providerUid": node["uid"]} if node["uid"] else {}),
+                        "displayName": node.get("display") or node["name"],
+                        "document": node["document"],
+                        "status": node["status"],
+                    }
+                )
     batches = [
         {"seq": i // BATCH + 1, "items": items[i : i + BATCH]} for i in range(0, len(items), BATCH)
     ]
@@ -243,45 +362,57 @@ def build_sync(path, name, identity, scans, regions_complete, summary):
     }
 
 
-def denied_regions_error(scans):
-    """One permission_denied error for every region the credential may not list (an SCP, a
-    permission boundary, a policy that names regions), or None. Listing them in one error keeps
+def denied_regions_error(scans, kind):
+    """One permission_denied error for every region the credential may not list `kind` in (an SCP,
+    a permission boundary, a policy that names regions), or None. Listing them in one error keeps
     the run's error list short; each region's own partition still says `forbidden`."""
-    names = [s["name"] for s in scans if s["status"] == "forbidden"]
+    names = [s["name"] for s in scans if s["kinds"][kind.type]["status"] == "forbidden"]
     if not names:
         return None
     shown = ", ".join(names[:40]) + (f" and {len(names) - 40} more" if len(names) > 40 else "")
     return {
         "code": "permission_denied",
         "message": (
-            f"lambda:ListFunctions is denied in {len(names)} region(s): {shown}. A service control "
+            f"{kind.action} is denied in {len(names)} region(s): {shown}. A service control "
             "policy or the credential's policy forbids them; set the regions setting to the "
             "regions you use to stop reading these"
         ),
-        "scope": "regions",
+        "scope": kind.scope,
     }
 
 
 def unread(region):
-    """The scan of a region the loop ran out of time for: failed, never reported as empty."""
+    """The scan of a region the loop ran out of time for: every kind failed, never reported as
+    empty."""
+    error = {
+        "code": "timeout",
+        "message": f"{region}: not read, the {READ_BUDGET}s budget for reading regions is used up",
+        "scope": region,
+    }
     return {
         "name": region,
-        "status": "failed",
-        "functions": [],
-        "error": {
-            "code": "timeout",
-            "message": f"{region}: not read, the {READ_BUDGET}s budget for reading regions is used up",
-            "scope": region,
-        },
+        "kinds": {k.type: {"status": "failed", "items": [], "error": error} for k in KINDS},
     }
+
+
+def scan_errors(scans):
+    """The run's errors: one for the forbidden regions of each kind, then each failed list's own
+    (a region the loop never reached has one error, however many kinds it holds)."""
+    errors = [e for e in (denied_regions_error(scans, k) for k in KINDS) if e]
+    for scan in scans:
+        for kind in KINDS:
+            read = scan["kinds"][kind.type]
+            if read["status"] == "failed" and read["error"] not in errors:
+                errors.append(read["error"])
+    return errors
 
 
 def discover(ctx, settings):
     """Run discovery on the account this task targets; returns the task's outputs and the sync
     document. A credential that sts rejects (or that is for another account than the target), or
-    a region list that cannot be read, raises. A region that cannot be read is reported and
-    discovery goes on: the forbidden ones as one error listing them, the others each scoped to
-    their region."""
+    a region list that cannot be read, raises. A list that cannot be read is reported and
+    discovery goes on: the forbidden ones as one error listing the regions, the others each
+    scoped to their region."""
     started = time.monotonic()
     name = target_name(ctx.resource)
     path = ctx.resource["path"]
@@ -295,17 +426,16 @@ def discover(ctx, settings):
     else:
         regions = enabled_regions(ctx, home)
         regions_complete = True
+    deadline = started + READ_BUDGET
     scans = []
     for region in regions:
-        left = READ_BUDGET - (time.monotonic() - started)
-        if left < 1:
+        if deadline - time.monotonic() < 1:
             scan = unread(region["name"])  # a per-resource loop has a deadline
         else:
-            scan = read_region(ctx, region["name"], timeout=min(DEFAULT_TIMEOUT, left))
+            scan = read_region(ctx, region["name"], identity["accountId"], deadline)
         scan["optInStatus"] = region["optInStatus"]
         scans.append(scan)
-    denied = denied_regions_error(scans)
-    errors = ([denied] if denied else []) + [s["error"] for s in scans if s["status"] == "failed"]
+    errors = scan_errors(scans)
     for error in errors:
         ctx.error(error["code"], error["message"], scope=error["scope"])
 
@@ -314,7 +444,7 @@ def discover(ctx, settings):
         {
             "account": 1,
             "region": len(scans),
-            "lambda-function": sum(len(s["functions"]) for s in scans),
+            **{k.type: sum(len(s["kinds"][k.type]["items"]) for s in scans) for k in KINDS},
         },
         parts,
         errors,

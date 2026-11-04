@@ -1,0 +1,593 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/ec2-instances/i-0b7c1d2e3f4a5b6c7
+now: '2026-11-04T03:41:45.846Z'
+calls:
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --instance-ids
+  - i-0b7c1d2e3f4a5b6c7
+  - --query
+  - '{OwnerId: Reservations[0].OwnerId, Instance: Reservations[0].Instances[0].{InstanceId: InstanceId,
+    InstanceType: InstanceType, State: State.Name, StateCode: State.Code, StateReasonCode: StateReason.Code,
+    StateReasonMessage: StateReason.Message, StateTransitionReason: StateTransitionReason, LaunchTime:
+    LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Tenancy: Placement.Tenancy, Architecture:
+    Architecture, PlatformDetails: PlatformDetails, VirtualizationType: VirtualizationType, InstanceLifecycle:
+    InstanceLifecycle, EbsOptimized: EbsOptimized, Monitoring: Monitoring.State, RootDeviceType: RootDeviceType,
+    ImageId: ImageId, IamInstanceProfileArn: IamInstanceProfile.Arn, VpcId: VpcId, SubnetId: SubnetId,
+    PrivateIpAddress: PrivateIpAddress, PublicIpAddress: PublicIpAddress, SecurityGroupIds: SecurityGroups[].GroupId,
+    NetworkInterfaceCount: length(NetworkInterfaces || `[]`), HttpTokens: MetadataOptions.HttpTokens,
+    HttpEndpoint: MetadataOptions.HttpEndpoint, BlockDevices: BlockDeviceMappings[].{DeviceName: DeviceName,
+    VolumeId: Ebs.VolumeId, Status: Ebs.Status, DeleteOnTermination: Ebs.DeleteOnTermination, AttachTime:
+    Ebs.AttachTime}, Tags: Tags[].{Key: Key, Value: Value}}}'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "OwnerId": "123456789012",
+        "Instance": {
+            "InstanceId": "i-0b7c1d2e3f4a5b6c7",
+            "InstanceType": "t3.small",
+            "State": "running",
+            "StateCode": 16,
+            "StateReasonCode": null,
+            "StateReasonMessage": null,
+            "StateTransitionReason": "",
+            "LaunchTime": "2026-10-02T10:01:05+00:00",
+            "AvailabilityZone": "eu-west-1a",
+            "Tenancy": "default",
+            "Architecture": "x86_64",
+            "PlatformDetails": "Linux/UNIX",
+            "VirtualizationType": "hvm",
+            "InstanceLifecycle": null,
+            "EbsOptimized": true,
+            "Monitoring": "enabled",
+            "RootDeviceType": "ebs",
+            "ImageId": "ami-0abcdef1234567890",
+            "IamInstanceProfileArn": "arn:aws:iam::123456789012:instance-profile/orders-web",
+            "VpcId": "vpc-0123456789abcdef0",
+            "SubnetId": "subnet-0123456789abcdef0",
+            "PrivateIpAddress": "10.0.13.77",
+            "PublicIpAddress": null,
+            "SecurityGroupIds": [
+                "sg-0123456789abcdef0"
+            ],
+            "NetworkInterfaceCount": 1,
+            "HttpTokens": "optional",
+            "HttpEndpoint": "enabled",
+            "BlockDevices": [
+                {
+                    "DeviceName": "/dev/xvda",
+                    "VolumeId": "vol-0b7c1d2e3f4a5b6c7",
+                    "Status": "attached",
+                    "DeleteOnTermination": true,
+                    "AttachTime": "2026-10-02T10:01:11+00:00"
+                },
+                {
+                    "DeviceName": "/dev/sdf",
+                    "VolumeId": "vol-0b7c1d2e3f4a5b6c8",
+                    "Status": "attached",
+                    "DeleteOnTermination": false,
+                    "AttachTime": "2026-10-02T10:03:40+00:00"
+                }
+            ],
+            "Tags": [
+                {
+                    "Key": "Name",
+                    "Value": "orders-batch-2"
+                },
+                {
+                    "Key": "env",
+                    "Value": "prod"
+                },
+                {
+                    "Key": "db_password",
+                    "Value": "hunter2"
+                },
+                {
+                    "Key": "build",
+                    "Value": "6f0b3c2a9d1e4b7a8c5d2e1f0a9b8c7d6e5f4a3b"
+                }
+            ]
+        }
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - CPUUtilization
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Average
+  - Maximum
+  - SampleCount
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "CPUUtilization",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "SampleCount": 5.0,
+                "Average": 88.5,
+                "Maximum": 99.8,
+                "Unit": "Percent"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "SampleCount": 5.0,
+                "Average": 93.0,
+                "Maximum": 99.9,
+                "Unit": "Percent"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "SampleCount": 5.0,
+                "Average": 95.2,
+                "Maximum": 99.7,
+                "Unit": "Percent"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "SampleCount": 5.0,
+                "Average": 87.4,
+                "Maximum": 97.3,
+                "Unit": "Percent"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - NetworkIn
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "NetworkIn",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 12000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 11000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 13000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 12500000.0,
+                "Unit": "Bytes"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - NetworkOut
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "NetworkOut",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 8400000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 8100000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 8900000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 8600000.0,
+                "Unit": "Bytes"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - EBSReadBytes
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "EBSReadBytes",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 21000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 24000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 22000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 20000000.0,
+                "Unit": "Bytes"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - EBSWriteBytes
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "EBSWriteBytes",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 45000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 48000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 44000000.0,
+                "Unit": "Bytes"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 46000000.0,
+                "Unit": "Bytes"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - EBSReadOps
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "EBSReadOps",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 5200.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 5400.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 5100.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 4900.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - EBSWriteOps
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "EBSWriteOps",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 11000.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 11500.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 10900.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 11200.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - CPUCreditBalance
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Minimum
+  - Average
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "CPUCreditBalance",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Average": 9.4,
+                "Minimum": 8.7,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Average": 6.1,
+                "Minimum": 5.3,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Average": 4.2,
+                "Minimum": 3.6,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Average": 3.4,
+                "Minimum": 3.2,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/EC2
+  - --metric-name
+  - CPUCreditUsage
+  - --dimensions
+  - Name=InstanceId,Value=i-0b7c1d2e3f4a5b6c7
+  - --start-time
+  - '2026-11-04T02:41:45Z'
+  - --end-time
+  - '2026-11-04T03:41:45Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "CPUCreditUsage",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 4.1,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:10:00+00:00",
+                "Sum": 4.4,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:15:00+00:00",
+                "Sum": 4.6,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:20:00+00:00",
+                "Sum": 4.5,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    metrics:
+      instanceState: running
+      instanceType: t3.small
+      hasData: true
+      cpuAverageAboveThreshold: true
+      cpuMaxAboveThreshold: true
+      cpuCreditBalanceBelowThreshold: true
+      cpuCredits:
+        minimum: 3.2
+        average: 5.78
+        usage: 17.6
+        hasData: true

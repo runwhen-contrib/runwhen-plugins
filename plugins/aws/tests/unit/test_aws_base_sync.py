@@ -110,13 +110,15 @@ def test_with_the_credential_it_opens_sends_the_batches_and_commits(
     }
     assert http.requests[0][1]["Authorization"] == "Bearer tok-SECRET"
     assert [i["identity"]["chain"][-1]["type"] for i in http.requests[1][2]["items"]] == [
-        "account", "region", "lambda-function", "lambda-function", "region",
+        "account", "region", "lambda-function", "lambda-function", "ec2-instance", "region",
     ]  # fmt: skip
     commit = http.requests[2][2]
     assert [(p["type"], p["status"]) for p in commit["partitions"]] == [
         ("region", "complete"),
         ("lambda-function", "complete"),
+        ("ec2-instance", "complete"),
         ("lambda-function", "complete"),
+        ("ec2-instance", "complete"),
     ]
     assert json.loads(run.files["sync.json"])["commit"]["summary"] == commit["summary"]
     assert "tok-SECRET" not in run.files["sync.json"] + json.dumps(run.envelope)
