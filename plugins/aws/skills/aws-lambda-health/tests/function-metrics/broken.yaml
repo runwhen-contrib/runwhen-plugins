@@ -4,14 +4,14 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
-now: '2026-11-04T01:15:13.502Z'
+now: '2026-11-04T02:13:49.010Z'
 calls:
 - argv:
   - aws
   - lambda
   - get-function-configuration
   - --function-name
-  - orders-api
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
   - --query
   - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
     Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
@@ -72,9 +72,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=orders-api
   - --start-time
-  - '2026-11-04T00:15:13Z'
+  - '2026-11-04T01:13:49Z'
   - --end-time
-  - '2026-11-04T01:15:13Z'
+  - '2026-11-04T02:13:49Z'
   - --period
   - '300'
   - --statistics
@@ -118,9 +118,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=orders-api
   - --start-time
-  - '2026-11-04T00:15:13Z'
+  - '2026-11-04T01:13:49Z'
   - --end-time
-  - '2026-11-04T01:15:13Z'
+  - '2026-11-04T02:13:49Z'
   - --period
   - '300'
   - --statistics
@@ -164,9 +164,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=orders-api
   - --start-time
-  - '2026-11-04T00:15:13Z'
+  - '2026-11-04T01:13:49Z'
   - --end-time
-  - '2026-11-04T01:15:13Z'
+  - '2026-11-04T02:13:49Z'
   - --period
   - '300'
   - --statistics
@@ -210,9 +210,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=orders-api
   - --start-time
-  - '2026-11-04T00:15:13Z'
+  - '2026-11-04T01:13:49Z'
   - --end-time
-  - '2026-11-04T01:15:13Z'
+  - '2026-11-04T02:13:49Z'
   - --period
   - '300'
   - --statistics
@@ -253,6 +253,47 @@ calls:
         ]
     }
   stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - ConcurrentExecutions
+  - --dimensions
+  - Name=FunctionName,Value=orders-api
+  - --start-time
+  - '2026-11-04T01:13:49Z'
+  - --end-time
+  - '2026-11-04T02:13:49Z'
+  - --period
+  - '300'
+  - --statistics
+  - Maximum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "ConcurrentExecutions",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T00:00:00+00:00",
+                "Maximum": 20.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Maximum": 41.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
 expect:
   status: ok
   errorCodes: []
@@ -267,3 +308,8 @@ expect:
       durationNearTimeout: true
       duration:
         maxMs: 30000.0
+      hasData: true
+      idle: false
+      concurrentExecutionsMax: 41
+      datapoints:
+        ConcurrentExecutions: 2

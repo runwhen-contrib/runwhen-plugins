@@ -4,14 +4,14 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
-now: '2026-11-04T01:15:05.725Z'
+now: '2026-11-04T02:13:41.869Z'
 calls:
 - argv:
   - aws
   - lambda
   - get-function-configuration
   - --function-name
-  - orders-api
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
   - --query
   - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
     Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
@@ -61,6 +61,45 @@ calls:
         "EnvironmentErrorMessage": null
     }
   stderr: ''
+- argv:
+  - aws
+  - lambda
+  - get-function-concurrency
+  - --function-name
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: ''
+  stderr: ''
+- argv:
+  - aws
+  - lambda
+  - list-provisioned-concurrency-configs
+  - --function-name
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
+  - --query
+  - '{ProvisionedConcurrencyConfigs: ProvisionedConcurrencyConfigs[].{FunctionArn: FunctionArn, Requested:
+    RequestedProvisionedConcurrentExecutions, Available: AvailableProvisionedConcurrentExecutions, Allocated:
+    AllocatedProvisionedConcurrentExecutions, Status: Status, StatusReason: StatusReason}, NextToken:
+    NextToken}'
+  - --max-items
+  - '50'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "ProvisionedConcurrencyConfigs": [],
+        "NextToken": null
+    }
+  stderr: ''
 expect:
   status: ok
   errorCodes: []
@@ -76,3 +115,10 @@ expect:
       logGroup: /aws/lambda/orders-api
       memoryMb: 256
       timeoutSeconds: 30
+      reservedConcurrency:
+        configured: false
+        executions: null
+      provisionedConcurrency:
+        configs: []
+        count: 0
+        truncated: false

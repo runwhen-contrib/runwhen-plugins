@@ -4,14 +4,14 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/report-batch
-now: '2026-11-04T01:15:27.350Z'
+now: '2026-11-04T02:13:58.728Z'
 calls:
 - argv:
   - aws
   - lambda
   - get-function-configuration
   - --function-name
-  - report-batch
+  - arn:aws:lambda:eu-west-1:123456789012:function:report-batch
   - --query
   - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
     Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
@@ -72,9 +72,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=report-batch
   - --start-time
-  - '2026-11-04T00:15:27Z'
+  - '2026-11-04T01:13:58Z'
   - --end-time
-  - '2026-11-04T01:15:27Z'
+  - '2026-11-04T02:13:58Z'
   - --period
   - '300'
   - --statistics
@@ -102,9 +102,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=report-batch
   - --start-time
-  - '2026-11-04T00:15:27Z'
+  - '2026-11-04T01:13:58Z'
   - --end-time
-  - '2026-11-04T01:15:27Z'
+  - '2026-11-04T02:13:58Z'
   - --period
   - '300'
   - --statistics
@@ -132,9 +132,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=report-batch
   - --start-time
-  - '2026-11-04T00:15:27Z'
+  - '2026-11-04T01:13:58Z'
   - --end-time
-  - '2026-11-04T01:15:27Z'
+  - '2026-11-04T02:13:58Z'
   - --period
   - '300'
   - --statistics
@@ -162,9 +162,9 @@ calls:
   - --dimensions
   - Name=FunctionName,Value=report-batch
   - --start-time
-  - '2026-11-04T00:15:27Z'
+  - '2026-11-04T01:13:58Z'
   - --end-time
-  - '2026-11-04T01:15:27Z'
+  - '2026-11-04T02:13:58Z'
   - --period
   - '300'
   - --statistics
@@ -183,21 +183,57 @@ calls:
         "Datapoints": []
     }
   stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - ConcurrentExecutions
+  - --dimensions
+  - Name=FunctionName,Value=report-batch
+  - --start-time
+  - '2026-11-04T01:13:58Z'
+  - --end-time
+  - '2026-11-04T02:13:58Z'
+  - --period
+  - '300'
+  - --statistics
+  - Maximum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "ConcurrentExecutions",
+        "Datapoints": []
+    }
+  stderr: ''
 expect:
   status: ok
   errorCodes: []
   outputs:
     metrics:
+      hasData: false
+      idle: true
       invocations: 0
-      errors: 0
-      throttles: 0
+      errors: null
+      throttles: null
       errorRate: null
+      errorRateAboveThreshold: null
+      throttlesAboveThreshold: null
+      durationNearTimeout: null
+      concurrentExecutionsMax: null
       datapoints:
         Invocations: 0
         Errors: 0
         Throttles: 0
         Duration: 0
-      errorRateAboveThreshold: false
+        ConcurrentExecutions: 0
       duration:
         averageMs: null
         maxMs: null

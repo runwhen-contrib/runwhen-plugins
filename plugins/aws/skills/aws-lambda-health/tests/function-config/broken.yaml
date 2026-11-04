@@ -4,14 +4,14 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
-now: '2026-11-04T01:15:07.017Z'
+now: '2026-11-04T02:13:43.269Z'
 calls:
 - argv:
   - aws
   - lambda
   - get-function-configuration
   - --function-name
-  - orders-api
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
   - --query
   - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
     Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
@@ -61,6 +61,57 @@ calls:
         "EnvironmentErrorMessage": "Lambda was unable to decrypt the environment variables because KMS access was denied. Please check the function's KMS key settings."
     }
   stderr: ''
+- argv:
+  - aws
+  - lambda
+  - get-function-concurrency
+  - --function-name
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "ReservedConcurrentExecutions": 5
+    }
+  stderr: ''
+- argv:
+  - aws
+  - lambda
+  - list-provisioned-concurrency-configs
+  - --function-name
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
+  - --query
+  - '{ProvisionedConcurrencyConfigs: ProvisionedConcurrencyConfigs[].{FunctionArn: FunctionArn, Requested:
+    RequestedProvisionedConcurrentExecutions, Available: AvailableProvisionedConcurrentExecutions, Allocated:
+    AllocatedProvisionedConcurrentExecutions, Status: Status, StatusReason: StatusReason}, NextToken:
+    NextToken}'
+  - --max-items
+  - '50'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "ProvisionedConcurrencyConfigs": [
+            {
+                "FunctionArn": "arn:aws:lambda:eu-west-1:123456789012:function:orders-api:live",
+                "Requested": 10,
+                "Available": 0,
+                "Allocated": 0,
+                "Status": "FAILED",
+                "StatusReason": "Provisioned concurrency could not be allocated: the account's unreserved concurrency would fall below 100."
+            }
+        ],
+        "NextToken": null
+    }
+  stderr: ''
 expect:
   status: ok
   errorCodes: []
@@ -75,3 +126,13 @@ expect:
       environmentError:
         code: AccessDeniedException
       memoryMb: 128
+      reservedConcurrency:
+        configured: true
+        executions: 5
+      provisionedConcurrency:
+        count: 1
+        truncated: false
+        configs:
+          $containsWhere:
+            qualifier: live
+            status: FAILED
