@@ -1,0 +1,50 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types live beside it in types.yaml.
+# Appendix C of the lane F plan (2026-11-03-lane-f-content.md) is the design.
+apiVersion: runwhen.com/integration/v1
+platform: azure
+title: Microsoft Azure
+docs: https://docs.runwhen.com/integrations/azure
+
+# --- what tools read (D38, D45, C2) -----------------------------------------
+# The az CLI's own state: AZURE_CONFIG_DIR is a directory holding the logged-in session (token
+# cache, profile) that an auth script created under $RW_CREDENTIALS_DIR, and AZURE_SUBSCRIPTION_ID
+# names the subscription the connection is for. Env only: a task script never handles a secret, it
+# runs `az` against the session already in that directory.
+credentialTypes:
+  azure/cli:
+    title: Azure CLI session
+    description: "A logged-in az session: AZURE_CONFIG_DIR (the az config and token cache directory) and AZURE_SUBSCRIPTION_ID."
+    materialize:
+      env: [AZURE_CONFIG_DIR, AZURE_SUBSCRIPTION_ID]
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Both methods are script methods that run inside the azure@1 runtime (az is there), log in with
+# az into $RW_CREDENTIALS_DIR/azure, and write the two variables. Each is self-contained.
+authMethods:
+  service-principal:
+    title: Service principal
+    description: "A Microsoft Entra application's client secret, from a Secret, Vault or a file; the reference supplies the secret, the inputs supply tenant, application and subscription. The secret goes to az as -p @<file>, never on argv."
+    produces: azure/cli
+    accepts: [k8s-secret, vault, file]       # the secret is the key clientSecret, AZURE_CLIENT_SECRET or value
+    script: auth/service_principal.py        # relative to this file: integration/auth/
+    inputs:
+      tenantId: { type: string, required: true, description: "Microsoft Entra tenant: its id or a verified domain" }
+      clientId: { type: string, required: true, description: "Application (client) id of the service principal" }
+      subscriptionId: { type: string, required: true, description: "Subscription the connection is for (AZURE_SUBSCRIPTION_ID); the root's key" }
+  managed-identity:
+    title: Managed identity
+    description: "The managed identity of the pod or node the runner runs on (ambient: nothing to reference). Leave clientId empty for the system-assigned identity."
+    produces: azure/cli
+    accepts: [cloud-identity]
+    script: auth/managed_identity.py
+    inputs:
+      subscriptionId: { type: string, required: true, description: "Subscription the connection is for (AZURE_SUBSCRIPTION_ID); the root's key" }
+      clientId: { type: string, required: false, description: "Client id of a user-assigned managed identity; empty = the system-assigned identity" }
+  # Workload identity (federated token) and certificate service principals come later, as more
+  # script methods of this type.
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/azure-permission.json    # one permission = an RBAC action or dataAction (D68)
+
+recognizers: []                              # nothing in Kubernetes or elsewhere says "this is an Azure subscription"

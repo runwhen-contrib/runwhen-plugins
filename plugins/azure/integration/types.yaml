@@ -1,0 +1,8 @@
+# Azure = subscription -> the resources a skill targets (D51). A resource group is not a type: no
+# skill targets one, and every resource is addressed by its name within the subscription (a Key
+# Vault name is unique across Azure); the group is a fact in the resource's document.
+types:
+  # canonicalKey: the subscription id. It is the same whichever identity reaches the subscription
+  # (a service principal, a managed identity), so a second connection to it is the same root.
+  subscription: { root: true, rootKey: subscriptionId, canonicalKey: subscriptionId, plural: subscriptions }
+  keyvault: { parent: subscription, plural: keyvaults, native: { provider: Microsoft.KeyVault, type: vaults } }
