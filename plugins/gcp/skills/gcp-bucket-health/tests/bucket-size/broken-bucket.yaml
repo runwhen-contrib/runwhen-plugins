@@ -4,18 +4,116 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: gcp/projects/shop-prod-1234/buckets/shop-archive
-now: '2026-11-04T01:11:05.324Z'
+now: '2026-11-04T02:14:01.655Z'
 calls:
 - argv:
   - gcloud
   - storage
-  - du
-  - --summarize
+  - buckets
+  - describe
   - gs://shop-archive
+  - --raw
+  - --billing-project=shop-prod-1234
+  - --format=json
   - --quiet
   rc: 0
   stdout: |
-    1649267441664  gs://shop-archive/
+    {
+      "etag": "CAM=",
+      "iamConfiguration": {
+        "bucketPolicyOnly": {
+          "enabled": true,
+          "lockedTime": "2025-06-12T09:21:05.123000+00:00"
+        },
+        "publicAccessPrevention": "enforced",
+        "uniformBucketLevelAccess": {
+          "enabled": true,
+          "lockedTime": "2025-06-12T09:21:05.123000+00:00"
+        }
+      },
+      "id": "shop-archive",
+      "kind": "storage#bucket",
+      "location": "US-CENTRAL1",
+      "locationType": "region",
+      "metageneration": "3",
+      "name": "shop-archive",
+      "projectNumber": "123456789012",
+      "rpo": "DEFAULT",
+      "selfLink": "https://www.googleapis.com/storage/v1/b/shop-archive",
+      "softDeletePolicy": {
+        "effectiveTime": "2025-03-14T09:21:05.123000+00:00",
+        "retentionDurationSeconds": "604800"
+      },
+      "storageClass": "STANDARD",
+      "timeCreated": "2025-03-14T09:21:05.123000+00:00",
+      "updated": "2026-09-01T12:00:00+00:00"
+    }
+  stderr: ''
+- argv:
+  - gcloud
+  - auth
+  - print-access-token
+  - --billing-project=shop-prod-1234
+  - --quiet
+  rc: 0
+  stdout: |
+    fake-access-token-not-a-secret
+  stderr: ''
+- argv:
+  - curl
+  - -sS
+  - --fail-with-body
+  - --max-redirs
+  - '0'
+  - -H
+  - '@.gcp-monitoring-header'
+  - https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22storage.googleapis.com%2Fstorage%2Fv2%2Ftotal_bytes%22%20AND%20resource.type%20%3D%20%22gcs_bucket%22%20AND%20resource.labels.project_id%20%3D%20%22shop-prod-1234%22%20AND%20resource.labels.bucket_name%20%3D%20%22shop-archive%22&interval.endTime=2026-11-04T02%3A14%3A01Z&interval.startTime=2026-11-03T20%3A14%3A01Z&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_MAX&pageSize=1000
+  rc: 0
+  stdout: |
+    {
+      "timeSeries": [
+        {
+          "metric": {
+            "labels": {
+              "storage_class": "STANDARD",
+              "type": "live-object"
+            },
+            "type": "storage.googleapis.com/storage/v2/total_bytes"
+          },
+          "metricKind": "GAUGE",
+          "points": [
+            {
+              "interval": {
+                "endTime": "2026-11-04T01:00:00Z",
+                "startTime": "2026-11-04T00:00:00Z"
+              },
+              "value": {
+                "doubleValue": 1649267441664.0
+              }
+            },
+            {
+              "interval": {
+                "endTime": "2026-11-04T00:00:00Z",
+                "startTime": "2026-11-03T23:00:00Z"
+              },
+              "value": {
+                "doubleValue": 1649267441664.0
+              }
+            }
+          ],
+          "resource": {
+            "labels": {
+              "bucket_name": "shop-archive",
+              "location": "us-central1",
+              "project_id": "shop-prod-1234"
+            },
+            "type": "gcs_bucket"
+          },
+          "valueType": "DOUBLE"
+        }
+      ],
+      "unit": "By"
+    }
   stderr: ''
 expect:
   status: ok
@@ -23,10 +121,12 @@ expect:
   outputs:
     totals:
       examined: 1
+      total: 1
+      complete: true
       overThreshold: 1
     sizes:
-      total: 1
       items:
         $containsWhere:
           name: shop-archive
-          overThreshold: true
+          sizeBytes: 1649267441664
+          source: monitoring

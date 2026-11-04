@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: gcp/projects/shop-prod-1234
-now: '2026-11-04T01:10:16.664Z'
+now: '2026-11-04T02:13:10.771Z'
 calls:
 - argv:
   - gcloud
@@ -13,6 +13,7 @@ calls:
   - list
   - --project=shop-prod-1234
   - --raw
+  - --billing-project=shop-prod-1234
   - --format=json
   - --quiet
   rc: 0
@@ -23,12 +24,12 @@ calls:
         "iamConfiguration": {
           "bucketPolicyOnly": {
             "enabled": true,
-            "lockedTime": "2025-06-12T09:21:05.123Z"
+            "lockedTime": "2025-06-12T09:21:05.123000+00:00"
           },
           "publicAccessPrevention": "enforced",
           "uniformBucketLevelAccess": {
             "enabled": true,
-            "lockedTime": "2025-06-12T09:21:05.123Z"
+            "lockedTime": "2025-06-12T09:21:05.123000+00:00"
           }
         },
         "id": "shop-assets",
@@ -57,12 +58,60 @@ calls:
         "rpo": "DEFAULT",
         "selfLink": "https://www.googleapis.com/storage/v1/b/shop-assets",
         "softDeletePolicy": {
-          "effectiveTime": "2025-03-14T09:21:05.123Z",
+          "effectiveTime": "2025-03-14T09:21:05.123000+00:00",
           "retentionDurationSeconds": "604800"
         },
         "storageClass": "STANDARD",
-        "timeCreated": "2025-03-14T09:21:05.123Z",
-        "updated": "2026-09-01T12:00:00.000Z",
+        "timeCreated": "2025-03-14T09:21:05.123000+00:00",
+        "updated": "2026-09-01T12:00:00+00:00",
+        "versioning": {
+          "enabled": true
+        }
+      },
+      {
+        "encryption": {
+          "defaultKmsKeyName": "projects/shop-prod-1234/locations/us/keyRings/shop/cryptoKeys/backups"
+        },
+        "etag": "CAM=",
+        "iamConfiguration": {
+          "bucketPolicyOnly": {
+            "enabled": true,
+            "lockedTime": "2025-06-12T09:21:05.123000+00:00"
+          },
+          "publicAccessPrevention": "enforced",
+          "uniformBucketLevelAccess": {
+            "enabled": true,
+            "lockedTime": "2025-06-12T09:21:05.123000+00:00"
+          }
+        },
+        "id": "shop-backups",
+        "kind": "storage#bucket",
+        "lifecycle": {
+          "rule": [
+            {
+              "action": {
+                "type": "Delete"
+              },
+              "condition": {
+                "age": 30
+              }
+            }
+          ]
+        },
+        "location": "US",
+        "locationType": "multi-region",
+        "metageneration": "3",
+        "name": "shop-backups",
+        "projectNumber": "123456789012",
+        "rpo": "DEFAULT",
+        "selfLink": "https://www.googleapis.com/storage/v1/b/shop-backups",
+        "softDeletePolicy": {
+          "effectiveTime": "2025-03-14T09:21:05.123000+00:00",
+          "retentionDurationSeconds": "604800"
+        },
+        "storageClass": "COLDLINE",
+        "timeCreated": "2025-03-14T09:21:05.123000+00:00",
+        "updated": "2026-09-01T12:00:00+00:00",
         "versioning": {
           "enabled": true
         }
@@ -72,12 +121,12 @@ calls:
         "iamConfiguration": {
           "bucketPolicyOnly": {
             "enabled": true,
-            "lockedTime": "2025-06-12T09:21:05.123Z"
+            "lockedTime": "2025-06-12T09:21:05.123000+00:00"
           },
           "publicAccessPrevention": "inherited",
           "uniformBucketLevelAccess": {
             "enabled": true,
-            "lockedTime": "2025-06-12T09:21:05.123Z"
+            "lockedTime": "2025-06-12T09:21:05.123000+00:00"
           }
         },
         "id": "shop-logs",
@@ -108,68 +157,19 @@ calls:
         "name": "shop-logs",
         "projectNumber": "123456789012",
         "retentionPolicy": {
-          "effectiveTime": "2025-03-14T09:21:05.123Z",
+          "effectiveTime": "2025-03-14T09:21:05.123000+00:00",
           "isLocked": false,
           "retentionPeriod": "2592000"
         },
         "rpo": "DEFAULT",
         "selfLink": "https://www.googleapis.com/storage/v1/b/shop-logs",
         "softDeletePolicy": {
-          "effectiveTime": "2025-03-14T09:21:05.123Z",
+          "effectiveTime": "2025-03-14T09:21:05.123000+00:00",
           "retentionDurationSeconds": "604800"
         },
         "storageClass": "NEARLINE",
-        "timeCreated": "2025-03-14T09:21:05.123Z",
-        "updated": "2026-09-01T12:00:00.000Z",
-        "versioning": {}
-      },
-      {
-        "encryption": {
-          "defaultKmsKeyName": "projects/shop-prod-1234/locations/us/keyRings/shop/cryptoKeys/backups"
-        },
-        "etag": "CAM=",
-        "iamConfiguration": {
-          "bucketPolicyOnly": {
-            "enabled": true,
-            "lockedTime": "2025-06-12T09:21:05.123Z"
-          },
-          "publicAccessPrevention": "enforced",
-          "uniformBucketLevelAccess": {
-            "enabled": true,
-            "lockedTime": "2025-06-12T09:21:05.123Z"
-          }
-        },
-        "id": "shop-backups",
-        "kind": "storage#bucket",
-        "lifecycle": {
-          "rule": [
-            {
-              "action": {
-                "type": "Delete"
-              },
-              "condition": {
-                "age": 30
-              }
-            }
-          ]
-        },
-        "location": "US",
-        "locationType": "multi-region",
-        "metageneration": "3",
-        "name": "shop-backups",
-        "projectNumber": "123456789012",
-        "rpo": "DEFAULT",
-        "selfLink": "https://www.googleapis.com/storage/v1/b/shop-backups",
-        "softDeletePolicy": {
-          "effectiveTime": "2025-03-14T09:21:05.123Z",
-          "retentionDurationSeconds": "604800"
-        },
-        "storageClass": "COLDLINE",
-        "timeCreated": "2025-03-14T09:21:05.123Z",
-        "updated": "2026-09-01T12:00:00.000Z",
-        "versioning": {
-          "enabled": true
-        }
+        "timeCreated": "2025-03-14T09:21:05.123000+00:00",
+        "updated": "2026-09-01T12:00:00+00:00"
       }
     ]
   stderr: ''
@@ -178,6 +178,7 @@ calls:
   - projects
   - describe
   - shop-prod-1234
+  - --billing-project=shop-prod-1234
   - --format=json
   - --quiet
   rc: 0

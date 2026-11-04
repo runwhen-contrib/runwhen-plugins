@@ -3,38 +3,40 @@
 # subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
-resource: gcp/projects/shop-prod-1234/buckets/shop-backups
-now: '2026-11-04T01:11:03.620Z'
+resource: gcp/projects/shop-prod-1234/buckets/shop-assets
+now: '2026-11-04T02:13:58.889Z'
 calls:
 - argv:
   - gcloud
   - storage
   - buckets
   - describe
-  - gs://shop-backups
+  - gs://shop-assets
   - --raw
+  - --billing-project=shop-prod-1234
   - --format=json
   - --quiet
   rc: 0
   stdout: |
     {
-      "encryption": {
-        "defaultKmsKeyName": "projects/shop-prod-1234/locations/us/keyRings/shop/cryptoKeys/backups"
-      },
       "etag": "CAM=",
       "iamConfiguration": {
         "bucketPolicyOnly": {
           "enabled": true,
-          "lockedTime": "2025-06-12T09:21:05.123Z"
+          "lockedTime": "2025-06-12T09:21:05.123000+00:00"
         },
         "publicAccessPrevention": "enforced",
         "uniformBucketLevelAccess": {
           "enabled": true,
-          "lockedTime": "2025-06-12T09:21:05.123Z"
+          "lockedTime": "2025-06-12T09:21:05.123000+00:00"
         }
       },
-      "id": "shop-backups",
+      "id": "shop-assets",
       "kind": "storage#bucket",
+      "labels": {
+        "env": "prod",
+        "team": "web"
+      },
       "lifecycle": {
         "rule": [
           {
@@ -47,20 +49,20 @@ calls:
           }
         ]
       },
-      "location": "US",
-      "locationType": "multi-region",
+      "location": "US-CENTRAL1",
+      "locationType": "region",
       "metageneration": "3",
-      "name": "shop-backups",
+      "name": "shop-assets",
       "projectNumber": "123456789012",
       "rpo": "DEFAULT",
-      "selfLink": "https://www.googleapis.com/storage/v1/b/shop-backups",
+      "selfLink": "https://www.googleapis.com/storage/v1/b/shop-assets",
       "softDeletePolicy": {
-        "effectiveTime": "2025-03-14T09:21:05.123Z",
+        "effectiveTime": "2025-03-14T09:21:05.123000+00:00",
         "retentionDurationSeconds": "604800"
       },
-      "storageClass": "COLDLINE",
-      "timeCreated": "2025-03-14T09:21:05.123Z",
-      "updated": "2026-09-01T12:00:00.000Z",
+      "storageClass": "STANDARD",
+      "timeCreated": "2025-03-14T09:21:05.123000+00:00",
+      "updated": "2026-09-01T12:00:00+00:00",
       "versioning": {
         "enabled": true
       }
@@ -70,11 +72,15 @@ expect:
   status: ok
   errorCodes: []
   outputs:
-    buckets:
+    totals:
+      examined: 1
       total: 1
       omitted: 0
+      complete: true
+    buckets:
       items:
         $containsWhere:
-          name: shop-backups
-          storageClass: COLDLINE
-          cmek: true
+          name: shop-assets
+          versioning: true
+          uniformBucketLevelAccess: true
+          publicAccessPrevention: enforced
