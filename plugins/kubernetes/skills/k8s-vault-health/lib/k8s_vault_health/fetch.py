@@ -1,23 +1,20 @@
 """Fetching the target workloads, their pods, events and Vault's own health (the only I/O besides
 k8s.py)."""
 
-import re
-import subprocess
-
 from k8s_vault_health.errors import RwError
-from k8s_vault_health.k8s import (
-    MESSAGE_LIMIT,
-    failure,
-    kubectl_json_scoped,
-    run_unchecked,
-)
+from k8s_vault_health.k8s import MESSAGE_LIMIT, kubectl_json_scoped
 from k8s_vault_health.project import (
     DAEMONSET_FIELDS,
     POD_FIELDS,
     STATEFULSET_FIELDS,
     kubectl_projected,
 )
-from k8s_vault_health.vault import REMOVED_DOC, health_path, parse_health
+from k8s_vault_health.vault import (
+    HEALTH_PATH,
+    STATE_BY_STATUS,
+    check_listener,
+    parse_health,
+)
 from k8s_vault_health.workload import (
     NAMESPACE,
     STATEFULSET,
@@ -36,8 +33,6 @@ NOT_FOUND_HINT = (
     "the pod proxy answered 404: nothing serves Vault's /v1/sys/health on this port (the port "
     "input is Vault's API port, 8200 by default), or the pod is gone"
 )
-# kubectl's text for a status code the proxy cannot carry; 530 is Vault's "removed from cluster"
-_REMOVED = re.compile(r"(?<![\d.:/])530(?![\d.])")
 
 
 def target(ctx):
@@ -98,38 +93,57 @@ def load_warning_events(ctx, ns):
 
 
 def vault_health(ctx, ns, pod_name, scheme, port, budget):
-    """The /v1/sys/health document of one pod, through the API server's pod proxy (no port-forward,
-    no exec, no credential: the endpoint is unauthenticated). A call made after the task's time
-    budget is spent raises timeout without running. A Vault that answered 530 (removed from its
-    raft cluster) where the proxy dropped the body is the removed document."""
-    path = health_path(ns, pod_name, scheme, port)
+    """(status, document) of one pod's /v1/sys/health, through the API server's pod proxy by
+    `ctx.k8s_proxy_get` (no port-forward, no exec, no credential: the endpoint is unauthenticated;
+    a redirect is never followed). The status is Vault's own: 200 active, 429 standby, 472, 473,
+    501 uninitialized, 503 sealed, 530 removed from its raft cluster. A call made after the task's
+    time budget is spent raises timeout without running."""
+    check_listener(scheme, port)
     timeout = budget.timeout(PROXY_TIMEOUT)
-    argv = ["kubectl", "get", "--raw", path]
     try:
-        result = run_unchecked(ctx, argv, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise RwError("timeout", f"Vault did not answer within {timeout:g}s") from None
-    if result.returncode:
-        stderr = (result.stderr or "").lower()
-        if "http request to an https server" in stderr:
-            raise RwError("invalid_input", "the pod serves HTTPS: set the scheme input to https")
-        if "does not look like a tls handshake" in stderr:
+        reply = ctx.k8s_proxy_get(
+            ns, "pods", pod_name, port, HEALTH_PATH, scheme=scheme, timeout=timeout
+        )
+    except RwError as exc:
+        text = str(getattr(exc, "message", exc)).lower()
+        if exc.code == "timeout":
+            raise RwError("timeout", f"Vault did not answer within {timeout:g}s") from None
+        if exc.code == "unreachable" and "does not look like a tls handshake" in text:
             raise RwError(
                 "invalid_input", "the pod serves plain HTTP: set the scheme input to http"
-            )
-        if "bad certificate" in stderr:
+            ) from None
+        if exc.code == "unreachable" and "bad certificate" in text:
             raise RwError(
                 "unreachable",
                 "the Vault listener refused the proxy's connection: tls: bad certificate",
                 hint=MTLS_HINT,
-            )
-        if _REMOVED.search(stderr):
-            return dict(REMOVED_DOC)
-        error = failure(argv, result)
-        if error.code == "not_found":
-            raise RwError("not_found", error.message, hint=NOT_FOUND_HINT)
-        raise error
-    return parse_health(result.stdout)
+            ) from None
+        if exc.code == "not_found":
+            raise RwError("not_found", exc.message, hint=NOT_FOUND_HINT) from None
+        raise
+    status = reply["status"]
+    if reply.get("truncated"):
+        raise RwError(
+            "internal",
+            "the pod's /v1/sys/health body was cut at the size limit",
+            hint="something other than Vault answers on this port: check the port input",
+        )
+    if status in STATE_BY_STATUS:
+        return status, parse_health(reply["body"], status)
+    headers = reply.get("headers") or {}
+    if 300 <= status < 400:
+        dropped = headers.get("x-rw-redirect-dropped")
+        where = f"off cluster to {dropped}" if dropped else "elsewhere"
+        raise RwError(
+            "internal",
+            f"the pod's /v1/sys/health answered a redirect ({status}) {where}; not followed",
+            hint="something other than Vault answers on this port: check the port input",
+        )
+    if status == 404:
+        raise RwError("not_found", "the pod's /v1/sys/health answered 404", hint=NOT_FOUND_HINT)
+    if status == 400 and "http request to an https server" in reply["body"].lower():
+        raise RwError("invalid_input", "the pod serves HTTPS: set the scheme input to https")
+    raise RwError("internal", f"the pod's /v1/sys/health answered HTTP {status}")
 
 
 def error_entry(exc):

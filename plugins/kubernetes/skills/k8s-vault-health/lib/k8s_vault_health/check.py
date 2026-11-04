@@ -49,9 +49,8 @@ def server_status(ctx, scheme, port, max_items, budget=None):
             if not askable(pod):
                 continue
             try:
-                entry["health"] = health_facts(
-                    vault_health(ctx, ns, entry["pod"], scheme, port, budget)
-                )
+                status, document = vault_health(ctx, ns, entry["pod"], scheme, port, budget)
+                entry["health"] = health_facts(document, status)
                 entry["queried"] = True
             except RwError as exc:
                 entry["error"] = error_entry(exc)

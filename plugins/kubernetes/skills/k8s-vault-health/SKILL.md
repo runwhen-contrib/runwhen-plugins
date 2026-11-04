@@ -31,8 +31,9 @@ Targets, by task:
   labelled `app.kubernetes.io/name=vault-csi-provider`).
 - The other kind of workload is `invalid_input`; a namespace with no such workload is `not_found`.
 
-The tasks only read. `server-status` calls the pod proxy subresource (`pods/proxy` get), so the
-connection needs that verb in the Vault namespace. A namespace target also needs `get` on the
+The tasks only read. `server-status` calls the pod proxy subresource (`pods/proxy` get, and nothing
+else: the helper's `kubectl proxy` makes no API call of its own), so the connection needs that verb
+in the Vault namespace. A namespace target also needs `get` on the
 Namespace, which is cluster-scoped; without it the lists are still tried and the denial is reported.
 No Secret is read and no Vault token is used.
 
@@ -55,9 +56,10 @@ No Secret is read and no Vault token is used.
 
 ## How to read the result
 
-- Vault answers a health request with a status code that names the state. The API server's proxy
-  would turn those codes into errors and drop the body, so the task asks Vault to answer 200 for
-  every state and reads the state from the body. `healthCode` is what Vault returns by default.
+- Vault answers a health request with a status code that names the state, and the task reads that
+  status (200, 429, 472, 473, 501, 503, 530) as it comes, with the body for the other facts.
+  `healthCode` is that status. The request goes through `ctx.k8s_proxy_get`, which never follows a
+  redirect: a health endpoint that redirects is an `internal` error naming where it pointed.
 - Ready does not mean unsealed, and not ready does not mean sealed: trust `state`, Vault's own
   answer, over the pod's `ready`.
 - On a healthy Vault with several pods one is `active` and the rest `standby`. That is not
@@ -65,7 +67,7 @@ No Secret is read and no Vault token is used.
   other states appear next to the active one. A sealed pod that reports `standby: true` is a Vault
   quirk: read `state`. `clusterName` and `clusterId` are null while sealed.
 - `state: removed` (health code 530) is a pod taken out of its raft cluster; it no longer serves.
-  `initialized` and `sealed` are null when the API server dropped the body of the 530 reply.
+  `initialized` and `sealed` are null when the 530 reply has no health body.
 - `pods[].queried: false` is a pod that is not Running or has no address; it was listed, not asked.
   A pod with an `error` could not be asked (the result is `partial`; the code is
   `permission_denied` without `pods/proxy`, `unreachable` when nothing listens on the port, and
@@ -81,9 +83,9 @@ No Secret is read and no Vault token is used.
   is listed with a `timeout` error and `queried: false`.
 - Errors that name the cause: `tls: bad certificate` is a listener that wants a client certificate
   (mutual TLS), which the API server's pod proxy cannot present (`unreachable`); a 404 from the
-  proxy (`not_found`) usually means nothing serves Vault on the `port` input. The message for an
-  https listener asked over http ("HTTP request to an HTTPS server") is mapped but was never
-  recorded against a real listener.
+  proxy (`not_found`) usually means nothing serves Vault on the `port` input. An https listener asked over
+  http answers 400 "HTTP request to an HTTPS server" and a plain one asked over https is a TLS
+  handshake error; both are `invalid_input` naming the scheme to use.
 - A CSI `desired` of 0 means no node matches the DaemonSet's selector, not that all is well. A
   nonzero `unavailable` (`anyUnavailable: true`) is a fault in steady state, even below
   `maxUnavailable`; only a rollout in progress explains it. `unavailableExceedsMax: true` means more
