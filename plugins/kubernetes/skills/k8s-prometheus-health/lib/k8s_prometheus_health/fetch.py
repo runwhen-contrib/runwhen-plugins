@@ -5,7 +5,7 @@ import time
 from k8s_prometheus_health.common import MESSAGE_LIMIT
 from k8s_prometheus_health.errors import RwError
 from k8s_prometheus_health.k8s import kubectl_json
-from k8s_prometheus_health.proxy import api_json, pod_path, proxy_get
+from k8s_prometheus_health.proxy import api_json, proxy_get
 
 TYPE = "kubernetes/prometheus"
 PLURAL = "prometheuses"
@@ -53,8 +53,8 @@ class Budget:
             raise RwError("timeout", reason)
 
     def request_timeout(self):
-        """The kubectl --request-timeout for the next ask: never past the deadline."""
-        return f"{max(1, min(REQUEST_SECONDS, int(self.remaining())))}s"
+        """Seconds for the next ask: never past the deadline."""
+        return max(1, min(REQUEST_SECONDS, int(self.remaining())))
 
     def record(self, path, timed_out):
         self._timeouts[path] = self._timeouts.get(path, 0) + 1 if timed_out else 0
@@ -154,15 +154,13 @@ def fetch_one(ctx, prom, pod, path, parse, what, budget=None):
     ask that is past the deadline, or on a path that timed out for the last pods, raises
     `timeout` without asking."""
     scheme, port, prefix = endpoint(prom, pod)
-    api_path = pod_path(
-        prom["metadata"]["namespace"], pod["metadata"]["name"], scheme, port, prefix + path
-    )
+    where = (prom["metadata"]["namespace"], pod["metadata"]["name"], scheme, port, prefix + path)
     if budget is None:
-        reply = proxy_get(ctx, api_path)
+        reply = proxy_get(ctx, *where)
     else:
         budget.check(path)
         try:
-            reply = proxy_get(ctx, api_path, budget.request_timeout())
+            reply = proxy_get(ctx, *where, budget.request_timeout())
         except RwError as exc:
             budget.record(path, exc.code == "timeout")
             raise

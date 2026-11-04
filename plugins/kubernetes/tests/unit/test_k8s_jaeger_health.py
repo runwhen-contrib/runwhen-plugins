@@ -8,12 +8,15 @@ http.response.status_code key, 404 x2 with http.route) and `inventory` (507 x3, 
 code lists). `traces-<service>.json` is everything Jaeger held for the service (spans cut to the
 fields the skill reads); the tests answer each tag query the way Jaeger does (a trace matches when
 a span's tag equals the value as a string, a bool as true/false). The script runs through the SDK's test context (`ctx.run` raises on a non-zero exit like
-the real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails)."""
+the real runner; `stub_commands` matches the exact kubectl argv, so an unexpected call fails). The pod
+proxy reads go through `ctx.k8s_proxy_get`, stood in for by `proxy_fake.ProxyFake` (a stub written
+as kubectl's (rc, stdout, stderr) is turned into the helper's answer by `served_as`)."""
 
 import importlib.util
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import jsonschema
@@ -23,6 +26,7 @@ from k8s_jaeger_health import fetch, http_errors, k8s, proxy, traces
 from k8s_jaeger_health.common import parse_duration
 from k8s_jaeger_health.errors import RwError
 from k8s_jaeger_health.project import POD_FIELDS, WORKLOAD_FIELDS, Projection
+from proxy_fake import ProxyFake, api_error, cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-jaeger-health"
@@ -49,10 +53,9 @@ UNREACHABLE = (
     "Error from server (ServiceUnavailable): error trying to reach service: "
     "dial tcp 10.244.0.5:16686: connect: connection refused"
 )
-UNAVAILABLE = (
-    "Error from server (ServiceUnavailable): the server is currently unable to handle the request"
-)
-NO_ROUTE = "Error from server (NotFound): the server could not find the requested resource"
+# what a test writes as (rc, stdout, stderr) for the workload's own 503 / 404
+UNAVAILABLE = (1, "", "backend 503")
+NO_ROUTE = (1, "", "backend 404")
 SERVICES = ("catalog", "checkout", "gateway", "inventory", "jaeger-all-in-one")  # last: no spans
 EMPTY = {"data": [], "total": 0, "limit": 0, "offset": 0, "errors": None}
 
@@ -109,13 +112,23 @@ def micros(stamp):
 
 
 def raw(path, scheme="http", port=16686):
-    return (
-        "kubectl",
-        "get",
-        "--raw",
-        f"/api/v1/namespaces/{NS}/pods/{scheme}:{POD}:{port}/proxy{path}",
-        "--request-timeout=30s",
-    )
+    """The key of one proxied request: a `ctx.k8s_proxy_get` call, recorded in `calls` as this tuple."""
+    return ("k8s_proxy_get", NS, POD, str(port), path, scheme)
+
+
+def served_as(answer):
+    """The ctx.k8s_proxy_get answer for a test's (rc, stdout, stderr): a body for 0, the workload's
+    503 / 404 for UNAVAILABLE / NO_ROUTE, a dict as it is, else the API-server error the stderr names."""
+    if isinstance(answer, dict):
+        return answer
+    rc, out, err = answer
+    if rc == 0:
+        return out
+    if answer == UNAVAILABLE:
+        return reply(503, "service unavailable")
+    if answer == NO_ROUTE:
+        return reply(404, "404 page not found")
+    return api_error(err, k8s.classify)
 
 
 def first_start(trace):
@@ -215,7 +228,16 @@ def run(now=CAPTURED, res=None, settings=None, inputs=None, **kw):
             **inputs_of(inputs),
             **kw,
         )
-        calls = stub_commands(tc, table)
+        calls = stub_commands(tc, {k: v for k, v in table.items() if k[0] == "kubectl"})
+
+        def answer(request):
+            key = ("k8s_proxy_get", request["namespace"], request["name"], str(request["port"]))
+            key += (request["path"], request["scheme"])
+            calls.append(key)
+            assert key in table, f"ctx.k8s_proxy_get called with an unstubbed request {key!r}"
+            return served_as(table[key])
+
+        tc.ctx.k8s_proxy_get = ProxyFake(answer)
         env = run_main(script(), tc, **inputs)
     return env, calls
 
@@ -262,7 +284,7 @@ def test_traces_path_is_one_exact_tag_query_in_microseconds():
     assert query["service"] == ["check out"] and query["start"] == ["1000"]
     assert query["end"] == ["2000"] and query["limit"] == ["100"]
     assert json.loads(query["tags"][0]) == {"http.status_code": "500"}
-    assert " " not in path and "{" not in path  # percent-encoded: safe as a --raw argument
+    assert " " not in path and "{" not in path  # percent-encoded: a plain request path
 
 
 def test_the_window_is_microseconds_before_the_reference_time():
@@ -475,24 +497,84 @@ def test_check_inputs_codes_limit_and_duration():
     assert parse_duration("1h30m") == timedelta(minutes=90)
 
 
-class FakeRun:
-    def __init__(self, rc, out="", err=""):
-        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+class FakeProxyCtx:
+    def __init__(self, answer):
+        self.k8s_proxy_get = ProxyFake(answer)
 
-    def run(self, argv, check=True, **_):
-        return self.result
+
+def ask(answer, path="/x"):
+    return proxy.proxy_get(FakeProxyCtx(answer), "ns", POD, "http", 16686, path)
 
 
 def test_classify_and_proxy_get_tell_the_statuses_apart():
     assert k8s.classify(1, UNREACHABLE) == "unreachable"
     assert k8s.classify(1, FORBIDDEN.format(r="pods/proxy", v="get")) == "permission_denied"
     assert k8s.classify(1, 'Error from server (NotFound): pods "x" not found') == "not_found"
-    assert proxy.proxy_get(FakeRun(0, "ok"), "/x") == proxy.Reply(200, "ok")
-    assert proxy.proxy_get(FakeRun(1, "", NO_ROUTE), "/x").status == 404
-    assert proxy.proxy_get(FakeRun(1, "", UNAVAILABLE), "/x").status == 503
+    assert ask("ok") == proxy.Reply(200, "ok")
+    assert ask(reply(404, "404 page not found")).status == 404
+    assert ask(reply(503, "unavailable")) == proxy.Reply(503, "unavailable")
+    assert ask(reply(403, "forbidden")).status == 403  # the backend's 403 is data, not RBAC
     with pytest.raises(RwError) as exc:
-        proxy.proxy_get(FakeRun(1, "", UNREACHABLE), "/x")
+        ask(api_error(UNREACHABLE, k8s.classify))
     assert exc.value.code == "unreachable"
+    with pytest.raises(RwError) as exc:
+        ask(api_error(FORBIDDEN.format(r="pods/proxy", v="get"), k8s.classify))
+    assert exc.value.code == "permission_denied"
+
+
+def test_proxy_get_asks_the_pod_proxy_with_scheme_port_path_and_timeout():
+    ctx = FakeProxyCtx("ok")
+    proxy.proxy_get(ctx, "ns", POD, "https", 9000, "/api/services?x=1", 7)
+    assert ctx.k8s_proxy_get.requests == [
+        {
+            "namespace": "ns",
+            "kind": "pods",
+            "name": POD,
+            "port": 9000,
+            "path": "/api/services?x=1",
+            "scheme": "https",
+            "timeout": 7,
+        }
+    ]
+
+
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location; the skill reports the host and asks nothing more."""
+    ctx = FakeProxyCtx(cross_host_redirect("sso.example.invalid"))
+    got = proxy.proxy_get(ctx, "ns", POD, "http", 16686, "/api/services")
+    assert got.status == 302 and got.redirect_dropped == "sso.example.invalid"
+    assert len(ctx.k8s_proxy_get.requests) == 1
+    with pytest.raises(RwError) as exc:
+        proxy.expect_200(got, "services")
+    assert exc.value.code == "dependency"
+    assert "off cluster to sso.example.invalid (not followed)" in exc.value.message
+
+
+def test_a_cross_host_redirect_through_the_task_is_an_error_and_asks_once():
+    env, calls = run(replies={"/api/services": cross_host_redirect("sso.example.invalid")})
+    assert env["status"] == "failed" and codes_of(env) == [("dependency", None)]
+    assert "sso.example.invalid" in env["errors"][0]["message"]
+    assert [c for c in calls if c[0] == "k8s_proxy_get"] == [raw("/api/services")]
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = FakeProxyCtx(
+        lambda r: reply(301, "", location="/jaeger/api/x") if r["path"] == "/api/x" else "moved"
+    )
+    assert ask_with(ctx, "/api/x").body == "moved"
+    assert ctx.k8s_proxy_get.paths() == ["/api/x", "/jaeger/api/x"]
+    loop = FakeProxyCtx(lambda r: reply(302, "", location="/again"))
+    assert ask_with(loop, "/a").status == 302 and len(loop.k8s_proxy_get.requests) == 2
+
+
+def ask_with(ctx, path):
+    return proxy.proxy_get(ctx, "ns", POD, "http", 16686, path)
+
+
+def test_a_cut_body_is_internal_never_a_partial_parse():
+    with pytest.raises(RwError) as exc:
+        ask(reply(200, '{"data": [', truncated=True))
+    assert exc.value.code == "internal" and exc.value.hint
 
 
 def test_the_error_reason_decides_before_the_message_text():
@@ -522,33 +604,9 @@ def test_the_error_reason_decides_before_the_message_text():
     assert k8s.classify(1, warned) == "not_found"
 
 
-def test_proxy_get_reads_the_reason_line_before_looking_for_a_404_or_503_text():
-    # a permission error whose message happens to contain the 404 text is not a 404
-    forbidden = (
-        'Error from server (Forbidden): pods "p" is forbidden: cannot get resource "pods/proxy" '
-        "(the server could not find the requested resource)"
-    )
-    with pytest.raises(RwError) as exc:
-        proxy.proxy_get(FakeRun(1, "", forbidden), "/x")
-    assert exc.value.code == "permission_denied"
-    with pytest.raises(RwError) as exc:
-        proxy.proxy_get(
-            FakeRun(1, "", "Error from server (Timeout): currently unable to handle the request"),
-            "/x",
-        )
-    assert exc.value.code == "timeout"
-    # no Reason line at all: the text is all there is
-    assert (
-        proxy.proxy_get(
-            FakeRun(1, "", "the server could not find the requested resource"), "/x"
-        ).status
-        == 404
-    )
-
-
 def test_workload_and_pod_reads_are_projected_so_no_env_value_leaves_the_cluster():
     _, calls = run()
-    reads = [c for c in calls if "--raw" not in c]
+    reads = [c for c in calls if c[0] == "kubectl"]
     assert reads and all(c[-2] == "-o" and c[-1].startswith("jsonpath=") for c in reads)
     for projection in (WORKLOAD_FIELDS, POD_FIELDS):
         template = projection.template(True)
@@ -629,14 +687,18 @@ def test_broken_reports_5xx_and_4xx_per_service_and_operation():
         stock["byStatus"] == {"507": 3} and service_row(env, "inventory")["serverErrorSpans"] == 3
     )
     # one error=true query per service, then one query per service, status attribute key and code
-    queries = [c for c in calls if "/api/traces" in c[3]]
+    queries = [c for c in calls if c[0] == "k8s_proxy_get" and "/api/traces" in c[4]]
     assert len(queries) == 5 * (1 + 2 * len(CODES))
-    assert "tags=%7B%22error%22%3A%22true%22%7D" in queries[0][3]
+    assert "tags=%7B%22error%22%3A%22true%22%7D" in queries[0][4]
 
 
 def test_all_error_true_queries_come_before_any_exact_code_query():
     _, calls = run()
-    tags = [parse_qs(urlsplit(c[3]).query)["tags"][0] for c in calls if "/api/traces" in c[3]]
+    tags = [
+        parse_qs(urlsplit(c[4]).query)["tags"][0]
+        for c in calls
+        if c[0] == "k8s_proxy_get" and "/api/traces" in c[4]
+    ]
     first_exact = next(i for i, t in enumerate(tags) if "error" not in json.loads(t))
     assert all(json.loads(t) == {"error": "true"} for t in tags[:first_exact])
     assert first_exact == len(SERVICES)
@@ -923,7 +985,9 @@ def test_services_beyond_max_items_are_counted_not_queried():
     assert out["truncated"] is True and out["serviceCount"] == 5
     assert out["queriedCount"] == 2 and out["servicesNotQueried"] == 3
     assert [s["name"] for s in out["services"]] == ["checkout", "catalog"]
-    assert len([c for c in calls if "/api/traces" in c[3]]) == 2 * (1 + 2 * len(CODES))
+    assert len([c for c in calls if c[0] == "k8s_proxy_get" and "/api/traces" in c[4]]) == 2 * (
+        1 + 2 * len(CODES)
+    )
     check_schema(env)
 
 
@@ -932,7 +996,7 @@ def test_no_services_in_jaeger_is_a_fact():
     assert env["status"] == "ok"
     out = env["outputs"]["httpErrors"]
     assert out["serviceCount"] == 0 and out["services"] == []
-    assert not [c for c in calls if "/api/traces" in c[3]]
+    assert not [c for c in calls if c[0] == "k8s_proxy_get" and "/api/traces" in c[4]]
 
 
 def test_operations_are_capped_at_50_and_long_text_is_cut():
@@ -988,7 +1052,7 @@ def test_html_where_services_were_expected_fails_the_task():
 
 
 def test_a_services_path_the_pod_does_not_serve_is_a_dependency_error():
-    env, _ = run(replies={"/api/services": (1, "", NO_ROUTE)})
+    env, _ = run(replies={"/api/services": NO_ROUTE})
     assert env["status"] == "failed" and codes_of(env) == [("dependency", None)]
 
 
@@ -1016,7 +1080,7 @@ def test_a_service_cut_off_mid_pass_keeps_its_finished_queries():
     assert row["queried"] is True and row["complete"] is False
     assert row["queriesDone"] == 4 and row["queriesPlanned"] == 1 + 2 * len(CODES)
     assert row["serverErrorSpans"] == 6 and row["clientErrorSpans"] == 0
-    checkout_queries = [c for c in calls if "service=checkout" in c[3]]
+    checkout_queries = [c for c in calls if c[0] == "k8s_proxy_get" and "service=checkout" in c[4]]
     assert len(checkout_queries) == 5
     other = service_row(env, "catalog")
     assert other["complete"] is True and other["clientErrorSpans"] == 3
@@ -1044,7 +1108,7 @@ def test_a_long_error_message_is_cut_to_1024_on_every_path():
     assert env["status"] == "failed" and len(env["errors"][0]["message"]) <= 1024
     # a service name that is itself very long
     name = "s" * 3000
-    err = k8s.failure(["kubectl"], FakeRun(1, "", long_err).result)
+    err = k8s.failure(["kubectl"], SimpleNamespace(returncode=1, stdout="", stderr=long_err))
     assert len(err.message) <= 1024
     assert len(RwError("internal", name).message) == 1024
 
@@ -1082,7 +1146,7 @@ def test_no_running_pod_is_unreachable_and_a_ready_pod_is_asked_first():
     pod["status"]["phase"] = "Pending"
     env, calls = run(pods=[pod])
     assert env["status"] == "failed" and codes_of(env) == [("unreachable", None)]
-    assert not [c for c in calls if "--raw" in c]
+    assert not [c for c in calls if c[0] == "k8s_proxy_get"]
     ready = base_pod()
     not_ready = json.loads(json.dumps(ready))
     not_ready["metadata"]["name"] = "aaa-not-ready"
@@ -1143,7 +1207,7 @@ def test_inputs_choose_the_port_and_scheme():
 
 
 class Clocked:
-    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock."""
+    """A ctx whose `k8s_proxy_get` calls each take `step` seconds of a fake clock."""
 
     def __init__(self, answer, step=30):
         self.now = 0.0
@@ -1155,11 +1219,14 @@ class Clocked:
     def clock(self):
         return self.now
 
-    def run(self, argv, check=True, **_):
-        self.calls.append(list(argv))
-        rc, out, err = self.answer(len(self.calls) - 1, argv)
-        self.now += self.step
-        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        def answer(request):
+            self.calls.append(request)
+            out = served_as(self.answer(len(self.calls) - 1, request))
+            self.now += self.step
+            return out
+
+        return ProxyFake(answer)(namespace, kind, name, port, path, scheme=scheme, timeout=timeout)
 
     def error(self, code, message, scope=None, **_):
         self.errors.append((code, scope, message))
@@ -1251,9 +1318,8 @@ VALUE_FLAGS = {"-n", "-o", "-l"}
 def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs. Raises on anything it does
     not know, so a script that issues a new call has to extend this."""
-    if "--raw" in argv:
-        path = argv[argv.index("--raw") + 1]
-        assert "/pods/" in path and "/proxy/" in path, path
+    assert "--raw" not in argv, argv  # pod proxy reads go through ctx.k8s_proxy_get (S17)
+    if argv[0] == "k8s_proxy_get":  # ctx.k8s_proxy_get(ns, "pods", ...): pods/proxy get
         return {("", "pods/proxy", "get")}
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
@@ -1315,7 +1381,8 @@ def test_rbac_needs_maps_the_verbs():
     assert rbac_needs(["kubectl", "-n", "x", "get", "pods", "-l", "a=b", "-o", "json"]) == {
         ("", "pods", "list")
     }
-    path = "/api/v1/namespaces/n/pods/http:p:16686/proxy/api/services"
-    assert rbac_needs(["kubectl", "get", "--raw", path]) == {("", "pods/proxy", "get")}
+    assert rbac_needs(list(raw("/api/services"))) == {("", "pods/proxy", "get")}
+    with pytest.raises(AssertionError):  # S17: a proxied read through kubectl get --raw
+        rbac_needs(["kubectl", "get", "--raw", "/api/v1/namespaces/n/pods/p:16686/proxy/api"])
     with pytest.raises(AssertionError):
         rbac_needs(["kubectl", "-n", "x", "delete", "pods", "p"])

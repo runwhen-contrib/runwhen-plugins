@@ -13,6 +13,9 @@
 #                   pod is Running but not Ready
 #   jenkins-locked  StatefulSet with anonymous read turned off: /login is 200, every /api/json
 #                   answers 403 (what Jenkins does for an anonymous caller without Overall/Read)
+#   jenkins-sso     StatefulSet behind an SSO realm: every request, /login included, is answered
+#                   302 with a Location on another host (http://example.invalid/sso), which the
+#                   S17 proxy helper must report and never follow
 #   jenkins-prefix  StatefulSet healthy like `jenkins` but served under the prefix /jenkins (the
 #                   chart's jenkinsUriPrefix): its readinessProbe asks /jenkins/login, which is
 #                   where the skill takes the prefix from; every other path is a 404
@@ -31,7 +34,7 @@ data:
     import json, sys, time
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    MODE = sys.argv[1]  # healthy | stuck | locked | down | prefix
+    MODE = sys.argv[1]  # healthy | stuck | locked | down | prefix | sso
     PREFIX = "/jenkins" if MODE == "prefix" else ""
     DAY = 86400000
     LOGIN = ('<html><head><title>Sign in [Jenkins]</title></head><body>'
@@ -84,6 +87,11 @@ data:
             path = self.path.split("?")[0]
             if MODE == "down":
                 return self.send(503, "Please wait while Jenkins is getting ready to work", "text/plain")
+            if MODE == "sso":  # an SSO realm sends an anonymous caller to its identity provider
+                self.send_response(302)
+                self.send_header("Location", "http://example.invalid/sso")
+                self.send_header("Content-Length", "0")
+                return self.end_headers()
             if not path.startswith(PREFIX):
                 return self.send(404, "not found", "text/plain")
             path = path[len(PREFIX):]
@@ -297,6 +305,48 @@ spec:
             - {name: http, containerPort: 8080}
           readinessProbe:
             httpGet: {path: /login, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-sso
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-sso}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins-sso
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins-sso
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-sso}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-sso, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, sso]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            tcpSocket: {port: http}
             periodSeconds: 5
           resources:
             requests: {cpu: 5m, memory: 16Mi}

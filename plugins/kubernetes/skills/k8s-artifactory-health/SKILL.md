@@ -25,8 +25,7 @@ Artifactory.
 
 One task, `health`, reaches each running pod, and each Service whose selector matches the
 pod template's labels, over HTTP through the API server's proxy
-(`kubectl get --raw /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/<path>`, and the same
-under `services/`): no exec, no port-forward, no Secret read, no credential sent. That needs `get`
+(`ctx.k8s_proxy_get` on the pod and on the Service, which never follows a redirect): no exec, no port-forward, no Secret read, no credential sent. That needs `get`
 on the workload, `list` on `pods` and `services`, and `get` on `pods/proxy` and `services/proxy` in
 its namespace. Liveness and readiness are asked on the `port` input, else the pod's container port
 named `http-internal` (the chart's Artifactory port, 8081), else 8081; the router's health, liveness
@@ -50,9 +49,12 @@ pass `port: 8091` only if your image serves it to the pod IP. `scheme` is `http`
 Outputs are facts, not verdicts.
 
 - **`ok: false` has no reason here.** Artifactory answers 503 on readiness while it starts or when a
-  dependency (the database) is down, but the 503 body does not come back through the proxy. Use
+  dependency (the database) is down; the skill reports the status, not the 503 body. Use
   `kubernetes:k8s-workload-logs/recent-logs` for the pod's log. A pod that just started reads
-  `ok: false` on readiness and is normal; an overloaded API server also answers 503.
+  `ok: false` on readiness and is normal. An API server that cannot reach the pod or is overloaded
+  is an error (`unreachable`), not `ok: false`. A redirect to another host (an SSO login in front
+  of Artifactory) is never followed and is a `dependency` error naming the host, scoped
+  `pod/<name>/<endpoint>`.
 - **A Service row can say 503 for another reason.** `noEndpoints: true` means the Service has no
   ready pod (typically because readiness fails), not that Artifactory answered. A Service is asked
   on the Service port whose `targetPort` is the pod's Artifactory (or router) port; if none is, that

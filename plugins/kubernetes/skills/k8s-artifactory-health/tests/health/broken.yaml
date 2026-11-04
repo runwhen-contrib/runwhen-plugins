@@ -4,7 +4,7 @@
 # `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
 # artifact files. `rwtask test` replays this file.
 resource: kubernetes/clusters/kind/namespaces/rw-artifactory/statefulsets/artifactory-broken
-now: '2026-11-04T00:30:52.529Z'
+now: '2026-11-04T01:54:36.833Z'
 calls:
 - argv:
   - kubectl
@@ -44,7 +44,7 @@ calls:
     s:metadata.deletionTimestamp=
     s:status.phase=Running
     j:metadata.labels={"app":"artifactory","apps.kubernetes.io/pod-index":"0","component":"artifactory","controller-revision-hash":"artifactory-broken-755565778b","release":"artifactory-broken","role":"artifactory","statefulset.kubernetes.io/pod-name":"artifactory-broken-0"}
-    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:17:48Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:53:27Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:53:27Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:53:27Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:53:27Z","message":"containers with unready status: [artifactory]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:53:27Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
     k:artifactory=[{"containerPort":8082,"name":"http","protocol":"TCP"},{"containerPort":8081,"name":"http-internal","protocol":"TCP"}]
   stderr: ''
 - argv:
@@ -73,103 +73,167 @@ calls:
     j:spec.selector={"app":"artifactory","release":"artifactory","role":"artifactory"}
     j:spec.ports=[{"port":80,"protocol":"TCP","targetPort":8081}]
   stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8081/proxy/artifactory/api/v1/system/liveness
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"code":"OK"}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8081/proxy/artifactory/api/v1/system/readiness
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (ServiceUnavailable): the server is currently unable to handle the request
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8082/proxy/router/api/v1/system/health
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"router":{"node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-broken-0","state":"UNHEALTHY","message":"database
-    connection refused"}]}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8082/proxy/router/api/v1/system/liveness
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"code":"OK"}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/pods/http:artifactory-broken-0:8082/proxy/router/api/v1/system/readiness
-  - --request-timeout=30s
-  rc: 0
-  stdout: '{"code":"OK"}'
-  stderr: ''
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-artifactory/proxy/artifactory/api/v1/system/liveness
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-artifactory/proxy/artifactory/api/v1/system/readiness
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-router/proxy/router/api/v1/system/health
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-router/proxy/router/api/v1/system/liveness
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
-- argv:
-  - kubectl
-  - get
-  - --raw
-  - /api/v1/namespaces/rw-artifactory/services/http:artifactory-broken:http-router/proxy/router/api/v1/system/readiness
-  - --request-timeout=30s
-  rc: 1
-  stdout: ''
-  stderr: |
-    Error from server (ServiceUnavailable): no endpoints available for service "artifactory-broken"
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: pods
+    name: artifactory-broken-0
+    port: 8081
+    path: /artifactory/api/v1/system/liveness
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '13'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:54:37 GMT
+      server: nginx/1.27.5
+      connection: close
+    body: '{"code":"OK"}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: pods
+    name: artifactory-broken-0
+    port: 8081
+    path: /artifactory/api/v1/system/readiness
+    scheme: http
+  response:
+    status: 503
+    headers:
+      cache-control: no-cache, private
+      content-length: '19'
+      content-type: text/plain
+      date: Wed, 04 Nov 2026 01:54:37 GMT
+      server: nginx/1.27.5
+      connection: close
+    body: Service Unavailable
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: pods
+    name: artifactory-broken-0
+    port: 8082
+    path: /router/api/v1/system/health
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '302'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:54:37 GMT
+      server: nginx/1.27.5
+      connection: close
+    body: '{"router":{"node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},"services":[{"service_id":"jfac@01h","node_id":"artifactory-broken-0","state":"HEALTHY","message":"OK"},{"service_id":"jfrt@01h","node_id":"artifactory-broken-0","state":"UNHEALTHY","message":"database
+      connection refused"}]}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: pods
+    name: artifactory-broken-0
+    port: 8082
+    path: /router/api/v1/system/liveness
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '13'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:54:37 GMT
+      server: nginx/1.27.5
+      connection: close
+    body: '{"code":"OK"}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: pods
+    name: artifactory-broken-0
+    port: 8082
+    path: /router/api/v1/system/readiness
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '13'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:54:37 GMT
+      server: nginx/1.27.5
+      connection: close
+    body: '{"code":"OK"}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: services
+    name: artifactory-broken
+    port: 8081
+    path: /artifactory/api/v1/system/liveness
+    scheme: http
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: no endpoints available for service "artifactory-broken"'
+    scope: rw-artifactory/services/artifactory-broken:8081
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: services
+    name: artifactory-broken
+    port: 8081
+    path: /artifactory/api/v1/system/readiness
+    scheme: http
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: no endpoints available for service "artifactory-broken"'
+    scope: rw-artifactory/services/artifactory-broken:8081
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: services
+    name: artifactory-broken
+    port: http-router
+    path: /router/api/v1/system/health
+    scheme: http
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: no endpoints available for service "artifactory-broken"'
+    scope: rw-artifactory/services/artifactory-broken:http-router
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: services
+    name: artifactory-broken
+    port: http-router
+    path: /router/api/v1/system/liveness
+    scheme: http
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: no endpoints available for service "artifactory-broken"'
+    scope: rw-artifactory/services/artifactory-broken:http-router
+- type: k8s-proxy-get
+  request:
+    namespace: rw-artifactory
+    kind: services
+    name: artifactory-broken
+    port: http-router
+    path: /router/api/v1/system/readiness
+    scheme: http
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: no endpoints available for service "artifactory-broken"'
+    scope: rw-artifactory/services/artifactory-broken:http-router
 expect:
   status: ok
   errorCodes: []

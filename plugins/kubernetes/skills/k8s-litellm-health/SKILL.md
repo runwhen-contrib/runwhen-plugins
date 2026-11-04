@@ -24,7 +24,7 @@ or HTML and the tasks fail with `dependency` or `internal`. Start with `readines
 cannot reach the proxy, `service` shows whether a Service selects the pods and has ready endpoints.
 
 `liveness` and `readiness` reach each pod over HTTP through the API server's pod proxy
-(`kubectl get --raw /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/health/...`): no exec,
+(`ctx.k8s_proxy_get`, which never follows a redirect): no exec,
 no port-forward, no Secret read, no credential sent. That needs `get` on the workload, `list` on
 `pods` and `get` on `pods/proxy` in its namespace. The port is the `port` input, else the container
 port named `http`, `litellm` or `http-litellm` of the main container (the one whose image is
@@ -55,8 +55,8 @@ reads only Kubernetes objects: `get` on the workload, `list` on `services` and o
 
 Outputs are facts, not verdicts.
 
-- **`ready: false` and `alive: false` come with a cause where it can be told.** The proxy does not
-  pass a 503's body on, so `db` and `status` are `null`. Read from LiteLLM 1.102.1 (older versions
+- **`ready: false` and `alive: false` come with a cause where it can be told.** `db` and `status` are `null` for a 503 (its body is not
+  read as the payload). Read from LiteLLM 1.102.1 (older versions
   may differ): `/health/liveliness` answers 503 only once a graceful shutdown has begun;
   `/health/readiness` answers 503 then too, and also while a configured database is not connected
   (unless `allow_requests_on_db_unavailable` keeps the pod in rotation). So the task asks liveness
@@ -64,9 +64,11 @@ Outputs are facts, not verdicts.
   down, or in the rare case building the detailed payload failed), `draining` (liveness 503 too: a
   shutdown, e.g. a preStop `/health/drain`), `undetermined` (liveness could not be read; an error
   scoped `pod/<name>` says why). `livenessHttpStatus` is what liveness gave. For the database
-  itself use `kubernetes:k8s-workload-logs/recent-logs`. An API server that is itself overloaded
-  also answers 503, which reads as not ready here. A 403 from the backend reads as
-  `permission_denied` on `pods/proxy`.
+  itself use `kubernetes:k8s-workload-logs/recent-logs`. An API server that cannot reach the
+  pod or is overloaded is an error (`unreachable`), never not ready. A 401/403 from the proxy itself
+  (an auth proxy in front) is a `dependency` error naming the status, not `permission_denied` (that is
+  the API server refusing `pods/proxy`); a redirect to another host is never followed and is a
+  `dependency` error naming the host.
 - **The public payload is small.** Recent LiteLLM answers `{"status":"healthy","db":...}` on
   `/health/readiness`; `cache`, `litellmVersion` and `successCallbacks` are `null` and
   `detailed: false` unless `general_settings.allow_public_health_readiness_details` is set. The

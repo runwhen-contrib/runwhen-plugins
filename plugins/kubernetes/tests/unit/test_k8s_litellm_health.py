@@ -8,11 +8,14 @@ Ready). `readiness-public.json` is the public payload the real v1.102.1 image re
 `readiness-db-disconnected-200.json` is a hand-written 200 with db "disconnected" (allow_requests_
 on_db_unavailable, or an older version that did not 503). The scripts run through the SDK's test
 context (`ctx.run` raises on a non-zero exit like the real runner; `stub_commands` matches the
-exact kubectl argv, so an unexpected call fails)."""
+exact kubectl argv, so an unexpected call fails). The pod proxy reads go through `ctx.k8s_proxy_get`,
+stood in for by `proxy_fake.ProxyFake`; the proxy answers kept in the data files as kubectl's
+(rc, stdout, stderr) are turned into the helper's answer by `served_as`."""
 
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import jsonschema
 import pytest
@@ -20,6 +23,7 @@ import yaml
 from k8s_litellm_health import fetch, health, k8s, project, proxy, service
 from k8s_litellm_health.errors import RwError
 from k8s_litellm_health.project import POD_FIELDS, WORKLOAD_FIELDS, Projection
+from proxy_fake import ProxyFake, api_error, cross_host_redirect, reply
 from runwhen_capability.testing import make_context, run_main, stub_commands
 
 SKILL = Path(__file__).parents[2] / "skills" / "k8s-litellm-health"
@@ -73,14 +77,25 @@ def pod_name(name):
     return POD_FIELDS.parse(load(f"pods-{name}.txt"), True)["items"][0]["metadata"]["name"]
 
 
-def raw(name, path, scheme="http", port=4000):
-    return (
-        "kubectl",
-        "get",
-        "--raw",
-        f"/api/v1/namespaces/{NS}/pods/{scheme}:{pod_name(name)}:{port}/proxy{path}",
-        "--request-timeout=30s",
-    )
+def raw(name, path, scheme="http", port=4000, pod=None):
+    """The key of one proxied request: a `ctx.k8s_proxy_get` call, recorded in `calls` as this tuple."""
+    return ("k8s_proxy_get", NS, pod or pod_name(name), str(port), path, scheme)
+
+
+def served_as(answer):
+    """The ctx.k8s_proxy_get answer for a test's (rc, stdout, stderr): a body for 0, the workload's
+    own 503 / 404 for the stderr kubectl printed for them, a dict as it is, else the API-server
+    error the stderr names."""
+    if isinstance(answer, dict):
+        return answer
+    rc, out, err = answer
+    if rc == 0:
+        return out
+    if "currently unable to handle the request" in err:
+        return reply(503, "service unavailable")
+    if "could not find the requested resource" in err:
+        return reply(404, "404 page not found")
+    return api_error(err, k8s.classify)
 
 
 def render(pods):
@@ -152,13 +167,7 @@ def stubs(
             ("liveness", PATHS[1]),
             ("readiness", PATHS[2]),
         ):
-            argv = (
-                "kubectl",
-                "get",
-                "--raw",
-                f"/api/v1/namespaces/{NS}/pods/{scheme}:{pname}:{port}/proxy{path}",
-                "--request-timeout=30s",
-            )
+            argv = ("k8s_proxy_get", NS, pname, str(port), path, scheme)
             default = reply_of(kind, name)
             reply = replies.get((pname, path), replies.get(path, default))
             out[argv] = (1, "", fail["proxy"]) if "proxy" in fail else reply
@@ -177,7 +186,17 @@ def run(task, name="litellm", res=None, settings=None, inputs=None, **kw):
     inputs = inputs or {}
     with make_context(resource=resource, settings=settings or SETTINGS) as tc:
         proxy_args = {k: inputs[k] for k in ("scheme", "port") if k in inputs}
-        calls = stub_commands(tc, stubs(name, **proxy_args, **kw))
+        table = stubs(name, **proxy_args, **kw)
+        calls = stub_commands(tc, {k: v for k, v in table.items() if k[0] == "kubectl"})
+
+        def answer(request):
+            key = ("k8s_proxy_get", request["namespace"], request["name"], str(request["port"]))
+            key += (request["path"], request["scheme"])
+            calls.append(key)
+            assert key in table, f"ctx.k8s_proxy_get called with an unstubbed request {key!r}"
+            return served_as(table[key])
+
+        tc.ctx.k8s_proxy_get = ProxyFake(answer)
         env = run_main(script(task), tc, **inputs)
     return env, calls
 
@@ -203,7 +222,7 @@ def only_pod(env, task):
 def test_alive_reply_is_never_true_for_unexpected_text():
     assert health.alive_reply(proxy.Reply(200, '"I\'m alive!"'), "w") == (True, "I'm alive!")
     assert health.alive_reply(proxy.Reply(503, ""), "w") == (False, None)
-    for reply in (
+    for bad in (
         proxy.Reply(200, "<html>Sign in</html>"),
         proxy.Reply(200, '"ok"'),
         proxy.Reply(200, '{"status":"healthy"}'),
@@ -211,7 +230,7 @@ def test_alive_reply_is_never_true_for_unexpected_text():
         proxy.Reply(404, ""),
     ):
         with pytest.raises(RwError):
-            health.alive_reply(reply, "w")
+            health.alive_reply(bad, "w")
 
 
 def test_readiness_doc_rejects_what_is_not_readiness_json():
@@ -305,27 +324,80 @@ def test_classify_and_proxy_get_tell_the_statuses_apart():
     assert k8s.classify(1, FORBIDDEN.format(r="pods/proxy", v="get", g="")) == "permission_denied"
     assert k8s.classify(1, 'Error from server (NotFound): pods "x" not found') == "not_found"
 
-    class Fake:
-        def __init__(self, rc, out="", err=""):
-            self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
-
-        def run(self, argv, check=True, **_):
-            return self.result
-
-    assert proxy.proxy_get(Fake(0, "ok"), "/x") == proxy.Reply(200, "ok")
-    assert proxy.proxy_get(Fake(1, "", NO_ROUTE), "/x").status == 404
-    assert proxy.proxy_get(Fake(1, "", UNAVAILABLE), "/x").status == 503
+    assert ask("ok") == proxy.Reply(200, "ok")
+    assert ask(reply(404, "404 page not found")).status == 404
+    assert ask(reply(503, "unavailable")) == proxy.Reply(503, "unavailable")
+    assert ask(reply(403, "forbidden")).status == 403  # the backend's 403 is data, not RBAC
     with pytest.raises(RwError) as exc:
-        proxy.proxy_get(Fake(1, "", UNREACHABLE), "/x")
+        ask(api_error(UNREACHABLE, k8s.classify))
     assert exc.value.code == "unreachable"
+    with pytest.raises(RwError) as exc:
+        ask(api_error(FORBIDDEN.format(r="pods/proxy", v="get", g=""), k8s.classify))
+    assert exc.value.code == "permission_denied"
 
 
-class FakeRun:
-    def __init__(self, rc, out="", err=""):
-        self.result = type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+class FakeProxyCtx:
+    def __init__(self, answer):
+        self.k8s_proxy_get = ProxyFake(answer)
 
-    def run(self, argv, check=True, **_):
-        return self.result
+
+def ask(answer, path="/x"):
+    return proxy.proxy_get(FakeProxyCtx(answer), "ns", "litellm-0", "http", 4000, path)
+
+
+def test_proxy_get_asks_the_pod_proxy_with_scheme_port_path_and_timeout():
+    ctx = FakeProxyCtx("ok")
+    proxy.proxy_get(ctx, "ns", "litellm-0", "https", 8080, "/health/readiness", 7)
+    assert ctx.k8s_proxy_get.requests == [
+        {
+            "namespace": "ns",
+            "kind": "pods",
+            "name": "litellm-0",
+            "port": 8080,
+            "path": "/health/readiness",
+            "scheme": "https",
+            "timeout": 7,
+        }
+    ]
+
+
+def test_a_cross_host_redirect_is_reported_and_never_followed():
+    """S17: the helper drops the Location; the skill reports the host and asks nothing more."""
+    ctx = FakeProxyCtx(cross_host_redirect("sso.example.invalid"))
+    got = proxy.proxy_get(ctx, "ns", "litellm-0", "http", 4000, "/health/readiness")
+    assert got.status == 302 and got.redirect_dropped == "sso.example.invalid"
+    assert len(ctx.k8s_proxy_get.requests) == 1
+    with pytest.raises(RwError) as exc:
+        proxy.expect_200(got, "readiness")
+    assert exc.value.code == "dependency"
+    assert "off cluster to sso.example.invalid (not followed)" in exc.value.message
+
+
+def test_a_cross_host_redirect_through_the_task_is_an_error_and_asks_once_per_path():
+    redirect = cross_host_redirect("sso.example.invalid")
+    env, calls = run("readiness", replies={"/health/readiness": redirect})
+    assert env["status"] == "failed" and codes(env) == [
+        ("dependency", "pod/litellm-86bdbc9c6f-p59vx")
+    ]
+    assert "sso.example.invalid" in env["errors"][0]["message"]
+    assert [c for c in calls if c[0] == "k8s_proxy_get"] == [raw("litellm", "/health/readiness")]
+
+
+def test_a_same_pod_redirect_is_followed_once_and_no_more():
+    ctx = FakeProxyCtx(
+        lambda r: reply(301, "", location="/x/health") if r["path"] == "/health" else "moved"
+    )
+    assert proxy.proxy_get(ctx, "ns", "p", "http", 4000, "/health").body == "moved"
+    assert ctx.k8s_proxy_get.paths() == ["/health", "/x/health"]
+    loop = FakeProxyCtx(lambda r: reply(302, "", location="/again"))
+    assert proxy.proxy_get(loop, "ns", "p", "http", 4000, "/a").status == 302
+    assert len(loop.k8s_proxy_get.requests) == 2
+
+
+def test_a_cut_body_is_internal_never_a_partial_parse():
+    with pytest.raises(RwError) as exc:
+        ask(reply(200, '{"status": "hea', truncated=True))
+    assert exc.value.code == "internal" and exc.value.hint
 
 
 def test_the_error_reason_decides_before_the_message_text():
@@ -354,24 +426,6 @@ def test_the_error_reason_decides_before_the_message_text():
     assert k8s.classify(1, warned) == "not_found"
 
 
-def test_proxy_get_reads_the_reason_line_before_looking_for_a_404_or_503_text():
-    forbidden = (
-        'Error from server (Forbidden): pods "p" is forbidden: cannot get resource "pods/proxy" '
-        "(the server could not find the requested resource)"
-    )
-    with pytest.raises(RwError) as exc:
-        proxy.proxy_get(FakeRun(1, "", forbidden), "/x")
-    assert exc.value.code == "permission_denied"
-    with pytest.raises(RwError) as exc:
-        proxy.proxy_get(
-            FakeRun(1, "", "Error from server (Timeout): currently unable to handle the request"),
-            "/x",
-        )
-    assert exc.value.code == "timeout"
-    no_line = "the server could not find the requested resource"
-    assert proxy.proxy_get(FakeRun(1, "", no_line), "/x").status == 404
-
-
 def test_a_long_error_message_is_cut_to_1024_on_every_path():
     long_err = "Error from server (InternalError): " + "x" * 5000
     for task in ("liveness", "readiness"):
@@ -387,13 +441,20 @@ def test_a_long_error_message_is_cut_to_1024_on_every_path():
     for task in SCRIPTS:
         env, _ = run(task, fail={"workload": long_err})
         assert env["status"] == "failed" and len(env["errors"][0]["message"]) <= 1024
-    assert len(k8s.failure(["kubectl"], FakeRun(1, "", long_err).result).message) <= 1024
+    assert (
+        len(
+            k8s.failure(
+                ["kubectl"], SimpleNamespace(returncode=1, stdout="", stderr=long_err)
+            ).message
+        )
+        <= 1024
+    )
     assert len(RwError("internal", "s" * 3000).message) == 1024
 
 
 def test_reads_are_projected_so_no_env_value_leaves_the_cluster():
     _, calls = run("readiness")
-    reads = [c for c in calls if "--raw" not in c]
+    reads = [c for c in calls if c[0] == "kubectl"]
     assert reads and all(c[-2] == "-o" and c[-1].startswith("jsonpath=") for c in reads)
     for projection in (WORKLOAD_FIELDS, POD_FIELDS):
         template = projection.template(True)
@@ -531,7 +592,7 @@ def test_liveness_pending_pod_is_listed_and_not_asked_and_no_pods_is_a_fact():
     env, calls = run("liveness", pods=[pod])
     row = only_pod(env, "liveness")
     assert row["queried"] is False and row["alive"] is None and row["paths"] == []
-    assert not [c for c in calls if "--raw" in c]
+    assert not [c for c in calls if c[0] == "k8s_proxy_get"]
     check_schemas("liveness", env)
     env, _ = run("liveness", pods=[])
     assert env["status"] == "ok" and env["outputs"]["liveness"]["podCount"] == 0
@@ -620,7 +681,7 @@ def test_readiness_503_with_liveness_200_is_a_database_problem_likely():
     assert pod["cause"] == "db_unreachable_likely" and pod["livenessHttpStatus"] == 200
     assert "liveness answered 200" in pod["causeBasis"]
     assert pod["db"] is None and pod["status"] is None  # the proxy does not pass the body on
-    paths = [c[3].rsplit("/proxy", 1)[1] for c in calls if "--raw" in c]
+    paths = [c[4] for c in calls if c[0] == "k8s_proxy_get"]
     assert paths == ["/health/readiness", "/health/liveliness"]
 
 
@@ -656,14 +717,16 @@ def test_readiness_503_whose_liveness_cannot_be_read_is_undetermined_with_an_err
     replies = {(name, PATHS[0]): (1, "", NO_ROUTE)}
     env, calls = run("readiness", name="litellm-degraded", replies=replies)
     assert only_pod(env, "readiness")["cause"] == "db_unreachable_likely"
-    assert [c[3].rsplit("/proxy", 1)[1] for c in calls if "--raw" in c][-1] == PATHS[1]
+    assert [c[4] for c in calls if c[0] == "k8s_proxy_get"][-1] == PATHS[1]
 
 
 def test_readiness_a_pod_that_is_ready_has_no_cause():
     env, calls = run("readiness")
     pod = only_pod(env, "readiness")
     assert (pod["cause"], pod["causeBasis"], pod["livenessHttpStatus"]) == (None, None, None)
-    assert len([c for c in calls if "--raw" in c]) == 1  # liveness is asked only after a 503
+    assert (
+        len([c for c in calls if c[0] == "k8s_proxy_get"]) == 1
+    )  # liveness is asked only after a 503
 
 
 def test_readiness_the_public_payload_has_status_and_db_only():
@@ -757,8 +820,9 @@ def test_the_skill_never_reads_secrets_execs_or_calls_a_keyed_endpoint():
                 text = " ".join(argv)
                 assert "secret" not in text and "exec" not in argv and "port-forward" not in argv
                 assert "/model/info" not in text and "/v1/models" not in text
-                if "--raw" in argv:
-                    assert argv[argv.index("--raw") + 1].rsplit("/proxy", 1)[1] in PATHS
+                assert "--raw" not in argv  # S17: reads go through ctx.k8s_proxy_get
+                if argv[0] == "k8s_proxy_get":
+                    assert argv[4] in PATHS
 
 
 # ------------------------------------------------------------ scripts: service ----
@@ -1024,7 +1088,7 @@ def test_bad_input_is_invalid_input_before_any_call(task, inputs):
 
 
 class Clocked:
-    """A ctx whose `kubectl get --raw` calls each take `step` seconds of a fake clock."""
+    """A ctx whose `k8s_proxy_get` calls each take `step` seconds of a fake clock."""
 
     def __init__(self, answer, step=30):
         self.now = 0.0
@@ -1036,18 +1100,21 @@ class Clocked:
     def clock(self):
         return self.now
 
-    def run(self, argv, check=True, **_):
-        self.calls.append(list(argv))
-        rc, out, err = self.answer(len(self.calls) - 1, argv)
-        self.now += self.step
-        return type("R", (), {"returncode": rc, "stdout": out, "stderr": err})
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        def answer(request):
+            self.calls.append(request)
+            out = served_as(self.answer(len(self.calls) - 1, request))
+            self.now += self.step
+            return out
+
+        return ProxyFake(answer)(namespace, kind, name, port, path, scheme=scheme, timeout=timeout)
 
     def error(self, code, message, scope=None, **_):
         self.errors.append((code, scope, message))
 
 
 WORKLOAD = {"kind": "Deployment", "metadata": {"name": "litellm", "namespace": NS}, "spec": {}}
-TIMEOUT = "Unable to connect to the server: net/http: request canceled (Client.Timeout exceeded)"
+TIMEOUT = "net/http: request canceled (Client.Timeout exceeded)"
 
 
 def pods(n):
@@ -1064,7 +1131,7 @@ def test_readiness_the_task_deadline_leaves_the_remaining_pods_a_timeout_error()
     out = health.view(ctx, "readiness", WORKLOAD, pods(6), "http", None, 200, budget)
     # 0s, 30s, 60s, 90s: four asks; the fourth is limited to what is left of the 100s
     assert out["readyCount"] == 4
-    assert [c[4] for c in ctx.calls] == [f"--request-timeout={t}s" for t in (30, 30, 30, 10)]
+    assert [c["timeout"] for c in ctx.calls] == [30, 30, 30, 10]
     assert [(c, s) for c, s, _ in ctx.errors] == [
         ("timeout", "pod/litellm-4"),
         ("timeout", "pod/litellm-5"),
@@ -1100,9 +1167,8 @@ VALUE_FLAGS = {"-n", "-o", "-l"}
 def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs. Raises on anything it does
     not know, so a script that issues a new call has to extend this."""
-    if "--raw" in argv:
-        path = argv[argv.index("--raw") + 1]
-        assert "/pods/" in path and "/proxy/" in path, path
+    assert "--raw" not in argv, argv  # pod proxy reads go through ctx.k8s_proxy_get (S17)
+    if argv[0] == "k8s_proxy_get":  # ctx.k8s_proxy_get(ns, "pods", ...): pods/proxy get
         return {("", "pods/proxy", "get")}
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
@@ -1175,7 +1241,21 @@ def test_a_statefulset_target_is_read_as_a_statefulset():
         )
     ] = workload
     with make_context(resource=resource, settings=SETTINGS) as tc:
-        stub_commands(tc, table)
+        stub_commands(tc, {k: v for k, v in table.items() if k[0] == "kubectl"})
+        tc.ctx.k8s_proxy_get = ProxyFake(
+            lambda r: served_as(
+                table[
+                    (
+                        "k8s_proxy_get",
+                        r["namespace"],
+                        r["name"],
+                        str(r["port"]),
+                        r["path"],
+                        r["scheme"],
+                    )
+                ]
+            )
+        )
         env = run_main(script("readiness"), tc)
     assert (
         env["status"] == "ok" and env["outputs"]["readiness"]["workload"]["kind"] == "StatefulSet"
@@ -1192,7 +1272,8 @@ def test_rbac_needs_maps_the_verbs():
     assert rbac_needs(
         ["kubectl", "-n", "x", "get", "endpointslices", "-l", "a=b", "-o", "json"]
     ) == {("discovery.k8s.io", "endpointslices", "list")}
-    path = "/api/v1/namespaces/n/pods/http:p:4000/proxy/health/readiness"
-    assert rbac_needs(["kubectl", "get", "--raw", path]) == {("", "pods/proxy", "get")}
+    assert rbac_needs(list(raw("litellm", "/health/readiness"))) == {("", "pods/proxy", "get")}
+    with pytest.raises(AssertionError):  # S17: a proxied read through kubectl get --raw
+        rbac_needs(["kubectl", "get", "--raw", "/api/v1/namespaces/n/pods/p:4000/proxy/health"])
     with pytest.raises(AssertionError):
         rbac_needs(["kubectl", "-n", "x", "delete", "pods", "p"])

@@ -1,8 +1,9 @@
 """Unit tests for k8s-vault-health: lib/ and the thin scripts, against JSON captured from the
 kind-rw-plugins scenario rw-vault (a dev-mode Vault that is active, a real Vault that is initialized
 and sealed after a restart, a CSI provider DaemonSet that is ready and one whose probes fail). No
-test calls a cluster: scripts run against a fake ctx that answers kubectl (including
-`get --raw` through the pod proxy) from the captured files and records every call."""
+test calls a cluster: scripts run against a fake ctx that answers kubectl, and
+`ctx.k8s_proxy_get` (the pod proxy) like the SDK's helper does, from the captured files and
+records every call."""
 
 import copy
 import importlib.util
@@ -87,7 +88,9 @@ class FakeCtx:
     """What a script sees: resource, settings, now(), error(), run().
 
     `answers` are (substring of the joined argv, (rc, stdout, stderr)) checked first. `health` is
-    {pod: document} for the pod proxy; a pod missing from it answers like a closed port.
+    {pod: document} for the pod proxy, answered with the status Vault gives for that document; a
+    pod missing from it answers like a closed port. `proxy` is [(substring of "<pod>:<port>",
+    reply dict or exception)] checked first, for `ctx.k8s_proxy_get`.
     """
 
     def __init__(
@@ -95,6 +98,7 @@ class FakeCtx:
         rtype="kubernetes/statefulset",
         name="vault",
         answers=(),
+        proxy=(),
         pods=None,
         health=None,
         events=None,
@@ -107,6 +111,8 @@ class FakeCtx:
         )
         self.settings = SimpleNamespace(max_items=200)
         self.answers = list(answers)
+        self.proxy = list(proxy)
+        self.proxy_requests = []
         self.pods = copy.deepcopy(pods if pods is not None else PODS)
         self.health = copy.deepcopy(health if health is not None else HEALTH)
         self.events = copy.deepcopy(events if events is not None else EVENTS)
@@ -140,17 +146,33 @@ class FakeCtx:
         proj = PROJECTIONS[argv[argv.index("-o") + 1][len("jsonpath=") :]]
         return 0, "".join(render(o, proj) for o in objects), ""
 
+    def k8s_proxy_get(self, namespace, kind, name, port, path, *, scheme="http", timeout=30):
+        """Like the SDK helper: the backend's own status and body, an RwError for the API server's."""
+        request = {
+            "namespace": namespace,
+            "kind": kind,
+            "name": name,
+            "port": port,
+            "path": path,
+            "scheme": scheme,
+            "timeout": timeout,
+        }
+        self.proxy_requests.append(request)
+        target = f"{name}:{port}"
+        answer = next((a for needle, a in self.proxy if needle in target), None)
+        if isinstance(answer, Exception):
+            raise answer
+        if answer is not None:
+            return {"headers": {}, "truncated": False, "location": None, **answer}
+        assert (kind, path) == ("pods", "/v1/sys/health"), request
+        if name in self.health:
+            return reply(status_of(self.health[name]), json.dumps(self.health[name]))
+        raise RwError(
+            "unreachable",
+            "error trying to reach service: dial tcp 10.244.0.1:8200: connect: connection refused",
+        )
+
     def default(self, argv, line):
-        if argv[1:3] == ["get", "--raw"]:
-            pod = argv[3].split("/pods/")[1].split("/proxy")[0].split(":")[1]
-            if pod in self.health:
-                return 0, json.dumps(self.health[pod]), ""
-            return (
-                1,
-                "",
-                "Error from server (ServiceUnavailable): error trying to reach service: dial tcp "
-                "10.244.0.1:8200: connect: connection refused",
-            )
         if "get namespaces rw-vault" in line:
             return 0, json.dumps({"kind": "Namespace", "metadata": {"name": "rw-vault"}}), ""
         if "get statefulsets.apps -l" in line:
@@ -203,7 +225,34 @@ def by_pod(items):
 
 
 def proxy_calls(ctx):
-    return [c for c in ctx.calls if c[1:3] == ["get", "--raw"]]
+    return ctx.proxy_requests
+
+
+def reply(status, body="", **extra):
+    """What ctx.k8s_proxy_get returns."""
+    return {
+        "status": status,
+        "headers": {},
+        "body": body,
+        "truncated": False,
+        "location": None,
+        **extra,
+    }
+
+
+def status_of(document):
+    """The status code Vault gives for a health document (its default settings)."""
+    if document.get("removed_from_cluster") is True:
+        return 530
+    if not document["initialized"]:
+        return 501
+    if document["sealed"]:
+        return 503
+    if document.get("replication_dr_mode") == "secondary":
+        return 472
+    if document.get("performance_standby") is True:
+        return 473
+    return 429 if document.get("standby") else 200
 
 
 # ------------------------------------------------------- health document ----
@@ -235,11 +284,17 @@ def doc(**over):
     ],
 )
 def test_the_health_codes_map_to_states_in_vaults_own_order(over, state, code):
-    assert vault.health_state(doc(**over)) == (state, code)
+    assert status_of(doc(**over)) == code
+    assert vault.health_state(code) == (state, code)
+
+
+def test_a_status_vault_does_not_use_for_health_has_no_state():
+    for status in (0, 202, 400, 404, 500, 502, 504):
+        assert vault.health_state(status) is None
 
 
 def test_active_facts():
-    facts = vault.health_facts(HEALTH["vault-0"])
+    facts = vault.health_facts(HEALTH["vault-0"], 200)
     assert facts["state"] == "active" and facts["healthCode"] == 200
     assert (facts["initialized"], facts["sealed"], facts["standby"]) == (True, False, False)
     assert facts["version"] == "1.18.5" and facts["clusterName"].startswith("vault-cluster-")
@@ -247,14 +302,14 @@ def test_active_facts():
 
 
 def test_sealed_facts_have_no_cluster_name():
-    facts = vault.health_facts(HEALTH["vault-sealed-0"])
+    facts = vault.health_facts(HEALTH["vault-sealed-0"], 503)
     assert (facts["state"], facts["healthCode"], facts["sealed"]) == ("sealed", 503, True)
     assert facts["initialized"] is True
     assert facts["clusterName"] is None and facts["clusterId"] is None
 
 
 def test_uninitialized_facts():
-    facts = vault.health_facts(UNINITIALIZED)
+    facts = vault.health_facts(UNINITIALIZED, 501)
     assert (facts["state"], facts["healthCode"]) == ("uninitialized", 501)
     assert facts["initialized"] is False
 
@@ -267,27 +322,30 @@ def test_parse_health_refuses_what_is_not_a_health_document():
     assert vault.parse_health(json.dumps(doc()))["initialized"] is True
 
 
-def test_every_status_code_is_overridden_to_200_so_the_body_survives_the_proxy():
-    params = dict(p.split("=") for p in vault.QUERY.split("&"))
-    assert params == {
-        "activecode": "200",
-        "standbycode": "200",
-        "performancestandbycode": "200",
-        "drsecondarycode": "200",
-        "sealedcode": "200",
-        "uninitcode": "200",
-        "removedcode": "200",  # 530: removed from the raft cluster; older Vaults ignore it
+def test_a_530_body_that_is_not_a_health_document_is_the_empty_document():
+    assert vault.parse_health("", 530) == {}
+    assert vault.parse_health("<html>", 530) == {}
+    assert vault.parse_health('{"removed_from_cluster": true}', 530) == {
+        "removed_from_cluster": True
     }
 
 
-def test_the_path_goes_through_the_pod_proxy_subresource():
-    path = vault.health_path("rw-vault", "vault-0", "http", 8200)
-    assert path.startswith(
-        "/api/v1/namespaces/rw-vault/pods/http:vault-0:8200/proxy/v1/sys/health?"
-    )
-    assert vault.health_path("n", "p", "https", 8201).startswith(
-        "/api/v1/namespaces/n/pods/https:p:8201/proxy/"
-    )
+def test_vault_is_asked_for_its_own_status_codes_with_no_override_query():
+    ctx = FakeCtx(health={"vault-0": HEALTH["vault-sealed-0"]})
+    out = server(ctx)
+    [request] = ctx.proxy_requests
+    assert request["path"] == "/v1/sys/health"  # no activecode=200&sealedcode=200... query
+    assert out["pods"][0]["health"]["healthCode"] == 503 and ctx.errors == []
+
+
+@pytest.mark.parametrize("status", [200, 429, 472, 473, 501, 503, 530])
+def test_every_health_status_is_a_state_of_its_own_not_an_error(status):
+    body = json.dumps(doc(initialized=status != 501, sealed=status in (501, 503)))
+    ctx = FakeCtx(proxy=[("vault-0", reply(status, body))])
+    out = server(ctx)
+    entry = out["pods"][0]
+    assert entry["health"]["healthCode"] == status and entry["error"] is None
+    assert entry["health"]["state"] == vault.STATE_BY_STATUS[status]
 
 
 @pytest.mark.parametrize(
@@ -295,7 +353,7 @@ def test_the_path_goes_through_the_pod_proxy_subresource():
 )
 def test_a_bad_scheme_or_port_is_invalid_input(scheme, port):
     with pytest.raises(RwError) as exc:
-        vault.health_path("n", "p", scheme, port)
+        vault.check_listener(scheme, port)
     assert exc.value.code == "invalid_input"
 
 
@@ -420,8 +478,15 @@ def test_vault_is_asked_through_the_pod_proxy_and_nothing_else():
     ctx = FakeCtx(namespace_target=True)
     server(ctx)
     [first, second] = proxy_calls(ctx)  # in StatefulSet order
-    assert "/pods/http:vault-0:8200/proxy/v1/sys/health?" in first[3]
-    assert "/pods/http:vault-sealed-0:8200/proxy/v1/sys/health?" in second[3]
+    assert (first["namespace"], first["kind"], first["name"], first["port"]) == (
+        "rw-vault",
+        "pods",
+        "vault-0",
+        8200,
+    )
+    assert (first["path"], first["scheme"]) == ("/v1/sys/health", "http")
+    assert (second["name"], second["path"]) == ("vault-sealed-0", "/v1/sys/health")
+    assert not [c for c in ctx.calls if "--raw" in c]  # S17: never kubectl get --raw
     joined = " ".join(" ".join(c) for c in ctx.calls)
     for forbidden in ("exec", "port-forward", "secret", "VAULT_TOKEN", "-H", "token"):
         assert forbidden not in joined
@@ -430,7 +495,7 @@ def test_vault_is_asked_through_the_pod_proxy_and_nothing_else():
 def test_scheme_and_port_inputs_reach_the_proxy_path():
     ctx = FakeCtx()
     server(ctx, scheme="https", port=8201)
-    assert "/pods/https:vault-0:8201/proxy/" in proxy_calls(ctx)[0][3]
+    assert (proxy_calls(ctx)[0]["scheme"], proxy_calls(ctx)[0]["port"]) == ("https", 8201)
 
 
 def test_a_bad_scheme_or_port_fails_before_any_pod_is_asked():
@@ -497,32 +562,16 @@ def test_no_pod_could_be_asked_fails_the_task_with_the_first_code():
     assert exc.value.code == "unreachable" and ctx.errors == []
 
 
-PROXY_FORBIDDEN = (
-    'Error from server (Forbidden): pods "vault-0" is forbidden: User "u" cannot get resource '
-    '"pods/proxy" in API group "" in the namespace "rw-vault"'
-)
-
-
 def test_forbidden_pod_proxy_is_permission_denied_not_an_empty_result():
-    ctx = FakeCtx(answers=[("get --raw", (1, "", PROXY_FORBIDDEN))])
+    ctx = FakeCtx(proxy=[("", RwError("permission_denied", 'cannot get resource "pods/proxy"'))])
     with pytest.raises(RwError) as exc:
         server(ctx)
     assert exc.value.code == "permission_denied"
 
 
 def test_a_tls_listener_asked_over_http_names_the_scheme_to_use():
-    ctx = FakeCtx(
-        answers=[
-            (
-                "get --raw",
-                (
-                    1,
-                    "",
-                    "Error from server (BadRequest): Client sent an HTTP request to an HTTPS server.",
-                ),
-            )
-        ]
-    )
+    body = "Client sent an HTTP request to an HTTPS server.\n"
+    ctx = FakeCtx(proxy=[("", reply(400, body))])
     with pytest.raises(RwError) as exc:
         server(ctx)
     assert exc.value.code == "invalid_input" and "https" in exc.value.message
@@ -530,14 +579,13 @@ def test_a_tls_listener_asked_over_http_names_the_scheme_to_use():
 
 def test_a_plain_listener_asked_over_https_names_the_scheme_to_use():
     ctx = FakeCtx(
-        answers=[
+        proxy=[
             (
-                "get --raw",
-                (
-                    1,
-                    "",
-                    "Error from server (ServiceUnavailable): error trying to reach service: tls: "
-                    "first record does not look like a TLS handshake",
+                "",
+                RwError(
+                    "unreachable",
+                    "error trying to reach service: tls: first record does not look like a TLS "
+                    "handshake",
                 ),
             )
         ]
@@ -548,22 +596,44 @@ def test_a_plain_listener_asked_over_https_names_the_scheme_to_use():
 
 
 def test_a_body_that_is_not_vault_is_an_internal_error():
-    ctx = FakeCtx(answers=[("get --raw", (0, "<html>nginx</html>", ""))])
+    ctx = FakeCtx(proxy=[("", reply(200, "<html>nginx</html>"))])
     with pytest.raises(RwError) as exc:
         server(ctx)
     assert exc.value.code == "internal"
 
 
-def test_a_proxy_timeout_is_a_timeout_error():
-    import subprocess
+@pytest.mark.parametrize("status", [500, 502, 403])
+def test_a_status_vault_does_not_use_for_health_is_an_internal_error(status):
+    ctx = FakeCtx(proxy=[("", reply(status, "oops"))])
+    with pytest.raises(RwError) as exc:
+        server(ctx)
+    assert exc.value.code == "internal" and str(status) in exc.value.message
 
+
+def test_a_truncated_body_is_an_internal_error_never_a_partial_parse():
+    ctx = FakeCtx(proxy=[("", reply(200, json.dumps(doc())[:20], truncated=True))])
+    with pytest.raises(RwError) as exc:
+        server(ctx)
+    assert exc.value.code == "internal" and exc.value.hint
+
+
+def test_a_redirect_is_reported_and_never_followed():
+    """S17: a health endpoint that redirects off cluster is an error naming the host; the helper
+    drops the Location and the skill never asks again."""
+    redirect = reply(302, "", headers={"x-rw-redirect-dropped": "evil.example"})
+    ctx = FakeCtx(proxy=[("", redirect)])
+    with pytest.raises(RwError) as exc:
+        server(ctx)
+    assert exc.value.code == "internal" and "evil.example" in exc.value.message
+    assert len(ctx.proxy_requests) == 1  # asked once, the redirect not chased
+
+
+def test_a_proxy_timeout_is_a_timeout_error():
     from k8s_vault_health.fetch import vault_health
 
-    def run(argv, check=True, **kw):
-        raise subprocess.TimeoutExpired(argv, 10)
-
+    ctx = FakeCtx(proxy=[("", RwError("timeout", "the proxy did not answer"))])
     with pytest.raises(RwError) as exc:
-        vault_health(SimpleNamespace(run=run), "rw-vault", "vault-0", "http", 8200, Budget())
+        vault_health(ctx, "rw-vault", "vault-0", "http", 8200, Budget())
     assert exc.value.code == "timeout"
 
 
@@ -937,11 +1007,9 @@ def rbac_needs(argv):
     """The (apiGroup, resource, verb) triples one kubectl argv needs.
 
     get <kind> <name> -> get; get <kind> (no name, or -l) -> list;
-    get --raw <api path>/pods/<pod>/proxy/... -> pods/proxy get. Raises on anything else.
+    Raises on anything else; ctx.k8s_proxy_get(ns, "pods", ...) is pods/proxy get (see needs_of).
     """
-    if argv[1:3] == ["get", "--raw"]:
-        assert "/proxy/" in argv[3] and "/pods/" in argv[3], argv
-        return {("", "pods/proxy", "get")}
+    assert "--raw" not in argv, argv  # the pod proxy goes through ctx.k8s_proxy_get
     flags, positional, it = {}, [], iter(argv[1:])
     for a in it:
         if a in VALUE_FLAGS:
@@ -972,6 +1040,8 @@ def needs_of(ctxs, module):
         script(module)(ctx)
         for argv in ctx.calls:
             needed |= rbac_needs(argv)
+        for request in ctx.proxy_requests:
+            needed.add(("", f"{request['kind']}/proxy", "get"))
     return needed
 
 
@@ -981,6 +1051,7 @@ def test_server_status_declares_exactly_the_permissions_its_calls_need():
         "server_status",
     )
     assert needed == declared("server-status")
+    assert ("", "pods/proxy", "get") in needed
 
 
 def test_csi_provider_status_declares_exactly_the_permissions_its_calls_need():
@@ -1052,14 +1123,11 @@ def test_a_pod_that_was_queried_keeps_the_result_clean_of_the_no_pod_error():
 # ---------------------------------------------------------- proxy mapping ----
 
 
-MTLS = (
-    "Error from server (ServiceUnavailable): error trying to reach service: remote error: "
-    "tls: bad certificate"
-)
+MTLS = RwError("unreachable", "error trying to reach service: remote error: tls: bad certificate")
 
 
 def test_a_listener_that_wants_a_client_certificate_is_unreachable_with_a_hint():
-    ctx = FakeCtx(answers=[("get --raw", (1, "", MTLS))])
+    ctx = FakeCtx(proxy=[("", MTLS)])
     with pytest.raises(RwError) as exc:
         server(ctx, scheme="https")
     assert exc.value.code == "unreachable"
@@ -1068,7 +1136,7 @@ def test_a_listener_that_wants_a_client_certificate_is_unreachable_with_a_hint()
 
 
 def test_the_mutual_tls_hint_reaches_the_scoped_error_of_a_partial_result():
-    ctx = FakeCtx(namespace_target=True, answers=[("vault-sealed-0:8200", (1, "", MTLS))])
+    ctx = FakeCtx(namespace_target=True, proxy=[("vault-sealed-0:8200", MTLS)])
     out = server(ctx)
     assert by_pod(out["pods"])["vault-sealed-0"]["error"]["code"] == "unreachable"
     [err] = ctx.errors
@@ -1076,12 +1144,8 @@ def test_the_mutual_tls_hint_reaches_the_scoped_error_of_a_partial_result():
     assert "mutual TLS" in err["hint"]
 
 
-def test_a_404_from_the_proxy_names_the_port_input():
-    not_found = (
-        "Error from server (NotFound): the server could not find the requested resource (get pods "
-        "http:vault-0:9999)"
-    )
-    ctx = FakeCtx(answers=[("get --raw", (1, "", not_found))])
+def test_a_404_from_the_backend_names_the_port_input():
+    ctx = FakeCtx(proxy=[("", reply(404, "404 page not found"))])
     with pytest.raises(RwError) as exc:
         server(ctx, port=9999)
     assert exc.value.code == "not_found"
@@ -1090,7 +1154,7 @@ def test_a_404_from_the_proxy_names_the_port_input():
 
 def test_a_removed_raft_node_is_the_removed_state_not_internal():
     removed = {**doc(), "removed_from_cluster": True}
-    assert vault.health_state(removed) == ("removed", 530)
+    assert vault.health_state(status_of(removed)) == ("removed", 530)
     ctx = FakeCtx(health={"vault-0": removed})
     out = server(ctx)
     entry = out["pods"][0]
@@ -1099,8 +1163,8 @@ def test_a_removed_raft_node_is_the_removed_state_not_internal():
     assert out["counts"]["byState"] == {"removed": 1}
 
 
-def test_a_530_the_proxy_could_not_carry_is_the_removed_state_too():
-    ctx = FakeCtx(answers=[("get --raw", (1, "", "Error from server: unexpected status code 530"))])
+def test_a_530_without_a_health_body_is_the_removed_state_too():
+    ctx = FakeCtx(proxy=[("", reply(530, ""))])
     out = server(ctx)
     entry = out["pods"][0]
     assert entry["health"]["state"] == "removed" and entry["health"]["healthCode"] == 530
@@ -1109,7 +1173,8 @@ def test_a_530_the_proxy_could_not_carry_is_the_removed_state_too():
 
 
 def test_a_port_that_contains_530_is_not_taken_for_a_removed_node():
-    ctx = FakeCtx(answers=[("get --raw", (1, "", "dial tcp 10.0.0.5:8530: connection refused"))])
+    unreachable = RwError("unreachable", "dial tcp 10.0.0.5:8530: connection refused")
+    ctx = FakeCtx(proxy=[("", unreachable)])
     with pytest.raises(RwError) as exc:
         server(ctx)
     assert exc.value.code == "unreachable"
@@ -1136,14 +1201,13 @@ class Clock:
 
 
 def slow(ctx, clock, seconds):
-    real = ctx.run
+    real = ctx.k8s_proxy_get
 
-    def run(argv, check=True, **kw):
-        if argv[1:3] == ["get", "--raw"]:
-            clock.now += seconds
-        return real(argv, check=check, **kw)
+    def proxy_get(*args, **kw):
+        clock.now += seconds
+        return real(*args, **kw)
 
-    ctx.run = run
+    ctx.k8s_proxy_get = proxy_get
     return ctx
 
 
@@ -1176,7 +1240,7 @@ def test_a_budget_spent_before_any_pod_fails_the_task_with_timeout():
 def test_every_proxy_call_gets_a_timeout_of_at_most_ten_seconds():
     ctx = FakeCtx(namespace_target=True)
     server(ctx)
-    proxied = [t for argv, t in zip(ctx.calls, ctx.timeouts) if argv[1:3] == ["get", "--raw"]]
+    proxied = [r["timeout"] for r in ctx.proxy_requests]
     assert proxied and all(t is not None and 1 <= t <= 10 for t in proxied)
 
 
@@ -1195,7 +1259,7 @@ def test_any_unavailable_pod_is_flagged_even_below_max_unavailable():
 
 def test_server_text_is_bounded_to_1024():
     facts = vault.health_facts(
-        doc(version="1." + "9" * 3000, cluster_name="c" * 3000, replication_dr_mode="d" * 3000)
+        doc(version="1." + "9" * 3000, cluster_name="c" * 3000, replication_dr_mode="d" * 3000), 200
     )
     assert len(facts["version"]) == len(facts["clusterName"]) == 1024
     assert len(facts["replicationDrMode"]) == 1024

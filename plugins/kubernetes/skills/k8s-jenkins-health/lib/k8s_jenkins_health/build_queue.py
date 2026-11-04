@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from k8s_jenkins_health.common import NESTED_LIMIT, cap, cap_text, truncate
 from k8s_jenkins_health.errors import RwError
 from k8s_jenkins_health.fetch import Budget, ask, no_pod_error, pod_endpoint, pod_ready, queried
+from k8s_jenkins_health.proxy import describe_status
 from k8s_jenkins_health.tally import Tally
 
 QUEUE = "/queue/api/json"
@@ -194,7 +195,7 @@ def view(ctx, workload, pods, scheme, port, stuck_after, now, limit, budget=None
                 else:
                     sections[key] = None
                     if reply.status not in (401, 403):
-                        raise RwError("dependency", f"{what} answered HTTP {reply.status}")
+                        raise RwError("dependency", describe_status(reply, what))
             except RwError as exc:
                 if exc.code == "permission_denied":
                     raise

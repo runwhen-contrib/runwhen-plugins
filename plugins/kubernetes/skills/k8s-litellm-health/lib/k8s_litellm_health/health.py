@@ -4,6 +4,7 @@ import json
 
 from k8s_litellm_health.common import MESSAGE_LIMIT, NESTED_LIMIT, cap, truncate
 from k8s_litellm_health.errors import RwError
+from k8s_litellm_health.proxy import status_error
 from k8s_litellm_health.fetch import (
     MAX_QUERIED_PODS,
     Budget,
@@ -40,13 +41,13 @@ CAUSE_BASIS = {
 
 def alive_reply(reply, what):
     """(alive, body) of a liveness reply: 200 whose JSON string says alive is True; 503 is False
-    (LiteLLM answers 503 once a graceful shutdown has begun; the proxy does not pass the body on);
+    (LiteLLM answers 503 once a graceful shutdown has begun);
     a 200 with other content (an auth page, an HTML error) is an error, never alive. A 404 is the
     caller's `served: false`."""
     if reply.status == 503:
         return False, None
     if reply.status != 200:
-        raise RwError("dependency", f"{what} answered HTTP {reply.status}")
+        raise status_error(reply, what)
     try:
         doc = json.loads(reply.body)
     except ValueError:
@@ -186,12 +187,12 @@ def readiness_row(ctx, workload, pod, scheme, port, budget):
         "livenessHttpStatus": None,
     }
     if reply.status == 503:
-        row["ready"] = False  # the proxy answered not ready; its body does not come through
+        row["ready"] = False  # the proxy answered not ready
         cause, live_status, failure = readiness_cause(ctx, workload, pod, scheme, port, budget)
         row.update(cause=cause, causeBasis=CAUSE_BASIS[cause], livenessHttpStatus=live_status)
         return row, failure
     if reply.status != 200:
-        raise RwError("dependency", f"{what} answered HTTP {reply.status}")
+        raise status_error(reply, what)
     doc = readiness_doc(reply, what)
     status, cut_status = truncate(doc["status"])
     db, cut_db = truncate(doc.get("db"))

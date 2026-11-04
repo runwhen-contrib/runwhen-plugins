@@ -1,4 +1,5 @@
-"""ring: the members of each Loki hash ring, from the ring pages served as JSON."""
+"""ring: the members of each Loki hash ring, from the ring pages (JSON when a client asks for it,
+HTML otherwise)."""
 
 import json
 
@@ -13,28 +14,34 @@ from k8s_loki_health.common import (
 )
 from k8s_loki_health.errors import RwError
 from k8s_loki_health.fetch import Budget, fetch_one, no_pods, queried
+from k8s_loki_health.proxy import status_error
+from k8s_loki_health.ringpage import members as html_members
 
 DEFAULT_PATHS = ("/ring", "/distributor/ring", "/compactor/ring")
 
 
 def ring_members(reply, what):
-    """(the member list, the server's `now` text or None) of a ring page. The page answers JSON
-    only when asked for it (kubectl's Accept header asks for it; a client that does not gets
-    HTML); HTML (an older Loki, or a page that is not a ring), a JSON without `shards`, or any
-    status but 200 is an error, never an empty ring. A 404 is not an error here: the caller
-    reads it as 'this pod does not serve that ring' before calling this."""
+    """(the member list, the server's `now` text or None) of a ring page. The page is JSON for a
+    client that asks for it, which `ctx.k8s_proxy_get` cannot (it sends `Accept: */*`), and HTML
+    otherwise; both are read. A page that is neither a ring's JSON (`shards`) nor a ring's HTML
+    table, or any status but 200, is an error, never an empty ring. A 404 is not an error here:
+    the caller reads it as 'this pod does not serve that ring' before calling this."""
     if reply.status != 200:
-        raise RwError("dependency", f"{what} answered HTTP {reply.status}")
+        raise status_error(reply, what)
     try:
         doc = json.loads(reply.body)
     except ValueError:
         doc = None
+    if doc is None:
+        parsed = html_members(reply.body)
+        if parsed is not None:
+            return parsed
     shards = doc.get("shards") if isinstance(doc, dict) else None
     if not isinstance(shards, list) or not all(isinstance(s, dict) for s in shards):
         raise RwError(
             "internal",
-            f"{what} did not return ring JSON (this Loki may serve the ring page as HTML "
-            f"only): {reply.body.strip()[:80]!r}",
+            f"{what} did not return a ring page (JSON with shards, or the HTML ring table): "
+            f"{reply.body.strip()[:80]!r}",
         )
     return shards, doc.get("now")
 
@@ -53,7 +60,7 @@ def member_view(shard, now, unparsed):
         "state": shard.get("state"),
         "address": shard.get("address"),
         "zone": shard.get("zone") or None,
-        "tokenCount": len(tokens) if isinstance(tokens, list) else None,
+        "tokenCount": len(tokens) if isinstance(tokens, list) else shard.get("token_count"),
         "registeredAt": iso(registered),
         "lastHeartbeat": iso(beat),
         "heartbeatAgeSeconds": age_seconds(beat, now),

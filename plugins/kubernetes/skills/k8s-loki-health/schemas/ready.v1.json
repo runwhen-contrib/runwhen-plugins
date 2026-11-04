@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Loki /ready per pod",
-  "description": "What each pod of the workload answered on /ready through the API server's pod proxy. ready is true for 200 with the ready text, false for 503 (the proxy does not pass the 503 body on, so the reason is not here); null when the pod was not asked or the answer was an error.",
+  "description": "What each pod of the workload answered on /ready through the API server's pod proxy. ready is true for 200 with the ready text, false for 503 (body then holds Loki's reason); null when the pod was not asked or the answer was an error.",
   "type": "object",
   "properties": {
     "workload": {
@@ -93,7 +93,7 @@
               "string",
               "null"
             ],
-            "description": "the 200 body"
+            "description": "the /ready body: the 200 text, or the reason a 503 gives"
           },
           "bodyTruncated": {
             "type": "boolean"

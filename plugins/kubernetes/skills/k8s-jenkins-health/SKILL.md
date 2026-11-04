@@ -25,7 +25,7 @@ with `http-status` to see whether the controller answers; `queue` shows whether 
 and whether the executors they need are online.
 
 Both tasks reach each running pod over HTTP through the API server's pod proxy
-(`kubectl get --raw /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/login`): no exec, no
+(`ctx.k8s_proxy_get`, which never follows a redirect): no exec, no
 port-forward, no Secret read, no credential sent. That needs `get` on the workload, `list` on
 `pods` and `get` on `pods/proxy` in its namespace. The port, `scheme` and `urlPrefix` (Jenkins's
 `--prefix`, the chart's `jenkinsUriPrefix`, for example `/jenkins`) are the inputs when given; when
@@ -70,6 +70,11 @@ Outputs are facts, not verdicts.
   JSON API (Jenkins starting) is a `dependency` error, as there is nothing to report. When no pod
   answers at all the task fails. A 404 on every pod usually means a wrong prefix: check
   `urlPrefix` against the row.
+- **`ssoRedirect: redirect`.** `/login` answered a redirect to another host, as a Jenkins behind an SSO
+  realm does for an anonymous caller. The redirect is never followed (the API server's proxy would
+  send the runner's credential to that host if a client did), `httpStatus` is the 3xx, `ok` is `null`
+  and `hint` names the host. On a queue endpoint such a redirect is a `dependency` error naming the host.
+  A redirect to another path of the same pod is followed once.
 - **`ssoRedirect: likely`.** `/login` answered 200 with a login page that has no `Jenkins
   <version>` footer, as an SSO identity provider's page does. `ok` is `null` and `hint` says why;
   the queue endpoints of such a Jenkins are not readable anonymously either.

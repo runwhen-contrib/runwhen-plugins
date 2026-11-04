@@ -4,6 +4,7 @@ import re
 
 from k8s_jenkins_health.common import cap
 from k8s_jenkins_health.errors import RwError
+from k8s_jenkins_health.proxy import describe_status
 from k8s_jenkins_health.fetch import (
     Budget,
     ask,
@@ -22,6 +23,12 @@ FOOTER = re.compile(r"Jenkins (\d+\.\d+(?:\.\d+)?)")
 # A page that asks for a login but is not Jenkins's: what an SSO identity provider serves.
 LOGIN_PAGE = re.compile(
     r"type=[\"']?password|sign[ -]?in|log[ -]?in|single sign|saml|openid|oauth", re.IGNORECASE
+)
+REDIRECT_HINT = (
+    "/login redirected to another host and the redirect was not followed (it would carry the "
+    "runner's credential there): Jenkins behind an SSO realm redirects anonymous requests to the "
+    "identity provider, so this skill's facts are limited there; the pod's readiness and log say "
+    "whether Jenkins is up"
 )
 SSO_HINT = (
     "/login answered 200 with a login page that is not Jenkins's (no 'Jenkins <version>' footer): "
@@ -54,7 +61,8 @@ def login_row(pod, port, probed, reply=None, scheme=None, prefix=None):
 def read_login(pod, port, reply, what, scheme=None, prefix=None):
     """The row of a /login reply. 200 with the Jenkins footer (`Jenkins <version>`) is ok true and
     its version; 200 with a login page that is not Jenkins's is `ssoRedirect: likely`, ok null and
-    a hint; 503 is ok false; 404 is ok false too (nothing serves /login there); any other 200 is an
+    a hint; a redirect to another host (never followed) is `ssoRedirect: redirect`, ok null and a hint
+    naming the host; 503 is ok false; 404 is ok false too (nothing serves /login there); any other 200 is an
     `internal` error, never ok. A version the page does not give is the image tag's."""
     row = login_row(pod, port, True, reply, scheme, prefix)
     if reply.status == 200:
@@ -66,6 +74,13 @@ def read_login(pod, port, reply, what, scheme=None, prefix=None):
             row["ssoRedirect"], row["hint"] = "likely", SSO_HINT
         else:
             raise RwError("internal", f"{what} answered 200 but is not a Jenkins login page")
+    elif reply.redirected:
+        if not reply.redirect_dropped:
+            raise RwError(
+                "internal", f"{describe_status(reply, what)}: no redirect target to report"
+            )
+        row["ssoRedirect"] = "redirect"
+        row["hint"] = f"{REDIRECT_HINT} (it pointed to {reply.redirect_dropped})"[:1024]
     elif reply.status in (404, 503):
         row["ok"] = False
     return row

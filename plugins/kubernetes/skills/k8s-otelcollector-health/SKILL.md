@@ -25,7 +25,8 @@ a collector's memory is climbing. The target is the collector's own workload. `e
 only task: the collector keeps these counters itself, so no log search is needed.
 
 It needs `get` on the workload, `list` on its pods and `get` on `pods/proxy`. The request is
-`GET /api/v1/namespaces/<ns>/pods/<pod>:<port>/proxy/metrics`, so the metrics must be reachable on the
+a `GET /metrics` on the pod's port through the API server's pod proxy (`ctx.k8s_proxy_get`, which never
+follows a redirect: one to another host is a `dependency` error naming the host), so the metrics must be reachable on the
 **pod IP**: recent collector versions listen on `localhost:8888` unless `service.telemetry.metrics` is
 configured with `0.0.0.0` (or `${env:MY_POD_IP}`), and then the pod answers `unreachable`; set the
 `metricsPort` setting when the port is not 8888. No exec, no port-forward.
@@ -54,7 +55,8 @@ all), so back-pressure cannot be seen here; read `counters` instead. A counter t
 
 A pod that is not Running, or whose page could not be read, is in `pods` with the reason and the result is
 `partial` with an error per pod; when no pod could be read the task fails (`unreachable`, or
-`permission_denied` if the proxy was refused, or `internal` when the page is not a collector's metrics),
+`permission_denied` if the proxy was refused, or `internal` when the page is not a collector's metrics
+or the workload answered another error status; the message names the status),
 with the same hint as the partial result (the metrics port and the telemetry bind address).
 `enqueue_failed` and `receiver.refused` climbing together with a full queue mean the pipeline is
 saturated; `send_failed` climbing with an empty queue means the destination rejects data right away.

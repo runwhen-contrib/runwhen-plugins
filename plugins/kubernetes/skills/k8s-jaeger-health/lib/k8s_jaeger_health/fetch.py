@@ -4,7 +4,7 @@ import time
 
 from k8s_jaeger_health.errors import RwError
 from k8s_jaeger_health.project import POD_FIELDS, WORKLOAD_FIELDS, kubectl_projected
-from k8s_jaeger_health.proxy import pod_path, proxy_get
+from k8s_jaeger_health.proxy import proxy_get
 
 KINDS = {
     "kubernetes/statefulset": "statefulsets.apps",
@@ -63,8 +63,8 @@ class Budget:
             raise RwError("timeout", reason)
 
     def request_timeout(self):
-        """The kubectl --request-timeout for the next ask: never past the deadline."""
-        return f"{max(1, min(REQUEST_SECONDS, int(self.remaining())))}s"
+        """Seconds for the next ask: never past the deadline."""
+        return max(1, min(REQUEST_SECONDS, int(self.remaining())))
 
     def record(self, timed_out):
         self._timeouts = self._timeouts + 1 if timed_out else 0
@@ -242,7 +242,7 @@ def fetch_one(ctx, workload, pod, scheme, port, path, budget):
     """GET `path` (with its query string) from one pod: a Reply (200, 404 or 503) or RwError. An
     ask past the task's deadline, or after three timeouts in a row, raises `timeout` without
     asking."""
-    api_path = pod_path(
+    where = (
         workload["metadata"]["namespace"],
         pod["metadata"]["name"],
         scheme,
@@ -251,7 +251,7 @@ def fetch_one(ctx, workload, pod, scheme, port, path, budget):
     )
     budget.check()
     try:
-        reply = proxy_get(ctx, api_path, budget.request_timeout())
+        reply = proxy_get(ctx, *where, budget.request_timeout())
     except RwError as exc:
         budget.record(exc.code == "timeout")
         raise
