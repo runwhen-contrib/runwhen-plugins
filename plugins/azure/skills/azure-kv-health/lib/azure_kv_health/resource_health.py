@@ -1,11 +1,13 @@
 """resource-health: Azure's own verdict on the vault (Microsoft.ResourceHealth)."""
 
 from .az import az_json
-from .common import clip, resolve
+from .common import clip
 from .errors import RwError
+from .vault import resolve
 
 API_VERSION = "2022-10-01"
-URL = "https://management.azure.com{id}/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version={api}"
+# a relative URL: az rest sends an ARM resource id to the active cloud's Resource Manager endpoint
+URL = "{id}/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version={api}"
 
 
 def read(ctx):

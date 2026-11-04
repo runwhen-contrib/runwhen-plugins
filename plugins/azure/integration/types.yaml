@@ -1,8 +1,15 @@
-# Azure = subscription -> the resources a skill targets (D51). A resource group is not a type: no
-# skill targets one, and every resource is addressed by its name within the subscription (a Key
-# Vault name is unique across Azure); the group is a fact in the resource's document.
+# Azure = subscription -> resource group -> the resources a skill targets (D51). The resource group
+# is a type because it is part of every resource's address: without `-g` az searches the whole
+# subscription for the group (a Microsoft.Resources read the task would have to declare and the
+# identity be granted), while `-g` scopes the call, and its permission, to the group. A skill's
+# target is subscriptions/<id>/resourcegroups/<group>/<plural>/<name>.
+#
+# The group's name is lower case in the identity: ARM compares group names without case (a vault's id
+# may spell the group differently from `az group list`), so `RG-Prod` and `rg-prod` must be one node.
+# The name as ARM spells it is the item's display name.
 types:
   # canonicalKey: the subscription id. It is the same whichever identity reaches the subscription
   # (a service principal, a managed identity), so a second connection to it is the same root.
   subscription: { root: true, rootKey: subscriptionId, canonicalKey: subscriptionId, plural: subscriptions }
-  keyvault: { parent: subscription, plural: keyvaults, native: { provider: Microsoft.KeyVault, type: vaults } }
+  resourcegroup: { parent: subscription, plural: resourcegroups, native: { provider: Microsoft.Resources, type: resourceGroups } }
+  keyvault: { parent: resourcegroup, plural: keyvaults, native: { provider: Microsoft.KeyVault, type: vaults } }

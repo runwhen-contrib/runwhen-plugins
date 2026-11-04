@@ -49,6 +49,21 @@ CASES = [
     (1, "ERROR: Please run 'az login' to setup account.", "permission_denied"),  # capture, 2.92.0
     (
         1,
+        'ERROR: Unauthorized({"error":{"code":"ExpiredAuthenticationToken","message":"The access token expiry UTC time is earlier than current UTC time."}})',
+        "permission_denied",
+    ),
+    (
+        1,
+        "ERROR: (InvalidAuthenticationToken) The access token is invalid.\nCode: InvalidAuthenticationToken",
+        "permission_denied",
+    ),
+    (
+        1,
+        "ERROR: (InsufficientAccessError) The caller does not have sufficient access.",
+        "permission_denied",
+    ),
+    (
+        1,
         "ERROR: AADSTS700016: Application with identifier 'x' was not found in the directory 'y'.",
         "permission_denied",
     ),  # capture
@@ -181,6 +196,49 @@ def test_the_message_is_the_error_lines_not_the_traceback():
 
 def test_a_long_message_is_cut_to_1024_characters():
     assert len(failure(1, "ERROR: " + "x" * 5000).message) == 1024
+
+
+# A Key Vault data-plane refusal as az prints it: the first line says "not authorized", the lines
+# after it (which do not start with ERROR:) name the action and the scope.
+DATA_PLANE_REFUSAL = (
+    "WARNING: A new Azure CLI version is available.\n"
+    "ERROR: (Forbidden) Caller is not authorized to perform action on resource.\n"
+    "If role assignments, deny assignments or role definitions were changed recently, please observe propagation time.\n"
+    "Caller: appid=9d2c;oid=9d2c;iss=https://sts.windows.net/c0ff/\n"
+    "Action: 'Microsoft.KeyVault/vaults/secrets/readMetadata/action'\n"
+    "Resource: '/subscriptions/x/resourcegroups/rg/providers/microsoft.keyvault/vaults/kv/secrets/'\n"
+    "Assignment: (not found)\n"
+    "Vault: kv;location=eastus\n"
+    "Code: Forbidden\n"
+    "Message: Caller is not authorized to perform action on resource.\n"
+    "Traceback (most recent call last):\n  File x\nFinal: not part of it\n"
+)
+
+
+def test_the_message_keeps_the_lines_that_continue_the_error_and_names_the_missing_action():
+    exc = failure(1, DATA_PLANE_REFUSAL)
+    assert exc.code == "permission_denied"
+    assert "Action: 'Microsoft.KeyVault/vaults/secrets/readMetadata/action'" in exc.message
+    assert "Resource: '/subscriptions/x/" in exc.message
+    assert "Traceback" not in exc.message and "Final" not in exc.message
+    assert "WARNING" not in exc.message  # what comes before the first ERROR: line is dropped
+
+
+def test_headline_runs_from_the_first_error_line_to_the_traceback_and_is_capped():
+    assert az_mod.headline(DATA_PLANE_REFUSAL).startswith("ERROR: (Forbidden) Caller")
+    assert az_mod.headline(DATA_PLANE_REFUSAL).endswith(
+        "Message: Caller is not authorized to perform action on resource."
+    )
+    assert az_mod.headline("no error line at all\nbut text") == "no error line at all\nbut text"
+    assert az_mod.headline("") == "" and az_mod.headline(None) == ""
+    assert len(az_mod.headline("ERROR: " + "x" * 5000)) == 1024
+    assert len(az_mod.headline("ERROR: " + "x" * 5000, limit=10)) == 10
+
+
+def test_the_classifier_reads_past_the_cap_the_message_is_cut_at():
+    err = "ERROR: " + "x" * 2000 + "\nCode: TooManyRequests\n"
+    exc = failure(1, err)
+    assert exc.code == "rate_limited" and len(exc.message) == 1024
 
 
 def test_exit_code_zero_is_a_success_whatever_stderr_holds():

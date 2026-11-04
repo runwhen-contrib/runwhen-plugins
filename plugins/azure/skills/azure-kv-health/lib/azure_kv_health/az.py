@@ -1,9 +1,9 @@
 """Running one `az` command that returns JSON, and classifying its failure.
 
 This file is shared by every azure skill. Skills do not import each other (a task sees only its
-own skill's lib/), so each skill carries a verbatim copy of `errors.py` and `az.py` in its own
-`lib/<skill_snake>/`; they import only `.errors`, so the copy needs no edit. A test
-(tests/unit/test_azure_copies.py) fails when a copy drifts from `azure_base`'s.
+own skill's lib/), so each skill carries a verbatim copy of `errors.py`, `az.py`, `common.py` and
+`metrics.py` in its own `lib/<skill_snake>/`; they import only each other, so a copy needs no edit.
+A test (tests/unit/test_azure_copies.py) fails when a copy drifts from `azure_base`'s.
 
     from azure_base.az import az_json           # in another skill: from <skill_snake>.az import ...
 
@@ -17,8 +17,10 @@ never goes on argv: a command that needs one reads it from a file (`-p @file`).
 The exit code decides, then stderr. az prints warnings to stderr on commands that succeed (an
 upgrade notice, a deprecation, `az login -p`), so an exit code of 0 is a success whatever stderr
 holds, and stderr is only read to classify a non-zero exit. On a failure az prints `ERROR: ...`
-lines; an unexpected error also prints a traceback after them, so the classifier reads the
-`ERROR:` lines only (the traceback names exception classes that would match anything).
+and the lines that continue the message (`Code:`, `Message:`, `Action:`, `Resource:`); an
+unexpected error also prints a traceback after them, so the classifier and the error message read
+the text from the first `ERROR:` line up to a `Traceback` line (the traceback names exception
+classes that would match anything).
 """
 
 import json
@@ -101,6 +103,7 @@ _RULES = (
         re.compile(
             r"AuthorizationFailed|AuthorizationPermissionMismatch|Forbidden|not authorized"
             r"|does not have authorization|AccessDenied|Unauthorized|AADSTS|InsufficientPermissions"
+            r"|InsufficientAccessError|ExpiredAuthenticationToken|InvalidAuthenticationToken"
             r"|PermissionDenied|Please run 'az login'|Interactive authentication is needed"
             r"|\b40[13]\b|SubscriptionNotRegistered|was not found in the directory",
             re.I,
@@ -135,19 +138,34 @@ _RULES = (
 )
 
 
-def headline(stderr):
-    """The `ERROR:` lines of az's stderr (az prints a traceback after them on an unexpected
-    error); the whole text when there are none."""
+def error_text(stderr):
+    """The text of az's stderr from the first `ERROR:` line up to a `Traceback` line: the error
+    and the lines that continue it (a Key Vault refusal names the action and the scope on lines
+    after the first), without the traceback an unexpected error appends. The whole text when
+    there is no `ERROR:` line."""
     text = str(stderr or "")
-    lines = [ln for ln in text.splitlines() if ln.startswith("ERROR:")]
-    return "\n".join(lines) if lines else text
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith("ERROR:")), None)
+    if start is None:
+        return text
+    kept = []
+    for line in lines[start:]:
+        if line.startswith("Traceback"):
+            break
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def headline(stderr, limit=MESSAGE_LIMIT):
+    """`error_text` cut to `limit` characters: what an error message is made of."""
+    return error_text(stderr)[:limit]
 
 
 def classify_error(stderr, returncode=1):
     """D64 error code for a failed az command, from its stderr and exit code."""
     if returncode == 127:
         return "dependency"
-    text = headline(stderr)
+    text = error_text(stderr)
     for code, pattern in _RULES:
         if pattern.search(text):
             return code

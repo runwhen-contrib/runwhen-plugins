@@ -20,10 +20,17 @@
           },
           "auditEvent": {
             "type": "boolean",
-            "description": "The AuditEvent category is enabled"
+            "description": "The AuditEvent category, or a category group that holds it (audit, allLogs), is enabled"
           },
           "logAnalytics": {
             "type": "boolean"
+          },
+          "table": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Log Analytics table the setting writes to: AZKVAuditLogs for a Dedicated destination type, else AzureDiagnostics; null when it does not send to a workspace"
           },
           "storageAccount": {
             "type": "boolean"
@@ -36,6 +43,7 @@
           "name",
           "auditEvent",
           "logAnalytics",
+          "table",
           "storageAccount",
           "eventHub"
         ],
@@ -49,12 +57,23 @@
       "type": "boolean",
       "description": "Some setting sends AuditEvent to a Log Analytics workspace. False: the log cannot be queried here, and failures is null"
     },
+    "table": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The table(s) queried, comma separated when the vault's settings use both (AZKVAuditLogs, AzureDiagnostics); null when nothing was queried"
+    },
     "workspacesQueried": {
       "type": "integer"
     },
     "workspacesSkipped": {
       "type": "integer",
-      "description": "Workspaces beyond the first 3 that were not queried"
+      "description": "Workspace/table pairs beyond the first 3 that were not queried"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "A query had more than 50 operation/status groups and the rest were cut (the least frequent): failureCount and failures are then lower bounds"
     },
     "failureCount": {
       "type": [
@@ -129,8 +148,10 @@
     "diagnosticSettings",
     "diagnosticSettingsOmitted",
     "auditLoggingToWorkspace",
+    "table",
     "workspacesQueried",
     "workspacesSkipped",
+    "truncated",
     "failureCount",
     "failures"
   ],

@@ -1,5 +1,8 @@
 """Azure Monitor metrics through `az monitor metrics list`: one metric over a window, reduced to
-facts. A grain with no datapoint is counted, never read as healthy or as zero."""
+facts. A grain with no datapoint is counted, never read as healthy or as zero.
+
+Shared by every azure skill that reads a metric, as a verbatim copy in its `lib/<skill_snake>/`
+(a test keeps the copies equal)."""
 
 from .az import az_json
 from .common import NESTED_LIMIT, span
@@ -41,7 +44,8 @@ def summarize(data, key, *, extra=None, threshold=None, above=True):
     {timestamp, value} plus the `extra` aggregations (a dict of output name -> key) when present.
     grains: how many intervals the window holds; withData: those with a value; missing: those
     without. min/max/last are over every datapoint with a value, not only the points returned, and
-    are null when there is none. With a `threshold`, crossings counts the datapoints beyond it
+    are null when there is none. lastGrainMissing: the newest interval has no value, so `last` is
+    an older interval's value, not the latest reading (a metric that stopped reporting). With a `threshold`, crossings counts the datapoints beyond it
     (above it when `above`, below it otherwise) and crossed says whether there was any."""
     have = [d for d in data if isinstance(d.get(key), (int, float))]
     values = [d[key] for d in have]
@@ -60,6 +64,7 @@ def summarize(data, key, *, extra=None, threshold=None, above=True):
         "min": min(values) if values else None,
         "max": max(values) if values else None,
         "last": values[-1] if values else None,
+        "lastGrainMissing": bool(data) and not isinstance(data[-1].get(key), (int, float)),
         "points": points,
         "pointsOmitted": len(have) - len(shown),
     }

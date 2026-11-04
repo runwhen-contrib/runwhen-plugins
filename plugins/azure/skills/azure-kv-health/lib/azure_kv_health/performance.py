@@ -1,8 +1,9 @@
 """performance: request volume and latency of the vault over a window."""
 
-from .common import resolve, window
+from .common import window
 from .errors import RwError
 from .metrics import read_series, summarize
+from .vault import resolve
 
 
 def _series(
@@ -16,7 +17,7 @@ def _series(
     return out
 
 
-def read(ctx, window_input, st):
+def read(ctx, window_input, st, th):
     seconds = window(window_input)
     subscription, name, resource_id, _ = resolve(ctx)
     out = {
@@ -28,14 +29,14 @@ def read(ctx, window_input, st):
     }
     failed = []
     for field, metric, aggregations, key, extra, threshold in (
-        ("requests", "ServiceApiHit", ["Count"], "count", None, st.request_threshold),
+        ("requests", "ServiceApiHit", ["Count"], "count", None, th.request_threshold),
         (
             "latency",
             "ServiceApiLatency",
             ["Average", "Maximum"],
             "average",
             {"maximum": "maximum"},
-            st.latency_threshold_ms,
+            th.latency_threshold_ms,
         ),
     ):
         try:

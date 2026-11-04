@@ -6,17 +6,19 @@ settings:
   commandTimeout: { type: duration, default: 60s, description: "How long one az command may run before it is stopped (timeout)" }
 tasks:
   - name: discover
-    title: Discover subscription and Key Vaults
-    description: Reads the subscription (id, name, tenant, state) and lists its Key Vaults with resource group and location, as facts and as an rw.discovery.v1 sync. Reports the subscription id as the root's canonical key. Read-only.
+    title: Discover subscription, resource groups and Key Vaults
+    description: Reads the subscription (id, name, tenant, state), lists its resource groups and, group by group, their Key Vaults, as facts and as an rw.discovery.v1 sync (subscription -> resource group -> Key Vault; one partition per group, so a group that cannot be listed is reported and not swept). Reports the subscription id as the root's canonical key. Read-only.
     script: scripts/discover.py
     tags: [discovery, inventory]
     readOnly: true
     timeout: 600s                                  # the az calls and the push; the push is clamped to what is left (azure_base/budget.py)
     credentials: [azure/cli, runwhen/sync]         # runwhen/sync is platform-minted per run by the lease, not a connection
     permissions:
-      - { action: Microsoft.KeyVault/vaults/read }  # az keyvault list, at the subscription
+      - { action: Microsoft.Resources/subscriptions/resourceGroups/read }  # az group list
+      - { action: Microsoft.KeyVault/vaults/read }  # az keyvault list -g <group>, once per resource group
     outputs:
       summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-step errors and root.canonicalKey (subscriptionId)" }
       subscription: { schema: ./schemas/subscription.v1.json, description: "Subscription id, name, tenant and state" }
+      resourceGroups: { schema: ./schemas/resourcegroups.v1.json, description: "Name, location, id and Key Vault count of each resource group, cut to maxItems" }
       keyvaults: { schema: ./schemas/keyvaults.v1.json, description: "Name, resource group, location and id of each Key Vault, cut to maxItems" }
-      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this subscription and all its Key Vaults" }
+      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this subscription, its resource groups and their Key Vaults" }

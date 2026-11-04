@@ -4,10 +4,10 @@ description: >-
   Health of one Azure Key Vault: Azure's own Resource Health verdict, the Availability metric over a
   window (every interval counted, none read as healthy), soft delete, purge protection, network and
   authorization configuration, secrets, certificates and keys that are expired or expire within N
-  days, failed operations in the audit log (Log Analytics), and request volume and latency against
-  thresholds. Use when an application cannot read a secret or certificate, a vault is slow or
-  throttling, a certificate or credential may have lapsed, or a Key Vault needs a quick audit of its
-  protection settings.
+  days, failed operations in the audit log (Log Analytics, including 429 responses), and request
+  volume and latency against thresholds. Use when an application cannot read a secret or
+  certificate, a vault is slow, a certificate or credential may have lapsed, or a Key Vault needs a
+  quick audit of its protection settings.
 runwhen:
   role: health
   appliesTo:
@@ -22,7 +22,9 @@ expired, or you are asked whether a vault is protected (soft delete, purge prote
 access). Each task answers one question about the vault the run targets; they read only, through the
 connection's own az session (`azure/cli`), and never return a secret, key or certificate value.
 
-Every task looks the vault up first (`az keyvault show`): a vault that is gone is `not_found`. The
+Every task looks the vault up first (`az keyvault show -g`, with the resource group from the target:
+the target is `azure/subscriptions/<id>/resourcegroups/<group>/keyvaults/<name>`): a vault that is
+gone is `not_found`. The
 `commandTimeout` setting (default 60s) bounds each az command; the metrics tasks take a `window`
 (default `24h`, 1m to 30d) that ends at the run's reference time.
 
@@ -37,13 +39,17 @@ Every task looks the vault up first (`az keyvault show`): a vault that is gone i
   (default 1h). `hasData`, the intervals with and without a value, `min`, `max`, `last`, the newest 50
   intervals and `belowThreshold` (some interval below `availabilityMinPercent`, default 100).
 - `configuration` returns `configuration`: `softDeleteEnabled`, retention, `purgeProtectionEnabled`,
-  `rbacAuthorization`, `publicNetworkAccess`, the firewall's default action, rule, private endpoint
-  and access policy counts.
+  `rbacAuthorization`, `publicNetworkAccess`, the firewall's default action and `networkAclBypass`,
+  rule, private endpoint (with the count in each approval state) and access policy counts.
 - `expiring-items` takes `thresholdDays` (default 31) and returns `expiry`: secrets, certificates and
   keys already expired or expiring within the threshold, soonest first, with `daysRemaining`; how many
-  of each kind were listed (`scanned`) and how many have no expiry date (`noExpiry`).
-- `audit-failures` returns `audit`: the diagnostic settings, `auditLoggingToWorkspace`, and the failed
-  operations (HTTP 400 or above) of the window grouped by operation and status.
+  of each kind were listed (`scanned`) and how many have no expiry date (`noExpiry`). Items whose
+  expiry date cannot be read are named in `unreadableExpiry`; secrets Key Vault manages for a
+  certificate (`managed: true`) are skipped and counted in `managedSecretsSkipped`, because the
+  certificate row carries that expiry.
+- `audit-failures` returns `audit`: the diagnostic settings, `auditLoggingToWorkspace`, the Log
+  Analytics `table` queried, and the failed operations (HTTP 400 or above) of the window grouped by
+  operation and status. 429 rows are the vault's throttling.
 - `performance` returns `performance`: `requests` (ServiceApiHit per interval) and `latency`
   (ServiceApiLatency average and maximum in ms), each with the intervals over `requestThreshold`
   (default 1000) or `latencyThresholdMs` (default 500).
@@ -53,6 +59,7 @@ Every task looks the vault up first (`az keyvault show`): a vault that is gone i
 - `availability.hasData: false`, or `grainsMissing` above zero: Azure Monitor had no datapoint for
   those intervals. That is no information, not a healthy vault; `belowThreshold` is only about
   intervals that have a value. The whole window is covered, not just its last interval.
+  `lastGrainMissing: true`: the newest interval has no value, so `last` is an older reading.
 - `softDeleteEnabled: true` with a newer API version that reports nothing: soft delete is always on
   for vaults created since 2020, and only an explicit `false` means off. `purgeProtectionEnabled:
   false` is the common finding: purge protection is opt-in and cannot be turned off once on.
@@ -64,18 +71,26 @@ Every task looks the vault up first (`az keyvault show`): a vault that is gone i
   to `secrets`, `certificates` or `keys`. Item metadata is a data-plane read that Reader on the
   control plane does not include: grant Key Vault Reader (RBAC vaults) or list permission (access
   policy vaults).
-- `audit.auditLoggingToWorkspace: false`: no diagnostic setting sends AuditEvent to a Log Analytics
-  workspace, so there is nothing to query and `failures` is null. That is not "no failures": it is a
-  finding about the vault's logging. `failures.items` empty with `workspacesQueried` above zero means
-  no failed operation in the window. Log Analytics ingestion lags a few minutes.
+- `audit.auditLoggingToWorkspace: false`: no diagnostic setting sends the audit log (the AuditEvent
+  category, or the `audit` or `allLogs` category group) to a Log Analytics workspace, so there is
+  nothing to query and `failures` is null. That is not "no failures": it is a finding about the
+  vault's logging. `failures.items` empty with `workspacesQueried` above zero means no failed
+  operation in the window. Log Analytics ingestion lags a few minutes. `table` says where the log
+  was read: `AZKVAuditLogs` (a Dedicated, resource-specific destination) or `AzureDiagnostics`.
+  `truncated: true`: a query had more than 50 operation/status groups and cut the least frequent, so
+  the counts are lower bounds. The query endpoint is the active cloud's (`az cloud show`).
 - `performance.requests` or `.latency` null: that metric could not be read (the run is `partial`,
   error scoped `requests` or `latency`); the other stands. `crossings` counts intervals beyond the
-  threshold, so a short spike is visible even when `last` is back to normal.
+  threshold, so a short spike is visible even when `last` is back to normal; `lastGrainMissing`
+  says `last` is stale. This is request volume and latency, not throttling: for 429s read
+  `audit-failures`.
 - Lists are cut at `maxItems` (default 200; `omitted` says how many), nested lists at 50, and text
   fields at 1024 characters (`truncated`).
 - The run fails with a code, never an empty result, classified from az's own `ERROR:` lines (the exit
   code decides first; warnings az prints on a successful command are ignored):
-  - `permission_denied`: `AuthorizationFailed`, `Forbidden`, an AADSTS code, no `az login`.
+  - `permission_denied`: `AuthorizationFailed`, `Forbidden`, an AADSTS code, no `az login`, an
+    expired or invalid token. The message keeps az's whole error text, so a data-plane refusal
+    names the action it needs (for example `Microsoft.KeyVault/vaults/secrets/readMetadata/action`).
   - `unreachable`: cannot connect, DNS, TLS, and a vault firewall or private link refusing the
     runner (`ForbiddenByFirewall`, "Client address is not authorized").
   - `not_found`: the vault or subscription is gone. `rate_limited`: `TooManyRequests`, 429.

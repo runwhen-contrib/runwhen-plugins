@@ -5,10 +5,12 @@ or a certificate; and only name, kind, expiry and enabled leave this module."""
 
 import math
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from .az import az_json
-from .common import listing, resolve
+from .common import listing
 from .errors import RwError
+from .vault import resolve
 
 KINDS = (
     ("secret", "secrets", ["keyvault", "secret", "list"]),
@@ -29,10 +31,20 @@ def parse_expiry(text):
 
 
 def classify(rows, kind, now, threshold_days):
-    """(items that are expired or expire within the threshold, how many rows, how many have no
-    expiry). A row whose expiry cannot be read is counted as having none and reported by name."""
-    items, no_expiry, unreadable = [], 0, []
+    """What the rows of one list say about expiry.
+
+    items: those that are expired or expire within the threshold. scanned: the rows looked at.
+    no_expiry: rows with no expiry date. unreadable: names of rows whose expiry is set but cannot
+    be read (they count in no_expiry too: nothing is known about them, and they are listed by name
+    so they are not mistaken for items that never expire). managed_skipped: secrets Key Vault
+    manages for a certificate (`managed: true`); the certificate row carries that expiry, and the
+    secret is left out so the same date is not reported twice."""
+    items, no_expiry, unreadable, managed, scanned = [], 0, [], 0, 0
     for row in rows:
+        if kind == "secret" and row.get("managed") is True:
+            managed += 1
+            continue
+        scanned += 1
         attrs = row.get("attributes") if isinstance(row.get("attributes"), dict) else {}
         name = str(row.get("name") or "")
         raw = attrs.get("expires")
@@ -40,7 +52,7 @@ def classify(rows, kind, now, threshold_days):
         if expires is None:
             no_expiry += 1
             if raw:
-                unreadable.append(name)
+                unreadable.append({"kind": kind, "name": name})
             continue
         days = math.floor((expires - now).total_seconds() / 86400)
         if days <= threshold_days:
@@ -54,7 +66,13 @@ def classify(rows, kind, now, threshold_days):
                     "enabled": attrs.get("enabled") is not False,
                 }
             )
-    return items, len(rows), no_expiry, unreadable
+    return SimpleNamespace(
+        items=items,
+        scanned=scanned,
+        no_expiry=no_expiry,
+        unreadable=unreadable,
+        managed_skipped=managed,
+    )
 
 
 def read(ctx, threshold_days, max_items):
@@ -68,7 +86,8 @@ def read(ctx, threshold_days, max_items):
     # lists would only fail to resolve its host name
     _, name, _, _ = resolve(ctx)
     now = ctx.now()
-    found, scanned, no_expiry, failed = [], {}, {}, []
+    found, unreadable, scanned, no_expiry, failed = [], [], {}, {}, []
+    managed = 0
     for kind, plural, argv in KINDS:
         try:
             rows = az_json(ctx, [*argv, "--vault-name", name])
@@ -78,9 +97,11 @@ def read(ctx, threshold_days, max_items):
             continue
         if not isinstance(rows, list):
             raise RwError("internal", f"az keyvault {kind} list returned no list")
-        items, count, none, _ = classify(rows, kind, now, threshold_days)
-        found += items
-        scanned[plural], no_expiry[plural] = count, none
+        result = classify(rows, kind, now, threshold_days)
+        found += result.items
+        unreadable += result.unreadable
+        managed += result.managed_skipped
+        scanned[plural], no_expiry[plural] = result.scanned, result.no_expiry
     if len(failed) == len(KINDS):  # nothing could be read: say why, not "no expiring items"
         raise failed[0][1]
     for plural, exc in failed:
@@ -91,6 +112,8 @@ def read(ctx, threshold_days, max_items):
         "thresholdDays": threshold_days,
         "scanned": scanned,
         "noExpiry": no_expiry,
+        "unreadableExpiry": listing(unreadable, max_items),
+        "managedSecretsSkipped": managed,
         "expired": sum(1 for i in found if i["expired"]),
         "items": listing(found, max_items),
     }

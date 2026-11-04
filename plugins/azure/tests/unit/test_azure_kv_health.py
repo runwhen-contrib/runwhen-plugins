@@ -2,6 +2,7 @@
 failure as a code, and the permissions each task declares."""
 
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 import yaml
 from azure_kv_health import audit, expiry, metrics
 from azure_kv_health.common import clip, read_settings
+from azure_kv_health.vault import read_thresholds
 from conftest import SETTINGS, SUB, Replies, vault
 
 PLUGIN = Path(__file__).parents[2]
@@ -23,6 +25,8 @@ PROD_ID = (
     f"/subscriptions/{SUB}/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/{PROD}"
 )
 STUB = PLUGIN / "tests" / "stub" / "scenarios"
+SHOW_DEV = ("keyvault", "show", "--name", DEV, "-g", "rg-orders-dev", "--subscription", SUB)
+SHOW_PROD = ("keyvault", "show", "--name", PROD, "-g", "rg-orders-prod", "--subscription", SUB)
 
 TASKS = {
     "resource-health": ("resource_health", "health"),
@@ -109,8 +113,9 @@ def test_resource_health_asks_for_the_resource_ids_current_status_and_registers_
     run = go("resource-health", "healthy")
     method, url = run.calls[1][2], run.calls[1][4]
     assert method == "get"
+    # a relative ARM id: az rest sends it to the active cloud's Resource Manager endpoint
     assert url == (
-        f"https://management.azure.com{PROD_ID}/providers/Microsoft.ResourceHealth/"
+        f"{PROD_ID}/providers/Microsoft.ResourceHealth/"
         "availabilityStatuses/current?api-version=2022-10-01"
     )
     assert not any("register" in " ".join(c) for c in run.calls)
@@ -123,17 +128,14 @@ def test_resource_health_text_is_cut_at_1024_characters():
     assert clip(None) == ("", False)
 
 
-HEALTH_URL = (
-    f"https://management.azure.com{DEV_ID}/providers/Microsoft.ResourceHealth/"
-    "availabilityStatuses/current?api-version=2022-10-01"
-)
+HEALTH_URL = f"{DEV_ID}/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01"
 
 
 def test_a_reply_without_a_state_is_an_error_not_a_healthy_vault(go):
     show = stub_json("broken", "keyvault-show.json")
     runner = Replies(
         {
-            ("keyvault", "show", "--name", DEV, "--subscription", SUB): (0, show, ""),
+            SHOW_DEV: (0, show, ""),
             ("rest", "--method", "get", "--url", HEALTH_URL): (0, "{}", ""),
         }
     )
@@ -149,7 +151,7 @@ def test_an_unregistered_resource_provider_is_a_dependency_error(go):
     )
     runner = Replies(
         {
-            ("keyvault", "show", "--name", DEV, "--subscription", SUB): (0, show, ""),
+            SHOW_DEV: (0, show, ""),
             ("rest", "--method", "get", "--url", HEALTH_URL): (1, "", err),
         }
     )
@@ -194,9 +196,7 @@ def test_a_target_without_a_subscription_is_invalid_input(run_script):
 def test_the_warning_az_prints_on_a_good_command_is_not_an_error(go):
     show = stub_json("healthy", "keyvault-show.json")
     warning = "WARNING: A new Azure CLI version is available.\nWARNING: Forbidden TooManyRequests\n"
-    runner = Replies(
-        {("keyvault", "show", "--name", PROD, "--subscription", SUB): (0, show, warning)}
-    )
+    runner = Replies({SHOW_PROD: (0, show, warning)})
     run = go("configuration", "healthy", runner=runner)
     assert run.envelope["status"] == "ok" and run.errors == []
 
@@ -274,7 +274,7 @@ def with_metric(reply, name=DEV, interval="PT1H", start="2026-11-03T12:00:00Z"):
     )  # fmt: skip
     return Replies(
         {
-            ("keyvault", "show", "--name", name, "--subscription", SUB): (0, show, ""),
+            SHOW_DEV: (0, show, ""),
             metrics_argv: (0, reply, ""),
         }
     )
@@ -375,7 +375,7 @@ def test_soft_delete_is_off_only_when_azure_says_false_not_when_it_says_nothing(
         document["properties"].update(props)
         runner = Replies(
             {
-                ("keyvault", "show", "--name", DEV, "--subscription", SUB): (
+                SHOW_DEV: (
                     0,
                     json.dumps(document),
                     "",
@@ -396,9 +396,7 @@ def test_configuration_returns_no_access_policy_content(go):
     document["properties"]["accessPolicies"] = [
         {"objectId": "OBJ", "permissions": {"secrets": ["get"]}}
     ]
-    runner = Replies(
-        {("keyvault", "show", "--name", DEV, "--subscription", SUB): (0, json.dumps(document), "")}
-    )
+    runner = Replies({SHOW_DEV: (0, json.dumps(document), "")})
     c = out(go("configuration", "broken", runner=runner), "configuration")
     assert c["accessPolicyCount"] == 1 and "OBJ" not in json.dumps(c)
 
@@ -464,7 +462,7 @@ def test_only_names_and_dates_leave_expiring_items(go):
 def lists_with(**failing):
     """Replies for the broken vault where the named kinds fail with the given stderr."""
     show = stub_json("broken", "keyvault-show.json")
-    replies = {("keyvault", "show", "--name", DEV, "--subscription", SUB): (0, show, "")}
+    replies = {SHOW_DEV: (0, show, "")}
     for argv, file, kind in (
         (("keyvault", "secret", "list", "--vault-name", DEV), "secrets.json", "secrets"),
         (("keyvault", "certificate", "list", "--vault-name", DEV), "certificates.json", "certificates"),
@@ -519,10 +517,10 @@ def test_classify_handles_naive_unreadable_and_missing_expiry():
         {"name": "d", "attributes": {}},
         {"name": "e"},
     ]
-    items, count, none, unreadable = expiry.classify(rows, "secret", NOW, 31)
-    assert [i["name"] for i in items] == ["a", "b"] and count == 5 and none == 3
-    assert unreadable == ["c"]
-    assert items[0]["daysRemaining"] == 0 and items[0]["expired"] is False
+    got = expiry.classify(rows, "secret", NOW, 31)
+    assert [i["name"] for i in got.items] == ["a", "b"] and got.scanned == 5 and got.no_expiry == 3
+    assert got.unreadable == [{"kind": "secret", "name": "c"}]
+    assert got.items[0]["daysRemaining"] == 0 and got.items[0]["expired"] is False
 
 
 # --- audit-failures ---------------------------------------------------------------------------------
@@ -542,6 +540,7 @@ def test_audit_failures_groups_the_failed_operations(go):
             "name": "kv-audit",
             "auditEvent": True,
             "logAnalytics": True,
+            "table": "AzureDiagnostics",
             "storageAccount": False,
             "eventHub": False,
         }
@@ -568,8 +567,8 @@ def test_the_log_query_is_scoped_to_the_vault_and_the_window(go):
     last = run.calls[-1]
     body = json.loads(last[last.index("--body") + 1])
     assert body["timespan"] == "2026-11-04T10:00:00Z/2026-11-04T12:00:00Z"
-    assert f'ResourceId =~ "{DEV_ID.upper()}"' in body["query"]
-    assert "httpStatusCode_d) >= 400" in body["query"]
+    assert f'ResourceId =~ "{DEV_ID}"' in body["query"]
+    assert "httpStatusCode_d) >= 400" in body["query"] and body["query"].endswith("take 51")
     assert last[last.index("--url") + 1] == (
         "https://api.loganalytics.io/v1/workspaces/0b6c2f1e-3d4a-4e5f-9a7b-1c2d3e4f5a6b/query"
     )
@@ -588,7 +587,7 @@ def test_a_shared_workspace_is_queried_once(go):
     setting = json.loads(stub_json("broken", "diagnostic-settings.json"))[0]
     twin = json.dumps([setting, {**setting, "name": "second"}])
     replies = {
-        ("keyvault", "show", "--name", DEV, "--subscription", SUB): (
+        SHOW_DEV: (
             0,
             stub_json("broken", "keyvault-show.json"),
             "",
@@ -607,10 +606,13 @@ def test_a_shared_workspace_is_queried_once(go):
 
     class Run(Replies):
         def __call__(self, argv, **kw):
+            if argv[1] == "cloud":
+                self.calls.append(["cloud", "show"])
+                return subprocess.CompletedProcess(
+                    argv, 0, stub_json("broken", "cloud-show.json"), ""
+                )
             if argv[1] == "rest":
                 self.calls.append(["rest"])
-                import subprocess
-
                 return subprocess.CompletedProcess(
                     argv, 0, stub_json("broken", "audit-query.json"), ""
                 )
@@ -630,7 +632,7 @@ def test_a_workspace_that_cannot_be_queried_fails_the_run_and_does_not_look_clea
     settings_json = stub_json("broken", "diagnostic-settings.json")
     workspace = json.loads(settings_json)[0]["workspaceId"]
     replies = {
-        ("keyvault", "show", "--name", DEV, "--subscription", SUB): (
+        SHOW_DEV: (
             0,
             stub_json("broken", "keyvault-show.json"),
             "",
@@ -645,6 +647,7 @@ def test_a_workspace_that_cannot_be_queried_fails_the_run_and_does_not_look_clea
             "",
             ws_forbidden,
         ),
+        ("cloud", "show"): (0, stub_json("broken", "cloud-show.json"), ""),
     }
     run = go("audit-failures", "broken", runner=Replies(replies))
     assert run.envelope["status"] == "failed" and run.errors[0]["code"] == "permission_denied"
@@ -730,7 +733,7 @@ def test_one_metric_that_cannot_be_read_leaves_the_other_and_a_partial_run(go):
     throttled = "ERROR: (TooManyRequests) The request is being throttled.\n"
     runner = Replies(
         {
-            ("keyvault", "show", "--name", DEV, "--subscription", SUB): (0, show, ""),
+            SHOW_DEV: (0, show, ""),
             tuple(hits.split()): (1, "", throttled),
             tuple(latency.split()): (0, stub_json("broken", "metrics-latency.json"), ""),
         }
@@ -758,6 +761,8 @@ def test_summarize_with_no_threshold_has_no_crossing_fields():
 def az_actions(call):
     """The RBAC actions one az command needs (Azure's operation names)."""
     head = call[:2]
+    if head == ["cloud", "show"]:
+        return set()  # the active cloud's endpoints: a local read
     if head == ["keyvault", "show"]:
         return {("action", "Microsoft.KeyVault/vaults/read")}
     if head == ["monitor", "metrics"]:
@@ -824,14 +829,382 @@ def test_the_skill_applies_to_key_vaults_and_the_type_exists():
 def test_read_settings_returns_the_values_as_declared():
     from types import SimpleNamespace
 
-    st = read_settings(
-        SimpleNamespace(
-            max_items=200,
-            command_timeout="60s",
-            metric_interval="PT1H",
-            availability_min_percent=100,
-            request_threshold=1000,
-            latency_threshold_ms=500,
-        )
+    declared = SimpleNamespace(
+        max_items=200,
+        command_timeout="60s",
+        metric_interval="PT1H",
+        availability_min_percent=100,
+        request_threshold=1000,
+        latency_threshold_ms=500,
     )
-    assert (st.max_items, st.metric_interval, st.availability_min_percent) == (200, "PT1H", 100)
+    st, th = read_settings(declared), read_thresholds(declared)
+    assert (st.max_items, st.metric_interval, th.availability_min_percent) == (200, "PT1H", 100)
+    assert (th.request_threshold, th.latency_threshold_ms) == (1000, 500)
+
+
+# --- the target: subscription -> resource group -> vault, every call scoped with -g ---------------------
+
+
+def test_every_arm_call_names_the_resource_group_and_the_subscription(go):
+    for task in TASKS:
+        run = go(task, "healthy" if task != "audit-failures" else "broken")
+        shows = [c for c in run.calls if c[:2] == ["keyvault", "show"]]
+        assert len(shows) == 1, task
+        group = "rg-orders-prod" if task != "audit-failures" else "rg-orders-dev"
+        assert shows[0][shows[0].index("-g") + 1] == group
+        assert shows[0][-2:] == ["--subscription", SUB]
+        for call in run.calls:
+            if call[:2] in (["monitor", "metrics"], ["monitor", "diagnostic-settings"]):
+                assert call[-2:] == ["--subscription", SUB], call
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"resourcegroup": ""},
+        {"resourcegroup": "-rg"},
+        {"resourcegroup": "rg/../x"},
+        {"resourcegroup": "a" * 91},
+        {"name": "ab"},
+        {"name": "-kv-orders"},
+        {"name": "kv_orders"},
+        {"subscription": "not-a-guid"},
+    ],
+)
+def test_a_target_with_a_bad_scope_is_invalid_input_before_any_az_call(run_script, change):
+    run = run_script("azure-kv-health", "configuration", resource={**vault(DEV), **change}, now=NOW)
+    assert run.errors[0]["code"] == "invalid_input" and run.calls == []
+
+
+def test_a_vault_whose_id_names_another_group_is_an_error_not_the_wrong_vault(go):
+    other = json.loads(stub_json("broken", "keyvault-show.json"))
+    other["id"] = other["id"].replace("rg-orders-dev", "rg-elsewhere")
+    runner = Replies({SHOW_DEV: (0, json.dumps(other), "")})
+    run = go("configuration", "broken", runner=runner)
+    assert run.errors[0]["code"] == "internal" and "another scope" in run.errors[0]["message"]
+
+
+def test_an_id_that_is_not_a_vault_resource_id_is_refused_before_it_reaches_a_query(go):
+    other = json.loads(stub_json("broken", "keyvault-show.json"))
+    other["id"] = DEV_ID + '"; drop'
+    runner = Replies({SHOW_DEV: (0, json.dumps(other), "")})
+    run = go("audit-failures", "broken", runner=runner)
+    assert run.errors[0]["code"] == "internal" and len(runner.calls) == 1
+
+
+def test_the_group_case_arm_reports_may_differ_from_the_identitys_lower_case(go):
+    # the identity keeps the group lower case; ARM spells it as it was created
+    shown = json.loads(stub_json("broken", "keyvault-show.json"))
+    shown["id"] = shown["id"].replace("rg-orders-dev", "RG-Orders-Dev")
+    runner = Replies({SHOW_DEV: (0, json.dumps(shown), "")})
+    run = go("configuration", "broken", runner=runner)
+    assert run.envelope["status"] == "ok"
+
+
+def test_a_group_that_does_not_exist_is_not_found(go):
+    gone = "ERROR: (ResourceGroupNotFound) Resource group 'rg-gone' could not be found.\n"
+    runner = Replies({SHOW_DEV: (1, "", gone)})
+    run = go("configuration", "broken", runner=runner)
+    assert run.errors[0]["code"] == "not_found"
+
+
+# --- expiring-items: the data-plane refusal names the action ---------------------------------------------
+
+
+def test_the_permission_denied_message_names_the_missing_action(go):
+    run = go("expiring-items", "data-plane-forbidden")
+    (error,) = run.errors
+    assert error["code"] == "permission_denied"
+    assert "Action: 'Microsoft.KeyVault/vaults/secrets/readMetadata/action'" in error["message"]
+    assert "Microsoft.KeyVault/vaults/secrets/readMetadata/action" in error["message"]
+
+
+def test_the_data_plane_fixture_records_the_text_that_names_the_action():
+    fixture = yaml.safe_load(
+        (SKILL / "tests" / "expiring-items" / "data-plane-forbidden.yaml").read_text()
+    )
+    stderr = "\n".join(c["stderr"] for c in fixture["calls"] if c["rc"] != 0)
+    assert "Action: 'Microsoft.KeyVault/vaults/secrets/readMetadata/action'" in stderr
+    assert fixture["expect"]["errorCodes"] == ["permission_denied"]
+
+
+def test_certificate_managed_secrets_are_skipped_and_counted(go):
+    run = go("expiring-items", "broken")
+    e = out(run, "expiry")
+    assert e["managedSecretsSkipped"] == 1
+    assert e["scanned"]["secrets"] == 5  # the sixth row is the certificate's own secret
+    assert [i["name"] for i in e["items"]["items"]].count(
+        "tls-orders-dev"
+    ) == 1  # the certificate's
+
+
+def test_items_with_an_unreadable_expiry_are_named(go):
+    show = stub_json("broken", "keyvault-show.json")
+    secrets = json.dumps(
+        [
+            {"name": "weird", "attributes": {"expires": "next tuesday", "enabled": True}},
+            {"name": "plain", "attributes": {"expires": None}},
+        ]
+    )
+    runner = Replies(
+        {
+            SHOW_DEV: (0, show, ""),
+            ("keyvault", "secret", "list", "--vault-name", DEV): (0, secrets, ""),
+            ("keyvault", "certificate", "list", "--vault-name", DEV): (0, "[]", ""),
+            ("keyvault", "key", "list", "--vault-name", DEV): (0, "[]", ""),
+        }
+    )
+    e = out(go("expiring-items", "broken", runner=runner), "expiry")
+    assert e["unreadableExpiry"] == {
+        "items": [{"kind": "secret", "name": "weird"}],
+        "total": 1,
+        "omitted": 0,
+    }
+    assert e["noExpiry"]["secrets"] == 2  # unreadable is also "no known expiry"
+    assert e["items"]["items"] == []
+
+
+# --- configuration: network bypass and private endpoint states ----------------------------------------------
+
+
+def test_configuration_reports_the_firewall_bypass_and_the_private_endpoint_states(go):
+    c = out(go("configuration", "healthy"), "configuration")
+    assert c["networkAclBypass"] == "AzureServices"
+    assert c["privateEndpointConnectionStates"] == [{"status": "Approved", "count": 1}]
+    assert out(go("configuration", "broken"), "configuration")["networkAclBypass"] is None
+
+
+def test_connection_states_count_each_status_in_either_shape():
+    from azure_kv_health.configuration import connection_states
+
+    states = connection_states(
+        [
+            {"privateLinkServiceConnectionState": {"status": "Approved"}},  # az keyvault show
+            {"properties": {"privateLinkServiceConnectionState": {"status": "Pending"}}},  # REST
+            {"privateLinkServiceConnectionState": {"status": "Approved"}},
+            {"privateLinkServiceConnectionState": {}},
+            {},
+        ]
+    )
+    assert states == [
+        {"status": "Approved", "count": 2},
+        {"status": "Pending", "count": 1},
+        {"status": "Unknown", "count": 2},
+    ]
+    assert connection_states(None) == [] and connection_states([]) == []
+
+
+# --- metrics: a newest interval with no value ----------------------------------------------------------------
+
+
+def test_a_missing_newest_interval_makes_last_stale_and_says_so(go):
+    data = [
+        {"timeStamp": "2026-11-04T01:00:00+00:00", "average": 100.0},
+        {"timeStamp": "2026-11-04T02:00:00+00:00"},
+    ]
+    a = out(go("availability", "broken", runner=with_metric(metric_reply(data))), "availability")
+    assert a["last"] == 100.0 and a["lastGrainMissing"] is True
+    assert out(go("availability", "healthy"), "availability")["lastGrainMissing"] is False
+
+
+def test_performance_series_carry_last_grain_missing(go):
+    p = out(go("performance", "broken"), "performance")
+    assert p["requests"]["lastGrainMissing"] is False and p["latency"]["lastGrainMissing"] is False
+    assert metrics.summarize([], "count")["lastGrainMissing"] is False
+    assert metrics.summarize([{"timeStamp": "t"}], "count")["lastGrainMissing"] is True
+
+
+# --- audit-failures: which diagnostic settings count, which table, the endpoint, the cuts ------------------
+
+
+@pytest.mark.parametrize(
+    "log,enabled",
+    [
+        ({"category": "AuditEvent", "enabled": True}, True),
+        ({"category": "AuditEvent", "categoryGroup": None, "enabled": True}, True),
+        ({"category": None, "categoryGroup": "audit", "enabled": True}, True),
+        ({"category": None, "categoryGroup": "allLogs", "enabled": True}, True),
+        ({"category": None, "categoryGroup": "AllLogs", "enabled": True}, True),
+        ({"category": None, "categoryGroup": "audit", "enabled": False}, False),
+        ({"category": None, "categoryGroup": "audit", "enabled": None}, False),
+        ({"category": "AzurePolicyEvaluationDetails", "enabled": True}, False),
+        ({"category": None, "categoryGroup": "allMetrics", "enabled": True}, False),
+    ],
+)
+def test_audit_enabled_counts_the_audit_category_and_the_groups_that_hold_it(log, enabled):
+    assert audit.audit_enabled({"logs": [log]}) is enabled
+
+
+def test_a_setting_with_the_all_logs_group_is_queried(go):
+    a = out(go("audit-failures", "category-group"), "audit")
+    assert a["auditLoggingToWorkspace"] is True and a["workspacesQueried"] == 1
+    assert a["diagnosticSettings"][0]["auditEvent"] is True
+    assert a["table"] == "AzureDiagnostics" and a["failureCount"] == 50
+
+
+def test_a_dedicated_destination_is_read_from_azkvauditlogs(go):
+    run = go("audit-failures", "dedicated")
+    a = out(run, "audit")
+    assert run.envelope["status"] == "ok"
+    assert a["table"] == "AZKVAuditLogs"
+    assert a["diagnosticSettings"][0]["table"] == "AZKVAuditLogs"
+    last = run.calls[-1]
+    query = json.loads(last[last.index("--body") + 1])["query"]
+    assert query.startswith("AZKVAuditLogs\n")
+    assert f'_ResourceId =~ "{DEV_ID}"' in query and "HttpStatusCode" in query
+    assert "AzureDiagnostics" not in query and "httpStatusCode_d" not in query
+    assert a["failureCount"] == 50  # the same result columns, whatever the table
+
+
+def test_the_table_follows_the_destination_type():
+    assert audit.table_of({"logAnalyticsDestinationType": "Dedicated"}) == "AZKVAuditLogs"
+    assert audit.table_of({"logAnalyticsDestinationType": "dedicated"}) == "AZKVAuditLogs"
+    assert audit.table_of({"logAnalyticsDestinationType": "AzureDiagnostics"}) == "AzureDiagnostics"
+    assert audit.table_of({"logAnalyticsDestinationType": None}) == "AzureDiagnostics"
+    assert audit.table_of({}) == "AzureDiagnostics"
+
+
+def test_both_tables_are_queried_when_the_settings_use_both(go):
+    setting = json.loads(stub_json("broken", "diagnostic-settings.json"))[0]
+    both = json.dumps(
+        [setting, {**setting, "name": "dedicated", "logAnalyticsDestinationType": "Dedicated"}]
+    )
+    run = go("audit-failures", "broken", runner=audit_replies(both))
+    a = out(run, "audit")
+    assert a["table"] == "AZKVAuditLogs, AzureDiagnostics" and a["workspacesQueried"] == 2
+    assert a["failureCount"] == 100  # the same rows from both
+
+
+def audit_replies(settings_json, cloud=None, query=None):
+    """A runner for audit-failures on the broken vault with the given settings, cloud and query."""
+
+    class Run(Replies):
+        def __call__(self, argv, **kw):
+            if argv[1] == "rest":
+                self.calls.append(["rest", *argv[2:-2]])
+                return subprocess.CompletedProcess(
+                    argv, 0, query or stub_json("broken", "audit-query.json"), ""
+                )
+            return super().__call__(argv, **kw)
+
+    workspace = json.loads(settings_json)[0]["workspaceId"]
+    return Run(
+        {
+            SHOW_DEV: (0, stub_json("broken", "keyvault-show.json"), ""),
+            (
+                "monitor",
+                "diagnostic-settings",
+                "list",
+                "--resource",
+                DEV_ID,
+                "--subscription",
+                SUB,
+            ): (
+                0,
+                settings_json,
+                "",
+            ),
+            ("monitor", "log-analytics", "workspace", "show", "--ids", workspace): (
+                0,
+                stub_json("broken", "workspace.json"),
+                "",
+            ),
+            ("cloud", "show"): (0, cloud or stub_json("broken", "cloud-show.json"), ""),
+        }
+    )
+
+
+def test_the_query_endpoint_is_the_active_clouds(go):
+    cloud = json.loads(stub_json("broken", "cloud-show.json"))
+    cloud["endpoints"]["logAnalyticsResourceId"] = "https://api.loganalytics.us/"
+    run = go(
+        "audit-failures",
+        "broken",
+        runner=audit_replies(stub_json("broken", "diagnostic-settings.json"), json.dumps(cloud)),
+    )
+    rest = run.calls[-1]
+    assert rest[rest.index("--url") + 1].startswith("https://api.loganalytics.us/v1/workspaces/")
+    assert rest[rest.index("--resource") + 1] == "https://api.loganalytics.us"
+
+
+@pytest.mark.parametrize(
+    "endpoints", [{}, {"logAnalyticsResourceId": None}, {"logAnalyticsResourceId": "http://x"}]
+)
+def test_a_cloud_without_a_log_analytics_endpoint_is_a_dependency_error(go, endpoints):
+    cloud = json.dumps({"endpoints": endpoints})
+    run = go(
+        "audit-failures",
+        "broken",
+        runner=audit_replies(stub_json("broken", "diagnostic-settings.json"), cloud),
+    )
+    assert run.envelope["status"] == "failed" and run.errors[0]["code"] == "dependency"
+
+
+def test_a_query_that_hit_its_row_limit_says_it_was_cut(go):
+    reply = json.loads(stub_json("broken", "audit-query.json"))
+    rows = [
+        [f"Op{i:02d}", 403, 100 - i, "2026-11-04T01:00:00Z", "2026-11-04T02:00:00Z"]
+        for i in range(51)
+    ]
+    reply["tables"][0]["rows"] = rows
+    run = go(
+        "audit-failures",
+        "broken",
+        runner=audit_replies(
+            stub_json("broken", "diagnostic-settings.json"), query=json.dumps(reply)
+        ),
+    )
+    a = out(run, "audit")
+    assert a["truncated"] is True and a["failures"]["total"] == 50  # the 51st row is dropped
+    assert out(go("audit-failures", "broken"), "audit")["truncated"] is False
+    assert out(go("audit-failures", "no-diagnostics"), "audit")["truncated"] is False
+
+
+def test_the_resource_id_is_escaped_for_kql_and_must_be_a_vault_id():
+    assert audit.kql_quote('a"b\\c') == 'a\\"b\\\\c'
+    body = json.loads(audit.query_body(DEV_ID, audit.LEGACY, "s", "e"))
+    assert f'ResourceId =~ "{DEV_ID}"' in body["query"]
+    for bad in (DEV_ID + '" or 1==1 //', "/subscriptions/x", DEV_ID + "/extra", "", 'x"'):
+        with pytest.raises(Exception) as caught:
+            audit.query_body(bad, audit.LEGACY, "s", "e")
+        assert caught.value.code == "internal"
+
+
+def test_the_workspaces_that_do_not_fit_the_time_budget_are_not_started(go):
+    setting = json.loads(stub_json("broken", "diagnostic-settings.json"))[0]
+    twin = json.dumps(
+        [setting, {**setting, "name": "dedicated", "logAnalyticsDestinationType": "Dedicated"}]
+    )
+    run = go("audit-failures", "broken", runner=audit_replies(twin))
+    assert out(run, "audit")["workspacesQueried"] == 2  # baseline: both fit with the real clock
+    ticks = iter([0, 0, 530, 530, 530, 530])  # the first pair starts, the second has no room
+    from types import SimpleNamespace
+
+    ctx_run = audit_replies(twin)
+    ctx = SimpleNamespace(
+        settings=SimpleNamespace(command_timeout="60s"),
+        resource=vault(DEV),
+        run=ctx_run,
+        errors=[],
+        now=lambda: NOW,
+    )
+    ctx.error = lambda code, message, scope=None: ctx.errors.append(
+        {"code": code, "message": message, "scope": scope}
+    )
+    result = audit.read(ctx, "24h", 200, clock=lambda: next(ticks))
+    assert result["workspacesQueried"] == 1
+    assert [(e["code"], e["scope"]) for e in ctx.errors] == [("timeout", "workspace:law-central")]
+
+
+def test_the_audit_task_has_a_timeout_that_fits_its_calls_and_budget():
+    task = next(t for t in doc()["tasks"] if t["name"] == "audit-failures")
+    seconds = float(task["timeout"].rstrip("s"))
+    # keyvault show, diagnostic-settings, cloud show, then workspace show + query for each of 3
+    calls = 3 + 2 * audit.MAX_WORKSPACES
+    assert calls == 9 and audit.BUDGET <= seconds - 30
+    assert calls * 60 <= audit.BUDGET
+
+
+def test_a_vault_with_no_audit_setting_makes_no_cloud_call(go):
+    run = go("audit-failures", "no-diagnostics")
+    assert ["cloud", "show"] not in run.calls

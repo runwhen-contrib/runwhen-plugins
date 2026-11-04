@@ -21,11 +21,22 @@ SUBSCRIPTION = {
 }
 
 
-def vault(name):
+GROUP_OF = {
+    "kv-orders-dev": "rg-orders-dev",
+    "kv-orders-prod": "rg-orders-prod",
+    "nope": "rg-orders-dev",
+}
+
+
+def vault(name, group=None):
+    """The target of a Key Vault run, as the SDK builds it from the resource path: the identity
+    fields are the ancestors by type (subscription, resourcegroup) and `name`."""
+    group = group or GROUP_OF.get(name, "rg-orders-dev")
     return {
-        "path": f"azure/subscriptions/{SUB}/keyvaults/{name}",
+        "path": f"azure/subscriptions/{SUB}/resourcegroups/{group}/keyvaults/{name}",
         "type": "azure/keyvault",
         "subscription": SUB,
+        "resourcegroup": group,
         "name": name,
     }
 
@@ -69,7 +80,7 @@ class StubAz:
         self.timeouts.append(timeout)
         done = subprocess.run(
             [str(STUB), *argv[1:]],
-            env={"PATH": "/usr/bin:/bin", "AZ_STUB_SCENARIO": self.scenario},
+            env={"PATH": "/usr/bin:/bin", "AZURE_STUB_SCENARIO": self.scenario},
             capture_output=True,
             text=True,
         )

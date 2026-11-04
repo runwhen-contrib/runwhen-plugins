@@ -4,9 +4,9 @@ import time
 
 from azure_base import discovery as dc
 from azure_base.budget import budgeted_opener, budgeted_sleep, deadline_from
+from azure_base.common import read_settings
 from azure_base.discovery import discover
 from azure_base.errors import RwError
-from azure_base.settings import read_settings
 from azure_base.sync import SyncClient, load_credential
 
 

@@ -1,16 +1,22 @@
 #!/usr/bin/env -S python3 -I
 """A stand-in for the `az` CLI that serves canned responses (plugins/azure/tests/stub/README.md).
 
-    AZ_STUB_SCENARIO=healthy az keyvault show --name kv-orders-prod --subscription <id>
+    AZURE_STUB_SCENARIO=healthy az keyvault show --name kv-orders-prod -g rg-orders-prod --subscription <id>
 
-The argv after `az` is looked up in scenarios/<AZ_STUB_SCENARIO>/calls.yaml; the first matching
+The argv after `az` is looked up in scenarios/<AZURE_STUB_SCENARIO>/calls.yaml; the first matching
 call answers with its stdout file, its stderr and its exit code. An argv with no canned answer
-exits 2 with a message on stderr that names it, so a test notices a command it did not expect.
+exits 2 with a message on stderr that names it, so a test notices a command it did not expect. The
+stub refuses to run at all when the scenario is not named: a stub that quietly answers from some
+default scenario would put wrong calls into a fixture.
 
-The scenario is named by AZ_STUB_SCENARIO, not RW_STUB_SCENARIO: the SDK runner strips every
-RW_* variable from the environment of a task script (bundle.py `_inherited_env`), so a RW_ name
-never reaches az when `rwtask run` or `rwtask test` start the task. RW_STUB_SCENARIO and
-RW_STUB_LOG are still read when set (a unit test that calls the stub directly), as a fallback.
+`az version` is answered by the stub itself, with a marker (STUB_MARKER) that tests/stub/record.sh
+checks before it records anything: if `az` on the PATH is the real CLI, a recording would call
+Azure, and the marker is how the recorder knows it is not.
+
+The scenario is named by AZURE_STUB_SCENARIO (AZ_STUB_SCENARIO is the same name, kept as an alias),
+not RW_*: the SDK runner strips every RW_* variable from the environment of a task script, so a RW_
+name never reaches az when `rwtask run` or `rwtask test` start the task. AZURE_STUB_LOG (alias
+AZ_STUB_LOG) names a file each argv is appended to.
 
 No dependencies (it runs as `python3 -I`, so not even PyYAML): calls.yaml is JSON written as YAML
 (`#` comment lines are dropped before it is parsed).
@@ -18,10 +24,23 @@ No dependencies (it runs as `python3 -I`, so not even PyYAML): calls.yaml is JSO
 
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCENARIOS = os.path.join(os.path.dirname(HERE), "scenarios")
+STUB_MARKER = "rw-azure-stub"
+VERSION = {
+    "azure-cli": "0.0.0-stub",
+    "azure-cli-core": "0.0.0-stub",
+    "azure-cli-telemetry": "0.0.0-stub",
+    "extensions": {},
+    STUB_MARKER: True,
+}
+# `<ts>` in a canned argv entry stands for a timestamp that depends on when the run happened (the
+# start and end of a metrics window): RFC 3339 UTC, whole seconds, as the skills send it.
+TIMESTAMP = r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ"
+TOKEN = "<ts>"
 
 
 def normalise(argv):
@@ -40,24 +59,20 @@ def normalise(argv):
     return out
 
 
+def entry_pattern(want):
+    """The regular expression an argv entry of a call must match: the text itself, with each
+    `<ts>` a validated timestamp."""
+    return re.compile(TIMESTAMP.join(re.escape(part) for part in want.split(TOKEN)))
+
+
 def matches(pattern, argv):
-    """Same length, and each argument equal to its pattern; `*` in a pattern matches any text
-    (a timestamp that depends on when the run happened)."""
+    """Same length, and each argument equal to its pattern; `<ts>` in a pattern matches a timestamp
+    and nothing else."""
     if len(pattern) != len(argv):
         return False
     for want, got in zip(pattern, argv):
-        if "*" in want:
-            head, *rest = want.split("*")
-            if not got.startswith(head):
-                return False
-            pos = len(head)
-            for part in rest[:-1]:
-                pos = got.find(part, pos)
-                if pos < 0:
-                    return False
-                pos += len(part)
-            tail = rest[-1]
-            if len(got) - pos < len(tail) or not got.endswith(tail):
+        if TOKEN in want:
+            if not entry_pattern(want).fullmatch(got):
                 return False
         elif want != got:
             return False
@@ -70,20 +85,31 @@ def load_calls(directory):
     return json.loads(text)["calls"]
 
 
+def env(name):
+    """AZURE_STUB_<name>, or the alias AZ_STUB_<name>."""
+    return os.environ.get(f"AZURE_STUB_{name}") or os.environ.get(f"AZ_STUB_{name}")
+
+
 def main(argv):
-    name = os.environ.get("AZ_STUB_SCENARIO") or os.environ.get("RW_STUB_SCENARIO")
+    name = env("SCENARIO")
     if not name:
-        sys.stderr.write("az stub: AZ_STUB_SCENARIO is not set\n")
+        sys.stderr.write(
+            "az stub: AZURE_STUB_SCENARIO is not set; refusing to answer. Name the scenario "
+            "(tests/stub/README.md) or use the real az\n"
+        )
         return 2
     directory = os.path.join(SCENARIOS, name)
     if not os.path.isfile(os.path.join(directory, "calls.yaml")):
         sys.stderr.write(f"az stub: no scenario {name!r} under {SCENARIOS}\n")
         return 2
     call_argv = normalise(argv)
-    log = os.environ.get("AZ_STUB_LOG") or os.environ.get("RW_STUB_LOG")
+    log = env("LOG")
     if log:
         with open(log, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(argv) + "\n")
+    if call_argv == ["version"]:
+        sys.stdout.write(json.dumps(VERSION, indent=2, sort_keys=True) + "\n")
+        return 0
     calls = load_calls(directory)
     for call in calls:
         if matches(call["argv"], call_argv):

@@ -37,7 +37,7 @@
         "keys"
       ],
       "additionalProperties": false,
-      "description": "Items listed per kind; null for a kind that could not be listed (the run is partial, with an error scoped to it)"
+      "description": "Items listed per kind, secrets managed for a certificate not counted (see managedSecretsSkipped); null for a kind that could not be listed (the run is partial, with an error scoped to it)"
     },
     "noExpiry": {
       "type": "object",
@@ -68,6 +68,51 @@
       ],
       "additionalProperties": false,
       "description": "Items of that kind with no expiry date; null as in scanned"
+    },
+    "unreadableExpiry": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "secret",
+                  "certificate",
+                  "key"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer"
+        },
+        "omitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted"
+      ],
+      "additionalProperties": false,
+      "description": "Items whose expiry date is set but cannot be read, by name (they are also counted in noExpiry): their expiry is unknown, which is not the same as never expiring"
+    },
+    "managedSecretsSkipped": {
+      "type": "integer",
+      "description": "Secrets Key Vault manages for a certificate (managed: true), left out of the secret counts: the certificate row carries the expiry"
     },
     "expired": {
       "type": "integer",
@@ -138,6 +183,8 @@
     "thresholdDays",
     "scanned",
     "noExpiry",
+    "unreadableExpiry",
+    "managedSecretsSkipped",
     "expired",
     "items"
   ],

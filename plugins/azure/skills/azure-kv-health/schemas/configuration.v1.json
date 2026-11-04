@@ -60,6 +60,13 @@
         "null"
       ]
     },
+    "networkAclBypass": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "AzureServices: trusted Microsoft services pass the firewall; None (or null): they do not"
+    },
     "ipRuleCount": {
       "type": "integer"
     },
@@ -68,6 +75,27 @@
     },
     "privateEndpointConnectionCount": {
       "type": "integer"
+    },
+    "privateEndpointConnectionStates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Approved, Pending, Rejected, Disconnected or Unknown"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Private endpoint connections by approval state; only Approved connections carry traffic"
     },
     "accessPolicyCount": {
       "type": "integer",
@@ -95,9 +123,11 @@
     "rbacAuthorization",
     "publicNetworkAccess",
     "networkAclDefaultAction",
+    "networkAclBypass",
     "ipRuleCount",
     "virtualNetworkRuleCount",
     "privateEndpointConnectionCount",
+    "privateEndpointConnectionStates",
     "accessPolicyCount",
     "enabledForDeployment",
     "enabledForDiskEncryption",

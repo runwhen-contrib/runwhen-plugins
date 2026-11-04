@@ -1,24 +1,46 @@
 """audit-failures: failed Key Vault operations from the audit log in Log Analytics.
 
-The vault must send its AuditEvent log to a Log Analytics workspace (a diagnostic setting). A vault
-that does not is reported as such; "no failures" is only said when a workspace was queried."""
+The vault must send its audit log to a Log Analytics workspace (a diagnostic setting). A vault that
+does not is reported as such; "no failures" is only said when a workspace was queried.
+
+Which table holds the log depends on the diagnostic setting's `logAnalyticsDestinationType`:
+  - `Dedicated` (resource-specific tables): `AZKVAuditLogs`. Its columns here are `_ResourceId`,
+    `HttpStatusCode` (int), `OperationName` and `TimeGenerated`.
+    https://learn.microsoft.com/azure/azure-monitor/reference/tables/azkvauditlogs
+  - otherwise (Azure diagnostics, the default): `AzureDiagnostics`, with `ResourceProvider`,
+    `ResourceId`, `Category`, `OperationName` and `httpStatusCode_d` (a double).
+    https://learn.microsoft.com/azure/azure-monitor/reference/tables/azurediagnostics
+How the destination type picks the table:
+https://learn.microsoft.com/azure/azure-monitor/platform/resource-logs#send-to-log-analytics-workspace
+"""
 
 import json
+import time
 
-from .az import az_json
-from .common import NESTED_LIMIT, listing, resolve, span, window
+from .az import az_json, command_timeout
+from .common import NESTED_LIMIT, listing, span, window
 from .errors import RwError
+from .vault import VAULT_ID, resolve
 
-QUERY_URL = "https://api.loganalytics.io/v1/workspaces/{customer}/query"
-QUERY_RESOURCE = "https://api.loganalytics.io"
-MAX_WORKSPACES = 3
-ROWS = 50
-KQL = """AzureDiagnostics
+QUERY_PATH = "/v1/workspaces/{customer}/query"
+MAX_WORKSPACES = 3  # (workspace, table) pairs queried; the rest are counted, not queried
+ROWS = 50  # failed operation/status groups one query returns; it asks for one more to see a cut
+BUDGET = 540  # seconds for the whole task (tasks.yaml: timeout 600s), less a margin for the result
+LEGACY, DEDICATED = "AzureDiagnostics", "AZKVAuditLogs"
+KQL = {
+    LEGACY: """AzureDiagnostics
 | where ResourceProvider == "MICROSOFT.KEYVAULT" and ResourceId =~ "{resource_id}"
 | where Category == "AuditEvent" and toint(httpStatusCode_d) >= 400
 | summarize failures = count(), firstSeen = min(TimeGenerated), lastSeen = max(TimeGenerated) by OperationName, httpStatusCode = toint(httpStatusCode_d)
 | order by failures desc
-| take {rows}"""
+| take {rows}""",
+    DEDICATED: """AZKVAuditLogs
+| where _ResourceId =~ "{resource_id}" and toint(HttpStatusCode) >= 400
+| summarize failures = count(), firstSeen = min(TimeGenerated), lastSeen = max(TimeGenerated) by OperationName, httpStatusCode = toint(HttpStatusCode)
+| order by failures desc
+| take {rows}""",
+}
+AUDIT_GROUPS = ("audit", "alllogs")  # category groups that include the AuditEvent category
 
 
 def diagnostic_settings(reply):
@@ -31,24 +53,48 @@ def diagnostic_settings(reply):
 
 
 def audit_enabled(setting):
-    return any(
-        isinstance(log, dict) and log.get("category") == "AuditEvent" and log.get("enabled") is True
-        for log in setting.get("logs") or []
-    )
+    """The setting sends the audit log: the AuditEvent category, or a category group that holds it
+    (`audit`, `allLogs`), switched on. Azure Monitor settings made in the portal since 2022 use the
+    groups and leave `category` null."""
+    for log in setting.get("logs") or []:
+        if not isinstance(log, dict) or log.get("enabled") is not True:
+            continue
+        if str(log.get("category") or "").lower() == "auditevent":
+            return True
+        if str(log.get("categoryGroup") or "").lower() in AUDIT_GROUPS:
+            return True
+    return False
+
+
+def table_of(setting):
+    """The Log Analytics table this setting's logs land in."""
+    kind = setting.get("logAnalyticsDestinationType")
+    return DEDICATED if str(kind or "").lower() == "dedicated" else LEGACY
 
 
 def describe(setting):
+    sends = bool(setting.get("workspaceId"))
     return {
         "name": str(setting.get("name") or ""),
         "auditEvent": audit_enabled(setting),
-        "logAnalytics": bool(setting.get("workspaceId")),
+        "logAnalytics": sends,
+        "table": table_of(setting) if sends else None,
         "storageAccount": bool(setting.get("storageAccountId")),
         "eventHub": bool(setting.get("eventHubAuthorizationRuleId")),
     }
 
 
-def query_body(resource_id, start, end):
-    query = KQL.format(resource_id=resource_id.upper(), rows=ROWS)
+def kql_quote(text):
+    """`text` as the inside of a KQL double-quoted string: backslash and quote escaped."""
+    return str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def query_body(resource_id, table, start, end):
+    """The JSON body of the Log Analytics query for one vault in one table. The id is checked to
+    be a vault's resource id first and escaped for KQL anyway."""
+    if not VAULT_ID.match(resource_id):
+        raise RwError("internal", "the vault's resource id is not a vault resource id")
+    query = KQL[table].format(resource_id=kql_quote(resource_id), rows=ROWS + 1)
     return json.dumps({"query": query, "timespan": f"{start}/{end}"}, separators=(",", ":"))
 
 
@@ -87,8 +133,31 @@ def merge(batches):
     return sorted(out, key=lambda r: (-r["count"], r["operation"], r["httpStatusCode"] or 0))
 
 
-def read(ctx, window_input, max_items):
+def query_endpoint(ctx):
+    """The Log Analytics endpoint of the active cloud, from `az cloud show` (a local read: the
+    public cloud's https://api.loganalytics.io, a national cloud's own)."""
+    cloud = az_json(ctx, ["cloud", "show"])
+    endpoints = cloud.get("endpoints") if isinstance(cloud, dict) else None
+    endpoint = endpoints.get("logAnalyticsResourceId") if isinstance(endpoints, dict) else None
+    if not isinstance(endpoint, str) or not endpoint.startswith("https://"):
+        raise RwError("dependency", "the active Azure cloud has no Log Analytics query endpoint")
+    return endpoint.rstrip("/")
+
+
+def targets_of(settings):
+    """The (workspace id, table) pairs the audit log is sent to, in order, once each."""
+    found = []
+    for s in settings:
+        pair = (s.get("workspaceId"), table_of(s))
+        if audit_enabled(s) and pair[0] and pair not in found:
+            found.append(pair)
+    return found
+
+
+def read(ctx, window_input, max_items, *, clock=time.monotonic, budget=BUDGET):
+    started = clock()
     seconds = window(window_input)
+    per_call = command_timeout(ctx.settings)
     subscription, name, resource_id, _ = resolve(ctx)
     settings = diagnostic_settings(
         az_json(
@@ -105,25 +174,34 @@ def read(ctx, window_input, max_items):
         )
     )
     shown = [describe(s) for s in settings][:NESTED_LIMIT]
-    workspaces = []
-    for s in settings:
-        ws = s.get("workspaceId")
-        if audit_enabled(s) and ws and ws not in workspaces:
-            workspaces.append(ws)
+    targets = targets_of(settings)
+    queried = targets[:MAX_WORKSPACES]
     out = {
         "vault": name,
         "windowSeconds": int(seconds),
         "diagnosticSettings": shown,
         "diagnosticSettingsOmitted": max(len(settings) - len(shown), 0),
-        "auditLoggingToWorkspace": bool(workspaces),
+        "auditLoggingToWorkspace": bool(targets),
+        "table": None,
         "workspacesQueried": 0,
-        "workspacesSkipped": max(len(workspaces) - MAX_WORKSPACES, 0),
+        "workspacesSkipped": max(len(targets) - MAX_WORKSPACES, 0),
+        "truncated": False,
+        "failureCount": None,
+        "failures": None,
     }
+    if not queried:
+        return out
+    endpoint = query_endpoint(ctx)
     start, end = span(ctx.now(), seconds)
-    batches, failures = [], []
-    for ws in workspaces[:MAX_WORKSPACES]:
+    batches, failures, tables, cut = [], [], [], False
+    for ws, table in queried:
         label = ws.rstrip("/").rsplit("/", 1)[-1]
         try:
+            if clock() - started + 2 * per_call > budget:
+                # each workspace takes two az calls; start none that could run past the task budget
+                raise RwError(
+                    "timeout", "no time left in the task's budget to query this workspace"
+                )
             workspace = az_json(ctx, ["monitor", "log-analytics", "workspace", "show", "--ids", ws])
             customer = workspace.get("customerId") if isinstance(workspace, dict) else None
             if not customer:
@@ -132,20 +210,26 @@ def read(ctx, window_input, max_items):
                 ctx,
                 [
                     "rest", "--method", "post",
-                    "--url", QUERY_URL.format(customer=customer),
-                    "--resource", QUERY_RESOURCE,
-                    "--body", query_body(resource_id, start, end),
+                    "--url", endpoint + QUERY_PATH.format(customer=customer),
+                    "--resource", endpoint,
+                    "--body", query_body(resource_id, table, start, end),
                 ],
             )  # fmt: skip
-            batches.append(rows_of(reply))
+            rows = rows_of(reply)
+            cut = cut or len(rows) > ROWS
+            batches.append(rows[:ROWS])
+            if table not in tables:
+                tables.append(table)
         except RwError as exc:
             failures.append((label, exc))
-    if workspaces and len(failures) == len(workspaces[:MAX_WORKSPACES]):
+    if len(failures) == len(queried):
         raise failures[0][1]  # nothing was queried: say why, not "no failures"
     for label, exc in failures:
         ctx.error(exc.code, exc.message, scope=f"workspace:{label}")
     rows = merge(batches)
+    out["table"] = ", ".join(sorted(tables))
     out["workspacesQueried"] = len(batches)
-    out["failureCount"] = sum(r["count"] for r in rows) if batches else None
-    out["failures"] = listing(rows, max_items) if batches else None
+    out["truncated"] = cut
+    out["failureCount"] = sum(r["count"] for r in rows)
+    out["failures"] = listing(rows, max_items)
     return out
