@@ -1,0 +1,37 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "projectEditor:shop-prod-1234",
+        "projectOwner:shop-prod-1234"
+      ],
+      "role": "roles/storage.legacyBucketOwner"
+    },
+    {
+      "members": [
+        "projectViewer:shop-prod-1234"
+      ],
+      "role": "roles/storage.legacyBucketReader"
+    },
+    {
+      "members": [
+        "serviceAccount:rw-reader@shop-prod-1234.iam.gserviceaccount.com"
+      ],
+      "role": "roles/storage.objectViewer"
+    },
+    {
+      "condition": {
+        "expression": "request.time < timestamp('2027-01-01T00:00:00Z')",
+        "title": "until-2027"
+      },
+      "members": [
+        "allAuthenticatedUsers"
+      ],
+      "role": "roles/storage.objectViewer"
+    }
+  ],
+  "etag": "CAI=",
+  "kind": "storage#policy",
+  "resourceId": "projects/_/buckets/shop-legacy",
+  "version": 1
+}

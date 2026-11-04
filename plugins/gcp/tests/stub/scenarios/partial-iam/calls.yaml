@@ -1,0 +1,83 @@
+# gcloud answers for the 'partial-iam' scenario. Synthetic: project shop-prod-1234, buckets and
+# members are invented. Each entry's `source` is the reference its answer follows; every
+# value is JSON (see ../../README.md).
+- argv: ["projects", "describe", "shop-prod-1234"]
+  rc: 0
+  stdout: "project.json"
+  source: "https://cloud.google.com/resource-manager/reference/rest/v1/projects"
+- argv: ["storage", "buckets", "list", "--project=shop-prod-1234", "--raw"]
+  rc: 0
+  stdout: "buckets-list.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "buckets", "describe", "gs://shop-assets", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-assets.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "du", "--summarize", "gs://shop-assets"]
+  rc: 0
+  stdout: "du-shop-assets.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-logs", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-logs.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "du", "--summarize", "gs://shop-logs"]
+  rc: 0
+  stdout: "du-shop-logs.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-backups", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-backups.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "du", "--summarize", "gs://shop-backups"]
+  rc: 0
+  stdout: "du-shop-backups.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-public-assets", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-public-assets.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "du", "--summarize", "gs://shop-public-assets"]
+  rc: 0
+  stdout: "du-shop-public-assets.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-legacy", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-legacy.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "du", "--summarize", "gs://shop-legacy"]
+  rc: 0
+  stdout: "du-shop-legacy.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-archive", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-archive.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "du", "--summarize", "gs://shop-archive"]
+  rc: 0
+  stdout: "du-shop-archive.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-assets"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource (or it may not exist).\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-logs"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource (or it may not exist).\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-backups"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource (or it may not exist).\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-public-assets"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource (or it may not exist).\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-legacy"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource (or it may not exist).\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-archive"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource (or it may not exist).\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"

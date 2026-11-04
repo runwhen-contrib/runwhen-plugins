@@ -1,0 +1,23 @@
+# gcloud answers for the 'not-found' scenario. Synthetic: project shop-prod-1234, buckets and
+# members are invented. Each entry's `source` is the reference its answer follows; every
+# value is JSON (see ../../README.md).
+- argv: ["projects", "describe", "no-such-project-1"]
+  rc: 1
+  stderr: "ERROR: (gcloud.projects.describe) Project 'no-such-project-1' not found or deleted.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "list", "--project=no-such-project-1", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.list) HTTPError 404: The requested project was not found.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "describe", "gs://nope", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) gs://nope not found: 404.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://nope"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) gs://nope not found: 404.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"
+- argv: ["storage", "du", "--summarize", "gs://nope"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) gs://nope not found: 404.\n"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/status-codes"

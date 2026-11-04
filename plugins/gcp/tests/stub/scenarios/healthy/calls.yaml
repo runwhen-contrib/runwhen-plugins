@@ -1,0 +1,47 @@
+# gcloud answers for the 'healthy' scenario. Synthetic: project shop-prod-1234, buckets and
+# members are invented. Each entry's `source` is the reference its answer follows; every
+# value is JSON (see ../../README.md).
+- argv: ["projects", "describe", "shop-prod-1234"]
+  rc: 0
+  stdout: "project.json"
+  source: "https://cloud.google.com/resource-manager/reference/rest/v1/projects"
+- argv: ["storage", "buckets", "list", "--project=shop-prod-1234", "--raw"]
+  rc: 0
+  stdout: "buckets-list.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "buckets", "describe", "gs://shop-assets", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-assets.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-assets"]
+  rc: 0
+  stdout: "iam-shop-assets.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+- argv: ["storage", "du", "--summarize", "gs://shop-assets"]
+  rc: 0
+  stdout: "du-shop-assets.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-logs", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-logs.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-logs"]
+  rc: 0
+  stdout: "iam-shop-logs.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+- argv: ["storage", "du", "--summarize", "gs://shop-logs"]
+  rc: 0
+  stdout: "du-shop-logs.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"
+- argv: ["storage", "buckets", "describe", "gs://shop-backups", "--raw"]
+  rc: 0
+  stdout: "bucket-shop-backups.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets#resource"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-backups"]
+  rc: 0
+  stdout: "iam-shop-backups.json"
+  source: "https://cloud.google.com/storage/docs/json_api/v1/buckets/getIamPolicy"
+- argv: ["storage", "du", "--summarize", "gs://shop-backups"]
+  rc: 0
+  stdout: "du-shop-backups.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/storage/du"

@@ -1,0 +1,83 @@
+# gcloud answers for the 'throttled' scenario. Synthetic: project shop-prod-1234, buckets and
+# members are invented. Each entry's `source` is the reference its answer follows; every
+# value is JSON (see ../../README.md).
+- argv: ["projects", "describe", "shop-prod-1234"]
+  rc: 1
+  stderr: "ERROR: (gcloud.projects.describe) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "list", "--project=shop-prod-1234", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.list) RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user' of service 'storage.googleapis.com' for consumer 'project_number:123456789012'.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "describe", "gs://shop-assets", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-assets"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "du", "--summarize", "gs://shop-assets"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "describe", "gs://shop-logs", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-logs"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "du", "--summarize", "gs://shop-logs"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "describe", "gs://shop-backups", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-backups"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "du", "--summarize", "gs://shop-backups"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "describe", "gs://shop-public-assets", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-public-assets"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "du", "--summarize", "gs://shop-public-assets"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "describe", "gs://shop-legacy", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-legacy"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "du", "--summarize", "gs://shop-legacy"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "describe", "gs://shop-archive", "--raw"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.describe) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "buckets", "get-iam-policy", "gs://shop-archive"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.buckets.get-iam-policy) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
+- argv: ["storage", "du", "--summarize", "gs://shop-archive"]
+  rc: 1
+  stderr: "ERROR: (gcloud.storage.du) HTTPError 429: The rate of change requests per second for this bucket has been exceeded. Retry with exponential backoff.\n"
+  source: "https://cloud.google.com/storage/quotas"
