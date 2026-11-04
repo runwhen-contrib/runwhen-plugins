@@ -7,10 +7,10 @@
 # (an EKS kubeconfig comes from the kubernetes plugin's eks method, which runs in the
 # kubernetes@1 runtime). boto3, the AWS SDKs, sam, cdk and eksctl are deliberately absent.
 #
-# FROM is pinned by the multi-arch INDEX digest of tag v13-plugins-d1c7d04, the same pin as
+# FROM is pinned by the multi-arch INDEX digest of tag v13-plugins-m3-7c8bcb2, the same pin as
 # runtimes/kubernetes (see there for how to re-resolve it). Re-resolve and bump it (and
 # runtime.yaml's version) when the SDK pin moves.
-ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:f578706cb6f8d38d2776223618713c1f379c6c92a985ae2d7d2d6ca8122906af
+ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:f2e1de09241d731c9e49fe04c75d9da1cb839f7dc7197a9c627bf07f61851a09
 FROM ${BASE_IMAGE}
 
 # AWS CLI v2 is not in Debian. It ships as a self-contained bundle (its own python), downloaded
