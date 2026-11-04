@@ -1,0 +1,122 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/keyvaults/kv-orders-prod
+now: '2026-11-04T02:19:31.795Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - kv-orders-prod
+  - -g
+  - rg-orders-prod
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod",
+      "location": "eastus",
+      "name": "kv-orders-prod",
+      "properties": {
+        "accessPolicies": [],
+        "createMode": null,
+        "enablePurgeProtection": true,
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "enabledForDeployment": false,
+        "enabledForDiskEncryption": false,
+        "enabledForTemplateDeployment": false,
+        "hsmPoolResourceId": null,
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "defaultAction": "Deny",
+          "ipRules": [
+            {
+              "value": "203.0.113.0/24"
+            }
+          ],
+          "virtualNetworkRules": []
+        },
+        "privateEndpointConnections": [
+          {
+            "etag": null,
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/privateEndpointConnections/pe-orders",
+            "privateEndpoint": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/privateEndpoints/pe-orders",
+              "resourceGroup": "rg-orders-prod"
+            },
+            "privateLinkServiceConnectionState": {
+              "actionsRequired": "None",
+              "description": "Auto-Approved",
+              "status": "Approved"
+            },
+            "provisioningState": "Succeeded",
+            "resourceGroup": "rg-orders-prod"
+          }
+        ],
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Disabled",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "softDeleteRetentionInDays": 90,
+        "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+        "vaultUri": "https://kv-orders-prod.vault.azure.net/"
+      },
+      "resourceGroup": "rg-orders-prod",
+      "systemData": null,
+      "tags": {
+        "env": "prod",
+        "team": "orders"
+      },
+      "type": "Microsoft.KeyVault/vaults"
+    }
+  stderr: ''
+- argv:
+  - az
+  - rest
+  - --method
+  - get
+  - --url
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/providers/Microsoft.ResourceHealth/availabilityStatuses/current?api-version=2022-10-01
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
+      "location": "eastus",
+      "name": "current",
+      "properties": {
+        "availabilityState": "Available",
+        "title": "Available",
+        "summary": "There aren't any known Azure platform problems affecting this Key Vault.",
+        "detailedStatus": "",
+        "reasonType": "",
+        "context": "",
+        "category": "",
+        "reasonChronicity": "Persistent",
+        "occurredTime": "2026-10-29T08:00:00Z",
+        "reportedTime": "2026-11-04T00:30:00.0000000Z",
+        "serviceImpactingEvents": []
+      },
+      "type": "Microsoft.ResourceHealth/AvailabilityStatuses"
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    health:
+      vault: kv-orders-prod
+      availabilityState: Available
+      healthy: true
+      serviceImpactingEvents: 0

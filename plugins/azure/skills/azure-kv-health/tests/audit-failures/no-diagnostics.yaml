@@ -1,0 +1,82 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-dev/keyvaults/kv-orders-dev
+now: '2026-11-04T02:20:11.379Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - kv-orders-dev
+  - -g
+  - rg-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev",
+      "location": "westeurope",
+      "name": "kv-orders-dev",
+      "properties": {
+        "accessPolicies": [],
+        "createMode": null,
+        "enablePurgeProtection": null,
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "enabledForDeployment": false,
+        "enabledForDiskEncryption": false,
+        "enabledForTemplateDeployment": false,
+        "hsmPoolResourceId": null,
+        "networkAcls": null,
+        "privateEndpointConnections": null,
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Enabled",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "softDeleteRetentionInDays": 7,
+        "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+        "vaultUri": "https://kv-orders-dev.vault.azure.net/"
+      },
+      "resourceGroup": "rg-orders-dev",
+      "systemData": null,
+      "tags": {
+        "env": "dev",
+        "team": "orders"
+      },
+      "type": "Microsoft.KeyVault/vaults"
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - diagnostic-settings
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev/providers/Microsoft.KeyVault/vaults/kv-orders-dev
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    []
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    audit:
+      diagnosticSettings: []
+      auditLoggingToWorkspace: false
+      workspacesQueried: 0
+      failureCount: null
+      failures: null

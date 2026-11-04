@@ -1,0 +1,12 @@
+# group-forbidden: the identity can list resource groups, but has no Key Vault read in rg-orders-dev.
+# Only the calls azure-base/discover makes.
+# Format: JSON written as YAML; `<ts>` in an argv entry matches a timestamp (RFC 3339 UTC, whole seconds). See ../../README.md.
+{
+  "calls": [
+    {"argv": ["account", "show", "--subscription", "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"], "stdout": "account-show.json", "stderr": "WARNING: A new Azure CLI version is available. Run `az upgrade` to update.\n", "source": "https://learn.microsoft.com/cli/azure/account#az-account-show", "rc": 0},
+    {"argv": ["group", "list", "--subscription", "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"], "stdout": "group-list.json", "source": "https://learn.microsoft.com/cli/azure/group#az-group-list", "rc": 0},
+    {"argv": ["keyvault", "list", "-g", "rg-orders-dev", "--resource-type", "vault", "--subscription", "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"], "stderr": "ERROR: (AuthorizationFailed) The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.KeyVault/vaults/read' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev' or the scope is invalid. If access was recently granted, please refresh your credentials.\nCode: AuthorizationFailed\nMessage: The client '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' with object id '9d2c5a10-77b4-4f3e-8a1c-5e6f7a8b9c0d' does not have authorization to perform action 'Microsoft.KeyVault/vaults/read' over scope '/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-dev' or the scope is invalid. If access was recently granted, please refresh your credentials.\n", "source": "https://learn.microsoft.com/cli/azure/keyvault#az-keyvault-list", "rc": 1},
+    {"argv": ["keyvault", "list", "-g", "rg-orders-prod", "--resource-type", "vault", "--subscription", "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"], "stdout": "keyvault-list-rg-orders-prod.json", "source": "https://learn.microsoft.com/cli/azure/keyvault#az-keyvault-list", "rc": 0},
+    {"argv": ["keyvault", "list", "-g", "RG-Platform", "--resource-type", "vault", "--subscription", "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"], "stdout": "keyvault-list-rg-platform.json", "source": "https://learn.microsoft.com/cli/azure/keyvault#az-keyvault-list", "rc": 0}
+  ]
+}

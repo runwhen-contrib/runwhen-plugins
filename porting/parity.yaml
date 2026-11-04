@@ -396,6 +396,23 @@ aws:
       "List Lambda Versions and Runtimes in Account Region": "aws-lambda-health/function-config (one function: runtime, version, state and last update status; the region-wide listing is aws-base/discover)"
       "Analyze AWS Lambda Invocation Errors in Account Region": "aws-lambda-health/function-errors (the function's own log group, since/errorPattern; classic tailed 24h of every function)"
       "Monitor AWS Lambda Performance Metrics in Account Region": "aws-lambda-health/function-metrics (Duration, Errors, Throttles, Invocations and ConcurrentExecutions over since, default 1h, with thresholds as booleans; a window with no Invocations is idle and its errors, throttles and booleans are null, never healthy)"
+azure:
+  # --- pilot (M3) ---------------------------------------------------------------------------------------------
+  # Azure skills target one resource (azure/subscription -> azure/resourcegroup -> the resource, D51); the classic
+  # resource-group scope is the set of targets discovery lists, not a task input. Tests are recorded against the az stub (tests/stub/README.md).
+  - bundle: azure-kv-health
+    skills: [azure-kv-health]
+    status: ported
+    ported: [azure-kv-health]
+    pilot: true
+    note: "per-vault target (azure/keyvault) instead of a resource-group loop. Classic false-passes not reproduced: a failed `az keyvault list`/metrics/`az rest` call became an empty loop or 'N/A' and no issue (availability, configuration, performance, resource health); availability judged only the last hourly point; null soft-delete read as misconfigured; the SLI scored a JSON load failure as healthy. Resource Health no longer registers Microsoft.ResourceHealth (a write in a read task): an unregistered provider is a dependency error. The log-analytics extension is not installed on the fly: the query goes through `az rest` to the Log Analytics API."
+    tasks:
+      "Check Key Vault Resource Health": azure-kv-health/resource-health
+      "Check Key Vault Availability": azure-kv-health/availability
+      "Check Key Vault Configuration": azure-kv-health/configuration
+      "Check Expiring Key Vault Items": azure-kv-health/expiring-items
+      "Check Key Vault Logs for Issues": azure-kv-health/audit-failures
+      "Check Key Vault Performance Metrics": azure-kv-health/performance
 # --- gcp (M3; lane F plan, Appendix C). The four bundles of the 94-bundle baseline; the 27 other
 # gcp bundles on main are out of scope unless Samir widens it. Skills are stub-recorded (C5).
 gcp:

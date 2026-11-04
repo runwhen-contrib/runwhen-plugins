@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Request volume and latency of the vault over a look-back window",
+  "type": "object",
+  "properties": {
+    "vault": {
+      "type": "string"
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "interval": {
+      "type": "string"
+    },
+    "requests": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "grains": {
+              "type": "integer"
+            },
+            "withData": {
+              "type": "integer"
+            },
+            "missing": {
+              "type": "integer"
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "last": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "lastGrainMissing": {
+              "type": "boolean",
+              "description": "The newest interval has no value, so last is an older interval's reading"
+            },
+            "points": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  },
+                  "maximum": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "timestamp",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "pointsOmitted": {
+              "type": "integer"
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "crossings": {
+              "type": "integer",
+              "description": "Intervals with a value above the threshold"
+            },
+            "crossed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "metric",
+            "grains",
+            "withData",
+            "missing",
+            "min",
+            "max",
+            "last",
+            "lastGrainMissing",
+            "points",
+            "pointsOmitted",
+            "threshold",
+            "crossings",
+            "crossed"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "ServiceApiHit: requests per interval (Count); threshold is the requestThreshold setting. null when the metric could not be read (the run is partial)"
+    },
+    "latency": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "grains": {
+              "type": "integer"
+            },
+            "withData": {
+              "type": "integer"
+            },
+            "missing": {
+              "type": "integer"
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "last": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "lastGrainMissing": {
+              "type": "boolean",
+              "description": "The newest interval has no value, so last is an older interval's reading"
+            },
+            "points": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  },
+                  "maximum": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "timestamp",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "pointsOmitted": {
+              "type": "integer"
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "crossings": {
+              "type": "integer",
+              "description": "Intervals with a value above the threshold"
+            },
+            "crossed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "metric",
+            "grains",
+            "withData",
+            "missing",
+            "min",
+            "max",
+            "last",
+            "lastGrainMissing",
+            "points",
+            "pointsOmitted",
+            "threshold",
+            "crossings",
+            "crossed"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "ServiceApiLatency: value is the average per interval in milliseconds, maximum the slowest; threshold is latencyThresholdMs, compared with the average. null as above"
+    }
+  },
+  "required": [
+    "vault",
+    "windowSeconds",
+    "interval",
+    "requests",
+    "latency"
+  ],
+  "additionalProperties": false
+}

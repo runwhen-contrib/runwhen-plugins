@@ -1,0 +1,11 @@
+# not-found: the vault `nope` and the subscription 00000000-0000-4000-8000-00000000dead do not exist.
+# With -g, a vault that is not in its group is ARM's ResourceNotFound (the "The Vault 'x' not found within subscription" text is
+# what az prints without -g, after searching the subscription); the subscription text is az's own (_profile.py in 2.92.0).
+# Format: JSON written as YAML; `<ts>` in an argv entry matches a timestamp (RFC 3339 UTC, whole seconds). See ../../README.md.
+{
+  "calls": [
+    {"argv": ["account", "show", "--subscription", "00000000-0000-4000-8000-00000000dead"], "stderr": "ERROR: Subscription '00000000-0000-4000-8000-00000000dead' not found. Check the spelling and casing and try again.\n", "source": "https://learn.microsoft.com/cli/azure/account#az-account-show", "rc": 1},
+    {"argv": ["group", "list", "--subscription", "00000000-0000-4000-8000-00000000dead"], "stderr": "ERROR: Subscription '00000000-0000-4000-8000-00000000dead' not found. Check the spelling and casing and try again.\n", "source": "https://learn.microsoft.com/cli/azure/group#az-group-list", "rc": 1},
+    {"argv": ["keyvault", "show", "--name", "nope", "-g", "rg-orders-dev", "--subscription", "4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71"], "stderr": "ERROR: (ResourceNotFound) The Resource 'Microsoft.KeyVault/vaults/nope' under resource group 'rg-orders-dev' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix\nCode: ResourceNotFound\nMessage: The Resource 'Microsoft.KeyVault/vaults/nope' under resource group 'rg-orders-dev' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix\n", "source": "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-not-found", "rc": 1}
+  ]
+}
