@@ -69,7 +69,12 @@ def env_hits(node, where="$"):
 
 # Skills whose fetches are narrowed (`-o jsonpath`): their recordings hold no env entry at all, of
 # any name (env_names also reads the manifest a `last-applied-configuration` annotation repeats).
-NARROWED_SKILLS = ("k8s-redis-health", "k8s-vault-health")
+NARROWED_SKILLS = (
+    "k8s-jaeger-health",
+    "k8s-litellm-health",
+    "k8s-redis-health",
+    "k8s-vault-health",
+)
 
 
 def env_names(node):

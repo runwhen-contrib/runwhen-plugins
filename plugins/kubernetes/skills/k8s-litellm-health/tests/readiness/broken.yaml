@@ -1,0 +1,80 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-litellm/deployments/litellm-degraded
+now: '2026-11-04T00:25:35.295Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-litellm
+  - get
+  - deployments.apps
+  - litellm-degraded
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}{range
+    .spec.template.spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:kind=Deployment
+    s:metadata.name=litellm-degraded
+    s:metadata.namespace=rw-litellm
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/name":"litellm-degraded"}}
+    j:spec.template.metadata.labels={"app.kubernetes.io/name":"litellm-degraded"}
+    j:status.readyReplicas=
+    c:litellm=python:3.12-alpine
+    p:http=4000
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-litellm
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=litellm-degraded
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=litellm-degraded-56db694fd9-fgkwm
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:37Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:36Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:36Z","message":"containers with unready status: [litellm]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:36Z","message":"containers with unready status: [litellm]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:20:36Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:litellm=python:3.12-alpine
+    p:http=4000
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-litellm/pods/http:litellm-degraded-56db694fd9-fgkwm:4000/proxy/health/readiness
+  - --request-timeout=30s
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (ServiceUnavailable): the server is currently unable to handle the request
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-litellm/pods/http:litellm-degraded-56db694fd9-fgkwm:4000/proxy/health/liveliness
+  - --request-timeout=30s
+  rc: 0
+  stdout: '"I''m alive!"'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    readiness:
+      readyCount: 0
+      notReadyCount: 1
+      pods:
+        $containsWhere: {ready: false, httpStatus: 503, podReady: false, db: null, status: null, cause: db_unreachable_likely, livenessHttpStatus: 200}

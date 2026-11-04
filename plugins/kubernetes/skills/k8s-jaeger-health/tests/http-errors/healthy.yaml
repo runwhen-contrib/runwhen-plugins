@@ -1,0 +1,178 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jaeger/deployments/jaeger
+inputs:
+  services:
+  - catalog
+now: '2026-11-04T00:25:14.061Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jaeger
+  - get
+  - deployments.apps
+  - jaeger
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=Deployment
+    s:metadata.name=jaeger
+    s:metadata.namespace=rw-jaeger
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app":"jaeger","app.kubernetes.io/component":"all-in-one"}}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-jaeger
+  - get
+  - pods
+  - -l
+  - app=jaeger,app.kubernetes.io/component=all-in-one
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"s:status.startTime="}{.status.startTime}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}{range
+    .status.containerStatuses[*]}{"r:"}{.name}{"="}{.restartCount}{"|"}{.state.running.startedAt}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=jaeger-f6bd9dd68-j59qx
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    s:status.startTime=2026-11-04T00:13:08Z
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:10Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:10Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T00:13:08Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:jaeger=jaegertracing/all-in-one:1.76.0
+    p:query=16686
+    p:otlp-http=4318
+    p:admin=14269
+    r:jaeger=0|2026-11-04T00:13:09Z
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/services
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":["jaeger-all-in-one","checkout","catalog","gateway","inventory"],"total":5,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22error%22%3A%22true%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.status_code%22%3A%22400%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.status_code%22%3A%22401%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.status_code%22%3A%22403%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.status_code%22%3A%22404%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[{"traceID":"fab05ceccf21ac2801003d24a14f3c92","spans":[{"traceID":"fab05ceccf21ac2801003d24a14f3c92","spanID":"31d7d01b8bb0e6d1","operationName":"GET
+    /items/{id}","references":[],"startTime":1793751186318009,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/items/9?debug=1"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"catalog","tags":[]}},"warnings":null},{"traceID":"5450449eb2e4e2425cc5aa55880aa3b8","spans":[{"traceID":"5450449eb2e4e2425cc5aa55880aa3b8","spanID":"d3c3338a7c3f54d0","operationName":"GET
+    /items/{id}","references":[],"startTime":1793751148318001,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/items/9?debug=1"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"catalog","tags":[]}},"warnings":null},{"traceID":"0ac41bf59187c5ed415c9847b2b5aaed","spans":[{"traceID":"0ac41bf59187c5ed415c9847b2b5aaed","spanID":"422b28bb7c9ecadb","operationName":"GET
+    /items/{id}","references":[],"startTime":1793751192318006,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/items/9?debug=1"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"catalog","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.status_code%22%3A%22429%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.response.status_code%22%3A%22400%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.response.status_code%22%3A%22401%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.response.status_code%22%3A%22403%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.response.status_code%22%3A%22404%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /api/v1/namespaces/rw-jaeger/pods/http:jaeger-f6bd9dd68-j59qx:16686/proxy/api/traces?service=catalog&start=1793748314061000&end=1793751914061000&limit=100&tags=%7B%22http.response.status_code%22%3A%22429%22%7D
+  - --request-timeout=30s
+  rc: 0
+  stdout: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    httpErrors:
+      serverErrorSpans: 0
+      clientErrorSpans: 3
+      outboundErrorSpans: 0
+      queriedCount: 1
+      services:
+        $containsWhere: {name: catalog, queried: true, complete: true, serverErrorSpans: 0, clientErrorSpans: 3, limitReached: false}
