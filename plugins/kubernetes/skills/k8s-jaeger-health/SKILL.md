@@ -26,12 +26,14 @@ It reads what Jaeger holds, so it tells you about traffic that is traced and sto
 that is not instrumented, or whose spans carry no HTTP status attribute, shows no errors.
 
 The task asks the first Running pod (Ready ones first) over HTTP through the API server's pod
-proxy (`kubectl get --raw /api/v1/namespaces/<ns>/pods/<scheme>:<pod>:<port>/proxy/api/...`). That
+proxy (`ctx.k8s_proxy_get`, which never follows a redirect). That
 needs `get` on the workload, `list` on `pods` and `get` on `pods/proxy` in its namespace. The port
 is the `port` input (the override), else the port named `query`, `http-query` or `query-http` of
 the main container (the one whose image is Jaeger's, else the first that is not a sidecar), else
 16686; `scheme` defaults to `http`. A Jaeger that needs a login in front of it answers 401/403
-through the proxy, which reads as `permission_denied` on `pods/proxy`.
+or redirects to a login page: a 401/403 is a `dependency` error naming the status (the backend's, not
+the API server's `permission_denied` on `pods/proxy`), and a redirect to another host is never
+followed and is a `dependency` error naming the host.
 
 ## What each task tells you
 
