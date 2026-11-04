@@ -1,0 +1,60 @@
+{
+  "calls": [
+    {
+      "argv": [
+        "sts",
+        "get-caller-identity",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/reference/sts/get-caller-identity.html",
+      "rc": 0,
+      "stdout": "../_shared/sts-get-caller-identity.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ec2",
+        "describe-regions",
+        "--region",
+        "us-east-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DescribeRegions operation: You are not authorized to perform this operation. User: arn:aws:iam::123456789012:user/rw-monitor is not authorized to perform: ec2:DescribeRegions because no identity-based policy allows the ec2:DescribeRegions action. Encoded authorization failure message: Z9mYfXkq0eN3wPq1vD7sTgHbJ2c8Ra5LwUo4nV6yMzE1xK0iA3dC9tBhOjQpFlS\n"
+    },
+    {
+      "argv": [
+        "lambda",
+        "list-functions",
+        "--query",
+        "{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus: LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}",
+        "--max-items",
+        "1000",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (AccessDeniedException) when calling the ListFunctions operation: User: arn:aws:iam::123456789012:user/rw-monitor is not authorized to perform: lambda:ListFunctions on resource: * because no identity-based policy allows the lambda:ListFunctions action\n"
+    },
+    {
+      "argv": [
+        "lambda",
+        "get-function-configuration",
+        "--function-name",
+        "orders-api",
+        "--query",
+        "{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType, Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size, Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason, LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason: LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount: length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup: LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode, EnvironmentErrorMessage: Environment.Error.Message}",
+        "--region",
+        "eu-west-1"
+      ],
+      "doc": "https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-troubleshooting.html",
+      "rc": 254,
+      "stdout": "",
+      "stderr": "\naws: [ERROR]: An error occurred (AccessDeniedException) when calling the GetFunctionConfiguration operation: User: arn:aws:iam::123456789012:user/rw-monitor is not authorized to perform: lambda:GetFunctionConfiguration on resource: arn:aws:lambda:eu-west-1:123456789012:function:orders-api because no identity-based policy allows the lambda:GetFunctionConfiguration action\n"
+    }
+  ]
+}
