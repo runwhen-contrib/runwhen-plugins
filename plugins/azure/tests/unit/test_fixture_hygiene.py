@@ -30,10 +30,25 @@ SYNTHETIC_GUIDS = {
     "00000000-0000-4000-8000-0000000000aa",  # the signed-in service principal
     "00000000-0000-4000-8000-00000000dead",  # a subscription that does not exist
     "8a1b2c3d-0000-4000-8000-000000000001",  # the correlation id of a Resource Health event
+    "00000000-0000-4000-8000-0000000000b1",  # an AKS cluster's system-assigned identity
+    "00000000-0000-4000-8000-0000000000b2",  # its kubelet identity: client id
+    "00000000-0000-4000-8000-0000000000b3",  # its kubelet identity: object id
+    "00000000-0000-4000-8000-0000000000b4",  # an Entra group (AKS admin group)
+    "00000000-0000-4000-8000-0000000000b5",  # an AKS OIDC issuer id
 }
 # the names the stub invents (compared without case: ARM does not distinguish them)
 SYNTHETIC_VAULTS = {"kv-orders-dev", "kv-orders-prod", "nope"}
-SYNTHETIC_GROUPS = {"rg-orders-dev", "rg-orders-prod", "rg-platform", "rg-observability"}
+SYNTHETIC_GROUPS = {
+    "rg-orders-dev",
+    "rg-orders-prod",
+    "rg-platform",
+    "rg-observability",
+    # the node resource groups AKS creates for the two clusters: MC_<group>_<cluster>_<region>
+    "mc_rg-orders-dev_aks-orders-dev_westeurope",
+    "mc_rg-orders-prod_aks-orders-prod_eastus",
+}
+SYNTHETIC_CLUSTERS = {"aks-orders-dev", "aks-orders-prod", "aks-orders-dev2", "nope"}
+SYNTHETIC_AKS_HOSTS = {"aks-orders-dev-dns-1a2b3c4d", "aks-orders-prod-dns-1a2b3c4d"}
 SYNTHETIC_WORKSPACES = {"law-central"}
 SYNTHETIC_ENDPOINTS = {"pe-orders"}
 SYNTHETIC_EMAILS = set()  # the stub invents none: a principal is a GUID
@@ -60,6 +75,7 @@ LEAKS = [
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 VAULT_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.vault\.azure\.net\b")
+AKS_HOST = re.compile(r"(?i)\b([a-z0-9-]+)\.(?:hcp|privatelink)\.[a-z0-9]+\.azmk8s\.io\b")
 NAME = r"([A-Za-z0-9_.()-]+)"  # a name ends at the first character a resource name cannot hold
 RESOURCE_NAMES = [  # (what, pattern of an ARM id or resource path, the stub's set)
     (
@@ -70,10 +86,22 @@ RESOURCE_NAMES = [  # (what, pattern of an ARM id or resource path, the stub's s
     (
         "Key Vault",
         re.compile(
-            r"(?i)(?:/providers/microsoft\.keyvault/vaults/|/keyvaults/|--vault-name\W+|--name\W+)"
-            + NAME
+            r"(?i)(?:/providers/microsoft\.keyvault/vaults/|/keyvaults/|--vault-name\W+)" + NAME
         ),
         SYNTHETIC_VAULTS,
+    ),
+    (
+        "AKS cluster",
+        re.compile(
+            r"(?i)(?:/providers/microsoft\.containerservice/managedclusters/|/aks-clusters/"
+            r"|--cluster-name\W+)" + NAME
+        ),
+        SYNTHETIC_CLUSTERS,
+    ),
+    (
+        "Key Vault or AKS cluster",  # `az keyvault show --name` and `az aks show --name`
+        re.compile(r"(?i)--name\W+" + NAME),
+        SYNTHETIC_VAULTS | SYNTHETIC_CLUSTERS,
     ),
     (
         "workspace",
@@ -182,6 +210,9 @@ def foreign(text):
     for host in VAULT_HOST.findall(text):
         if host.lower() not in SYNTHETIC_VAULTS:
             out.append(("a vault host name", f"{host}.vault.azure.net"))
+    for host in AKS_HOST.findall(text):
+        if host.lower() not in SYNTHETIC_AKS_HOSTS:
+            out.append(("an AKS API server host name", host))
     for what, pattern, allowed in RESOURCE_NAMES:
         for name in pattern.findall(text):
             if name.lower() not in allowed and not GUID.fullmatch(name):
@@ -225,6 +256,35 @@ def test_the_name_scan_finds_what_it_looks_for_and_passes_the_stub_names():
         "/providers/Microsoft.OperationalInsights/workspaces/real-ws "
         "/v1/workspaces/0b6c2f1e-3d4a-4e5f-9a7b-1c2d3e4f5a6b/query"
     ) == [("a workspace name", "real-ws")]
+
+
+def test_the_name_scan_knows_aks_clusters_node_groups_and_api_server_hosts():
+    base = "/subscriptions/x/resourceGroups/rg-orders-dev/providers/Microsoft.ContainerService"
+    assert foreign(f"{base}/managedClusters/aks-orders-dev/agentPools/batch") == []
+    assert foreign(f"{base}/managedClusters/payments-aks") == [
+        ("a AKS cluster name", "payments-aks")
+    ]
+    assert foreign("azure/subscriptions/s/resourcegroups/rg-orders-dev/aks-clusters/prod-1") == [
+        ("a AKS cluster name", "prod-1")
+    ]
+    assert foreign('"--cluster-name", "aks-orders-prod"') == []
+    assert (
+        foreign('"--name", "aks-orders-prod"') == [] and foreign('"--name", "kv-orders-dev"') == []
+    )
+    assert foreign('"--name", "payments-aks"') == [
+        ("a Key Vault or AKS cluster name", "payments-aks")
+    ]
+    assert (
+        foreign("/subscriptions/x/resourceGroups/MC_rg-orders-dev_aks-orders-dev_westeurope/p")
+        == []
+    )
+    assert foreign("/subscriptions/x/resourceGroups/MC_prod_payments_eastus/p") == [
+        ("a resource group name", "MC_prod_payments_eastus")
+    ]
+    assert foreign("https://aks-orders-dev-dns-1a2b3c4d.hcp.westeurope.azmk8s.io") == []
+    assert foreign("https://pay-dns-9f.hcp.eastus.azmk8s.io:443") == [
+        ("an AKS API server host name", "pay-dns-9f")
+    ]
 
 
 def secret_flag(arg):

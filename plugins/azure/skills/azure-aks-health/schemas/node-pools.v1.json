@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An AKS cluster's node pools",
+  "type": "object",
+  "properties": {
+    "cluster": {
+      "type": "string"
+    },
+    "clusterProvisioningState": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "clusterPowerState": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "poolCount": {
+      "type": "integer"
+    },
+    "nodeCount": {
+      "type": "integer",
+      "description": "Sum of the counts the pools report"
+    },
+    "nodeCountKnown": {
+      "type": "boolean",
+      "description": "Every pool reported a count"
+    },
+    "systemPoolCount": {
+      "type": "integer"
+    },
+    "systemNodeCount": {
+      "type": "integer"
+    },
+    "failedPoolCount": {
+      "type": "integer",
+      "description": "Pools whose provisioning state is Failed or Canceled"
+    },
+    "failedPools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "description": "Their names, at most 50"
+    },
+    "notRunningPoolCount": {
+      "type": "integer",
+      "description": "Pools whose power state is not Running"
+    },
+    "notRunningPools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "description": "Their names, at most 50"
+    },
+    "pools": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "mode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "System or User"
+              },
+              "osType": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "osSku": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "vmSize": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "poolType": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "VirtualMachineScaleSets or VirtualMachines"
+              },
+              "scaleSetPriority": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Regular or Spot"
+              },
+              "count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Nodes the pool has now"
+              },
+              "provisioningState": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "transitioning": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "provisioningState is neither Succeeded, Failed nor Canceled"
+              },
+              "powerState": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Running or Stopped"
+              },
+              "autoscaleEnabled": {
+                "type": "boolean"
+              },
+              "minCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The autoscaler's minimum; null with the autoscaler off"
+              },
+              "maxCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The autoscaler's maximum; null with the autoscaler off"
+              },
+              "atMaxCount": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Autoscaler on and count at or above maxCount: it cannot add a node. Null with the autoscaler off"
+              },
+              "atMinCount": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Autoscaler on and count at or below minCount: it cannot remove a node. Null with the autoscaler off"
+              },
+              "orchestratorVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The version requested for the pool"
+              },
+              "currentOrchestratorVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The version the pool runs now"
+              },
+              "versionDiffers": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "nodeImageVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "availabilityZones": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "description": "Zones, at most 50"
+              },
+              "maxSurge": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "mode",
+              "osType",
+              "osSku",
+              "vmSize",
+              "poolType",
+              "scaleSetPriority",
+              "count",
+              "provisioningState",
+              "transitioning",
+              "powerState",
+              "autoscaleEnabled",
+              "minCount",
+              "maxCount",
+              "atMaxCount",
+              "atMinCount",
+              "orchestratorVersion",
+              "currentOrchestratorVersion",
+              "versionDiffers",
+              "nodeImageVersion",
+              "availabilityZones",
+              "maxSurge"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Pools by name, cut to maxItems"
+        },
+        "total": {
+          "type": "integer",
+          "description": "Entries found"
+        },
+        "omitted": {
+          "type": "integer",
+          "description": "Entries left out of items by maxItems"
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "omitted"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "cluster",
+    "clusterProvisioningState",
+    "clusterPowerState",
+    "poolCount",
+    "nodeCount",
+    "nodeCountKnown",
+    "systemPoolCount",
+    "systemNodeCount",
+    "failedPoolCount",
+    "failedPools",
+    "notRunningPoolCount",
+    "notRunningPools",
+    "pools"
+  ],
+  "additionalProperties": false
+}

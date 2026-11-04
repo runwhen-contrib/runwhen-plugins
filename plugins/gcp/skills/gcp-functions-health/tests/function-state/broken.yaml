@@ -1,0 +1,137 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/regions/us-central1/cloud-functions/checkout
+now: '2026-11-04T04:57:28.440Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - checkout
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "buildConfig": {
+        "build": "projects/123456789012/locations/us-central1/builds/a1b2c3d4-0000-4000-8000-000000000003",
+        "dockerRegistry": "ARTIFACT_REGISTRY",
+        "entryPoint": "handler",
+        "environmentVariables": {
+          "BUILD_FLAVOUR": "release"
+        },
+        "runtime": "python312"
+      },
+      "environment": "GEN_2",
+      "labels": {
+        "deployment-tool": "console",
+        "team": "web"
+      },
+      "name": "projects/shop-prod-1234/locations/us-central1/functions/checkout",
+      "serviceConfig": {
+        "allTrafficOnLatestRevision": true,
+        "availableCpu": "1",
+        "availableMemory": "512Mi",
+        "environmentVariables": {
+          "LOG_EXECUTION_ID": "true",
+          "LOG_LEVEL": "info"
+        },
+        "ingressSettings": "ALLOW_ALL",
+        "maxInstanceCount": 20,
+        "maxInstanceRequestConcurrency": 80,
+        "minInstanceCount": 0,
+        "revision": "checkout-00002-pkq",
+        "secretEnvironmentVariables": [
+          {
+            "key": "STRIPE_KEY",
+            "projectId": "shop-prod-1234",
+            "secret": "stripe-key",
+            "version": "latest"
+          }
+        ],
+        "service": "projects/shop-prod-1234/locations/us-central1/services/checkout",
+        "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+        "timeoutSeconds": 60,
+        "uri": "https://checkout-k3j2h1g0fa-uc.a.run.app"
+      },
+      "state": "FAILED",
+      "stateMessages": [
+        {
+          "message": "Build failed with status: FAILURE and message: ModuleNotFoundError: No module named 'stripe_client'. Check the build logs.",
+          "severity": "ERROR",
+          "type": "BuildFailed"
+        },
+        {
+          "message": "Revision 'checkout-00003-abc' is not ready and cannot serve traffic.",
+          "severity": "WARNING",
+          "type": "CloudRunService"
+        }
+      ],
+      "updateTime": "2026-10-30T14:02:11.123456Z",
+      "url": "https://us-central1-shop-prod-1234.cloudfunctions.net/checkout"
+    }
+  stderr: |+
+    CRITICAL: Function has the following conditions:
+      [ERROR] Build failed with status: FAILURE and message: ModuleNotFoundError: No module named 'stripe_client'. Check the build logs.
+      [WARNING] Revision 'checkout-00003-abc' is not ready and cannot serve traffic.
+
+- argv:
+  - gcloud
+  - builds
+  - describe
+  - a1b2c3d4-0000-4000-8000-000000000003
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 0
+  stdout: |
+    {
+      "createTime": "2026-10-30T14:00:02.481516Z",
+      "failureInfo": {
+        "detail": "Build failed; check build logs for details",
+        "type": "USER_BUILD_STEP"
+      },
+      "finishTime": "2026-10-30T14:01:30.000000Z",
+      "id": "a1b2c3d4-0000-4000-8000-000000000003",
+      "logUrl": "https://console.cloud.google.com/cloud-build/builds;region=us-central1/a1b2c3d4-0000-4000-8000-000000000003?project=123456789012",
+      "projectId": "shop-prod-1234",
+      "startTime": "2026-10-30T14:00:03.120442Z",
+      "status": "FAILURE",
+      "statusDetail": "build failed: step exited with non-zero status: 1",
+      "steps": [
+        {
+          "args": [
+            "/cnb/lifecycle/builder"
+          ],
+          "env": [
+            "GOOGLE_ENTRYPOINT=handler"
+          ],
+          "name": "gcr.io/gae-runtimes/buildpacks/python312/builder",
+          "status": "SUCCESS"
+        }
+      ],
+      "tags": [
+        "gcf-deploy"
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    function:
+      name: checkout
+      generation: 2
+      state: FAILED
+      stateMessageCount: 2
+      build:
+        status: FAILURE
+        failureType: USER_BUILD_STEP

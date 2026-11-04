@@ -411,10 +411,13 @@ def test_every_call_cites_its_reference_and_the_sdk_file_and_every_file_exists_a
             # the SDK file that formats the answer, in the pinned gcloud
             assert call["cli_source"].startswith("gcloud 592.0.0: "), call
             assert re.search(r"(surface|googlecloudsdk)/\S+\.py", call["cli_source"]), call
-            assert call["argv"][0] in ("projects", "storage", "auth")
-            assert f"--billing-project={P}" in call["argv"], (
-                "every gcloud call is billed to the project"
-            )
+            assert call["argv"][0] in (
+                "projects", "storage", "auth", "functions", "builds", "logging",
+            )  # fmt: skip
+            if call["argv"][:2] != ["auth", "print-access-token"]:
+                assert f"--billing-project={P}" in call["argv"], (
+                    "every gcloud call is billed to the project"
+                )
         else:
             assert tool == "curl" and call["cli_source"].startswith("curl 8.14.1")
             assert call["argv"][:5] == ["-sS", "--fail-with-body", "--max-redirs", "0", "-H"]
@@ -424,11 +427,15 @@ def test_every_call_cites_its_reference_and_the_sdk_file_and_every_file_exists_a
             "argv is stored normalised"
         )
         if call["rc"] == 0:
-            assert call.get("stdout") and "stderr" not in call
+            # gcloud may warn and exit 0 (functions list: regions it could not reach; describe: the
+            # conditions of a 2nd gen function)
+            assert call.get("stdout") and call.get("stderr", "WARNING: ").startswith(
+                ("WARNING: ", "CRITICAL: Function has the following conditions")
+            )
         else:
             assert call["stderr"].startswith(("ERROR: (gcloud.", "curl: ("))
             assert "stdout" not in call or call["stdout"].startswith(
-                ("buckets-list", "monitoring-")
+                ("buckets-list", "monitoring-", "mon-", "logs-")
             )
         if call.get("stdout"):
             used.add(call["stdout"])
@@ -485,7 +492,17 @@ def test_the_error_scenarios_print_the_words_real_gcloud_prints():
 
 
 def test_the_scenarios_the_fixtures_need_exist():
-    assert set(SCENARIOS) == {
+    assert {s for s in SCENARIOS if not s.startswith("functions-")} == {
         "healthy", "broken", "forbidden", "not-found", "throttled", "unauthenticated",
         "api-disabled", "project-denied", "partial-throttled", "du-fallback", "monitoring-disabled",
+    }  # fmt: skip
+    # gcp-functions-health's (capture/capture_functions.py)
+    assert {s for s in SCENARIOS if s.startswith("functions-")} == {
+        "functions-healthy", "functions-broken", "functions-forbidden", "functions-throttled",
+        "functions-api-disabled", "functions-build-denied", "functions-not-found",
+        "functions-empty", "functions-unreachable", "functions-split", "functions-idle",
+        "functions-monitoring-disabled", "functions-partial-metrics", "functions-logging-denied",
+        "functions-monitoring-denied", "functions-discover-denied", "functions-discover-disabled",
+        "functions-discover-unreachable", "functions-discover-split",
+        "functions-leaky", "functions-discover-buckets-denied", "functions-discover-deleted",
     }  # fmt: skip

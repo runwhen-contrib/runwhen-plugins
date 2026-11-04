@@ -1,0 +1,380 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An AKS cluster's node CPU, memory and node/device disk use",
+  "type": "object",
+  "properties": {
+    "cluster": {
+      "type": "string"
+    },
+    "windowSeconds": {
+      "type": "integer"
+    },
+    "interval": {
+      "type": "string",
+      "description": "ISO 8601 grain: the metricInterval setting"
+    },
+    "cpu": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "hasData": {
+          "type": "boolean",
+          "description": "At least one interval has a value. False is no data, not a healthy cluster"
+        },
+        "thresholdPercent": {
+          "type": "number"
+        },
+        "grains": {
+          "type": "integer",
+          "description": "Intervals in the window"
+        },
+        "grainsWithData": {
+          "type": "integer"
+        },
+        "grainsMissing": {
+          "type": "integer",
+          "description": "Intervals without a datapoint"
+        },
+        "averageMin": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "averageMax": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "averageLast": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lastGrainMissing": {
+          "type": "boolean",
+          "description": "The newest interval has no value, so averageLast is an older interval's reading"
+        },
+        "peakMax": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "The highest per-interval maximum (the busiest node)"
+        },
+        "grainsAverageOverThreshold": {
+          "type": "integer"
+        },
+        "averageOverThreshold": {
+          "type": "boolean"
+        },
+        "grainsPeakOverThreshold": {
+          "type": "integer"
+        },
+        "peakOverThreshold": {
+          "type": "boolean"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              },
+              "maximum": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "timestamp",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "The newest 50 intervals that have an average, oldest first"
+        },
+        "pointsOmitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "metric",
+        "hasData",
+        "thresholdPercent",
+        "grains",
+        "grainsWithData",
+        "grainsMissing",
+        "averageMin",
+        "averageMax",
+        "averageLast",
+        "lastGrainMissing",
+        "peakMax",
+        "grainsAverageOverThreshold",
+        "averageOverThreshold",
+        "grainsPeakOverThreshold",
+        "peakOverThreshold",
+        "points",
+        "pointsOmitted"
+      ],
+      "additionalProperties": false,
+      "description": "Null when this metric could not be read (the run is partial, error scoped to the metric)"
+    },
+    "memory": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "hasData": {
+          "type": "boolean",
+          "description": "At least one interval has a value. False is no data, not a healthy cluster"
+        },
+        "thresholdPercent": {
+          "type": "number"
+        },
+        "grains": {
+          "type": "integer",
+          "description": "Intervals in the window"
+        },
+        "grainsWithData": {
+          "type": "integer"
+        },
+        "grainsMissing": {
+          "type": "integer",
+          "description": "Intervals without a datapoint"
+        },
+        "averageMin": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "averageMax": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "averageLast": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lastGrainMissing": {
+          "type": "boolean",
+          "description": "The newest interval has no value, so averageLast is an older interval's reading"
+        },
+        "peakMax": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "The highest per-interval maximum (the busiest node)"
+        },
+        "grainsAverageOverThreshold": {
+          "type": "integer"
+        },
+        "averageOverThreshold": {
+          "type": "boolean"
+        },
+        "grainsPeakOverThreshold": {
+          "type": "integer"
+        },
+        "peakOverThreshold": {
+          "type": "boolean"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              },
+              "maximum": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "timestamp",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "The newest 50 intervals that have an average, oldest first"
+        },
+        "pointsOmitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "metric",
+        "hasData",
+        "thresholdPercent",
+        "grains",
+        "grainsWithData",
+        "grainsMissing",
+        "averageMin",
+        "averageMax",
+        "averageLast",
+        "lastGrainMissing",
+        "peakMax",
+        "grainsAverageOverThreshold",
+        "averageOverThreshold",
+        "grainsPeakOverThreshold",
+        "peakOverThreshold",
+        "points",
+        "pointsOmitted"
+      ],
+      "additionalProperties": false,
+      "description": "Null when this metric could not be read (the run is partial, error scoped to the metric)"
+    },
+    "disk": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "hasData": {
+          "type": "boolean",
+          "description": "At least one interval has a value. False is no data, not a healthy cluster"
+        },
+        "thresholdPercent": {
+          "type": "number"
+        },
+        "grains": {
+          "type": "integer",
+          "description": "Intervals in the window"
+        },
+        "grainsWithData": {
+          "type": "integer"
+        },
+        "grainsMissing": {
+          "type": "integer",
+          "description": "Intervals without a datapoint"
+        },
+        "averageMin": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "averageMax": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "averageLast": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lastGrainMissing": {
+          "type": "boolean",
+          "description": "The newest interval has no value, so averageLast is an older interval's reading"
+        },
+        "peakMax": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "The highest per-interval maximum (the busiest node)"
+        },
+        "grainsAverageOverThreshold": {
+          "type": "integer"
+        },
+        "averageOverThreshold": {
+          "type": "boolean"
+        },
+        "grainsPeakOverThreshold": {
+          "type": "integer"
+        },
+        "peakOverThreshold": {
+          "type": "boolean"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              },
+              "maximum": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "timestamp",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50,
+          "description": "The newest 50 intervals that have an average, oldest first"
+        },
+        "pointsOmitted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "metric",
+        "hasData",
+        "thresholdPercent",
+        "grains",
+        "grainsWithData",
+        "grainsMissing",
+        "averageMin",
+        "averageMax",
+        "averageLast",
+        "lastGrainMissing",
+        "peakMax",
+        "grainsAverageOverThreshold",
+        "averageOverThreshold",
+        "grainsPeakOverThreshold",
+        "peakOverThreshold",
+        "points",
+        "pointsOmitted"
+      ],
+      "additionalProperties": false,
+      "description": "Null when this metric could not be read (the run is partial, error scoped to the metric)"
+    }
+  },
+  "required": [
+    "cluster",
+    "windowSeconds",
+    "interval",
+    "cpu",
+    "memory",
+    "disk"
+  ],
+  "additionalProperties": false
+}

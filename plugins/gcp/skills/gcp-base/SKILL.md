@@ -2,8 +2,8 @@
 name: gcp-base
 description: >-
   The Google Cloud integration's own skill. discover reads a project and lists its Cloud
-  Storage buckets (name, location, storage class, creation time) and reports the project id
-  as the root's canonical key. Use to see what a gcp connection holds, or to find out why
+  Storage buckets (name, location, storage class, creation time) and its Cloud Functions (id,
+  region, generation, state, runtime) and reports the project id as the root's canonical key. Use to see what a gcp connection holds, or to find out why
   another gcp skill reports permission_denied, not_found or dependency (a disabled API).
 runwhen:
   role: [discovery]
@@ -14,10 +14,12 @@ runwhen:
 
 ## When to use
 
-Reach for `discover` to see what a project holds: its number and state, and every Cloud Storage
-bucket the identity may list. The platform also runs it on its own every 15 minutes, to keep the
-`gcp/bucket` resources that the other gcp skills target. It only reads: two gcloud calls,
-`gcloud projects describe` and `gcloud storage buckets list --raw`, with the connection's
+Reach for `discover` to see what a project holds: its number and state, every Cloud Storage
+bucket and every Cloud Function (both generations, all regions) the identity may list. The
+platform also runs it on its own every 15 minutes, to keep the `gcp/bucket` and
+`gcp/cloud-function` resources that the other gcp skills target. It only reads: three gcloud calls,
+`gcloud projects describe`, `gcloud storage buckets list --raw`, `gcloud functions list` and, once that works, `gcloud functions regions list` (v1 and `--gen2`)
+(which needs `cloudfunctions.functions.list` and `cloudfunctions.locations.list`), with the connection's
 credential (`gcp/adc`: a service-account key, or the pod's own identity through the metadata
 server), each billed to the project it reads (`--billing-project`, which needs
 `serviceusage.services.use`; an assumption to verify against a real project, parked P18).
@@ -48,8 +50,27 @@ of the budget (less a 10s margin), and a request that would start with nothing l
   `partial`; the buckets stand. A response in a shape this task does not know (neither Resource
   Manager v1's `lifecycleState`/`name` nor v3's `state`/`displayName`) is an `internal` error
   scoped `project`, not silent nulls.
-- `buckets.items` empty and `total` 0: the project has no buckets (an identity that may not list
-  them fails with `permission_denied`; it never returns an empty list).
+- Each type is read on its own. `buckets.read` or `functions.read` false, with an error scoped
+  `buckets` / `functions` (`permission_denied`, `dependency` for a disabled API, `rate_limited`,
+  ...): that list could not be read; the other type and the project stand and the run is `partial`.
+  Its sync partition is `forbidden` / `failed` with a `reason`, so nothing is swept: it is never
+  "the project has no functions" (or no buckets). Only when both lists fail does the task fail, with
+  the bucket list's error. `items` empty with `total` 0 and `read` true is a project with none.
+- The sync is project -> bucket and project -> region -> cloud-function: a region item for each
+  region that holds a function (or was unreachable), and one `cloud-function` partition per region.
+  The same function id in two regions is two functions. Every region Cloud Functions serves
+  (`functions regions list`) gets a region item and a `complete` partition, with a count of 0 when
+  it holds no function, so a region whose last function was deleted is swept; a region that was
+  unreachable stays `failed`. If the region list itself cannot be read (an error scoped
+  `functions`), the region partition is `failed` and no empty region is guessed.
+- `functions.unreachableRegions` not empty: gcloud exits 0 but could not reach those regions
+  (it only warns; `unknown` when it did not say which); their functions are missing, the run is
+  `partial` (`unreachable`) and the partitions of those regions are `failed` (all of them, for
+  `unknown`).
+- `state` is the generation's own field: 2nd gen `state` (`ACTIVE`, `FAILED`, `DEPLOYING`, ...),
+  1st gen `status` (`ACTIVE`, `OFFLINE`, ...); null when the row carries neither.
+- `buckets.items` empty and `total` 0 with `read` true: the project has no buckets (an identity
+  that may not list them gets `read: false` and an error; it never returns an empty list).
 - `buckets.omitted` above zero: the list was cut at `maxItems`; raise the setting, or read the
   `sync` artifact for the whole list.
 - `lifecycleState: DELETE_REQUESTED`: the project is scheduled for deletion.
@@ -72,6 +93,8 @@ of the budget (less a 10s margin), and a request that would start with nothing l
 - Missing permission: grant a role that carries it (see the IAM permissions reference for
   `storage.buckets.list` and `resourcemanager.projects.get`), then run
   `gcp:gcp-base/discover` again.
+- A function listed here is the target of `gcp:gcp-functions-health/function-state`,
+  `gcp:gcp-functions-health/function-errors` and `gcp:gcp-functions-health/function-metrics`.
 - A bucket listed here is the target of `gcp:gcp-bucket-health/bucket-config`,
   `gcp:gcp-bucket-health/public-access` and `gcp:gcp-bucket-health/bucket-size`.
 

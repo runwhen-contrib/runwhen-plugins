@@ -1,0 +1,24 @@
+# Canned answers of scenario 'functions-api-disabled', written by tests/stub/capture/capture_functions.py from the
+# real gcloud 592.0.0 in the runtime image (see ../../README.md). Project, functions and members are invented.
+# Every value is one line of JSON.
+- argv: ["functions", "list", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 1
+  stderr: "ERROR: (gcloud.functions.list) [None] does not have permission to access projects instance [shop-prod-1234] (or it may not exist): Cloud Functions API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudfunctions.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\n- '@type': type.googleapis.com/google.rpc.ErrorInfo\n  domain: googleapis.com\n  metadata:\n    consumer: projects/123456789012\n    service: cloudfunctions.googleapis.com\n  reason: SERVICE_DISABLED\n"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/list.py (2nd gen from the v2 API with filter environment=\"GEN_2\", 1st gen from v1; unreachable regions are only warned about)"
+- argv: ["functions", "describe", "orders-api", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 1
+  stderr: "ERROR: (gcloud.functions.describe) PERMISSION_DENIED: Cloud Functions API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudfunctions.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\n- '@type': type.googleapis.com/google.rpc.ErrorInfo\n  domain: googleapis.com\n  metadata:\n    consumer: projects/123456789012\n    service: cloudfunctions.googleapis.com\n  reason: SERVICE_DISABLED\n"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["builds", "describe", "a1b2c3d4-0000-4000-8000-000000000001", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 1
+  stderr: "ERROR: (gcloud.builds.describe) PERMISSION_DENIED: Cloud Build API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudbuild.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\n- '@type': type.googleapis.com/google.rpc.ErrorInfo\n  domain: googleapis.com\n  metadata:\n    consumer: projects/123456789012\n    service: cloudbuild.googleapis.com\n  reason: SERVICE_DISABLED\n"
+  source: "https://cloud.google.com/build/docs/api/reference/rest/v1/projects.locations.builds/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/builds/describe.py (--region: projects/<p>/locations/<r>/builds/<id>)"
+- argv: ["logging", "read", "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"orders-api\" AND resource.labels.location=\"us-central1\" AND severity>=ERROR AND timestamp>=\"<T>\" AND timestamp<=\"<T>\"", "--project=shop-prod-1234", "--limit=51", "--order=desc", "--billing-project=shop-prod-1234"]
+  rc: 1
+  stdout: "logs-orders-api.json"
+  stderr: "ERROR: (gcloud.logging.read) PERMISSION_DENIED: Cloud Logging API has not been used in project 123456789012 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/logging.googleapis.com/overview?project=123456789012 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.\n- '@type': type.googleapis.com/google.rpc.ErrorInfo\n  domain: googleapis.com\n  metadata:\n    consumer: projects/123456789012\n    service: logging.googleapis.com\n  reason: SERVICE_DISABLED\n"
+  source: "https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/logging/read.py and api_lib/logging/common.py (entries.list, --order, --limit, --freshness)"

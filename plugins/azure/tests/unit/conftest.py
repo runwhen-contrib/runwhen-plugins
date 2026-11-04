@@ -41,6 +41,25 @@ def vault(name, group=None):
     }
 
 
+CLUSTER_GROUP_OF = {
+    "aks-orders-dev": "rg-orders-dev",
+    "aks-orders-prod": "rg-orders-prod",
+    "nope": "rg-orders-dev",
+}
+
+
+def cluster(name, group=None):
+    """The target of an AKS cluster run, as the SDK builds it from the resource path."""
+    group = group or CLUSTER_GROUP_OF.get(name, "rg-orders-dev")
+    return {
+        "path": f"azure/subscriptions/{SUB}/resourcegroups/{group}/aks-clusters/{name}",
+        "type": "azure/aks-cluster",
+        "subscription": SUB,
+        "resourcegroup": group,
+        "name": name,
+    }
+
+
 SETTINGS = {
     "maxItems": 200,
     "commandTimeout": "60s",
@@ -49,6 +68,11 @@ SETTINGS = {
     "requestThreshold": 1000,
     "latencyThresholdMs": 500,
     "metricInterval": "PT1H",
+    # declared by azure-aks-health only; harmless elsewhere
+    "cpuThresholdPercent": 80,
+    "memoryThresholdPercent": 80,
+    "diskThresholdPercent": 80,
+    "activityScanLimit": 500,
 }
 
 

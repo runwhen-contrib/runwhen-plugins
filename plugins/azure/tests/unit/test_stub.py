@@ -49,6 +49,8 @@ def test_the_scenarios_this_plugin_records_exist():
         "category-group",
         "dedicated",
         "group-forbidden",
+        "stopped",
+        "monitor-forbidden",
     }
 
 
@@ -354,7 +356,7 @@ def test_record_sh_replays_with_the_stub_off_the_path(recorder):
     done, calls = recorder("azure-base/discover/healthy")
     assert done.returncode == 0, done.stderr
     replays = [c for c in calls if "--record" not in c["argv"]]
-    assert [c["argv"][1] for c in replays] == ["azure-base", "azure-kv-health"]
+    assert [c["argv"][1] for c in replays] == ["azure-base", "azure-kv-health", "azure-aks-health"]
     assert all(not c["stub_on_path"] and c["scenario"] is None for c in replays)
 
 
