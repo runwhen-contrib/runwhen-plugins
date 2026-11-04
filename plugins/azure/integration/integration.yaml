@@ -47,4 +47,10 @@ authMethods:
 permissions:
   schema: ./schemas/azure-permission.json    # one permission = an RBAC action or dataAction (D68)
 
+# --- how the platform plugs this integration in -------------------------------
+# check-permissions (simulating the declared actions against the identity's role assignments) comes
+# after the pilot (Appendix C4); until then permissions are declared and shown but unverified.
+entryPoints:
+  discovery: { task: azure-base/discover, schedule: "*/15 * * * *" }
+
 recognizers: []                              # nothing in Kubernetes or elsewhere says "this is an Azure subscription"
