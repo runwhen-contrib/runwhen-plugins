@@ -1,0 +1,43 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: aws@1
+defaults: { credentials: aws/sdk, timeout: 120s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries any list output returns (the lists of this skill are also cut at 50)" }
+  cpuUtilizationThreshold: { type: number, default: 80, min: 0, max: 100, description: "CPUUtilization in percent above which instance-metrics sets cpuAverageAboveThreshold (the window's average) and cpuMaxAboveThreshold (its highest period maximum); strictly above, so a value equal to it is not above" }
+  cpuCreditBalanceThreshold: { type: number, default: 20, min: 0, description: "CPU credits (a T-family instance) below which instance-metrics sets cpuCreditBalanceBelowThreshold from the lowest balance of the window; strictly below" }
+tasks:
+  - name: instance-config
+    title: Instance configuration and state
+    description: What EC2 reports about the instance - state (pending, running, shutting-down, terminated, stopping, stopped) with the reason code and message of its last change, instance type and whether it is burstable, launch time, availability zone, tenancy, architecture, platform, lifecycle (on-demand or spot), EBS optimization, monitoring level, IAM instance profile ARN, VPC, subnet, private and public IPs, security group ids, IMDSv2 requirement, attached EBS volumes (id, device, status, delete on termination) and tags. A tag whose key names a secret or whose value looks like one is listed by key only. Never requests or returns the instance's user data, console output or key pair. Read-only.
+    script: scripts/instance_config.py
+    tags: [ec2, configuration]
+    readOnly: true
+    timeout: 60s
+    permissions:
+      - { action: "ec2:DescribeInstances" }
+    outputs:
+      instance: { schema: ./schemas/instance.v1.json, description: "The instance's description and state as EC2 reports them; tags that look secret are redacted" }
+  - name: instance-status
+    title: Instance status checks and scheduled events
+    description: The system status check, the instance status check and the attached EBS status check of the instance (ok, impaired, insufficient-data, not-applicable or initializing, with the reachability details and since when), and its scheduled events (instance-reboot, system-reboot, system-maintenance, instance-retirement, instance-stop) with their window and whether each is completed or canceled. Asks for stopped instances too (--include-all-instances), whose checks are not-applicable. The impaired booleans are true for impaired, false for ok and null for anything EC2 could not evaluate - unknown is not passing. Read-only.
+    script: scripts/instance_status.py
+    tags: [ec2, status-checks, events]
+    readOnly: true
+    timeout: 60s
+    permissions:
+      - { action: "ec2:DescribeInstanceStatus" }
+    outputs:
+      checks: { schema: ./schemas/checks.v1.json, description: "The instance's state, its three status checks and the booleans they give, and its scheduled events" }
+  - name: instance-metrics
+    title: Instance CloudWatch metrics
+    description: CPUUtilization (average, highest maximum), NetworkIn and NetworkOut, EBS read and write bytes and operations, and for a T-family instance the CPU credit balance (lowest, mean) and credits spent, from CloudWatch AWS/EC2 over the look-back window, with the datapoint count of each and whether the CPU average, the CPU maximum and the lowest credit balance cross the thresholds in settings. A metric without datapoints is null, never 0, and with no CPUUtilization datapoints hasData is false and every threshold boolean is null - a stopped or just launched instance publishes nothing, which says nothing about its load. Reads the instance first (so one that does not exist is not_found, and its state and type are reported). Periods are 5 minutes up to a 3-day window and 1 hour above; the window is not aligned to the period. The metric loop is bounded to 90 seconds. Read-only.
+    script: scripts/instance_metrics.py
+    tags: [ec2, metrics, cloudwatch]
+    readOnly: true
+    inputs:
+      since: { type: duration, default: 1h, description: "How far back to look, at most 14d" }
+    permissions:
+      - { action: "ec2:DescribeInstances" }
+      - { action: "cloudwatch:GetMetricStatistics" }
+    outputs:
+      metrics: { schema: ./schemas/metrics.v1.json, description: "Window, instance state and type, hasData, CPU, network, EBS and CPU credit facts with datapoint counts and the threshold booleans; a metric whose call failed is null with a scoped error, and so is anything that needs data when there was none" }

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An EC2 instance's status checks and scheduled events",
+  "type": "object",
+  "$defs": {
+    "check": {
+      "type": ["object", "null"],
+      "properties": {
+        "status": {"enum": ["ok", "impaired", "insufficient-data", "not-applicable", "initializing", null], "description": "As EC2 reports it. Only ok and impaired are a result; the rest is unknown"},
+        "details": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": ["string", "null"], "description": "reachability"},
+              "status": {"type": ["string", "null"], "description": "passed, failed, insufficient-data or initializing"},
+              "impairedSince": {"type": ["string", "null"]}
+            },
+            "required": ["name", "status", "impairedSince"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["status", "details"],
+      "additionalProperties": false,
+      "description": "null when EC2 did not return this check"
+    }
+  },
+  "properties": {
+    "id": {"type": "string"},
+    "region": {"type": "string"},
+    "availabilityZone": {"type": ["string", "null"]},
+    "state": {
+      "type": "object",
+      "properties": {
+        "name": {"type": ["string", "null"]},
+        "code": {"type": ["integer", "null"]}
+      },
+      "required": ["name", "code"],
+      "additionalProperties": false
+    },
+    "checksApply": {"type": "boolean", "description": "The instance is running; EC2 runs status checks only for running instances, so every check of a stopped one is not-applicable"},
+    "systemStatus": {"$ref": "#/$defs/check"},
+    "instanceStatus": {"$ref": "#/$defs/check"},
+    "attachedEbsStatus": {"$ref": "#/$defs/check"},
+    "systemStatusImpaired": {"type": ["boolean", "null"], "description": "true: impaired; false: ok; null: insufficient-data, initializing, not-applicable or not returned (unknown is not passing)"},
+    "instanceStatusImpaired": {"type": ["boolean", "null"], "description": "As systemStatusImpaired, for the instance check"},
+    "attachedEbsStatusImpaired": {"type": ["boolean", "null"], "description": "As systemStatusImpaired, for the attached EBS volumes check"},
+    "events": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": ["string", "null"]},
+          "code": {"type": ["string", "null"], "description": "instance-reboot, system-reboot, system-maintenance, instance-retirement or instance-stop"},
+          "description": {"type": ["string", "null"], "maxLength": 1024},
+          "notBefore": {"type": ["string", "null"]},
+          "notAfter": {"type": ["string", "null"]},
+          "notBeforeDeadline": {"type": ["string", "null"], "description": "The latest the event can be delayed to, when it can be rescheduled"},
+          "completed": {"type": "boolean", "description": "The description starts with [Completed]"},
+          "canceled": {"type": "boolean", "description": "The description starts with [Canceled]"},
+          "pending": {"type": "boolean", "description": "Neither completed nor canceled"},
+          "truncated": {"type": "boolean"}
+        },
+        "required": ["id", "code", "description", "notBefore", "notAfter", "notBeforeDeadline", "completed", "canceled", "pending", "truncated"],
+        "additionalProperties": false
+      }
+    },
+    "eventCount": {"type": "integer", "description": "Scheduled events EC2 returned, which can exceed the 50 listed"},
+    "pendingEventCount": {"type": "integer"},
+    "hasPendingEvents": {"type": "boolean", "description": "At least one event is neither completed nor canceled"}
+  },
+  "required": [
+    "id", "region", "availabilityZone", "state", "checksApply", "systemStatus", "instanceStatus",
+    "attachedEbsStatus", "systemStatusImpaired", "instanceStatusImpaired", "attachedEbsStatusImpaired", "events",
+    "eventCount", "pendingEventCount", "hasPendingEvents"
+  ],
+  "additionalProperties": false
+}

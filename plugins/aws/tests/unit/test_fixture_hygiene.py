@@ -40,7 +40,8 @@ DOCUMENTED = {
 }
 ALLOWED = {
     "AKIAIOSFODNN7EXAMPLE": "the access key id in AWS's own documentation; planted in the broken log",
-    "hunter2": "a placeholder password planted in the broken log to prove the output scrubs it",
+    "hunter2": "a placeholder password planted in the broken log and in the broken instance's db_password tag to prove the output scrubs it",
+    "6f0b3c2a9d1e4b7a8c5d2e1f0a9b8c7d6e5f4a3b": "a commit-sha-shaped tag value planted in the broken instance to prove long opaque tag values are withheld",
 }
 
 
@@ -171,6 +172,18 @@ def test_a_fixtures_expectation_is_the_scrubbed_output_never_a_planted_value(pat
         assert expect.get("outputs"), "an ok or partial run asserts what it produced"
 
 
+# What an EC2 task must never request, so no recording of one holds it: the user data of an instance
+# (bootstrap scripts, often with credentials), the key pair (name and material) and console output.
+EC2_NEVER = ("UserData", "userData", "KeyMaterial", "KeyName", "KeyFingerprint", "ConsoleOutput")
+
+
+@pytest.mark.parametrize("path", scanned_files(), ids=lambda p: str(p.relative_to(PLUGIN)))
+def test_no_recording_holds_user_data_a_key_pair_or_console_output(path):
+    text = path.read_text()
+    for word in EC2_NEVER:
+        assert word not in text, f"{path.relative_to(PLUGIN)} holds {word}"
+
+
 def test_the_planted_values_are_only_in_the_broken_log_recording():
     holders = {
         str(p.relative_to(PLUGIN))
@@ -181,6 +194,8 @@ def test_the_planted_values_are_only_in_the_broken_log_recording():
     assert holders == {
         "skills/aws-lambda-health/tests/function-errors/broken.yaml",
         "tests/stub/scenarios/broken/logs-filter-log-events.json",
+        # the broken instance's tags: the output withholds both values
+        "tests/stub/scenarios/ec2-broken/ec2-describe-instances-i-0b7c1d2e3f4a5b6c7.json",
     }
 
 
@@ -197,7 +212,15 @@ def test_every_health_task_has_the_four_standard_scenarios(task):
 
 def test_discover_has_its_scenarios_and_every_failure_kind_the_brief_names():
     names = {p.stem for p in (PLUGIN / "skills" / "aws-base" / "tests" / "discover").glob("*.yaml")}
-    assert {"healthy", "partial", "forbidden", "expired", "throttled", "paged"} <= names
+    assert {
+        "healthy",
+        "partial",
+        "forbidden",
+        "expired",
+        "throttled",
+        "paged",
+        "ec2-forbidden",
+    } <= names
 
 
 def test_the_fixture_error_codes_cover_the_classes_the_cli_produces():

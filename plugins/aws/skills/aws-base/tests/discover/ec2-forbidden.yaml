@@ -1,0 +1,243 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012
+now: '2026-11-04T03:42:22.365Z'
+calls:
+- argv:
+  - aws
+  - sts
+  - get-caller-identity
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "UserId": "AIDACKCEVSQ6C2EXAMPLE",
+        "Account": "123456789012",
+        "Arn": "arn:aws:iam::123456789012:user/rw-monitor"
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-regions
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Regions": [
+            {
+                "OptInStatus": "opt-in-not-required",
+                "RegionName": "ap-south-1",
+                "Endpoint": "ec2.ap-south-1.amazonaws.com"
+            },
+            {
+                "OptInStatus": "opt-in-not-required",
+                "RegionName": "eu-west-1",
+                "Endpoint": "ec2.eu-west-1.amazonaws.com"
+            },
+            {
+                "OptInStatus": "opt-in-not-required",
+                "RegionName": "us-east-1",
+                "Endpoint": "ec2.us-east-1.amazonaws.com"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - lambda
+  - list-functions
+  - --query
+  - '{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime,
+    PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus:
+    LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - ap-south-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Functions": [],
+        "NextToken": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - ap-south-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation.
+- argv:
+  - aws
+  - lambda
+  - list-functions
+  - --query
+  - '{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime,
+    PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus:
+    LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Functions": [
+            {
+                "FunctionName": "orders-api",
+                "FunctionArn": "arn:aws:lambda:eu-west-1:123456789012:function:orders-api",
+                "Runtime": "python3.12",
+                "PackageType": "Zip",
+                "MemorySize": 256,
+                "Timeout": 30,
+                "State": "Active",
+                "LastUpdateStatus": "Successful",
+                "LastModified": "2026-10-28T09:14:03.000+0000"
+            },
+            {
+                "FunctionName": "report-batch",
+                "FunctionArn": "arn:aws:lambda:eu-west-1:123456789012:function:report-batch",
+                "Runtime": "python3.12",
+                "PackageType": "Zip",
+                "MemorySize": 512,
+                "Timeout": 300,
+                "State": "Active",
+                "LastUpdateStatus": "Successful",
+                "LastModified": "2026-10-28T09:14:03.000+0000"
+            }
+        ],
+        "NextToken": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation.
+- argv:
+  - aws
+  - lambda
+  - list-functions
+  - --query
+  - '{Functions: Functions[].{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime,
+    PackageType: PackageType, MemorySize: MemorySize, Timeout: Timeout, State: State, LastUpdateStatus:
+    LastUpdateStatus, LastModified: LastModified}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Functions": [],
+        "NextToken": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - ec2
+  - describe-instances
+  - --filters
+  - Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped
+  - --query
+  - '{Instances: Reservations[].Instances[].{InstanceId: InstanceId, InstanceType: InstanceType, State:
+    State.Name, LaunchTime: LaunchTime, AvailabilityZone: Placement.AvailabilityZone, Name: Tags[?Key==''Name'']
+    | [0].Value}, NextToken: NextToken}'
+  - --max-items
+  - '1000'
+  - --region
+  - us-east-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 254
+  stdout: ''
+  stderr: |2
+
+    aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation: You are not authorized to perform this operation.
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    regions:
+      total: 3
+      omitted: 0
+      items:
+      - name: ap-south-1
+        status: forbidden
+        functions: 0
+        instances: null
+      - name: eu-west-1
+        status: forbidden
+        functions: 2
+        instances: null
+      - name: us-east-1
+        status: forbidden
+        functions: 0
+        instances: null
+    summary:
+      counts:
+        account: 1
+        region: 3
+        lambda-function: 2
+        ec2-instance: 0
+      partitions:
+        complete: 4
+        failed: 0
+        forbidden: 3
+        excluded: 0

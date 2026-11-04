@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An EC2 instance's description and state",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string"},
+    "region": {"type": "string"},
+    "arn": {"type": "string", "description": "Built from the target's partition, region and account, not from the credential"},
+    "name": {"type": ["string", "null"], "description": "The Name tag, null when there is none or its value looks like a secret"},
+    "instanceType": {"type": ["string", "null"]},
+    "burstable": {"type": "boolean", "description": "A T-family type (t2, t3, t3a, t4g) that runs on CPU credits"},
+    "state": {
+      "type": "object",
+      "properties": {
+        "name": {"type": ["string", "null"], "description": "pending, running, shutting-down, terminated, stopping or stopped"},
+        "code": {"type": ["integer", "null"]}
+      },
+      "required": ["name", "code"],
+      "additionalProperties": false
+    },
+    "stateReasonCode": {"type": ["string", "null"], "description": "Why the instance last changed state, for example Client.UserInitiatedShutdown, Server.SpotInstanceTermination or Server.InsufficientInstanceCapacity; null while it runs"},
+    "stateReason": {"type": ["string", "null"], "maxLength": 1024},
+    "stateTransitionReason": {"type": ["string", "null"], "maxLength": 1024},
+    "launchTime": {"type": ["string", "null"]},
+    "availabilityZone": {"type": ["string", "null"]},
+    "tenancy": {"type": ["string", "null"]},
+    "architecture": {"type": ["string", "null"]},
+    "platform": {"type": ["string", "null"], "description": "PlatformDetails such as Linux/UNIX or Windows"},
+    "virtualizationType": {"type": ["string", "null"]},
+    "lifecycle": {"type": "string", "description": "on-demand, or spot, scheduled or capacity-block as EC2 reports"},
+    "ebsOptimized": {"type": ["boolean", "null"]},
+    "monitoring": {"type": ["string", "null"], "description": "enabled: detailed (1-minute) monitoring; disabled: basic (5-minute)"},
+    "rootDeviceType": {"type": ["string", "null"]},
+    "imageId": {"type": ["string", "null"]},
+    "iamInstanceProfileArn": {"type": ["string", "null"]},
+    "vpcId": {"type": ["string", "null"]},
+    "subnetId": {"type": ["string", "null"]},
+    "privateIpAddress": {"type": ["string", "null"]},
+    "publicIpAddress": {"type": ["string", "null"]},
+    "securityGroupIds": {"type": "array", "maxItems": 50, "items": {"type": "string"}},
+    "networkInterfaceCount": {"type": "integer"},
+    "imdsTokensRequired": {"type": ["boolean", "null"], "description": "IMDSv2 is required (HttpTokens: required)"},
+    "imdsEndpointEnabled": {"type": ["boolean", "null"]},
+    "blockDevices": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "deviceName": {"type": ["string", "null"]},
+          "volumeId": {"type": ["string", "null"]},
+          "status": {"type": ["string", "null"], "description": "attaching, attached, detaching or detached"},
+          "deleteOnTermination": {"type": ["boolean", "null"]},
+          "attachTime": {"type": ["string", "null"]}
+        },
+        "required": ["deviceName", "volumeId", "status", "deleteOnTermination", "attachTime"],
+        "additionalProperties": false
+      }
+    },
+    "blockDeviceCount": {"type": "integer", "description": "EBS volumes attached, which can exceed the 50 listed"},
+    "tags": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {"type": "string", "maxLength": 128},
+          "value": {"type": ["string", "null"], "maxLength": 256, "description": "null when redacted is true (the key names a secret or the value looks like one) or the tag has no value"},
+          "redacted": {"type": "boolean"}
+        },
+        "required": ["key", "value", "redacted"],
+        "additionalProperties": false
+      }
+    },
+    "tagCount": {"type": "integer", "description": "Tags on the instance, which can exceed the 50 listed"},
+    "tagsRedacted": {"type": "integer", "description": "Tags whose value was withheld because it looks like a secret"},
+    "textTruncated": {"type": "boolean", "description": "A reason text was cut to 1024 characters"}
+  },
+  "required": [
+    "id", "region", "arn", "name", "instanceType", "burstable", "state", "stateReasonCode", "stateReason",
+    "stateTransitionReason", "launchTime", "availabilityZone", "tenancy", "architecture", "platform",
+    "virtualizationType", "lifecycle", "ebsOptimized", "monitoring", "rootDeviceType", "imageId",
+    "iamInstanceProfileArn", "vpcId", "subnetId", "privateIpAddress", "publicIpAddress", "securityGroupIds",
+    "networkInterfaceCount", "imdsTokensRequired", "imdsEndpointEnabled", "blockDevices", "blockDeviceCount",
+    "tags", "tagCount", "tagsRedacted", "textTruncated"
+  ],
+  "additionalProperties": false
+}

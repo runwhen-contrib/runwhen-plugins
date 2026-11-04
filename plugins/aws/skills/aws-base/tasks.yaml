@@ -7,8 +7,8 @@ settings:
   defaultRegion: { type: string, default: us-east-1, description: "Region for the calls that have none of their own (sts get-caller-identity, ec2 describe-regions), passed as --region. Resource calls always use the region of their target" }
 tasks:
   - name: discover
-    title: Discover account, regions and Lambda functions
-    description: Reads the account's identity and, in every enabled region (or the regions setting), lists the Lambda functions, as facts and as an rw.discovery.v1 sync. Every region read is a region item with a function partition (count 0 included); a region that is forbidden or fails keeps its item, is not swept and does not stop the others. Fails with permission_denied when the target account id is not the credential's account. Reports the account id as the root's canonical key. Read-only.
+    title: Discover account, regions, Lambda functions and EC2 instances
+    description: Reads the account's identity and, in every enabled region (or the regions setting), lists the Lambda functions and the EC2 instances that are not terminated, as facts and as an rw.discovery.v1 sync. Every region read is a region item with a partition per type (count 0 included); a list that is forbidden or fails keeps its partition unswept and does not stop the others. Each list is deadline-bounded together with the others (420 s). Fails with permission_denied when the target account id is not the credential's account. Reports the account id as the root's canonical key. Read-only.
     script: scripts/discover.py
     tags: [discovery, inventory]
     readOnly: true
@@ -21,8 +21,9 @@ tasks:
     # regions setting then fails with permission_denied naming ec2:DescribeRegions.
     permissions:
       - { action: "lambda:ListFunctions" }         # per region
+      - { action: "ec2:DescribeInstances" }        # per region
     outputs:
       summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-region errors and root.canonicalKey (accountId)" }
       account: { schema: ./schemas/account.v1.json, description: "Account id, the calling principal, the home region and how many regions were read" }
-      regions: { schema: ./schemas/regions.v1.json, description: "Each region read with its status and function count (0 for an empty region), cut to maxItems" }
-      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this account, its regions and their functions" }
+      regions: { schema: ./schemas/regions.v1.json, description: "Each region read with its status and its function and instance counts (0 for an empty region, null for a list that could not be read), cut to maxItems" }
+      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this account, its regions and their functions and instances" }

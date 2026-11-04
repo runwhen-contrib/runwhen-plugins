@@ -20,11 +20,12 @@ and said so.
 import json
 import os
 import re
+import glob
 import subprocess
 import sys
 import tempfile
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -147,6 +148,204 @@ def raw_same(c):
     return c
 
 
+# --- EC2: the API response a projection came from, encoded from the CLI's own service model ---------------
+# EC2 answers in XML. The model in the CLI's botocore (service-2.json) names every member, its
+# locationName and its shape, so one generic encoder turns the API-shaped dict a builder makes into
+# the XML the real CLI parses, instead of hand-writing tags for each field.
+
+_MODEL = None
+
+
+def ec2_model():
+    global _MODEL
+    if _MODEL is None:
+        path = glob.glob(
+            "/usr/local/aws-cli/v2/*/dist/awscli/botocore/data/ec2/2016-11-15/service-2.json"
+        )[0]
+        _MODEL = json.loads(Path(path).read_text())
+    return _MODEL
+
+
+def xml_text(value):
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def xml_value(shape_name, value, name):
+    """The element `name` holding `value` of the model shape `shape_name`."""
+    shapes = ec2_model()["shapes"]
+    shape = shapes[shape_name]
+    kind = shape["type"]
+    if kind == "structure":
+        inner = "".join(
+            xml_value(shape["members"][k]["shape"], v, shape["members"][k].get("locationName", k))
+            if not shapes[shape["members"][k]["shape"]].get("flattened")
+            else xml_flat(
+                shape["members"][k]["shape"], v, shape["members"][k].get("locationName", k)
+            )
+            for k, v in value.items()
+        )
+        return f"<{name}>{inner}</{name}>"
+    if kind == "list":
+        item = shape["member"].get("locationName", "item")
+        return (
+            f"<{name}>"
+            + "".join(xml_value(shape["member"]["shape"], v, item) for v in value)
+            + f"</{name}>"
+        )
+    if kind == "timestamp":
+        moment = datetime.fromisoformat(value)
+        return (
+            f"<{name}>{moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')}</{name}>"
+        )
+    if kind == "boolean":
+        return f"<{name}>{'true' if value else 'false'}</{name}>"
+    return f"<{name}>{xml_text(value)}</{name}>"
+
+
+def xml_flat(shape_name, value, name):
+    shape = ec2_model()["shapes"][shape_name]
+    return "".join(xml_value(shape["member"]["shape"], v, name) for v in value)
+
+
+def ec2_response(op, raw):
+    """<OpResponse> for an API-shaped dict, members named and ordered by the operation's output
+    shape."""
+    model = ec2_model()
+    output = model["operations"][op]["output"]["shape"]
+    shape = model["shapes"][output]
+    body = "".join(
+        xml_value(shape["members"][k]["shape"], v, shape["members"][k].get("locationName", k))
+        for k, v in raw.items()
+    )
+    return (
+        f'<{op}Response xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">'
+        f"<requestId>req-1</requestId>{body}</{op}Response>"
+    )
+
+
+def raw_describe_instances(c):
+    """describe-instances from either projection: one instance (instance-config: OwnerId and
+    Instance) or a list (discover: Instances). Adds what each projection must drop: the key pair
+    name, public DNS and, for the list, tags other than Name."""
+    if "Instance" in c:
+        reservations = [(c["OwnerId"], [full_instance(c["Instance"])])]
+    else:
+        reservations = [("123456789012", [list_instance(i)]) for i in c["Instances"]]
+    return {
+        "Reservations": [
+            {"ReservationId": f"r-{n:017x}", "OwnerId": owner, "Instances": instances}
+            for n, (owner, instances) in enumerate(reservations, 1)
+        ]
+    }
+
+
+def list_instance(row):
+    tags = [{"Key": "team", "Value": "payments"}]
+    if row.get("Name"):
+        tags.insert(0, {"Key": "Name", "Value": row["Name"]})
+    return drop_none(
+        {
+            "InstanceId": row["InstanceId"],
+            "InstanceType": row["InstanceType"],
+            "State": {"Code": STATE_CODES[row["State"]], "Name": row["State"]},
+            "LaunchTime": row["LaunchTime"],
+            "Placement": {"AvailabilityZone": row["AvailabilityZone"], "Tenancy": "default"},
+            "KeyName": "ops-keypair",
+            "PublicDnsName": "ec2-203-0-113-10.eu-west-1.compute.amazonaws.com",
+            "Tags": tags,
+        }
+    )
+
+
+STATE_CODES = {
+    "pending": 0,
+    "running": 16,
+    "shutting-down": 32,
+    "terminated": 48,
+    "stopping": 64,
+    "stopped": 80,
+}
+
+
+def full_instance(c):
+    """The API's Instance for the instance-config projection (the inverse of INSTANCE_QUERY)."""
+    raw = {
+        "InstanceId": c["InstanceId"],
+        "InstanceType": c["InstanceType"],
+        "State": {"Code": c["StateCode"], "Name": c["State"]},
+        "StateTransitionReason": c["StateTransitionReason"],
+        "LaunchTime": c["LaunchTime"],
+        "Placement": drop_none({"AvailabilityZone": c["AvailabilityZone"], "Tenancy": c["Tenancy"]}),
+        "Architecture": c["Architecture"],
+        "PlatformDetails": c["PlatformDetails"],
+        "VirtualizationType": c["VirtualizationType"],
+        "InstanceLifecycle": c["InstanceLifecycle"],
+        "EbsOptimized": c["EbsOptimized"],
+        "Monitoring": {"State": c["Monitoring"]},
+        "RootDeviceType": c["RootDeviceType"],
+        "ImageId": c["ImageId"],
+        "VpcId": c["VpcId"],
+        "SubnetId": c["SubnetId"],
+        "PrivateIpAddress": c["PrivateIpAddress"],
+        "PublicIpAddress": c["PublicIpAddress"],
+        "KeyName": "ops-keypair",
+        "PublicDnsName": "ec2-203-0-113-10.eu-west-1.compute.amazonaws.com",
+        "MetadataOptions": drop_none({"HttpTokens": c["HttpTokens"], "HttpEndpoint": c["HttpEndpoint"]}),
+        "SecurityGroups": [
+            {"GroupId": g, "GroupName": f"sg-name-{n}"} for n, g in enumerate(c["SecurityGroupIds"] or [])
+        ],
+        "NetworkInterfaces": [
+            {"NetworkInterfaceId": f"eni-{n:017x}", "Status": "in-use"}
+            for n in range(c["NetworkInterfaceCount"])
+        ],
+        "BlockDeviceMappings": [
+            {
+                "DeviceName": b["DeviceName"],
+                "Ebs": drop_none({
+                    "VolumeId": b["VolumeId"], "Status": b["Status"],
+                    "DeleteOnTermination": b["DeleteOnTermination"], "AttachTime": b["AttachTime"],
+                }),
+            }
+            for b in (c["BlockDevices"] or [])
+        ],
+        "Tags": [drop_none(t) for t in (c["Tags"] or [])],
+    }  # fmt: skip
+    if c.get("IamInstanceProfileArn"):
+        raw["IamInstanceProfile"] = {"Arn": c["IamInstanceProfileArn"], "Id": "AIPAEXAMPLEPROFILE"}
+    if c.get("StateReasonCode") or c.get("StateReasonMessage"):
+        raw["StateReason"] = drop_none(
+            {"Code": c["StateReasonCode"], "Message": c["StateReasonMessage"]}
+        )
+    if not raw["Tags"]:
+        del raw["Tags"]
+    return drop_none(raw)
+
+
+def deep_drop_none(value):
+    """The API leaves out what a --query projection prints as null."""
+    if isinstance(value, dict):
+        return {k: deep_drop_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [deep_drop_none(v) for v in value]
+    return value
+
+
+def raw_describe_instance_status(c):
+    out = []
+    for row in c["InstanceStatuses"]:
+        entry = {
+            "InstanceId": row["InstanceId"],
+            "AvailabilityZone": row["AvailabilityZone"],
+            "InstanceState": {"Code": row["StateCode"], "Name": row["State"]},
+            "SystemStatus": row["SystemStatus"],
+            "InstanceStatus": row["InstanceStatus"],
+            "AttachedEbsStatus": row.get("AttachedEbsStatus"),
+            "Events": row.get("Events"),
+        }
+        out.append(deep_drop_none(entry))
+    return {"InstanceStatuses": out}
+
+
 # (service, operation) -> (protocol, builder). The builder gets the canned JSON.
 RAW = {
     ("lambda", "list-functions"): ("rest-json", raw_list_functions),
@@ -157,11 +356,14 @@ RAW = {
     ("cloudwatch", "get-metric-statistics"): ("json10", raw_same),
     ("sts", "get-caller-identity"): ("query", raw_same),
     ("ec2", "describe-regions"): ("ec2", raw_same),
+    ("ec2", "describe-instances"): ("ec2model", raw_describe_instances),
+    ("ec2", "describe-instance-status"): ("ec2model", raw_describe_instance_status),
 }
 STATUS = {
     "AccessDeniedException": 403, "AccessDenied": 403, "UnauthorizedOperation": 403,
     "ExpiredToken": 403, "ExpiredTokenException": 403, "ResourceNotFoundException": 404,
     "TooManyRequestsException": 429, "Throttling": 400, "ThrottlingException": 400,
+    "InvalidInstanceID.NotFound": 400, "RequestLimitExceeded": 503,
 }  # fmt: skip
 
 
@@ -256,6 +458,9 @@ def answer_for(service, op, protocol, canned, error):
         return 200, {"Content-Type": "application/x-amz-json-1.1"}, json.dumps(raw).encode()
     if protocol == "json10":
         return 200, {"Content-Type": "application/x-amz-json-1.0"}, json.dumps(epoch(raw)).encode()
+    if protocol == "ec2model":
+        op_name = "".join(p.capitalize() for p in op.split("-"))
+        return 200, {"Content-Type": "text/xml"}, ec2_response(op_name, raw).encode()
     return 200, {"Content-Type": "text/xml"}, xml_ok(service, op, canned).encode()
 
 
@@ -296,7 +501,7 @@ def main(argv):
             else:
                 text = path.read_text() if path else ""
                 canned = json.loads(text) if text.strip() else {}
-                if name == "paged" and op == "list-functions":
+                if name == "paged" and op in ("list-functions", "describe-instances"):
                     skipped += 1
                     print(f"skip  {label} (the CLI's own page token)")
                     continue

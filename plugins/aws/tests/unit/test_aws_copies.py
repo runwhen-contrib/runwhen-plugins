@@ -25,7 +25,7 @@ SYNC = {
 PACKAGE = {"postgres": "pg_base", "kubernetes": "k8s_base"}
 
 # every aws skill that runs the CLI carries the shared files; a skill missing here is untested
-SKILLS_WITH_COPIES = {"aws-base", "aws-lambda-health"}
+SKILLS_WITH_COPIES = {"aws-base", "aws-lambda-health", "aws-ec2-health"}
 
 
 def copies(name):
@@ -74,3 +74,13 @@ def test_budget_py_is_the_postgres_one_with_the_package_name_changed():
     ours = (SKILLS / "aws-base" / "lib" / "aws_base" / "budget.py").read_text()
     theirs = SYNC["postgres"].with_name("budget.py").read_text()
     assert ours == theirs.replace("pg_base", "aws_base")
+
+
+def test_text_py_is_aws_bases_in_every_skill_that_shows_tags():
+    """The tag secret check is one rule: aws-base names the Name tag of an instance in discovery
+    and aws-ec2-health lists the tags, with the same verdict."""
+    reference = (SKILLS / "aws-base" / "lib" / "aws_base" / "text.py").read_bytes()
+    holders = {p.parents[2].name for p in SKILLS.glob("*/lib/*/text.py")}
+    assert holders == {"aws-base", "aws-ec2-health"}
+    for path in SKILLS.glob("*/lib/*/text.py"):
+        assert path.read_bytes() == reference, f"{path} differs from aws-base's text.py"

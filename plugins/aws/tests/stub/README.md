@@ -71,14 +71,30 @@ us-east-1; the function of the health skill is `orders-api` in eu-west-1.
 | `throttled` | `TooManyRequestsException` / `Throttling` / `ThrottlingException` after `(reached max retries: 2)` for one region, one metric and the logs |
 | `expired` | `ExpiredToken` (STS) / `ExpiredTokenException` |
 | `partial` | an SCP denies `lambda:ListFunctions` in ap-south-1 (explicit deny wording) |
-| `paged` | the eu-west-1 function list takes two pages (`NextToken` then `--starting-token`) |
+| `paged` | the eu-west-1 function list and its instance list take two pages each (`NextToken` then `--starting-token`) |
+| `ec2-denied` | lambda lists fine, `ec2:DescribeInstances` is `UnauthorizedOperation` in every region (discover: the instance list is forbidden, the function list stands) |
+
+The `aws-ec2-health` scenarios are prefixed `ec2-`. Three instances in eu-west-1: `i-0a1b2c3d4e5f60718`
+(`orders-web-1`, t3.medium), `i-0b7c1d2e3f4a5b6c7` (`orders-batch-2`, t3.small) and
+`i-0c0ffee0123456789` (`batch-runner`, m5.large). `healthy`, `broken` and `paged` also list them for discover.
+
+| Scenario | What it models |
+| --- | --- |
+| `ec2-healthy` | `orders-web-1` running: both checks ok, no events, 4 datapoints of CPU (max 41 percent), network, EBS and a CPU credit balance around 490 |
+| `ec2-broken` | `orders-batch-2` running: the system check impaired since 00:41, a pending `instance-retirement` and a completed `system-reboot`, CPU near 100 percent, credit balance down to 3.2, IMDSv2 optional, two volumes, tags `db_password=hunter2` and a commit-sha-shaped `build` (both withheld from the output) |
+| `ec2-stopped` | `batch-runner` stopped by the user: checks `not-applicable`, state reason `Client.UserInitiatedShutdown`, no datapoints for any metric (no data, not zero) |
+| `ec2-forbidden` | `UnauthorizedOperation` for `DescribeInstances` and `DescribeInstanceStatus` |
+| `ec2-not-found` | `InvalidInstanceID.NotFound` for both |
+| `ec2-throttled` | `RequestLimitExceeded` for `DescribeInstanceStatus`; `Throttling` for the `NetworkIn` metric (the rest stand) |
+| `ec2-metrics-forbidden` | the instance reads, every `GetMetricStatistics` call `AccessDenied` |
 
 ## Where the canned output comes from (plan C7)
 
 Canned output is the pinned CLI's, not typed from memory. `verify/verify.sh` runs aws CLI
 **2.39.3** in the runtime image (`rwp-runtime-aws:dev`, as uid 65532 on a read-only root, no network
 but loopback) against a fake HTTP endpoint that answers in each service's own wire protocol
-(Lambda rest-json, Logs json 1.1, CloudWatch json 1.0, STS query, EC2 ec2), once for every call of
+(Lambda rest-json, Logs json 1.1, CloudWatch json 1.0, STS query, EC2 ec2; the EC2 XML answers are
+encoded from the CLI's own service model, member names and shapes included), once for every call of
 every scenario. It turns each canned file back into the API response its `--query` projection comes
 from (adding what the projection must drop, such as a function's environment variables) and
 compares what the CLI prints with the file: the key order, padding, `null`s, number formatting, and

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "An EC2 instance's CloudWatch metrics over a window",
+  "type": "object",
+  "properties": {
+    "window": {
+      "type": "object",
+      "properties": {
+        "start": {"type": "string"},
+        "end": {"type": "string"},
+        "seconds": {"type": "integer"}
+      },
+      "required": ["start", "end", "seconds"],
+      "additionalProperties": false
+    },
+    "periodSeconds": {"type": "integer", "description": "The CloudWatch period of each datapoint: 300 up to a 3-day window, 3600 above. The first datapoint can cover less than a full period and the last is still filling"},
+    "instanceState": {"type": ["string", "null"], "description": "running, stopped... as EC2 reports; a stopped instance publishes no metrics"},
+    "instanceType": {"type": ["string", "null"]},
+    "burstable": {"type": "boolean", "description": "A T-family type; only then cpuCredits is read"},
+    "monitoring": {"type": ["string", "null"], "description": "enabled: detailed (1-minute) monitoring; disabled: basic (5-minute)"},
+    "hasData": {"type": ["boolean", "null"], "description": "CPUUtilization has datapoints in the window; false: CloudWatch has nothing for the instance (stopped, just launched, or the metrics are not in yet), which says nothing about its load; null when the CPUUtilization call failed"},
+    "cpu": {
+      "type": ["object", "null"],
+      "properties": {
+        "averagePercent": {"type": ["number", "null"], "description": "CPUUtilization average over the window, weighted by each datapoint's sample count; null with no datapoints"},
+        "maxPercent": {"type": ["number", "null"], "description": "Highest CPUUtilization maximum of any period"},
+        "sampleCount": {"type": "number"}
+      },
+      "required": ["averagePercent", "maxPercent", "sampleCount"],
+      "additionalProperties": false,
+      "description": "null when the CPUUtilization call failed"
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "inBytes": {"type": ["number", "null"], "description": "Sum of NetworkIn over the window; null with no datapoints (unknown, not 0) or when the call failed"},
+        "outBytes": {"type": ["number", "null"], "description": "Sum of NetworkOut"},
+        "hasData": {"type": ["boolean", "null"], "description": "Either metric has datapoints; null when both calls failed"}
+      },
+      "required": ["inBytes", "outBytes", "hasData"],
+      "additionalProperties": false
+    },
+    "ebs": {
+      "type": "object",
+      "properties": {
+        "readBytes": {"type": ["number", "null"], "description": "Sum of EBSReadBytes over the window; null with no datapoints (an instance with no EBS volume publishes none) or when the call failed"},
+        "writeBytes": {"type": ["number", "null"]},
+        "readOps": {"type": ["number", "null"]},
+        "writeOps": {"type": ["number", "null"]},
+        "hasData": {"type": ["boolean", "null"], "description": "Any of the four has datapoints; null when all four calls failed"}
+      },
+      "required": ["readBytes", "writeBytes", "readOps", "writeOps", "hasData"],
+      "additionalProperties": false
+    },
+    "cpuCredits": {
+      "type": ["object", "null"],
+      "properties": {
+        "minimum": {"type": ["number", "null"], "description": "The lowest CPUCreditBalance of the window; null with no datapoints"},
+        "average": {"type": ["number", "null"], "description": "Mean of the per-period average balances"},
+        "usage": {"type": ["number", "null"], "description": "Sum of CPUCreditUsage: credits spent in the window"},
+        "hasData": {"type": ["boolean", "null"], "description": "CPUCreditBalance has datapoints; null when its call failed"}
+      },
+      "required": ["minimum", "average", "usage", "hasData"],
+      "additionalProperties": false,
+      "description": "null for a type that has no CPU credits"
+    },
+    "datapoints": {
+      "type": "object",
+      "properties": {
+        "CPUUtilization": {"type": ["integer", "null"]},
+        "NetworkIn": {"type": ["integer", "null"]},
+        "NetworkOut": {"type": ["integer", "null"]},
+        "EBSReadBytes": {"type": ["integer", "null"]},
+        "EBSWriteBytes": {"type": ["integer", "null"]},
+        "EBSReadOps": {"type": ["integer", "null"]},
+        "EBSWriteOps": {"type": ["integer", "null"]},
+        "CPUCreditBalance": {"type": ["integer", "null"]},
+        "CPUCreditUsage": {"type": ["integer", "null"]}
+      },
+      "required": ["CPUUtilization", "NetworkIn", "NetworkOut", "EBSReadBytes", "EBSWriteBytes", "EBSReadOps", "EBSWriteOps", "CPUCreditBalance", "CPUCreditUsage"],
+      "additionalProperties": false,
+      "description": "Datapoints CloudWatch returned per metric; 0 means no data in the window; null means the call failed or, for the credit metrics, the type has none"
+    },
+    "cpuAverageAboveThreshold": {"type": ["boolean", "null"], "description": "cpu.averagePercent > the cpuUtilizationThreshold setting (strictly); null with no CPU data"},
+    "cpuMaxAboveThreshold": {"type": ["boolean", "null"], "description": "cpu.maxPercent > the cpuUtilizationThreshold setting (strictly); null with no CPU data"},
+    "cpuCreditBalanceBelowThreshold": {"type": ["boolean", "null"], "description": "cpuCredits.minimum < the cpuCreditBalanceThreshold setting (strictly); null for a type without CPU credits and with no credit data"}
+  },
+  "required": [
+    "window", "periodSeconds", "instanceState", "instanceType", "burstable", "monitoring", "hasData", "cpu",
+    "network", "ebs", "cpuCredits", "datapoints", "cpuAverageAboveThreshold", "cpuMaxAboveThreshold",
+    "cpuCreditBalanceBelowThreshold"
+  ],
+  "additionalProperties": false
+}

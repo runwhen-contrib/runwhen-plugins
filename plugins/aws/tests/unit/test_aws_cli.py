@@ -330,6 +330,12 @@ EXPECTED = {
     ("expired", "ExpiredToken"): "permission_denied",
     ("expired", "ExpiredTokenException"): "permission_denied",
     ("partial", "AccessDeniedException"): "permission_denied",
+    ("ec2-denied", "UnauthorizedOperation"): "permission_denied",
+    ("ec2-forbidden", "UnauthorizedOperation"): "permission_denied",
+    ("ec2-metrics-forbidden", "AccessDenied"): "permission_denied",
+    ("ec2-not-found", "InvalidInstanceID.NotFound"): "not_found",
+    ("ec2-throttled", "RequestLimitExceeded"): "rate_limited",
+    ("ec2-throttled", "Throttling"): "rate_limited",
 }
 
 
