@@ -1,0 +1,201 @@
+name: runtime-aws
+
+# The aws@1 runtime image (runtimes/aws). PRs and branch pushes build it for
+# linux/amd64 and linux/arm64 and smoke-test both; pushes to main and v13/plugins also publish it.
+# A tag runtimes/aws/v<semver> publishes nothing new: it checks that runtime.yaml pins
+# exactly the digests already pushed and adds the version tag to that image (runtimes/README.md).
+
+on:
+  pull_request:
+    paths:
+      - "runtimes/aws/**"
+      - "ci/check_runtime.py"
+      - "ci/tests/test_check_runtime.py"
+      - ".github/workflows/runtime-aws.yml"
+  push:
+    branches: [main, v13/plugins]
+    paths:
+      - "runtimes/aws/**"
+      # Pinning the pushed digests must not rebuild (and re-push) a different image.
+      - "!runtimes/aws/runtime.yaml"
+      - "ci/check_runtime.py"
+      - "ci/tests/test_check_runtime.py"
+      - ".github/workflows/runtime-aws.yml"
+    tags: ["runtimes/aws/v*"]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/runwhen-contrib/runwhen-plugins-runtime-aws
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml
+      - run: python -m pytest ci/tests/test_check_runtime.py -q
+      - name: Validate runtime.yaml
+        run: |
+          set -euo pipefail
+          if [ "${IS_TAG}" = "true" ]; then
+            # Strict: the tag equals name and version, and the all-zero placeholder is refused.
+            python ci/check_runtime.py tag "${TAG}"
+          else
+            # Until the "pin aws runtime digests" PR the digests are the placeholder.
+            python ci/check_runtime.py validate --allow-placeholder
+          fi
+      - name: Tags are cut from main only
+        if: env.IS_TAG == 'true'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${TAG} points at ${GITHUB_SHA}, which is not on main; runtime tags are cut from main only" >&2
+            exit 1
+          fi
+
+  smoke:
+    # One platform per job so each image is built and run natively (arm64 under QEMU).
+    needs: check
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: runtimes/aws
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          tags: runtime-aws:smoke
+          build-args: |
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=runtime-aws-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=runtime-aws-${{ matrix.platform }}
+      - name: Smoke
+        run: docker run --rm -i --platform "${{ matrix.platform }}" --entrypoint sh runtime-aws:smoke -s < runtimes/aws/smoke.sh
+      - name: Smoke as the runner executes it (uid 65532, read-only root)
+        run: docker run --rm -i --platform "${{ matrix.platform }}" --user 65532 --read-only --tmpfs /work:rw,mode=1777 --entrypoint sh runtime-aws:smoke -s < runtimes/aws/smoke.sh
+
+  publish:
+    # Branch pushes only: a pull request (including one from a fork) never gets a write token
+    # used here, and a tag publishes through the release job.
+    needs: smoke
+    if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: runtimes/aws
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.head_commit.timestamp }}
+          cache-from: |
+            type=gha,scope=runtime-aws-linux/amd64
+            type=gha,scope=runtime-aws-linux/arm64
+      - name: Smoke the pushed image (native platform)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker run --rm -i --entrypoint sh "${IMAGE}@${DIGEST}" -s < runtimes/aws/smoke.sh
+      - name: Digests for runtime.yaml
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Pushed ${IMAGE}@${DIGEST}"
+            echo
+            echo "Put this in \`runtimes/aws/runtime.yaml\` (PR \"pin aws runtime digests\"), then tag:"
+            echo
+            echo '```yaml'
+            python ci/check_runtime.py digests "${IMAGE}@${DIGEST}"
+            echo '```'
+          } | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  release:
+    # Tag runtimes/aws/v<semver>: no rebuild (a rebuild would not reproduce the digests
+    # runtime.yaml pins). Verify the pinned image is in the registry with exactly those digests,
+    # then give it the version tag.
+    needs: check
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Registry digests equal runtime.yaml
+        run: python ci/check_runtime.py compare
+      - name: Tag the pinned image with the version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG##*/v}"
+          index="$(python -c 'import yaml; print(yaml.safe_load(open("runtimes/aws/runtime.yaml"))["digests"]["index"])')"
+          # Never move a published tag: an existing :X.Y.Z must already be this index.
+          if existing="$(docker buildx imagetools inspect "${IMAGE}:${version}" --format '{{.Manifest.Digest}}' 2>err.txt)"; then
+            if [ "${existing}" != "${index}" ]; then
+              echo "::error::${IMAGE}:${version} exists with index ${existing}, not the ${index} runtime.yaml pins; published tags are never moved" >&2
+              exit 1
+            fi
+          elif ! grep -q 'not found' err.txt; then
+            cat err.txt >&2
+            echo "::error::cannot tell whether ${IMAGE}:${version} exists" >&2
+            exit 1
+          fi
+          docker buildx imagetools create --tag "${IMAGE}:${version}" "${IMAGE}@${index}"
+          docker buildx imagetools inspect "${IMAGE}:${version}"
