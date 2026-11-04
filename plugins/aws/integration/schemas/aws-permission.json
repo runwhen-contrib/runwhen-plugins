@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AWS permission",
+  "description": "One permission in IAM's own terms (D68): an action, optionally narrowed to a resource ARN pattern. A task declares the actions its CLI calls need (for example lambda:ListFunctions); a connection is checked against them with iam:SimulatePrincipalPolicy. An operation that needs no IAM permission (sts:GetCallerIdentity) is not declared.",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "An IAM action, service prefix and name, for example logs:FilterLogEvents. The name may end in * (lambda:Get*).",
+      "pattern": "^[a-z0-9-]+:[A-Za-z0-9]+[*]?$",
+      "maxLength": 128
+    },
+    "resource": {
+      "type": "string",
+      "description": "An ARN or ARN pattern the action must be allowed on. Absent means the wildcard (*): the action is allowed on some resource.",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^([*]|arn:[a-z0-9-]+:.*)$"
+    }
+  },
+  "required": ["action"],
+  "additionalProperties": false
+}

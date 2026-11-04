@@ -1,0 +1,55 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types live beside it in types.yaml.
+apiVersion: runwhen.com/integration/v1
+platform: aws
+title: Amazon Web Services
+docs: https://docs.runwhen.com/integrations/aws
+
+# --- what tools read (D38, D45) ---------------------------------------------
+# The AWS SDK environment: the aws CLI (and every SDK) reads these variables, so a task script
+# never handles a key (it never reads or prints them). Env only: an auth plan materializes either
+# env or one file (auth-plan.schema.json, maxProperties 1). AWS_SESSION_TOKEN is written only when
+# the credential has one (temporary credentials). Static keys, an assumed role's credentials and the
+# ambient identity of IRSA or an instance profile all end as this type; for the ambient identity
+# the credentials are not written at all and the CLI finds them itself. AWS_REGION is the region
+# for account-level calls (STS, EC2 DescribeRegions); a skill's tasks always pass --region from
+# their target, so the variable never decides which region a resource task reads.
+credentialTypes:
+  aws/sdk:
+    title: AWS SDK environment
+    description: "The environment the aws CLI reads: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN (optional) and AWS_REGION."
+    materialize:
+      env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION]
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Each method is self-contained: it accepts its own reference kinds, has its own
+# inputs, and produces the type. No method depends on another connection. Both are script
+# methods (run in the aws runtime before the task): a native passthrough could copy the keys but
+# not add the region input or refuse a key that would break the env file.
+authMethods:
+  access-key:
+    title: Access key
+    description: "An IAM user's or a role session's keys from a Secret, Vault or a file; the reference supplies AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and optionally AWS_SESSION_TOKEN, the input supplies the default region."
+    produces: aws/sdk
+    accepts: [aws-access-key]                # reference content token: matches on any storage kind (call F1)
+    script: auth/access_key.py               # relative to this file: integration/auth/ (F7); reference keys are the standard variable names
+    inputs:
+      region: { type: string, default: us-east-1, description: "Default region for account-level calls (AWS_REGION), for example eu-west-1; resource tasks use the region of their target" }
+  cloud-identity:
+    title: Ambient identity
+    description: "The identity the runner or executor already runs as (IRSA web identity, EKS Pod Identity, an instance profile); nothing is read from a reference, the input supplies the default region."
+    produces: aws/sdk
+    accepts: [cloud-identity]
+    script: auth/cloud_identity.py
+    inputs:
+      region: { type: string, default: us-east-1, description: "Default region for account-level calls (AWS_REGION), for example eu-west-1; resource tasks use the region of their target" }
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/aws-permission.json      # one permission = one IAM action (D68)
+
+# --- how the platform plugs this integration in -------------------------------
+# A permissionCheck entry point (IAM simulate-principal-policy) follows the pilot.
+entryPoints:
+  discovery: { task: aws-base/discover, schedule: "*/15 * * * *" }
+
+recognizers: []                              # aws recognizes nothing yet
