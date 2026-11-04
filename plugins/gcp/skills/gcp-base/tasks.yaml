@@ -1,0 +1,23 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: gcp@1                 # gcloud, pinned; runtimes/gcp
+defaults: { credentials: gcp/adc, timeout: 60s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  commandTimeout: { type: duration, default: 60s, description: "How long one gcloud call may take before it fails with timeout" }
+tasks:
+  - name: discover
+    title: Discover project and buckets
+    description: Reads the project and lists its Cloud Storage buckets (name, location, storage class, creation time) as facts and as an rw.discovery.v1 sync. Reports the project id as the root's canonical key. Read-only.
+    script: scripts/discover.py
+    tags: [discovery, inventory]
+    readOnly: true
+    timeout: 600s                                  # the gcloud calls and the push; the push is clamped to what is left (gcp_base/budget.py)
+    credentials: [gcp/adc, runwhen/sync]           # runwhen/sync is platform-minted per run by the lease, not a connection
+    permissions:
+      - { permission: storage.buckets.list }               # the bucket list; without it discover fails with permission_denied
+      - { permission: resourcemanager.projects.get }       # the project's number, name and state; without it the run is partial and the project id alone is reported
+    outputs:
+      summary: { kind: rw.discovery.summary.v1, description: "Counts, partitions, per-step errors and root.canonicalKey (projectId)" }
+      project: { schema: ./schemas/project.v1.json, description: "Project id, number, display name and lifecycle state" }
+      buckets: { schema: ./schemas/buckets.v1.json, description: "Name, location, storage class and creation time of each bucket, cut to maxItems" }
+      sync: { artifact: { contentType: application/json, maxSize: 20Mi }, description: "The whole rw.discovery.v1 sync (open, item batches, commit) for this project and all its buckets" }
