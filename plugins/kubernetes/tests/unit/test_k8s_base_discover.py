@@ -353,6 +353,59 @@ def test_the_namespaces_setting_narrows_the_scope_and_the_namespace_partition_is
     assert validate("rw.discovery.v1", doc) == []
 
 
+@pytest.mark.parametrize(
+    "settings, selected",
+    [
+        ({"excludeNamespaces": ["b"]}, ["a"]),
+        ({"namespaces": ["b"], "excludeNamespaces": ["b"]}, ["b"]),
+        ({"excludeNamespaces": ["*", "a.*", "a*"]}, ["a", "b"]),
+        ({"excludeNamespaces": ["a", "b"]}, []),
+    ],
+)
+def test_namespace_exclusions_preserve_scope_and_cluster_resources(settings, selected):
+    cluster = basic()
+    env, doc, errors = run(cluster, settings)
+    assert errors == [] and env["status"] == "ok"
+    assert [i["identity"]["chain"][-1]["name"] for i in items_of(doc, "namespace")] == selected
+    assert parts(doc, "namespace")[0]["status"] == "excluded"
+    assert [p["parentPath"] for p in parts(doc, "deployment") if p["status"] == "complete"] == [
+        f"kubernetes/clusters/kind/namespaces/{ns}" for ns in selected
+    ]
+    assert not any("--all-namespaces" in c for c in cluster.calls)
+    assert [i["identity"]["chain"][-1]["name"] for i in items_of(doc, "node")] == ["n1"]
+    assert parts(doc, "node")[0]["status"] == "complete"
+    if "b" not in selected:
+        assert all(
+            p.get("parentPath") != "kubernetes/clusters/kind/namespaces/b"
+            for p in parts(doc, "deployment")
+        )
+    assert validate("rw.discovery.v1", doc) == []
+
+
+def test_excluded_namespaces_do_not_consume_the_namespace_cap():
+    env, doc, errors = run(basic(), {"excludeNamespaces": ["a"], "maxItems": 1})
+    assert errors == [] and env["status"] == "ok"
+    assert [i["identity"]["chain"][-1]["name"] for i in items_of(doc, "namespace")] == ["b"]
+    assert parts(doc, "namespace")[0]["status"] == "excluded"
+
+
+@pytest.mark.parametrize("forbidden", [["namespaces"], ["deployment"]])
+def test_exclusions_preserve_forbidden_partitions(forbidden):
+    cluster = basic()
+    cluster.forbidden.update(forbidden)
+    env, doc, errors = run(cluster, {"excludeNamespaces": ["b"]})
+    assert env["status"] == "partial"
+    assert errors and errors[0]["code"] == "permission_denied"
+    assert not any("--all-namespaces" in c for c in cluster.calls)
+    assert parts(doc, "namespace")[0]["status"] == (
+        "forbidden" if "namespaces" in forbidden else "excluded"
+    )
+    assert parts(doc, "deployment")[0]["status"] == (
+        "excluded" if "namespaces" in forbidden else "forbidden"
+    )
+    assert parts(doc, "node")[0]["status"] == "complete"
+
+
 def test_a_named_namespace_that_cannot_be_read_has_an_error_and_no_stub_item():
     cluster = Cluster(
         forbidden=["a"],
@@ -427,6 +480,8 @@ def test_the_target_must_be_a_cluster_and_settings_are_checked_before_any_call()
     env, _, errors = run(cluster, {"maxItems": 0})
     assert errors[0]["code"] == "invalid_input"
     env, _, errors = run(cluster, {"namespaces": ["ok", ""]})
+    assert errors[0]["code"] == "invalid_input"
+    env, _, errors = run(cluster, {"excludeNamespaces": ["ok", ""]})
     assert errors[0]["code"] == "invalid_input"
     assert cluster.calls == []
 

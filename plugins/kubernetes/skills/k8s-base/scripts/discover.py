@@ -19,10 +19,10 @@ def _bounded(settings, name, low, high):
     return value
 
 
-def _namespaces(settings):
-    value = list(settings.namespaces)
+def _namespaces(settings, name="namespaces"):
+    value = list(getattr(settings, name, []))
     if not all(isinstance(n, str) and n for n in value):
-        raise RwError("invalid_input", "setting namespaces must be a list of namespace names")
+        raise RwError("invalid_input", f"setting {name} must be a list of namespace names")
     return sorted(set(value))
 
 
@@ -50,11 +50,12 @@ def main(ctx):
     max_items = _bounded(ctx.settings, "max_items", 1, 100000)
     max_string = _bounded(ctx.settings, "max_string_bytes", 64, 1048576)
     namespaces = _namespaces(ctx.settings)
+    exclude_namespaces = _namespaces(ctx.settings, "exclude_namespaces")
     deadline = _deadline(ctx.settings)
     scope, cluster = _cluster(ctx.resource)
 
     run, uid, duration_ms = discover(
-        ctx, scope, cluster, namespaces, max_items, max_string, deadline
+        ctx, scope, cluster, namespaces, max_items, max_string, deadline, exclude_namespaces
     )
     partitions = run.partitions
     summary = dd.summarize(run.counts, partitions, ctx.errors, duration_ms, uid)

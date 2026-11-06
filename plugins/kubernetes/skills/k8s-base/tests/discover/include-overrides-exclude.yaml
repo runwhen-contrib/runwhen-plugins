@@ -1,0 +1,616 @@
+# Synthetic offline cluster replies; exercised by the real SDK replay harness.
+resource: kubernetes/clusters/kind
+settings:
+  namespaces:
+  - b
+  excludeNamespaces:
+  - b
+now: '2026-11-06T00:00:00.000Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /version
+  rc: 0
+  stdout: '{"gitVersion": "v1.31.2", "major": "1", "minor": "31", "platform": "linux/arm64"}'
+  stderr: ''
+- argv:
+  - kubectl
+  - config
+  - view
+  - --minify
+  - -o
+  - jsonpath={.clusters[0].cluster.server}
+  rc: 0
+  stdout: https://cluster.example.invalid:6443
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - kube-system
+  - -o
+  - jsonpath={.metadata.uid}
+  rc: 0
+  stdout: 30be408d-624f-4dc1-90bb-598388f92de6
+  stderr: ''
+- argv:
+  - kubectl
+  - api-resources
+  - --verbs=list
+  - -o
+  - wide
+  rc: 0
+  stdout: 'NAME                                    SHORTNAMES  APIVERSION                        NAMESPACED   KIND                              VERBS
+
+    namespaces                                          v1                                false        Namespace                         get,list
+
+    services                                            v1                                true         Service                           get,list
+
+    configmaps                                          v1                                true         ConfigMap                         get,list
+
+    secrets                                             v1                                true         Secret                            get,list
+
+    serviceaccounts                                     v1                                true         ServiceAccount                    get,list
+
+    persistentvolumeclaims                              v1                                true         PersistentVolumeClaim             get,list
+
+    replicationcontrollers                              v1                                true         ReplicationController             get,list
+
+    limitranges                                         v1                                true         LimitRange                        get,list
+
+    resourcequotas                                      v1                                true         ResourceQuota                     get,list
+
+    nodes                                               v1                                false        Node                              get,list
+
+    persistentvolumes                                   v1                                false        PersistentVolume                  get,list
+
+    deployments                                         apps/v1                           true         Deployment                        get,list
+
+    statefulsets                                        apps/v1                           true         StatefulSet                       get,list
+
+    daemonsets                                          apps/v1                           true         DaemonSet                         get,list
+
+    jobs                                                batch/v1                          true         Job                               get,list
+
+    cronjobs                                            batch/v1                          true         CronJob                           get,list
+
+    ingresses                                           networking.k8s.io/v1              true         Ingress                           get,list
+
+    networkpolicies                                     networking.k8s.io/v1              true         NetworkPolicy                     get,list
+
+    ingressclasses                                      networking.k8s.io/v1              false        IngressClass                      get,list
+
+    roles                                               rbac.authorization.k8s.io/v1      true         Role                              get,list
+
+    rolebindings                                        rbac.authorization.k8s.io/v1      true         RoleBinding                       get,list
+
+    clusterroles                                        rbac.authorization.k8s.io/v1      false        ClusterRole                       get,list
+
+    clusterrolebindings                                 rbac.authorization.k8s.io/v1      false        ClusterRoleBinding                get,list
+
+    storageclasses                                      storage.k8s.io/v1                 false        StorageClass                      get,list
+
+    volumeattachments                                   storage.k8s.io/v1                 false        VolumeAttachment                  get,list
+
+    csidrivers                                          storage.k8s.io/v1                 false        CSIDriver                         get,list
+
+    csinodes                                            storage.k8s.io/v1                 false        CSINode                           get,list
+
+    poddisruptionbudgets                                policy/v1                         true         PodDisruptionBudget               get,list
+
+    horizontalpodautoscalers                            autoscaling/v1                    true         HorizontalPodAutoscaler           get,list
+
+    priorityclasses                                     scheduling.k8s.io/v1              false        PriorityClass                     get,list
+
+    validatingwebhookconfigurations                     admissionregistration.k8s.io/v1   false        ValidatingWebhookConfiguration    get,list
+
+    mutatingwebhookconfigurations                       admissionregistration.k8s.io/v1   false        MutatingWebhookConfiguration      get,list
+
+    runtimeclasses                                      node.k8s.io/v1                    false        RuntimeClass                      get,list
+
+    customresourcedefinitions                           apiextensions.k8s.io/v1           false        CustomResourceDefinition          get,list
+
+    certificatesigningrequests                          certificates.k8s.io/v1            false        CertificateSigningRequest         get,list
+
+    helmreleases                                        helm.toolkit.fluxcd.io/v1         true         HelmRelease                       get,list
+
+    kustomizations                                      kustomize.toolkit.fluxcd.io/v1    true         Kustomization                     get,list
+
+    applications                                        argoproj.io/v1                    true         Application                       get,list
+
+    issuers                                             cert-manager.io/v1                true         Issuer                            get,list
+
+    clusterissuers                                      cert-manager.io/v1                false        ClusterIssuer                     get,list
+
+    gateways                                            gateway.networking.k8s.io/v1      true         Gateway                           get,list
+
+    httproutes                                          gateway.networking.k8s.io/v1      true         HTTPRoute                         get,list
+
+    prometheuses                                        monitoring.coreos.com/v1          true         Prometheus                        get,list
+
+    servicemonitors                                     monitoring.coreos.com/v1          true         ServiceMonitor                    get,list
+
+    postgresclusters                                    postgres-operator.crunchydata.com/v1true         PostgresCluster                   get,list
+
+    postgresqls                                         acid.zalan.do/v1                  true         postgresql                        get,list
+
+    '
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"metadata": {"name": "b", "uid": "uid-b", "resourceVersion": "9", "managedFields": [{"x":
+    1}]}}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - services
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - configmaps
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - serviceaccounts
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - persistentvolumeclaims
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - replicationcontrollers
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - limitranges
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - resourcequotas
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - nodes
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": [{"metadata": {"name": "n1", "uid": "uid-n1", "resourceVersion": "9", "managedFields":
+    [{"x": 1}]}}]}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - persistentvolumes
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - deployments.apps
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": [{"metadata": {"name": "api", "uid": "uid-api", "resourceVersion": "9", "managedFields":
+    [{"x": 1}], "namespace": "b"}}]}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - statefulsets.apps
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - daemonsets.apps
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - jobs.batch
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - cronjobs.batch
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - ingresses.networking.k8s.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - networkpolicies.networking.k8s.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - ingressclasses.networking.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - roles.rbac.authorization.k8s.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - rolebindings.rbac.authorization.k8s.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - clusterroles.rbac.authorization.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - clusterrolebindings.rbac.authorization.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - storageclasses.storage.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - volumeattachments.storage.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - csidrivers.storage.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - csinodes.storage.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - poddisruptionbudgets.policy
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - horizontalpodautoscalers.autoscaling
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - priorityclasses.scheduling.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - validatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - mutatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - runtimeclasses.node.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - customresourcedefinitions.apiextensions.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": [{"metadata": {"name": "c1.example.com", "uid": "uid-c1.example.com", "resourceVersion":
+    "9", "managedFields": [{"x": 1}]}}]}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - certificatesigningrequests.certificates.k8s.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - kustomizations.kustomize.toolkit.fluxcd.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - applications.argoproj.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - issuers.cert-manager.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - clusterissuers.cert-manager.io
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - gateways.gateway.networking.k8s.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - httproutes.gateway.networking.k8s.io
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - prometheuses.monitoring.coreos.com
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - servicemonitors.monitoring.coreos.com
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - postgresqls.acid.zalan.do
+  - --namespace
+  - b
+  - -o
+  - json
+  rc: 0
+  stdout: '{"items": []}'
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    summary:
+      counts:
+        cluster: 1
+        customresourcedefinition: 1
+        deployment: 1
+        namespace: 1
+        node: 1
+      partitions:
+        complete: 43
+        failed: 0
+        forbidden: 0
+        excluded: 6
+  artifacts:
+    sync:
+      contains:
+      - '"type":"namespace","status":"excluded"'
+      notContains: []
