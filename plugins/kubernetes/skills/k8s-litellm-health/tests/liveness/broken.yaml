@@ -1,0 +1,105 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-litellm/deployments/litellm-draining
+now: '2026-11-04T01:49:57.780Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-litellm
+  - get
+  - deployments.apps
+  - litellm-draining
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}{range
+    .spec.template.spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:kind=Deployment
+    s:metadata.name=litellm-draining
+    s:metadata.namespace=rw-litellm
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/name":"litellm-draining"}}
+    j:spec.template.metadata.labels={"app.kubernetes.io/name":"litellm-draining"}
+    j:status.readyReplicas=
+    c:litellm=python:3.12-alpine
+    p:http=4000
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-litellm
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=litellm-draining
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=litellm-draining-857f86889c-6h8nv
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:51Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:50Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:50Z","message":"containers with unready status: [litellm]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:50Z","message":"containers with unready status: [litellm]","observedGeneration":1,"reason":"ContainersNotReady","status":"False","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:49:50Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:litellm=python:3.12-alpine
+    p:http=4000
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-litellm
+    kind: pods
+    name: litellm-draining-857f86889c-6h8nv
+    port: 4000
+    path: /health/liveliness
+    scheme: http
+  response:
+    status: 503
+    headers:
+      cache-control: no-cache, private
+      content-length: '27'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:49:58 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '{"status": "shutting_down"}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-litellm
+    kind: pods
+    name: litellm-draining-857f86889c-6h8nv
+    port: 4000
+    path: /health/liveness
+    scheme: http
+  response:
+    status: 503
+    headers:
+      cache-control: no-cache, private
+      content-length: '27'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:49:58 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '{"status": "shutting_down"}'
+    truncated: false
+    location: null
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    liveness:
+      aliveCount: 0
+      notAliveCount: 1
+      pods:
+        $containsWhere:
+          alive: false
+          podReady: false
+          paths:
+            $containsWhere: {path: /health/liveliness, served: true, httpStatus: 503, alive: false}

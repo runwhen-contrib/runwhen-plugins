@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS S3 write probe",
+  "description": "One probe object put, read back, deleted and confirmed gone in an EXISTING bucket through one S3 gateway pod, with no credentials; the task never creates or deletes a bucket. plan is what the task does (or would do, in a dry run); steps are what it did, each with ok and the error (a failed work step is also a partial-result error with scope s3-check/<step>). bucketListing: allowed (an anonymous list answered 200) or denied (401/403: a write-only anonymous identity is possible, so the write is still tried; its result is reported separately). passed is true when every step of the plan ran and succeeded and nothing is left behind, false when any work step failed (PUT, read-back, DELETE, confirmation) or the cleanup left something, null in a dry run. anonymousWrite true: an unauthenticated PUT was accepted from the pod network (the API-server proxy strips Authorization) AND the read-back matched; false: the PUT answered 2xx but the read-back differs; null: the PUT failed or the read-back did not answer. contentMatches: the object read back equals what was written. leftBehind lists bucket/object paths a failed cleanup could not remove. The API server shows no body of a non-2xx answer, so an error message is the status, not SeaweedFS's explanation.",
+  "type": "object",
+  "properties": {
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "pod": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pod",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "bucket": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "bucketListing": {
+      "type": "string",
+      "enum": [
+        "allowed",
+        "denied"
+      ]
+    },
+    "plan": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "ok",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50
+    },
+    "passed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "contentMatches": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "anonymousWrite": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "cleanedUp": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "leftBehind": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10
+    }
+  },
+  "required": [
+    "gateway",
+    "bucket",
+    "key",
+    "bucketListing",
+    "plan",
+    "steps",
+    "passed",
+    "contentMatches",
+    "anonymousWrite",
+    "cleanedUp",
+    "leftBehind"
+  ],
+  "additionalProperties": false
+}

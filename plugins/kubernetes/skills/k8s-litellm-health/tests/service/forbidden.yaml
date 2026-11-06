@@ -1,0 +1,26 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-litellm/deployments/litellm-draining
+now: '2026-11-04T01:50:16.218Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-litellm
+  - get
+  - deployments.apps
+  - litellm-draining
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}{range
+    .spec.template.spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): deployments.apps "litellm-draining" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "deployments" in API group "apps" in the namespace "rw-litellm"
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

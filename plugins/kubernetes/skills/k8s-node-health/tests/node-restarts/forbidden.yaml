@@ -1,0 +1,29 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+inputs:
+  since: 3650d
+calls:
+- argv:
+  - kubectl
+  - get
+  - nodes
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodes is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodes" in API group "" at the cluster scope
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

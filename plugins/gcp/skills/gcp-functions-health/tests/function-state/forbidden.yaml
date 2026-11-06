@@ -1,0 +1,26 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234/regions/us-central1/cloud-functions/orders-api
+now: '2026-11-04T04:57:38.192Z'
+calls:
+- argv:
+  - gcloud
+  - functions
+  - describe
+  - orders-api
+  - --region=us-central1
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.functions.describe) ResponseError: status=[403], code=[], message=[Permission 'cloudfunctions.functions.get' denied on resource 'projects/shop-prod-1234' (or it may not exist).]
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

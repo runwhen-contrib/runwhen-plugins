@@ -1,0 +1,35 @@
+# k8s-pvc-health scenarios, applied by up.sh. The claim rw-broken/stuck (stuck
+# Terminating behind a finalizer) is created and deleted by 30-k8s-pvc-health.sh,
+# because a manifest cannot express "deleted but still present".
+# rw-healthy/df-user + df-data: a pod whose image has `df` (busybox), so the
+# `usage` task has a real success path. The pause image used by data-user has
+# no df.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: df-data
+  namespace: rw-healthy
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard
+  resources:
+    requests: {storage: 100Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: df-user
+  namespace: rw-healthy
+spec:
+  containers:
+    - name: busybox
+      image: busybox:1.36
+      command: [sh, -c, "dd if=/dev/zero of=/data/fill bs=1M count=10 && sleep 36000"]
+      volumeMounts:
+        - {name: data, mountPath: /data}
+      resources:
+        requests: {cpu: 1m, memory: 1Mi}
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: df-data

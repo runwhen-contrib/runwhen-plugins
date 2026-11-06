@@ -1,0 +1,571 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"bare\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"bare\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"bare\"}},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"86400\"],\"image\":\"busybox:1.36\",\"name\":\"app\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T20:30:39Z",
+    "generation": 1,
+    "name": "bare",
+    "namespace": "rw-istio",
+    "resourceVersion": "21620",
+    "uid": "ac175904-4452-4481-a0c2-621b88ec36f8"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "bare"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "bare"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sleep",
+         "86400"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {},
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:30:40Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "Deployment has minimum availability.",
+      "reason": "MinimumReplicasAvailable",
+      "status": "True",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "ReplicaSet \"bare-864b4d5547\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 1,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"bare-optout\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"bare-optout\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"bare-optout\",\"sidecar.istio.io/inject\":\"false\"}},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"86400\"],\"image\":\"busybox:1.36\",\"name\":\"app\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T20:30:39Z",
+    "generation": 1,
+    "name": "bare-optout",
+    "namespace": "rw-istio",
+    "resourceVersion": "21633",
+    "uid": "7bd90587-dc6a-4a64-b124-bcf15e620b4b"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "bare-optout"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "bare-optout",
+       "sidecar.istio.io/inject": "false"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sleep",
+         "86400"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {},
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:30:40Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "Deployment has minimum availability.",
+      "reason": "MinimumReplicasAvailable",
+      "status": "True",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "ReplicaSet \"bare-optout-69d4665bb9\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 1,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"istio-ingressgateway\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"istio-ingressgateway\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"istio-ingressgateway\",\"istio\":\"ingressgateway\"}},\"spec\":{\"containers\":[{\"image\":\"busybox:does-not-exist-1.20.3\",\"name\":\"istio-proxy\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T20:30:39Z",
+    "generation": 1,
+    "name": "istio-ingressgateway",
+    "namespace": "rw-istio",
+    "resourceVersion": "21593",
+    "uid": "1de716c9-3308-4c76-96c5-d808e6dd4800"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "istio-ingressgateway"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "istio-ingressgateway",
+       "istio": "ingressgateway"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "busybox:does-not-exist-1.20.3",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "istio-proxy",
+        "resources": {},
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:39Z",
+      "message": "Deployment does not have minimum availability.",
+      "reason": "MinimumReplicasUnavailable",
+      "status": "False",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:39Z",
+      "message": "ReplicaSet \"istio-ingressgateway-54dc9677cd\" is progressing.",
+      "reason": "ReplicaSetUpdated",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "unavailableReplicas": 1,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"istiod\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"istiod\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"istiod\",\"istio\":\"pilot\"}},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"86400\"],\"image\":\"busybox:1.36\",\"name\":\"discovery\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T20:30:39Z",
+    "generation": 1,
+    "name": "istiod",
+    "namespace": "rw-istio",
+    "resourceVersion": "21629",
+    "uid": "bdce16fd-9d81-4b35-a944-e9f4d60a6a27"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "istiod"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "istiod",
+       "istio": "pilot"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sleep",
+         "86400"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "discovery",
+        "resources": {},
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:30:40Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "Deployment has minimum availability.",
+      "reason": "MinimumReplicasAvailable",
+      "status": "True",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "ReplicaSet \"istiod-74dcfd9d7b\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 1,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "2",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"meshed\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"meshed\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"meshed\"}},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"86400\"],\"image\":\"busybox:1.36\",\"name\":\"app\"},{\"command\":[\"sh\",\"-c\",\"while true; do\\n  printf '2026-11-03T20:00:00.000000Z\\\\tinfo\\\\tads\\\\tXDS: Pushing request to the client\\\\n'\\n  printf '2026-11-03T20:00:01.000000Z\\\\twarning\\\\tenvoy config\\\\tgRPC config stream to xds-grpc closed: 14, connection error\\\\n'\\n  printf '2026-11-03T20:00:02.000000Z\\\\terror\\\\tenvoy connection\\\\tTLS error: 268435581:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED\\\\n'\\n  printf '[2026-11-03T20:00:03.123Z] \\\"GET /ok HTTP/1.1\\\" 200 - via_upstream - \\\"-\\\" 0 5 3 2 \\\"-\\\" \\\"curl/8.5\\\" \\\"r-1\\\" \\\"web\\\" \\\"10.244.0.9:8080\\\" inbound|8080|| 127.0.0.6:41 10.244.0.9:8080 10.244.0.4:55 - default\\\\n'\\n  printf '[2026-11-03T20:00:04.123Z] \\\"GET /pay HTTP/1.1\\\" 503 UF upstream_reset_before_response_started{connection_failure} - \\\"-\\\" 0 91 1 - \\\"-\\\" \\\"curl/8.5\\\" \\\"r-2\\\" \\\"pay\\\" \\\"10.244.0.9:9090\\\" outbound|9090||pay.rw-istio.svc.cluster.local - 10.96.0.20:9090 10.244.0.4:56 - default\\\\n'\\n  printf '[2026-11-03T20:00:05.123Z] \\\"POST /order?id=17 HTTP/1.1\\\" 503 NR no_route - \\\"-\\\" 0 0 0 - \\\"-\\\" \\\"curl/8.5\\\" \\\"r-3\\\" \\\"orders\\\" \\\"-\\\" - - 10.96.0.21:80 10.244.0.4:57 - default\\\\n'\\n  printf '[2026-11-03T20:00:06.123Z] \\\"GET /slow HTTP/1.1\\\" 504 URX upstream_max_stream_duration_reached - \\\"-\\\" 0 0 15000 - \\\"-\\\" \\\"curl/8.5\\\" \\\"r-4\\\" \\\"slow\\\" \\\"10.244.0.9:7070\\\" outbound|7070||slow.rw-istio.svc.cluster.local - 10.96.0.22:7070 10.244.0.4:58 - default\\\\n'\\n  sleep 20\\ndone\\n\"],\"image\":\"busybox:1.36\",\"name\":\"istio-proxy\",\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"32Mi\"}}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T20:30:39Z",
+    "generation": 2,
+    "name": "meshed",
+    "namespace": "rw-istio",
+    "resourceVersion": "21796",
+    "uid": "8b29665a-66a0-49d7-85ed-72c1a0dbae10"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "meshed"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "meshed"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sleep",
+         "86400"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {},
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       },
+       {
+        "command": [
+         "sh",
+         "-c",
+         "while true; do\n  printf '2026-11-03T20:00:00.000000Z\\tinfo\\tads\\tXDS: Pushing request to the client\\n'\n  printf '2026-11-03T20:00:01.000000Z\\twarning\\tenvoy config\\tgRPC config stream to xds-grpc closed: 14, connection error\\n'\n  printf '2026-11-03T20:00:02.000000Z\\terror\\tenvoy connection\\tTLS error: 268435581:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED\\n'\n  printf '[2026-11-03T20:00:03.123Z] \"GET /ok HTTP/1.1\" 200 - via_upstream - \"-\" 0 5 3 2 \"-\" \"curl/8.5\" \"r-1\" \"web\" \"10.244.0.9:8080\" inbound|8080|| 127.0.0.6:41 10.244.0.9:8080 10.244.0.4:55 - default\\n'\n  printf '[2026-11-03T20:00:04.123Z] \"GET /pay HTTP/1.1\" 503 UF upstream_reset_before_response_started{connection_failure} - \"-\" 0 91 1 - \"-\" \"curl/8.5\" \"r-2\" \"pay\" \"10.244.0.9:9090\" outbound|9090||pay.rw-istio.svc.cluster.local - 10.96.0.20:9090 10.244.0.4:56 - default\\n'\n  printf '[2026-11-03T20:00:05.123Z] \"POST /order?id=17 HTTP/1.1\" 503 NR no_route - \"-\" 0 0 0 - \"-\" \"curl/8.5\" \"r-3\" \"orders\" \"-\" - - 10.96.0.21:80 10.244.0.4:57 - default\\n'\n  printf '[2026-11-03T20:00:06.123Z] \"GET /slow HTTP/1.1\" 504 URX upstream_max_stream_duration_reached - \"-\" 0 0 15000 - \"-\" \"curl/8.5\" \"r-4\" \"slow\" \"10.244.0.9:7070\" outbound|7070||slow.rw-istio.svc.cluster.local - 10.96.0.22:7070 10.244.0.4:58 - default\\n'\n  sleep 20\ndone\n"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "istio-proxy",
+        "resources": {
+         "limits": {
+          "memory": "64Mi"
+         },
+         "requests": {
+          "cpu": "10m",
+          "memory": "32Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:30:40Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "Deployment has minimum availability.",
+      "reason": "MinimumReplicasAvailable",
+      "status": "True",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:54Z",
+      "message": "ReplicaSet \"meshed-9f4c5b8c7\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 2,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"meshed-quiet\",\"namespace\":\"rw-istio\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"meshed-quiet\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"meshed-quiet\"}},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"86400\"],\"image\":\"busybox:1.36\",\"name\":\"app\"},{\"command\":[\"sh\",\"-c\",\"while true; do\\n  printf '2026-11-03T20:00:00.000000Z\\\\tinfo\\\\tads\\\\tXDS: Pushing request to the client\\\\n'\\n  printf '[2026-11-03T20:00:03.123Z] \\\"GET /ok HTTP/1.1\\\" 200 - via_upstream - \\\"-\\\" 0 5 3 2 \\\"-\\\" \\\"curl/8.5\\\" \\\"r-1\\\" \\\"web\\\" \\\"10.244.0.9:8080\\\" inbound|8080|| 127.0.0.6:41 10.244.0.9:8080 10.244.0.4:55 - default\\\\n'\\n  sleep 20\\ndone\\n\"],\"image\":\"busybox:1.36\",\"name\":\"istio-proxy\",\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"32Mi\"}}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T20:30:39Z",
+    "generation": 1,
+    "name": "meshed-quiet",
+    "namespace": "rw-istio",
+    "resourceVersion": "21636",
+    "uid": "0db78e64-05ef-4fcd-bb16-03cd498ba27e"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "meshed-quiet"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "meshed-quiet"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sleep",
+         "86400"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {},
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       },
+       {
+        "command": [
+         "sh",
+         "-c",
+         "while true; do\n  printf '2026-11-03T20:00:00.000000Z\\tinfo\\tads\\tXDS: Pushing request to the client\\n'\n  printf '[2026-11-03T20:00:03.123Z] \"GET /ok HTTP/1.1\" 200 - via_upstream - \"-\" 0 5 3 2 \"-\" \"curl/8.5\" \"r-1\" \"web\" \"10.244.0.9:8080\" inbound|8080|| 127.0.0.6:41 10.244.0.9:8080 10.244.0.4:55 - default\\n'\n  sleep 20\ndone\n"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "istio-proxy",
+        "resources": {
+         "limits": {
+          "memory": "64Mi"
+         },
+         "requests": {
+          "cpu": "10m",
+          "memory": "32Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T20:30:40Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "Deployment has minimum availability.",
+      "reason": "MinimumReplicasAvailable",
+      "status": "True",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T20:30:39Z",
+      "lastUpdateTime": "2026-11-03T20:30:40Z",
+      "message": "ReplicaSet \"meshed-quiet-65c4c5c5c\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 1,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "updatedReplicas": 1
+   }
+  }
+ ],
+ "kind": "List",
+ "metadata": {
+  "resourceVersion": ""
+ }
+}

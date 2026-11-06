@@ -1,0 +1,69 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-vault/statefulsets/vault
+inputs:
+  scheme: https
+now: '2026-11-04T01:14:49.776Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - statefulsets.apps
+  - vault
+  - -o
+  - jsonpath={"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:metadata.generation="}{.metadata.generation}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.updateStrategy="}{.spec.updateStrategy}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:status="}{.status}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=vault
+    s:metadata.namespace=rw-vault
+    s:metadata.uid=70407ce4-081b-433e-9043-632045ac6c0f
+    j:metadata.generation=1
+    j:spec.replicas=1
+    j:spec.updateStrategy={"rollingUpdate":{"maxUnavailable":1,"partition":0},"type":"RollingUpdate"}
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/instance":"vault","app.kubernetes.io/name":"vault","component":"server"}}
+    j:status={"availableReplicas":1,"collisionCount":0,"currentReplicas":1,"currentRevision":"vault-74db74dc6d","observedGeneration":1,"readyReplicas":1,"replicas":1,"updateRevision":"vault-74db74dc6d","updatedReplicas":1}
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-vault
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=vault,app.kubernetes.io/name=vault,component=server
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:spec.nodeName="}{.spec.nodeName}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{"j:status="}{.status}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=vault-0
+    s:metadata.uid=0ff30f3e-ee40-4bc9-9bc4-a2115e043f04
+    s:metadata.deletionTimestamp=
+    s:spec.nodeName=rw-plugins-control-plane
+    j:metadata.labels={"app.kubernetes.io/instance":"vault","app.kubernetes.io/name":"vault","apps.kubernetes.io/pod-index":"0","component":"server","controller-revision-hash":"vault-74db74dc6d","statefulset.kubernetes.io/pod-name":"vault-0"}
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"StatefulSet","name":"vault","uid":"70407ce4-081b-433e-9043-632045ac6c0f"}]
+    j:status={"allocatedResources":{"cpu":"10m","memory":"48Mi"},"conditions":[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:12:44Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:12:43Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:12:49Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:12:49Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:12:43Z","observedGeneration":1,"status":"True","type":"PodScheduled"}],"containerStatuses":[{"allocatedResources":{"cpu":"10m","memory":"48Mi"},"containerID":"containerd://fb5a129d1b15c9aa69cf0079d1c6d13fe1f79c8e34332f200c74dd22f0dde165","image":"docker.io/hashicorp/vault:1.18.5","imageID":"docker.io/hashicorp/vault@sha256:750bb37c1638fa194ab37053a81618c61bb0491ddec6fccac87c07a8e6cd8166","lastState":{},"name":"vault","ready":true,"resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"10m","memory":"48Mi"}},"restartCount":0,"started":true,"state":{"running":{"startedAt":"2026-11-04T01:12:44Z"}},"user":{"linux":{"gid":0,"supplementalGroups":[0,1,2,3,4,6,10,11,20,26,27],"uid":0}},"volumeMounts":[{"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount","name":"kube-api-access-8jklx","readOnly":true,"recursiveReadOnly":"Disabled"}]}],"hostIP":"172.19.0.2","hostIPs":[{"ip":"172.19.0.2"}],"observedGeneration":1,"phase":"Running","podIP":"10.244.0.251","podIPs":[{"ip":"10.244.0.251"}],"qosClass":"Burstable","resources":{"limits":{"memory":"128Mi"},"requests":{"memory":"48Mi"}},"startTime":"2026-11-04T01:12:43Z"}
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-vault
+    kind: pods
+    name: vault-0
+    port: 8200
+    path: /v1/sys/health
+    scheme: https
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: error trying to reach service: tls: first record
+      does not look like a TLS handshake'
+    scope: rw-vault/pods/vault-0:8200
+expect:
+  status: failed
+  errorCodes:
+  - invalid_input

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flux dependencies",
+  "description": "spec.dependsOn of the object and whether each dependency is Ready. read is false for a dependency in another namespace or one that could not be read (note says why); then exists and ready are null. exists false means the object named in dependsOn is not there. count is the number in dependsOn; items holds at most 50 of them, and truncated says some were left out.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "exists": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ready": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readyReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationObserved": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "suspended": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "read",
+          "exists",
+          "ready",
+          "readyReason",
+          "generationObserved",
+          "suspended",
+          "note"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "count",
+    "truncated",
+    "items"
+  ],
+  "additionalProperties": false
+}

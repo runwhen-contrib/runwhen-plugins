@@ -20,7 +20,9 @@ preview before it applies (D23).
 
 ## Steps
 
-1. Set `version` in `plugins/<plugin>/plugin.yaml` and merge to `main`.
+1. Set `version` in `plugins/<plugin>/plugin.yaml` and merge to `main`. Work lands on `v13/plugins`
+   first and reaches `main` with the milestone PR; tags are cut from `main` only (the release
+   workflow refuses a tag whose commit is not on `main`).
 2. Tag the merge commit with an annotated tag:
 
    ```
@@ -37,7 +39,7 @@ preview before it applies (D23).
 A tag whose plugin directory is missing, or whose version differs from
 `plugin.yaml`, fails the workflow before anything is published.
 
-Until `vars.SDK_REF` is set on the repo (to `contracts-v1` once lane A tags it,
-`v13/plugins` before that), the validate, test, compile and release steps are
-skipped: a tag only runs the tag/version check. No release is ever published
-without its compiled archive.
+The SDK the plugins are validated, replayed and compiled with is pinned in
+`.github/workflows/plugins.yml` (`SDK_REF`; the repo variable `SDK_REF` overrides it). Every skill
+must have recorded fixtures (`skills/<skill>/tests/<task>/*.yaml`): `rwtask test` fails a skill
+without them.

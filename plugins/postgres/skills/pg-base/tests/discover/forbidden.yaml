@@ -1,0 +1,33 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: postgres/instances/orders-db
+now: '2026-11-03T22:51:00.886Z'
+calls:
+- argv:
+  - psql
+  - -X
+  - -A
+  - -t
+  - -q
+  - -v
+  - ON_ERROR_STOP=1
+  - -c
+  - |-
+    BEGIN READ ONLY; SET LOCAL statement_timeout = 30000; SELECT json_build_object(
+      'version', current_setting('server_version'),
+      'versionNum', current_setting('server_version_num')::int,
+      'inRecovery', pg_is_in_recovery(),
+      'currentUser', current_user::text
+    ); COMMIT;
+  rc: 2
+  stdout: ''
+  stderr: |
+    psql: error: connection to server at "127.0.0.1", port 55432 failed: FATAL:  permission denied for database "orders"
+    DETAIL:  User does not have CONNECT privilege.
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

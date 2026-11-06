@@ -1,0 +1,86 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most pods (liveness, readiness) or Services (service) a list output returns
+tasks:
+  - name: liveness
+    title: LiteLLM liveness
+    description: >-
+      GET /health/liveliness (LiteLLM's spelling) and /health/liveness on each running pod of
+      the Deployment or StatefulSet, through the API server's pod proxy (no exec, no
+      port-forward, no credential: both endpoints are unauthenticated). 200 with LiteLLM's
+      "alive" text is alive, 503 is not alive (LiteLLM answers 503 once a graceful shutdown has
+      begun; the proxy does not forward the body), a 404 means the pod does not serve that path
+      (served false); any other reply (an HTML page, other text, a timeout) is an error and the
+      pod's alive is null, never true. A pod that serves neither path is a dependency error. A pod
+      that is not Running is listed and not asked. Inputs port (default: the container port named
+      http, litellm or http-litellm, else 4000) and scheme (http or https).
+    script: scripts/liveness.py
+    timeout: 120s
+    tags: [litellm, liveness, health]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "LiteLLM HTTP port (the override); by default the main container's port named http, litellm or http-litellm (the container whose image is LiteLLM's, else the first that is not a sidecar), else 4000" }
+      scheme: { type: string, default: http, description: "http or https" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      liveness: { schema: ./schemas/liveness.v1.json, description: "Per pod: each liveness path's HTTP status and answer (alive true or false, served false for a 404), and the workload's replica counts" }
+
+  - name: readiness
+    title: LiteLLM readiness
+    description: >-
+      GET /health/readiness on each running pod, through the API server's pod proxy (no exec, no
+      port-forward, no credential). 200 with status "healthy" is ready. 503 is not ready (LiteLLM
+      1.102.1: a configured database is not connected, or a graceful shutdown has begun; the proxy
+      drops the body), so liveness is asked for the cause: 200 is db_unreachable_likely, 503 is
+      draining, else undetermined. Any other reply is an error and ready is null, never true.
+      Reports the db state; cache, litellm_version and success callbacks only when the proxy
+      exposes the detailed payload (allow_public_health_readiness_details), else null.
+      queriedCount and unaskedCount say how many pods were asked; the rest are named in a scoped
+      error. Inputs port and scheme as for liveness.
+    script: scripts/readiness.py
+    timeout: 120s
+    tags: [litellm, readiness, health, database, cache]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "LiteLLM HTTP port (the override); by default the main container's port named http, litellm or http-litellm (the container whose image is LiteLLM's, else the first that is not a sidecar), else 4000" }
+      scheme: { type: string, default: http, description: "http or https" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      readiness: { schema: ./schemas/readiness.v1.json, description: "Per pod: the /health/readiness answer (ready true or false, HTTP status, db state, and cache, version and callbacks when exposed) and the workload's replica counts" }
+
+  - name: service
+    title: LiteLLM Service reachability
+    description: >-
+      The Services in the namespace whose selector picks the workload's pods: for each, its
+      ports (port, targetPort, protocol), whether it exposes the expected port (servicePort,
+      default 4000: the Service side only), whether each targetPort leads to the port the proxy
+      listens on in the pod template's main container (targetPortMatches), whether it names a
+      container port the template declares, and its EndpointSlices' ready and not-ready endpoint
+      counts (one per pod: a dual-stack Service's IPv4 and IPv6 slices are not counted twice). Facts only: no request is
+      sent to the proxy. A workload no Service selects is services [] (a fact); a forbidden
+      EndpointSlice list is reported (permission_denied scoped endpointslices) and the
+      Services are still listed with endpoints null.
+    script: scripts/service.py
+    tags: [litellm, service, endpoints, networking]
+    readOnly: true
+    inputs:
+      servicePort: { type: integer, default: 4000, min: 1, max: 65535, description: "The Service port the proxy is expected on (LiteLLM's default is 4000)" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [services], verbs: [list] }
+      - { apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [list] }
+    outputs:
+      service: { schema: ./schemas/service.v1.json, description: "The Services that select the workload: ports, target-port declaration and ready endpoint counts" }

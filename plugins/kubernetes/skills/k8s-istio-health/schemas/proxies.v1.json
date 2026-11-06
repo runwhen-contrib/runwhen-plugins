@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Per pod: istio-proxy log lines by level and failed requests, most failures first",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "pod": {
+        "type": "string"
+      },
+      "container": {
+        "type": "string"
+      },
+      "native": {
+        "type": "boolean"
+      },
+      "linesRead": {
+        "type": "integer"
+      },
+      "truncated": {
+        "type": "boolean",
+        "description": "linesRead reached maxScanLines: older lines in the window were not read"
+      },
+      "bytesCut": {
+        "type": "boolean"
+      },
+      "errorLines": {
+        "type": "integer"
+      },
+      "warnLines": {
+        "type": "integer"
+      },
+      "accessLines": {
+        "type": "integer"
+      },
+      "status5xx": {
+        "type": "integer"
+      },
+      "responseFlags": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "flag": {
+              "type": "string"
+            },
+            "count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "flag",
+            "count"
+          ]
+        }
+      },
+      "samples": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "category": {
+              "enum": [
+                "error",
+                "warn",
+                "http5xx",
+                "flagged"
+              ]
+            },
+            "line": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "category",
+            "line",
+            "truncated"
+          ]
+        }
+      }
+    },
+    "required": [
+      "pod",
+      "container",
+      "native",
+      "linesRead",
+      "truncated",
+      "bytesCut",
+      "errorLines",
+      "warnLines",
+      "accessLines",
+      "status5xx",
+      "responseFlags",
+      "samples"
+    ]
+  }
+}

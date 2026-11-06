@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flux revisions",
+  "description": "Applied versus attempted revision. A Kustomization revision looks like main@sha1:<digest>; a HelmRelease revision is the chart version. For a HelmRelease the applied revision is status.lastAppliedRevision when the API has it (v2beta1, v2beta2) and otherwise the chart version of the newest status.history entry Helm reports as deployed (appliedSource says which). revisionsDiffer: a revision was attempted and is not the one applied (a stuck upgrade). neverApplied: nothing has been applied. helm is set for a HelmRelease, kustomization for a Kustomization; the other is null.",
+  "type": "object",
+  "properties": {
+    "lastAppliedRevision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "appliedSource": {
+      "enum": [
+        "status.lastAppliedRevision",
+        "status.history",
+        null
+      ]
+    },
+    "lastAttemptedRevision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revisionsDiffer": {
+      "type": "boolean"
+    },
+    "neverApplied": {
+      "type": "boolean"
+    },
+    "lastHandledReconcileAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "helm": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "chart": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "chartVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "kind": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "namespace"
+          ],
+          "additionalProperties": false
+        },
+        "interval": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "namespace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "releaseVersion": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "chartName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "chartVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "appVersion": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastDeployed": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "namespace",
+              "releaseVersion",
+              "chartName",
+              "chartVersion",
+              "appVersion",
+              "status",
+              "lastDeployed"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "historyCount": {
+          "type": "integer"
+        },
+        "failures": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "installFailures": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "upgradeFailures": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "chart",
+        "chartVersion",
+        "source",
+        "interval",
+        "history",
+        "historyCount",
+        "failures",
+        "installFailures",
+        "upgradeFailures"
+      ],
+      "additionalProperties": false
+    },
+    "kustomization": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "kind": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "namespace": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "namespace"
+          ],
+          "additionalProperties": false
+        },
+        "interval": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prune": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "targetNamespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inventoryCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "source",
+        "interval",
+        "prune",
+        "targetNamespace",
+        "inventoryCount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "lastAppliedRevision",
+    "appliedSource",
+    "lastAttemptedRevision",
+    "revisionsDiffer",
+    "neverApplied",
+    "lastHandledReconcileAt",
+    "helm",
+    "kustomization"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,847 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-otel/deployments/otel-ok
+now: '2026-11-04T01:44:14.095Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-otel
+  - get
+  - deployments
+  - otel-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "2",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"otel-ok\",\"app.kubernetes.io/name\":\"opentelemetry-collector\"},\"name\":\"otel-ok\",\"namespace\":\"rw-otel\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"otel-ok\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"otel-ok\",\"app.kubernetes.io/name\":\"opentelemetry-collector\"}},\"spec\":{\"containers\":[{\"args\":[\"--config=/conf/config.yaml\"],\"image\":\"otel/opentelemetry-collector:0.164.0\",\"name\":\"otelcol\",\"ports\":[{\"containerPort\":4317,\"name\":\"otlp-grpc\"},{\"containerPort\":4318,\"name\":\"otlp-http\"},{\"containerPort\":8888,\"name\":\"metrics\"}],\"resources\":{\"limits\":{\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"24Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/conf\",\"name\":\"conf\",\"readOnly\":true}]}],\"volumes\":[{\"configMap\":{\"name\":\"otel-ok-config\"},\"name\":\"conf\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-04T01:41:47Z",
+            "generation": 2,
+            "labels": {
+                "app": "otel-ok",
+                "app.kubernetes.io/name": "opentelemetry-collector"
+            },
+            "name": "otel-ok",
+            "namespace": "rw-otel",
+            "resourceVersion": "75884",
+            "uid": "416f3fcf-a360-4bb5-a360-6490dd33aa3a"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "otel-ok"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": "2026-11-04T07:11:48+05:30"
+                    },
+                    "labels": {
+                        "app": "otel-ok",
+                        "app.kubernetes.io/name": "opentelemetry-collector"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "--config=/conf/config.yaml"
+                            ],
+                            "image": "otel/opentelemetry-collector:0.164.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "otelcol",
+                            "ports": [
+                                {
+                                    "containerPort": 4317,
+                                    "name": "otlp-grpc",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 4318,
+                                    "name": "otlp-http",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "metrics",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "24Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/conf",
+                                    "name": "conf",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "otel-ok-config"
+                            },
+                            "name": "conf"
+                        }
+                    ]
+                }
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-04T01:41:48Z",
+                    "lastUpdateTime": "2026-11-04T01:41:48Z",
+                    "message": "Deployment has minimum availability.",
+                    "reason": "MinimumReplicasAvailable",
+                    "status": "True",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-04T01:41:47Z",
+                    "lastUpdateTime": "2026-11-04T01:41:48Z",
+                    "message": "ReplicaSet \"otel-ok-6644fbf6f7\" has successfully progressed.",
+                    "reason": "NewReplicaSetAvailable",
+                    "status": "True",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 2,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "terminatingReplicas": 0,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-otel
+  - get
+  - pods
+  - -l
+  - app=otel-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": "2026-11-04T07:11:48+05:30"
+                    },
+                    "creationTimestamp": "2026-11-04T01:41:48Z",
+                    "generateName": "otel-ok-6644fbf6f7-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "otel-ok",
+                        "app.kubernetes.io/name": "opentelemetry-collector",
+                        "pod-template-hash": "6644fbf6f7"
+                    },
+                    "name": "otel-ok-6644fbf6f7-jh9td",
+                    "namespace": "rw-otel",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "otel-ok-6644fbf6f7",
+                            "uid": "04537190-c986-4af7-8081-86feed5bcdbd"
+                        }
+                    ],
+                    "resourceVersion": "76130",
+                    "uid": "a9d7318d-252b-4e26-8885-754c1b33c2a9"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "--config=/conf/config.yaml"
+                            ],
+                            "image": "otel/opentelemetry-collector:0.164.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "otelcol",
+                            "ports": [
+                                {
+                                    "containerPort": 4317,
+                                    "name": "otlp-grpc",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 4318,
+                                    "name": "otlp-http",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "metrics",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "24Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/conf",
+                                    "name": "conf",
+                                    "readOnly": true
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-dbpdw",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "otel-ok-config"
+                            },
+                            "name": "conf"
+                        },
+                        {
+                            "name": "kube-api-access-dbpdw",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "memory": "24Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "memory": "24Mi"
+                            },
+                            "containerID": "containerd://c8edd05690523d4e058902a26f822f5fb4226bfef67b8cb364872afea432fd33",
+                            "image": "docker.io/otel/opentelemetry-collector:0.164.0",
+                            "imageID": "docker.io/otel/opentelemetry-collector@sha256:28b6d41ac51bff6b41ba5e8fe503569ffb9d6a1ea90f7a78419e86f34e44f750",
+                            "lastState": {},
+                            "name": "otelcol",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "24Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-04T01:41:48Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0
+                                    ],
+                                    "uid": 10001
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/conf",
+                                    "name": "conf",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-dbpdw",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.104",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.104"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "128Mi"
+                        },
+                        "requests": {
+                            "memory": "24Mi"
+                        }
+                    },
+                    "startTime": "2026-11-04T01:41:48Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-otel
+    kind: pods
+    name: otel-ok-6644fbf6f7-jh9td
+    port: 8888
+    path: /metrics
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-type: text/plain; version=0.0.4; charset=utf-8; escaping=underscores
+      date: Wed, 04 Nov 2026 01:44:14 GMT
+      vary: Accept, Accept-Encoding
+      connection: close
+      transfer-encoding: chunked
+    body: |
+      # HELP http_server_request_body_size Size of HTTP server request bodies.
+      # TYPE http_server_request_body_size histogram
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="25"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="50"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="75"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="100"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="250"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="500"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="750"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1000"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2500"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5000"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7500"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10000"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 30
+      http_server_request_body_size_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 6810
+      http_server_request_body_size_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="25"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="50"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="75"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="100"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="250"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="500"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="750"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1000"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2500"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5000"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7500"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10000"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 30
+      http_server_request_body_size_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 6960
+      http_server_request_body_size_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 30
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="25"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="50"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="75"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="100"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="250"} 0
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="500"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="750"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1000"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2500"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5000"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7500"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10000"} 29
+      http_server_request_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 29
+      http_server_request_body_size_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 9657
+      http_server_request_body_size_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 29
+      # HELP http_server_request_duration Duration of HTTP server requests.
+      # TYPE http_server_request_duration histogram
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.005"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.01"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.025"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.05"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.075"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.1"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.25"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.75"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2.5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7.5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 30
+      http_server_request_duration_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 0.000829792
+      http_server_request_duration_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.005"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.01"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.025"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.05"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.075"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.1"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.25"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.75"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2.5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7.5"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 30
+      http_server_request_duration_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 0.005538749999999999
+      http_server_request_duration_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 30
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.005"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.01"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.025"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.05"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.075"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.1"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.25"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.5"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0.75"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2.5"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7.5"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 29
+      http_server_request_duration_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 29
+      http_server_request_duration_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 0.001464211
+      http_server_request_duration_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 29
+      # HELP http_server_response_body_size Size of HTTP server response bodies.
+      # TYPE http_server_response_body_size histogram
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="25"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="50"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="75"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="100"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="250"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="500"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="750"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1000"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2500"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5000"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7500"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10000"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 30
+      http_server_response_body_size_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 630
+      http_server_response_body_size_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/logs",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="25"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="50"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="75"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="100"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="250"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="500"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="750"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1000"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2500"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5000"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7500"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10000"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 30
+      http_server_response_body_size_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 630
+      http_server_response_body_size_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/metrics",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 30
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="0"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10"} 0
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="25"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="50"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="75"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="100"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="250"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="500"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="750"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="1000"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="2500"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="5000"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="7500"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="10000"} 29
+      http_server_response_body_size_bucket{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http",le="+Inf"} 29
+      http_server_response_body_size_sum{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 609
+      http_server_response_body_size_count{http_request_method="POST",http_response_status_code="200",http_route="/v1/traces",network_protocol_name="http",network_protocol_version="1.1",server_address="otel-ok",server_port="4318",url_scheme="http"} 29
+      # HELP otelcol_exporter_enqueue_size Number of units in the request added to the sending queue. Only available on detailed level. [Development]
+      # TYPE otelcol_exporter_enqueue_size histogram
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="10"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="25"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="50"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="75"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="100"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="250"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="500"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="750"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="1000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="2000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="3000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="4000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="5000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="6000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="7000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="8000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="9000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="10000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="20000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="30000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="50000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="100000"} 89
+      otelcol_exporter_enqueue_size_bucket{exporter="otlp/sink",le="+Inf"} 89
+      otelcol_exporter_enqueue_size_sum{exporter="otlp/sink"} 89
+      otelcol_exporter_enqueue_size_count{exporter="otlp/sink"} 89
+      # HELP otelcol_exporter_enqueue_size_bytes Number of bytes in the request added to the sending queue. Only available on detailed level. [Development]
+      # TYPE otelcol_exporter_enqueue_size_bytes histogram
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="128"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="256"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="512"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="1024"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="2048"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="4096"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="8192"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="16384"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="32768"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="65536"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="131072"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="262144"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="524288"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="1.048576e+06"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="2.097152e+06"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="4.194304e+06"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="8.388608e+06"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="1.6777216e+07"} 89
+      otelcol_exporter_enqueue_size_bytes_bucket{exporter="otlp/sink",le="+Inf"} 89
+      otelcol_exporter_enqueue_size_bytes_sum{exporter="otlp/sink"} 6713
+      otelcol_exporter_enqueue_size_bytes_count{exporter="otlp/sink"} 89
+      # HELP otelcol_exporter_in_flight_requests Number of export requests currently in-flight (including retry backoff). [Development]
+      # TYPE otelcol_exporter_in_flight_requests gauge
+      otelcol_exporter_in_flight_requests{data_type="logs",exporter="debug"} 0
+      otelcol_exporter_in_flight_requests{data_type="logs",exporter="otlp/sink"} 0
+      otelcol_exporter_in_flight_requests{data_type="metrics",exporter="debug"} 0
+      otelcol_exporter_in_flight_requests{data_type="metrics",exporter="otlp/sink"} 0
+      otelcol_exporter_in_flight_requests{data_type="traces",exporter="debug"} 0
+      otelcol_exporter_in_flight_requests{data_type="traces",exporter="otlp/sink"} 0
+      # HELP otelcol_exporter_queue_capacity Fixed capacity of the retry queue (in batches). [Alpha]
+      # TYPE otelcol_exporter_queue_capacity gauge
+      otelcol_exporter_queue_capacity{data_type="logs",exporter="otlp/sink"} 10
+      otelcol_exporter_queue_capacity{data_type="metrics",exporter="otlp/sink"} 10
+      otelcol_exporter_queue_capacity{data_type="traces",exporter="otlp/sink"} 10
+      # HELP otelcol_exporter_queue_size Current size of the retry queue (in batches). [Alpha]
+      # TYPE otelcol_exporter_queue_size gauge
+      otelcol_exporter_queue_size{data_type="logs",exporter="otlp/sink"} 0
+      otelcol_exporter_queue_size{data_type="metrics",exporter="otlp/sink"} 0
+      otelcol_exporter_queue_size{data_type="traces",exporter="otlp/sink"} 0
+      # HELP otelcol_exporter_sent_log_records Number of log record successfully sent to destination. [Alpha]
+      # TYPE otelcol_exporter_sent_log_records counter
+      otelcol_exporter_sent_log_records{exporter="debug"} 30
+      otelcol_exporter_sent_log_records{exporter="otlp/sink",server_address="otel-sink.rw-otel.svc.cluster.local",server_port="4317"} 30
+      # HELP otelcol_exporter_sent_metric_points Number of metric points successfully sent to destination. [Alpha]
+      # TYPE otelcol_exporter_sent_metric_points counter
+      otelcol_exporter_sent_metric_points{exporter="debug"} 30
+      otelcol_exporter_sent_metric_points{exporter="otlp/sink",server_address="otel-sink.rw-otel.svc.cluster.local",server_port="4317"} 30
+      # HELP otelcol_exporter_sent_spans Number of spans successfully sent to destination. [Alpha]
+      # TYPE otelcol_exporter_sent_spans counter
+      otelcol_exporter_sent_spans{exporter="debug"} 29
+      otelcol_exporter_sent_spans{exporter="otlp/sink",server_address="otel-sink.rw-otel.svc.cluster.local",server_port="4317"} 29
+      # HELP otelcol_process_cpu_seconds Total CPU user and system time in seconds [Alpha]
+      # TYPE otelcol_process_cpu_seconds counter
+      otelcol_process_cpu_seconds 0.06
+      # HELP otelcol_process_memory_rss Total physical memory (resident set size) [Alpha]
+      # TYPE otelcol_process_memory_rss gauge
+      otelcol_process_memory_rss 7.432192e+07
+      # HELP otelcol_process_runtime_heap_alloc_bytes Bytes of allocated heap objects (see 'go doc runtime.MemStats.HeapAlloc') [Alpha]
+      # TYPE otelcol_process_runtime_heap_alloc_bytes gauge
+      otelcol_process_runtime_heap_alloc_bytes 2.0996624e+07
+      # HELP otelcol_process_runtime_total_alloc_bytes Cumulative bytes allocated for heap objects (see 'go doc runtime.MemStats.TotalAlloc') [Alpha]
+      # TYPE otelcol_process_runtime_total_alloc_bytes counter
+      otelcol_process_runtime_total_alloc_bytes 2.9003368e+07
+      # HELP otelcol_process_runtime_total_sys_memory_bytes Total bytes of memory obtained from the OS (see 'go doc runtime.MemStats.Sys') [Alpha]
+      # TYPE otelcol_process_runtime_total_sys_memory_bytes gauge
+      otelcol_process_runtime_total_sys_memory_bytes 3.6034824e+07
+      # HELP otelcol_process_uptime Uptime of the process [Alpha]
+      # TYPE otelcol_process_uptime counter
+      otelcol_process_uptime 145.892000332
+      # HELP otelcol_receiver_accepted_log_records Number of log records successfully pushed into the pipeline. [Alpha]
+      # TYPE otelcol_receiver_accepted_log_records counter
+      otelcol_receiver_accepted_log_records{receiver="otlp",transport="http"} 30
+      # HELP otelcol_receiver_accepted_metric_points Number of metric points successfully pushed into the pipeline. [Alpha]
+      # TYPE otelcol_receiver_accepted_metric_points counter
+      otelcol_receiver_accepted_metric_points{receiver="otlp",transport="http"} 30
+      # HELP otelcol_receiver_accepted_spans Number of spans successfully pushed into the pipeline. [Alpha]
+      # TYPE otelcol_receiver_accepted_spans counter
+      otelcol_receiver_accepted_spans{receiver="otlp",transport="http"} 29
+      # HELP otelcol_receiver_failed_log_records The number of log records that failed to be processed by the receiver due to internal errors. [Alpha]
+      # TYPE otelcol_receiver_failed_log_records counter
+      otelcol_receiver_failed_log_records{receiver="otlp",transport="http"} 0
+      # HELP otelcol_receiver_failed_metric_points The number of metric points that failed to be processed by the receiver due to internal errors. [Alpha]
+      # TYPE otelcol_receiver_failed_metric_points counter
+      otelcol_receiver_failed_metric_points{receiver="otlp",transport="http"} 0
+      # HELP otelcol_receiver_failed_spans The number of spans that failed to be processed by the receiver due to internal errors. [Alpha]
+      # TYPE otelcol_receiver_failed_spans counter
+      otelcol_receiver_failed_spans{receiver="otlp",transport="http"} 0
+      # HELP otelcol_receiver_refused_log_records Number of log records that could not be pushed into the pipeline. [Alpha]
+      # TYPE otelcol_receiver_refused_log_records counter
+      otelcol_receiver_refused_log_records{receiver="otlp",transport="http"} 0
+      # HELP otelcol_receiver_refused_metric_points Number of metric points that could not be pushed into the pipeline. [Alpha]
+      # TYPE otelcol_receiver_refused_metric_points counter
+      otelcol_receiver_refused_metric_points{receiver="otlp",transport="http"} 0
+      # HELP otelcol_receiver_refused_spans Number of spans that could not be pushed into the pipeline. [Alpha]
+      # TYPE otelcol_receiver_refused_spans counter
+      otelcol_receiver_refused_spans{receiver="otlp",transport="http"} 0
+      # HELP promhttp_metric_handler_errors_total Total number of internal errors encountered by the promhttp metric handler.
+      # TYPE promhttp_metric_handler_errors_total counter
+      promhttp_metric_handler_errors_total{cause="encoding"} 0
+      promhttp_metric_handler_errors_total{cause="gathering"} 0
+      # HELP rpc_client_call_duration Measures the duration of an outgoing Remote Procedure Call (RPC).
+      # TYPE rpc_client_call_duration histogram
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.005"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.01"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.025"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.05"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.075"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.1"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.25"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.75"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="1"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="2.5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="7.5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="10"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="+Inf"} 30
+      rpc_client_call_duration_sum{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317"} 0.006956499999999999
+      rpc_client_call_duration_count{rpc_method="opentelemetry.proto.collector.logs.v1.LogsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.005"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.01"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.025"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.05"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.075"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.1"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.25"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.75"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="1"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="2.5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="7.5"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="10"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="+Inf"} 30
+      rpc_client_call_duration_sum{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317"} 0.006835372999999999
+      rpc_client_call_duration_count{rpc_method="opentelemetry.proto.collector.metrics.v1.MetricsService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317"} 30
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.005"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.01"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.025"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.05"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.075"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.1"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.25"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.5"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="0.75"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="1"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="2.5"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="5"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="7.5"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="10"} 29
+      rpc_client_call_duration_bucket{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317",le="+Inf"} 29
+      rpc_client_call_duration_sum{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317"} 0.006978918000000001
+      rpc_client_call_duration_count{rpc_method="opentelemetry.proto.collector.trace.v1.TraceService/Export",rpc_response_status_code="OK",rpc_system_name="grpc",server_address="10.96.206.202",server_port="4317"} 29
+      # HELP target_info Target metadata
+      # TYPE target_info gauge
+      target_info{service_instance_id="90e976c6-75c5-4b80-a89e-7d7b373acb14",service_name="otelcol",service_version="0.164.0"} 1
+    truncated: false
+    location: null
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    pods:
+      count: 1
+      queriedCount: 1
+      truncated: false
+    queues:
+      thresholdPercent: 80
+      count: 3
+      noQueuedExporters: false
+      truncated: false
+      items:
+        $containsWhere:
+          exporter: otlp/sink
+          dataType: traces
+          size: 0
+          capacity: 10
+          full: false
+          atOrAboveThreshold: false
+    counters:
+      count: 3
+      nonZeroCount: 0
+      truncated: false

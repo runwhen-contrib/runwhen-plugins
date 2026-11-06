@@ -1,0 +1,120 @@
+{
+  "apiVersion": "argoproj.io/v1alpha1",
+  "kind": "Application",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"argoproj.io/v1alpha1\",\"kind\":\"Application\",\"metadata\":{\"annotations\":{},\"name\":\"drifted\",\"namespace\":\"rw-argo\"},\"spec\":{\"destination\":{\"name\":\"in-cluster\",\"namespace\":\"shop\"},\"project\":\"default\",\"source\":{\"path\":\"deploy\",\"repoURL\":\"https://git.example.test/org/shop.git\",\"targetRevision\":\"HEAD\"}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T19:48:11Z",
+    "generation": 1,
+    "name": "drifted",
+    "namespace": "rw-argo",
+    "resourceVersion": "14707",
+    "uid": "e33502fa-e739-48bf-9f97-494719e869f1"
+  },
+  "spec": {
+    "destination": {
+      "name": "in-cluster",
+      "namespace": "shop"
+    },
+    "project": "default",
+    "source": {
+      "path": "deploy",
+      "repoURL": "https://git.example.test/org/shop.git",
+      "targetRevision": "HEAD"
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-11-03T11:30:00Z",
+        "message": "Service/shop is part of applications rw-argo/web and rw-argo/drifted",
+        "type": "SharedResourceWarning"
+      }
+    ],
+    "health": {
+      "message": "Deployment shop exceeded its progress deadline",
+      "status": "Degraded"
+    },
+    "history": [
+      {
+        "deployStartedAt": "2026-11-03T09:00:00Z",
+        "deployedAt": "2026-11-03T09:00:06Z",
+        "id": 0,
+        "revision": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
+        "source": {
+          "path": "deploy",
+          "repoURL": "https://git.example.test/org/shop.git",
+          "targetRevision": "HEAD"
+        }
+      }
+    ],
+    "operationState": {
+      "finishedAt": "2026-11-03T09:00:06Z",
+      "message": "successfully synced (all tasks run)",
+      "phase": "Succeeded",
+      "startedAt": "2026-11-03T09:00:00Z",
+      "syncResult": {
+        "resources": [],
+        "revision": "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567"
+      }
+    },
+    "reconciledAt": "2026-11-03T12:00:05Z",
+    "resources": [
+      {
+        "group": "apps",
+        "health": {
+          "message": "Deployment shop exceeded its progress deadline",
+          "status": "Degraded"
+        },
+        "kind": "Deployment",
+        "name": "shop",
+        "namespace": "shop",
+        "status": "Synced",
+        "version": "v1"
+      },
+      {
+        "health": {
+          "status": "Healthy"
+        },
+        "kind": "Service",
+        "name": "shop",
+        "namespace": "shop",
+        "status": "OutOfSync",
+        "version": "v1"
+      },
+      {
+        "group": "networking.k8s.io",
+        "health": {
+          "message": "Waiting for LoadBalancer to be ready",
+          "status": "Progressing"
+        },
+        "kind": "Ingress",
+        "name": "shop",
+        "namespace": "shop",
+        "status": "Synced",
+        "version": "v1"
+      },
+      {
+        "kind": "ConfigMap",
+        "name": "shop-config",
+        "namespace": "shop",
+        "requiresPruning": true,
+        "status": "OutOfSync",
+        "version": "v1"
+      },
+      {
+        "kind": "Secret",
+        "name": "shop-tls",
+        "namespace": "shop",
+        "status": "Synced",
+        "version": "v1"
+      }
+    ],
+    "sourceType": "Directory",
+    "sync": {
+      "revision": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+      "status": "OutOfSync"
+    }
+  }
+}

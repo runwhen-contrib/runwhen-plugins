@@ -1,0 +1,304 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/failed-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - failed-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"failed-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"failed.rw.example\"],\"issuerRef\":{\"name\":\"broken-issuer\"},\"secretName\":\"failed-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:56:13Z",
+            "generation": 1,
+            "name": "failed-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "16042",
+            "uid": "b25abfe5-9580-4be6-ac26-44644474fb59"
+        },
+        "spec": {
+            "dnsNames": [
+                "failed.rw.example"
+            ],
+            "issuerRef": {
+                "name": "broken-issuer"
+            },
+            "secretName": "failed-cert-tls"
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:56:13Z",
+                    "message": "The certificate request has failed to complete and will be retried: Failed to wait for order resource",
+                    "observedGeneration": 1,
+                    "reason": "Failed",
+                    "status": "False",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T19:56:13Z",
+                    "message": "The certificate request has failed to complete and will be retried",
+                    "observedGeneration": 1,
+                    "reason": "Failed",
+                    "status": "True",
+                    "type": "Issuing"
+                }
+            ],
+            "lastFailureTime": "2026-11-03T19:41:50Z",
+            "revision": 0
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificaterequests.cert-manager.io
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "cert-manager.io/v1",
+                "kind": "CertificateRequest",
+                "metadata": {
+                    "annotations": {
+                        "cert-manager.io/certificate-revision": "1",
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"CertificateRequest\",\"metadata\":{\"annotations\":{\"cert-manager.io/certificate-revision\":\"1\"},\"name\":\"failed-cert-1\",\"namespace\":\"rw-certs\",\"ownerReferences\":[{\"apiVersion\":\"cert-manager.io/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"Certificate\",\"name\":\"failed-cert\",\"uid\":\"b25abfe5-9580-4be6-ac26-44644474fb59\"}]},\"spec\":{\"issuerRef\":{\"group\":\"cert-manager.io\",\"kind\":\"Issuer\",\"name\":\"broken-issuer\"},\"request\":\"Zm9v\"}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T19:56:15Z",
+                    "generation": 1,
+                    "name": "failed-cert-1",
+                    "namespace": "rw-certs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "cert-manager.io/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Certificate",
+                            "name": "failed-cert",
+                            "uid": "b25abfe5-9580-4be6-ac26-44644474fb59"
+                        }
+                    ],
+                    "resourceVersion": "16049",
+                    "uid": "4d633b05-e152-492b-8180-d7f85b7cf35c"
+                },
+                "spec": {
+                    "issuerRef": {
+                        "group": "cert-manager.io",
+                        "kind": "Issuer",
+                        "name": "broken-issuer"
+                    },
+                    "request": "Zm9v"
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "Certificate request has been approved by cert-manager.io",
+                            "observedGeneration": 1,
+                            "reason": "cert-manager.io",
+                            "status": "True",
+                            "type": "Approved"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "Failed to wait for order resource failed-cert-1-123 to become ready: order is in errored state",
+                            "observedGeneration": 1,
+                            "reason": "Failed",
+                            "status": "False",
+                            "type": "Ready"
+                        }
+                    ],
+                    "failureTime": "2026-11-03T07:56:15Z"
+                }
+            },
+            {
+                "apiVersion": "cert-manager.io/v1",
+                "kind": "CertificateRequest",
+                "metadata": {
+                    "annotations": {
+                        "cert-manager.io/certificate-revision": "2",
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"CertificateRequest\",\"metadata\":{\"annotations\":{\"cert-manager.io/certificate-revision\":\"2\"},\"name\":\"failed-cert-2\",\"namespace\":\"rw-certs\",\"ownerReferences\":[{\"apiVersion\":\"cert-manager.io/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"Certificate\",\"name\":\"failed-cert\",\"uid\":\"b25abfe5-9580-4be6-ac26-44644474fb59\"}]},\"spec\":{\"issuerRef\":{\"group\":\"cert-manager.io\",\"kind\":\"Issuer\",\"name\":\"broken-issuer\"},\"request\":\"Zm9v\"}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T19:56:15Z",
+                    "generation": 1,
+                    "name": "failed-cert-2",
+                    "namespace": "rw-certs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "cert-manager.io/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Certificate",
+                            "name": "failed-cert",
+                            "uid": "b25abfe5-9580-4be6-ac26-44644474fb59"
+                        }
+                    ],
+                    "resourceVersion": "16051",
+                    "uid": "660e760e-7e35-45be-9b42-94e9239f1d03"
+                },
+                "spec": {
+                    "issuerRef": {
+                        "group": "cert-manager.io",
+                        "kind": "Issuer",
+                        "name": "broken-issuer"
+                    },
+                    "request": "Zm9v"
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "Denied by policy",
+                            "observedGeneration": 1,
+                            "reason": "ApprovalDenied",
+                            "status": "True",
+                            "type": "Denied"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "The CertificateRequest was denied by an approval controller",
+                            "observedGeneration": 1,
+                            "reason": "Denied",
+                            "status": "False",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "The CSR PEM requests a duration of 1h0m0s, which is shorter than the minimum",
+                            "observedGeneration": 1,
+                            "reason": "RequestInvalid",
+                            "status": "True",
+                            "type": "InvalidRequest"
+                        }
+                    ],
+                    "failureTime": "2026-11-03T19:41:51Z"
+                }
+            },
+            {
+                "apiVersion": "cert-manager.io/v1",
+                "kind": "CertificateRequest",
+                "metadata": {
+                    "annotations": {
+                        "cert-manager.io/certificate-revision": "1",
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"CertificateRequest\",\"metadata\":{\"annotations\":{\"cert-manager.io/certificate-revision\":\"1\"},\"name\":\"ready-cert-1\",\"namespace\":\"rw-certs\",\"ownerReferences\":[{\"apiVersion\":\"cert-manager.io/v1\",\"blockOwnerDeletion\":true,\"controller\":true,\"kind\":\"Certificate\",\"name\":\"ready-cert\",\"uid\":\"75f6303e-91a0-4cc3-a028-9125c6864eb7\"}]},\"spec\":{\"issuerRef\":{\"group\":\"cert-manager.io\",\"kind\":\"Issuer\",\"name\":\"ca-ready\"},\"request\":\"Zm9v\"}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T19:56:14Z",
+                    "generation": 1,
+                    "name": "ready-cert-1",
+                    "namespace": "rw-certs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "cert-manager.io/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Certificate",
+                            "name": "ready-cert",
+                            "uid": "75f6303e-91a0-4cc3-a028-9125c6864eb7"
+                        }
+                    ],
+                    "resourceVersion": "16045",
+                    "uid": "8a6a9081-0c38-4727-b88f-79293ad3bfff"
+                },
+                "spec": {
+                    "issuerRef": {
+                        "group": "cert-manager.io",
+                        "kind": "Issuer",
+                        "name": "ca-ready"
+                    },
+                    "request": "Zm9v"
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "Certificate request has been approved by cert-manager.io",
+                            "observedGeneration": 1,
+                            "reason": "cert-manager.io",
+                            "status": "True",
+                            "type": "Approved"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T19:56:13Z",
+                            "message": "Certificate fetched from issuer successfully",
+                            "observedGeneration": 1,
+                            "reason": "Issued",
+                            "status": "True",
+                            "type": "Ready"
+                        }
+                    ]
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - orders.acme.cert-manager.io
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    error: the server doesn't have a resource type "orders"
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - challenges.acme.cert-manager.io
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    error: the server doesn't have a resource type "challenges"
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    requests:
+      - name: failed-cert-2
+        creationTimestamp: '2026-11-03T19:56:15Z'
+        revision: 2
+        failureTime: '2026-11-03T19:41:51Z'
+        issuerRef: {name: broken-issuer, kind: Issuer, group: cert-manager.io}
+        ready: {type: Ready, status: 'False', reason: Denied, message: The CertificateRequest was denied by an approval controller, truncated: false, lastTransitionTime: '2026-11-03T19:56:13Z', observedGeneration: 1}
+        approved: null
+        denied: {type: Denied, status: 'True', reason: ApprovalDenied, message: Denied by policy, truncated: false, lastTransitionTime: '2026-11-03T19:56:13Z', observedGeneration: 1}
+        invalidRequest: {type: InvalidRequest, status: 'True', reason: RequestInvalid, message: 'The CSR PEM requests a duration of 1h0m0s, which is shorter than the minimum', truncated: false, lastTransitionTime: '2026-11-03T19:56:13Z', observedGeneration: 1}
+      - name: failed-cert-1
+        creationTimestamp: '2026-11-03T19:56:15Z'
+        revision: 1
+        failureTime: '2026-11-03T07:56:15Z'
+        issuerRef: {name: broken-issuer, kind: Issuer, group: cert-manager.io}
+        ready: {type: Ready, status: 'False', reason: Failed, message: 'Failed to wait for order resource failed-cert-1-123 to become ready: order is in errored state', truncated: false, lastTransitionTime: '2026-11-03T19:56:13Z', observedGeneration: 1}
+        approved: {type: Approved, status: 'True', reason: cert-manager.io, message: Certificate request has been approved by cert-manager.io, truncated: false, lastTransitionTime: '2026-11-03T19:56:13Z', observedGeneration: 1}
+        denied: null
+        invalidRequest: null
+    orders: {applicable: false, items: []}
+    challenges: {applicable: false, items: []}

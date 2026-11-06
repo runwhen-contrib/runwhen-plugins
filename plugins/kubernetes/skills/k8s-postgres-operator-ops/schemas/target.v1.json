@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The cluster object a write task acted on",
+  "description": "gitopsManaged is true when Flux or Argo CD labels or annotations are on the object; the controller may revert a change to it. patroniCluster is the Patroni scope the commands used (null when the task did not read it). Only keys are reported.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "enum": [
+        "PostgresCluster",
+        "postgresql"
+      ]
+    },
+    "operator": {
+      "enum": [
+        "crunchy",
+        "zalando"
+      ]
+    },
+    "name": {
+      "type": [
+        "string"
+      ]
+    },
+    "namespace": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "postgresVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "patroniCluster": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "gitopsManaged": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "gitops": {
+      "type": "object",
+      "properties": {
+        "managed": {
+          "type": [
+            "boolean"
+          ]
+        },
+        "tool": {
+          "enum": [
+            "flux",
+            "argocd",
+            null
+          ]
+        },
+        "signals": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "label",
+                  "annotation"
+                ]
+              },
+              "key": {
+                "type": [
+                  "string"
+                ]
+              },
+              "tool": {
+                "enum": [
+                  "flux",
+                  "argocd"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "key",
+              "tool"
+            ]
+          }
+        }
+      },
+      "required": [
+        "managed",
+        "tool",
+        "signals"
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "operator",
+    "name",
+    "namespace",
+    "generation",
+    "postgresVersion",
+    "patroniCluster",
+    "gitopsManaged",
+    "gitops"
+  ]
+}

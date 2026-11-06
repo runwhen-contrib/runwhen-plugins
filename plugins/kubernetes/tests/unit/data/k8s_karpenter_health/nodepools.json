@@ -1,0 +1,377 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "creationTimestamp": "2026-11-03T20:26:50Z",
+        "generation": 1,
+        "name": "broken-pool",
+        "resourceVersion": "20932",
+        "uid": "1b486695-0ea6-4c3f-a577-c6d7a1565a70"
+      },
+      "spec": {
+        "disruption": {
+          "budgets": [
+            {
+              "nodes": "10%"
+            }
+          ],
+          "consolidateAfter": "1m",
+          "consolidationPolicy": "WhenEmptyOrUnderutilized"
+        },
+        "limits": {
+          "cpu": "50"
+        },
+        "template": {
+          "spec": {
+            "expireAfter": "720h",
+            "nodeClassRef": {
+              "group": "karpenter.k8s.aws",
+              "kind": "EC2NodeClass",
+              "name": "broken"
+            },
+            "requirements": [
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "spot",
+                  "on-demand"
+                ]
+              }
+            ]
+          }
+        },
+        "weight": 1
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "NodeClassRef not ready",
+            "observedGeneration": 1,
+            "reason": "NodeClassNotReady",
+            "status": "False",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "ValidationSucceeded",
+            "status": "True",
+            "type": "ValidationSucceeded"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "NodeClassRef not ready",
+            "observedGeneration": 1,
+            "reason": "NodeClassNotReady",
+            "status": "False",
+            "type": "NodeClassReady"
+          }
+        ],
+        "resources": {
+          "cpu": "4",
+          "nodes": "1"
+        }
+      }
+    },
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "creationTimestamp": "2026-11-03T20:26:50Z",
+        "generation": 1,
+        "name": "external-pool",
+        "resourceVersion": "20934",
+        "uid": "c6a6033b-b1de-4d75-9018-a3fd309024fb"
+      },
+      "spec": {
+        "disruption": {
+          "budgets": [
+            {
+              "nodes": "10%"
+            }
+          ],
+          "consolidateAfter": "1m",
+          "consolidationPolicy": "WhenEmptyOrUnderutilized"
+        },
+        "limits": {
+          "cpu": "10"
+        },
+        "template": {
+          "spec": {
+            "expireAfter": "720h",
+            "nodeClassRef": {
+              "group": "karpenter.kwok.sh",
+              "kind": "KWOKNodeClass",
+              "name": "kwok"
+            },
+            "requirements": [
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "spot",
+                  "on-demand"
+                ]
+              }
+            ]
+          }
+        },
+        "weight": 1
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-03T20:26:52Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "Ready",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:52Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "NodeClassReady",
+            "status": "True",
+            "type": "NodeClassReady"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "creationTimestamp": "2026-11-03T20:26:50Z",
+        "generation": 1,
+        "name": "full-pool",
+        "resourceVersion": "20931",
+        "uid": "aac1a5e6-1a35-417c-96b3-a047a93073dd"
+      },
+      "spec": {
+        "disruption": {
+          "budgets": [
+            {
+              "nodes": "0",
+              "reasons": [
+                "Underutilized"
+              ]
+            },
+            {
+              "nodes": "20%"
+            }
+          ],
+          "consolidateAfter": "1m",
+          "consolidationPolicy": "WhenEmptyOrUnderutilized"
+        },
+        "limits": {
+          "cpu": "100",
+          "nodes": "3"
+        },
+        "template": {
+          "spec": {
+            "expireAfter": "720h",
+            "nodeClassRef": {
+              "group": "karpenter.k8s.aws",
+              "kind": "EC2NodeClass",
+              "name": "default"
+            },
+            "requirements": [
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "spot",
+                  "on-demand"
+                ]
+              }
+            ]
+          }
+        },
+        "weight": 5
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "Ready",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "ValidationSucceeded",
+            "status": "True",
+            "type": "ValidationSucceeded"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "NodeClassReady",
+            "status": "True",
+            "type": "NodeClassReady"
+          }
+        ],
+        "resources": {
+          "cpu": "100",
+          "memory": "400Gi",
+          "nodes": "3"
+        }
+      }
+    },
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "creationTimestamp": "2026-11-03T20:26:50Z",
+        "generation": 1,
+        "name": "healthy-pool",
+        "resourceVersion": "20930",
+        "uid": "3fde35ec-07c0-4dfe-aae8-6a9a3cf02d22"
+      },
+      "spec": {
+        "disruption": {
+          "budgets": [
+            {
+              "nodes": "10%"
+            }
+          ],
+          "consolidateAfter": "1m",
+          "consolidationPolicy": "WhenEmptyOrUnderutilized"
+        },
+        "limits": {
+          "cpu": "1000",
+          "memory": "1000Gi"
+        },
+        "template": {
+          "spec": {
+            "expireAfter": "720h",
+            "nodeClassRef": {
+              "group": "karpenter.k8s.aws",
+              "kind": "EC2NodeClass",
+              "name": "default"
+            },
+            "requirements": [
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "spot",
+                  "on-demand"
+                ]
+              }
+            ]
+          }
+        },
+        "weight": 10
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "Ready",
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "ValidationSucceeded",
+            "status": "True",
+            "type": "ValidationSucceeded"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:51Z",
+            "message": "",
+            "observedGeneration": 1,
+            "reason": "NodeClassReady",
+            "status": "True",
+            "type": "NodeClassReady"
+          }
+        ],
+        "resources": {
+          "cpu": "8",
+          "memory": "32Gi",
+          "nodes": "2",
+          "pods": "20"
+        }
+      }
+    },
+    {
+      "apiVersion": "karpenter.sh/v1",
+      "kind": "NodePool",
+      "metadata": {
+        "creationTimestamp": "2026-11-03T20:26:50Z",
+        "generation": 1,
+        "name": "orphan-pool",
+        "resourceVersion": "20933",
+        "uid": "6871c7c1-9267-4beb-be93-69dfa3f6287d"
+      },
+      "spec": {
+        "disruption": {
+          "budgets": [],
+          "consolidateAfter": "1m",
+          "consolidationPolicy": "WhenEmptyOrUnderutilized"
+        },
+        "limits": {},
+        "template": {
+          "spec": {
+            "expireAfter": "720h",
+            "nodeClassRef": {
+              "group": "karpenter.k8s.aws",
+              "kind": "EC2NodeClass",
+              "name": "gone"
+            },
+            "requirements": [
+              {
+                "key": "karpenter.sh/capacity-type",
+                "operator": "In",
+                "values": [
+                  "spot",
+                  "on-demand"
+                ]
+              }
+            ]
+          }
+        },
+        "weight": 1
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-11-03T20:26:52Z",
+            "message": "NodeClass not found on cluster",
+            "observedGeneration": 1,
+            "reason": "NodeClassNotFound",
+            "status": "False",
+            "type": "Ready"
+          },
+          {
+            "lastTransitionTime": "2026-11-03T20:26:52Z",
+            "message": "NodeClass not found on cluster",
+            "observedGeneration": 1,
+            "reason": "NodeClassNotFound",
+            "status": "False",
+            "type": "NodeClassReady"
+          }
+        ]
+      }
+    }
+  ],
+  "kind": "List"
+}

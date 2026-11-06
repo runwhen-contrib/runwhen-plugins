@@ -1,0 +1,804 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/ingresses/web
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - ingresses.networking.k8s.io
+  - web
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"Ingress\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"rules\":[{\"host\":\"web.rw-healthy.local\",\"http\":{\"paths\":[{\"backend\":{\"service\":{\"name\":\"web\",\"port\":{\"number\":80}}},\"path\":\"/\",\"pathType\":\"Prefix\"}]}}]}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:00Z",
+            "generation": 1,
+            "name": "web",
+            "namespace": "rw-healthy",
+            "resourceVersion": "499",
+            "uid": "01e72069-124f-4ec9-9571-25eb7d9e0f3d"
+        },
+        "spec": {
+            "rules": [
+                {
+                    "host": "web.rw-healthy.local",
+                    "http": {
+                        "paths": [
+                            {
+                                "backend": {
+                                    "service": {
+                                        "name": "web",
+                                        "port": {
+                                            "number": 80
+                                        }
+                                    }
+                                },
+                                "path": "/",
+                                "pathType": "Prefix"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"ports\":[{\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"web\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "485",
+                    "uid": "7933aec9-247b-4b7d-8303-0c6f93b4ca7c"
+                },
+                "spec": {
+                    "clusterIP": "10.96.69.240",
+                    "clusterIPs": [
+                        "10.96.69.240"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 80
+                        }
+                    ],
+                    "selector": {
+                        "app": "web"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - events
+  - --field-selector
+  - type=Warning
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:46Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-5796b9665b-5c6dq",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8139",
+                    "uid": "c3bcac98-5517-46b2-bd96-4d4049757c3d"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:46:47Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.33:80/\": dial tcp 10.244.0.33:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:46Z",
+                    "name": "web-5796b9665b-5c6dq.18e49d568458d72b",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8493",
+                    "uid": "44f29770-df7e-48b7-a103-f72e671137fe"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:48Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-5796b9665b-npsh2",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8183",
+                    "uid": "2aa6332a-3cee-4d0f-8b17-5210aa08658f"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:46:39Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.34:80/\": dial tcp 10.244.0.34:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:48Z",
+                    "name": "web-5796b9665b-npsh2.18e49d571553aec0",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8434",
+                    "uid": "5524e99f-c78b-42a3-95c9-fd309229856e"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:24Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-589fdf8d9c-kcwbr",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7795",
+                    "uid": "6bea0f0c-f38a-4481-8082-961164efea05"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:45:24Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.28:80/\": dial tcp 10.244.0.28:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:24Z",
+                    "name": "web-589fdf8d9c-kcwbr.18e49d5160709f43",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7809",
+                    "uid": "b8d7eb2a-6383-4c4b-b539-5c7acaba81d9"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:25Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-589fdf8d9c-vbpsd",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7834",
+                    "uid": "3a0ad02d-ab5e-470a-a1a3-42980aa2e2ed"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:45:30Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.29:80/\": dial tcp 10.244.0.29:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:25Z",
+                    "name": "web-589fdf8d9c-vbpsd.18e49d51b2337b8e",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8055",
+                    "uid": "8277bb60-70da-4643-9c30-e81668dfe5f2"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:46:41Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-7cb4d5696c-g4gnr",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8437",
+                    "uid": "884fd7c3-3055-4f41-8d84-fe8d5ff6f8a5"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:46:41Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.38:80/\": dial tcp 10.244.0.38:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:46:41Z",
+                    "name": "web-7cb4d5696c-g4gnr.18e49d634ba90d6b",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8457",
+                    "uid": "9f5f0a67-4d27-4b24-bf87-b0071a218f3c"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:48:15Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-7cb4d5696c-mgbh9",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8784",
+                    "uid": "ff8e8f2a-41e6-4403-a39f-b4b8839b3a97"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:48:15Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.42:80/\": dial tcp 10.244.0.42:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:15Z",
+                    "name": "web-7cb4d5696c-mgbh9.18e49d7936f2e4ad",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8805",
+                    "uid": "93305c56-9c6c-4491-b2e4-6f54c8cc41fa"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:46:39Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-7cb4d5696c-n4xwc",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8399",
+                    "uid": "ed841690-8c47-408b-9e2a-7d6ecac2b635"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:46:39Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.37:80/\": dial tcp 10.244.0.37:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:46:39Z",
+                    "name": "web-7cb4d5696c-n4xwc.18e49d62bf2c433f",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8408",
+                    "uid": "a677ccd7-a1a7-4a6c-95af-a2296c61753a"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:32Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-86sl5",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8054",
+                    "uid": "9f5a0eb6-3e78-47eb-ac7c-18d14caed4f9"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:45:48Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.32:80/\": dial tcp 10.244.0.32:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:32Z",
+                    "name": "web-868f7b7477-86sl5.18e49d533b87ffbf",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8189",
+                    "uid": "3dc9012b-7b02-427d-adce-56be22b63f2b"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:29Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-clzbb",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7984",
+                    "uid": "45568faf-33fb-4825-ac45-70d019cf3f70"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:45:29Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.31:80/\": dial tcp 10.244.0.31:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:29Z",
+                    "name": "web-868f7b7477-clzbb.18e49d528e1d6489",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8016",
+                    "uid": "3ed543a4-f85a-4822-90b9-198591fea0ba"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:58:23Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-ddzml",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "496",
+                    "uid": "7cbd5dc7-ace9-449e-8469-55bd6664db6e"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:24:04Z",
+                "message": "Liveness probe failed: Get \"http://10.244.0.6:80/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:58:30Z",
+                    "name": "web-868f7b7477-ddzml.18e49ac0aef59e4c",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "5688",
+                    "uid": "e50b154d-263c-4700-87e2-47d4a1d71c22"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 5,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:58:25Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-ddzml",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "496",
+                    "uid": "7cbd5dc7-ace9-449e-8469-55bd6664db6e"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:27:55Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.6:80/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:58:30Z",
+                    "name": "web-868f7b7477-ddzml.18e49ac1049f259c",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "6130",
+                    "uid": "1a0e2271-989c-4339-bffb-b50dae56dfaf"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 3,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T17:58:23Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-drqlz",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "490",
+                    "uid": "712d3b48-f4e9-4fcf-b0c7-a0c1d3410aa3"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:28:56Z",
+                "message": "Liveness probe failed: Get \"http://10.244.0.5:80/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:58:30Z",
+                    "name": "web-868f7b7477-drqlz.18e49ac0aa0ba959",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "6192",
+                    "uid": "d0fbbb14-3c08-439f-a69c-10a62cb07ec3"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 2,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:24:05Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-drqlz",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "490",
+                    "uid": "712d3b48-f4e9-4fcf-b0c7-a0c1d3410aa3"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:26:14Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.5:80/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:24:06Z",
+                    "name": "web-868f7b7477-drqlz.18e49c2791790e75",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "5982",
+                    "uid": "ab120788-068d-489f-9621-daa0474a463c"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:50:16Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-fmbfh",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9117",
+                    "uid": "e4d6edd8-0f53-4cb2-af86-8977f3867ae2"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:50:16Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.47:80/\": dial tcp 10.244.0.47:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:50:16Z",
+                    "name": "web-868f7b7477-fmbfh.18e49d954873ad5d",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9138",
+                    "uid": "728b1cfb-0566-4023-a194-51247ef748b4"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:45:27Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-fz8fs",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7896",
+                    "uid": "0f2d9a96-181c-4b63-9951-233ba4fcf1cf"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:45:27Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.30:80/\": dial tcp 10.244.0.30:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:45:27Z",
+                    "name": "web-868f7b7477-fz8fs.18e49d521d05ca05",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7938",
+                    "uid": "6ceb6c1e-0da3-4a1f-9d16-c63173dbf315"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:50:15Z",
+                "involvedObject": {
+                    "apiVersion": "v1",
+                    "fieldPath": "spec.containers{nginx}",
+                    "kind": "Pod",
+                    "name": "web-868f7b7477-xvk94",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9085",
+                    "uid": "7715b3fa-92b4-4cc0-bc9f-91bf86204bae"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:50:15Z",
+                "message": "Readiness probe failed: Get \"http://10.244.0.46:80/\": dial tcp 10.244.0.46:80: connect: connection refused",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:50:15Z",
+                    "name": "web-868f7b7477-xvk94.18e49d950abe0ac2",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9094",
+                    "uid": "c56b7fa7-ef6d-4689-a01f-1bd61051cf37"
+                },
+                "reason": "Unhealthy",
+                "reportingComponent": "kubelet",
+                "reportingInstance": "rw-plugins-control-plane",
+                "source": {
+                    "component": "kubelet",
+                    "host": "rw-plugins-control-plane"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:48:25Z",
+                "involvedObject": {
+                    "apiVersion": "autoscaling/v2",
+                    "kind": "HorizontalPodAutoscaler",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8868",
+                    "uid": "a959e22d-84b5-4032-886e-aa35493a001d"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:48:25Z",
+                "message": "failed to get cpu utilization: unable to get metrics for resource cpu: unable to fetch metrics from resource metrics API: the server could not find the requested resource (get pods.metrics.k8s.io)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:25Z",
+                    "name": "web.18e49d7ba258e66d",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8869",
+                    "uid": "73b4c588-1835-426e-b347-6be33826152e"
+                },
+                "reason": "FailedGetResourceMetric",
+                "reportingComponent": "horizontal-pod-autoscaler",
+                "reportingInstance": "",
+                "source": {
+                    "component": "horizontal-pod-autoscaler"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:48:25Z",
+                "involvedObject": {
+                    "apiVersion": "autoscaling/v2",
+                    "kind": "HorizontalPodAutoscaler",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8868",
+                    "uid": "a959e22d-84b5-4032-886e-aa35493a001d"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:48:25Z",
+                "message": "invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: unable to fetch metrics from resource metrics API: the server could not find the requested resource (get pods.metrics.k8s.io)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:25Z",
+                    "name": "web.18e49d7ba39cda11",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8872",
+                    "uid": "aafd5d7a-61cc-4b5b-97a6-e4761d15132e"
+                },
+                "reason": "FailedComputeMetricsReplicas",
+                "reportingComponent": "horizontal-pod-autoscaler",
+                "reportingInstance": "",
+                "source": {
+                    "component": "horizontal-pod-autoscaler"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:48:56Z",
+                "involvedObject": {
+                    "apiVersion": "autoscaling/v2",
+                    "kind": "HorizontalPodAutoscaler",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8922",
+                    "uid": "954690cc-a72e-4124-80b2-4639b6f01418"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:48:56Z",
+                "message": "failed to get cpu utilization: unable to get metrics for resource cpu: unable to fetch metrics from resource metrics API: the server could not find the requested resource (get pods.metrics.k8s.io)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:56Z",
+                    "name": "web.18e49d82b29d1ff9",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8924",
+                    "uid": "e27c1efc-f0f6-4819-9726-52e7fd212d75"
+                },
+                "reason": "FailedGetResourceMetric",
+                "reportingComponent": "horizontal-pod-autoscaler",
+                "reportingInstance": "",
+                "source": {
+                    "component": "horizontal-pod-autoscaler"
+                },
+                "type": "Warning"
+            },
+            {
+                "apiVersion": "v1",
+                "count": 1,
+                "eventTime": null,
+                "firstTimestamp": "2026-11-03T18:48:56Z",
+                "involvedObject": {
+                    "apiVersion": "autoscaling/v2",
+                    "kind": "HorizontalPodAutoscaler",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8922",
+                    "uid": "954690cc-a72e-4124-80b2-4639b6f01418"
+                },
+                "kind": "Event",
+                "lastTimestamp": "2026-11-03T18:48:56Z",
+                "message": "invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: unable to fetch metrics from resource metrics API: the server could not find the requested resource (get pods.metrics.k8s.io)",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T18:48:56Z",
+                    "name": "web.18e49d82b2f6bf7f",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8925",
+                    "uid": "d77df70e-cb6c-4a82-a95b-c29fb7dc7045"
+                },
+                "reason": "FailedComputeMetricsReplicas",
+                "reportingComponent": "horizontal-pod-autoscaler",
+                "reportingInstance": "",
+                "source": {
+                    "component": "horizontal-pod-autoscaler"
+                },
+                "type": "Warning"
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    events:
+      items: []
+      total: 0
+    inspected:
+      ingress: web
+      services:
+      - web
+      servicesLookedUp: true

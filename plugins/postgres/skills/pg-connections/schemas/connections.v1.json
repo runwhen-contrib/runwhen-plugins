@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Connections in use against the limit, and who holds them",
+  "description": "Facts about pg_stat_activity and the connection settings. The task's own backend is not counted. Counts by state, database and user cover client backends; byBackendType covers every backend.",
+  "type": "object",
+  "$defs": {
+    "listing": {
+      "type": "object",
+      "properties": {
+        "items": {"type": "array", "items": {"type": "object"}},
+        "total": {"type": "integer", "description": "Groups found"},
+        "omitted": {"type": "integer", "description": "Groups left out of items by maxItems"},
+        "truncated": {"type": "boolean", "description": "true when items was cut at maxItems"}
+      },
+      "required": ["items", "total", "omitted", "truncated"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "visibility": {
+      "enum": ["full", "partial"],
+      "description": "partial: the role is neither a superuser nor a member of pg_read_all_stats, so other roles' sessions show no state, query or wait event. The run reports permission_denied scoped to pg_stat_activity."
+    },
+    "hiddenSessions": {"type": "integer", "description": "Rows of other roles' sessions that name a database and a role but whose backend type and state the role cannot read (0 when visibility is full). They are not in inUse; the count is an estimate (it can include a logical replication worker or walsender)"},
+    "maxConnections": {"type": "integer"},
+    "superuserReservedConnections": {"type": "integer"},
+    "reservedConnections": {"type": ["integer", "null"], "description": "reserved_connections (PostgreSQL 16 and later); null when the server has no such setting"},
+    "usableConnections": {"type": "integer", "description": "maxConnections - superuserReservedConnections - reservedConnections: the slots an ordinary role can use"},
+    "inUse": {"type": "integer", "description": "Client connections (rows whose backend_type is client backend), not counting the task's own. When visibility is partial only the sessions the role can see are counted: a lower bound, with hiddenSessions more that may exist"},
+    "usedPercent": {"type": ["number", "null"], "description": "inUse as a percentage of usableConnections, one decimal; null when usableConnections is 0. A lower bound when visibility is partial (computed from the visible client backends only)"},
+    "byState": {
+      "type": "object",
+      "description": "Visible client sessions by pg_stat_activity.state; the hidden sessions of other roles are not counted here when visibility is partial (see hiddenSessions)",
+      "properties": {
+        "active": {"type": "integer"},
+        "idle": {"type": "integer"},
+        "idleInTransaction": {"type": "integer"},
+        "idleInTransactionAborted": {"type": "integer"},
+        "fastpath": {"type": "integer", "description": "state fastpath function call"},
+        "disabled": {"type": "integer"},
+        "nullState": {"type": "integer"}
+      },
+      "required": ["active", "idle", "idleInTransaction", "idleInTransactionAborted", "fastpath", "disabled", "nullState"],
+      "additionalProperties": false
+    },
+    "byBackendType": {
+      "description": "Every backend by backend_type, largest first; backendType is null for every row whose type the role cannot read (the sessions and background processes of other roles) when visibility is partial",
+      "allOf": [{"$ref": "#/$defs/listing"}, {"properties": {"items": {"items": {
+        "type": "object",
+        "properties": {"backendType": {"type": ["string", "null"]}, "count": {"type": "integer"}},
+        "required": ["backendType", "count"],
+        "additionalProperties": false
+      }}}}]
+    },
+    "byDatabase": {
+      "description": "Visible client sessions by database, largest first",
+      "allOf": [{"$ref": "#/$defs/listing"}, {"properties": {"items": {"items": {
+        "type": "object",
+        "properties": {"database": {"type": ["string", "null"]}, "count": {"type": "integer"}},
+        "required": ["database", "count"],
+        "additionalProperties": false
+      }}}}]
+    },
+    "byUserApplication": {
+      "description": "Visible client sessions by role and application_name, largest first",
+      "allOf": [{"$ref": "#/$defs/listing"}, {"properties": {"items": {"items": {
+        "type": "object",
+        "properties": {"user": {"type": ["string", "null"]}, "applicationName": {"type": ["string", "null"]}, "count": {"type": "integer"}},
+        "required": ["user", "applicationName", "count"],
+        "additionalProperties": false
+      }}}}]
+    },
+    "oldestIdleInTransactionMs": {"type": ["integer", "null"], "description": "Time in ms the longest idle-in-transaction session (including aborted) has been idle; null when there is none or visibility is partial"},
+    "oldestTransactionMs": {"type": ["integer", "null"], "description": "Age in ms of the oldest open transaction of a client session; null when there is none or visibility is partial"},
+    "waitingOnLock": {"type": ["integer", "null"], "description": "Client sessions with wait_event_type Lock; null when visibility is partial"}
+  },
+  "required": ["visibility", "hiddenSessions", "maxConnections", "superuserReservedConnections", "reservedConnections", "usableConnections", "inUse", "usedPercent", "byState", "byBackendType", "byDatabase", "byUserApplication", "oldestIdleInTransactionMs", "oldestTransactionMs", "waitingOnLock"],
+  "additionalProperties": false
+}

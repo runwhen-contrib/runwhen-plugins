@@ -1,0 +1,649 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-seaweedfs/statefulsets/swfs-ok
+now: '2026-11-04T02:51:35.957Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - statefulsets
+  - swfs-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-ok\",\"app.kubernetes.io/name\":\"seaweedfs\"},\"name\":\"swfs-ok\",\"namespace\":\"rw-seaweedfs\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-ok\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"serviceName\":\"swfs-ok\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/component\":\"all-in-one\",\"app.kubernetes.io/instance\":\"swfs-ok\",\"app.kubernetes.io/name\":\"seaweedfs\"}},\"spec\":{\"containers\":[{\"args\":[\"server\",\"-dir=/data\",\"-ip.bind=0.0.0.0\",\"-master.volumeSizeLimitMB=16\",\"-volume.max=30\",\"-filer\",\"-s3\",\"-metricsPort=9327\"],\"image\":\"chrislusf/seaweedfs:4.41\",\"name\":\"seaweedfs\",\"ports\":[{\"containerPort\":9333,\"name\":\"swfs-master\"},{\"containerPort\":8080,\"name\":\"swfs-volume\"},{\"containerPort\":8888,\"name\":\"swfs-filer\"},{\"containerPort\":8333,\"name\":\"swfs-s3\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/cluster/status\",\"port\":9333},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"256Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"64Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}],\"volumes\":[{\"emptyDir\":{},\"name\":\"data\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-04T02:50:36Z",
+            "generation": 1,
+            "labels": {
+                "app.kubernetes.io/component": "all-in-one",
+                "app.kubernetes.io/instance": "swfs-ok",
+                "app.kubernetes.io/name": "seaweedfs"
+            },
+            "name": "swfs-ok",
+            "namespace": "rw-seaweedfs",
+            "resourceVersion": "86835",
+            "uid": "75449e78-295a-443a-9274-1758cf2d7ef5"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/component": "all-in-one",
+                    "app.kubernetes.io/instance": "swfs-ok",
+                    "app.kubernetes.io/name": "seaweedfs"
+                }
+            },
+            "serviceName": "swfs-ok",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-ok",
+                        "app.kubernetes.io/name": "seaweedfs"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-ip.bind=0.0.0.0",
+                                "-master.volumeSizeLimitMB=16",
+                                "-volume.max=30",
+                                "-filer",
+                                "-s3",
+                                "-metricsPort=9327"
+                            ],
+                            "image": "chrislusf/seaweedfs:4.41",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "ports": [
+                                {
+                                    "containerPort": 9333,
+                                    "name": "swfs-master",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8080,
+                                    "name": "swfs-volume",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "swfs-filer",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8333,
+                                    "name": "swfs-s3",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/cluster/status",
+                                    "port": 9333,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "volumes": [
+                        {
+                            "emptyDir": {},
+                            "name": "data"
+                        }
+                    ]
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "swfs-ok-5b6f664bf7",
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "swfs-ok-5b6f664bf7",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-seaweedfs
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=seaweedfs,app.kubernetes.io/instance=swfs-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-04T02:50:36Z",
+                    "generateName": "swfs-ok-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/component": "all-in-one",
+                        "app.kubernetes.io/instance": "swfs-ok",
+                        "app.kubernetes.io/name": "seaweedfs",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "swfs-ok-5b6f664bf7",
+                        "statefulset.kubernetes.io/pod-name": "swfs-ok-0"
+                    },
+                    "name": "swfs-ok-0",
+                    "namespace": "rw-seaweedfs",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "swfs-ok",
+                            "uid": "75449e78-295a-443a-9274-1758cf2d7ef5"
+                        }
+                    ],
+                    "resourceVersion": "86836",
+                    "uid": "01af3fe5-c8d7-4f33-ab15-0ed85b04a9aa"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "server",
+                                "-dir=/data",
+                                "-ip.bind=0.0.0.0",
+                                "-master.volumeSizeLimitMB=16",
+                                "-volume.max=30",
+                                "-filer",
+                                "-s3",
+                                "-metricsPort=9327"
+                            ],
+                            "image": "chrislusf/seaweedfs:4.41",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "seaweedfs",
+                            "ports": [
+                                {
+                                    "containerPort": 9333,
+                                    "name": "swfs-master",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8080,
+                                    "name": "swfs-volume",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "swfs-filer",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8333,
+                                    "name": "swfs-s3",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/cluster/status",
+                                    "port": 9333,
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-vtdff",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "swfs-ok-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "swfs-ok",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "emptyDir": {},
+                            "name": "data"
+                        },
+                        {
+                            "name": "kube-api-access-vtdff",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "10m",
+                        "memory": "64Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T02:50:37Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T02:50:36Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T02:50:39Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T02:50:39Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T02:50:36Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "10m",
+                                "memory": "64Mi"
+                            },
+                            "containerID": "containerd://2b28c1d1f74256287a81c8d766490a149f070a68179591ae81a95ed4c5a40b2e",
+                            "image": "docker.io/chrislusf/seaweedfs:4.41",
+                            "imageID": "docker.io/chrislusf/seaweedfs@sha256:43b768cd62b00d132439cda881b93fd1adebf1b315e996e794087743821d771d",
+                            "lastState": {},
+                            "name": "seaweedfs",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "256Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-04T02:50:37Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/data",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-vtdff",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.40",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.40"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "256Mi"
+                        },
+                        "requests": {
+                            "memory": "64Mi"
+                        }
+                    },
+                    "startTime": "2026-11-04T02:50:36Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-seaweedfs
+    kind: pods
+    name: swfs-ok-0
+    port: 8333
+    path: /runwhen-s3-check/?list-type=2&max-keys=1
+    scheme: http
+  response:
+    status: 200
+    headers:
+      accept-ranges: bytes
+      cache-control: no-cache, private
+      content-length: '244'
+      content-type: application/xml
+      date: Wed, 04 Nov 2026 02:51:36 GMT
+      server: SeaweedFS 30GB 4.41
+      vary: Origin
+      x-amz-request-id: 18E4B7D99BB188E39362FB0E
+      connection: close
+    body: |-
+      <?xml version="1.0" encoding="UTF-8"?>
+      <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>runwhen-s3-check</Name><Prefix></Prefix><MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated><KeyCount>0</KeyCount></ListBucketResult>
+    truncated: false
+    location: null
+- type: k8s-proxy-request
+  request:
+    method: PUT
+    namespace: rw-seaweedfs
+    kind: pods
+    name: swfs-ok-0
+    port: 8333
+    path: /runwhen-s3-check/runwhen-s3-check/20261104T025135957000Z-1e81d6.txt
+    scheme: http
+    headers:
+      content-type: text/plain
+    body: runwhen s3-check 2026-11-04T02:51:35Z
+  response:
+    status: 200
+    headers:
+      accept-ranges: bytes
+      cache-control: no-cache, private
+      content-length: '0'
+      date: Wed, 04 Nov 2026 02:51:37 GMT
+      etag: '"06f1421c18581baf2ae15f95b80412da"'
+      server: SeaweedFS 30GB 4.41
+      vary: Origin
+      x-amz-request-id: 18E4B7D99F39832E70297E03
+      connection: close
+    body: ''
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-seaweedfs
+    kind: pods
+    name: swfs-ok-0
+    port: 8333
+    path: /runwhen-s3-check/runwhen-s3-check/20261104T025135957000Z-1e81d6.txt
+    scheme: http
+  response:
+    status: 200
+    headers:
+      accept-ranges: bytes
+      cache-control: no-cache, private
+      content-length: '37'
+      content-type: text/plain
+      date: Wed, 04 Nov 2026 02:51:37 GMT
+      etag: '"06f1421c18581baf2ae15f95b80412da"'
+      last-modified: Wed, 04 Nov 2026 02:51:37 GMT
+      seaweed-x-amz-etag: 06f1421c18581baf2ae15f95b80412da
+      seaweed-x-amz-owner: admin
+      server: SeaweedFS 30GB 4.41
+      vary: Origin
+      x-amz-request-id: 18E4B7D9B86E38E6C8557BA3
+      connection: close
+    body: runwhen s3-check 2026-11-04T02:51:35Z
+    truncated: false
+    location: null
+- type: k8s-proxy-request
+  request:
+    method: DELETE
+    namespace: rw-seaweedfs
+    kind: pods
+    name: swfs-ok-0
+    port: 8333
+    path: /runwhen-s3-check/runwhen-s3-check/20261104T025135957000Z-1e81d6.txt
+    scheme: http
+  response:
+    status: 204
+    headers:
+      cache-control: no-cache, private
+      date: Wed, 04 Nov 2026 02:51:37 GMT
+      server: SeaweedFS 30GB 4.41
+      vary: Origin
+      x-amz-request-id: 18E4B7D9BE233ACDC37A9548
+      connection: close
+    body: ''
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-seaweedfs
+    kind: pods
+    name: swfs-ok-0
+    port: 8333
+    path: /runwhen-s3-check/runwhen-s3-check/20261104T025135957000Z-1e81d6.txt
+    scheme: http
+  response:
+    status: 404
+    headers:
+      accept-ranges: bytes
+      cache-control: no-cache, private
+      content-length: '366'
+      content-type: application/xml
+      date: Wed, 04 Nov 2026 02:51:37 GMT
+      server: SeaweedFS 30GB 4.41
+      vary: Origin
+      x-amz-request-id: 18E4B7D9C18F848E88B10A8D
+      connection: close
+    body: |-
+      <?xml version="1.0" encoding="UTF-8"?>
+      <Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Resource>/runwhen-s3-check/runwhen-s3-check/20261104T025135957000Z-1e81d6.txt</Resource><RequestId>18E4B7D9C18F848E88B10A8D</RequestId><Key>runwhen-s3-check/20261104T025135957000Z-1e81d6.txt</Key><BucketName>runwhen-s3-check</BucketName></Error>
+    truncated: false
+    location: null
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    probe:
+      gateway:
+        pod: swfs-ok-0
+        port: 8333
+      bucket: runwhen-s3-check
+      key: runwhen-s3-check/20261104T025135957000Z-1e81d6.txt
+      bucketListing: allowed
+      steps:
+      - name: put-object
+        ok: true
+        error: null
+      - name: get-object
+        ok: true
+        error: null
+      - name: delete-object
+        ok: true
+        error: null
+      - name: confirm-deleted
+        ok: true
+        error: null
+      passed: true
+      contentMatches: true
+      anonymousWrite: true
+      cleanedUp: true
+      leftBehind: []
+      plan:
+      - put-object
+      - get-object
+      - delete-object
+      - confirm-deleted

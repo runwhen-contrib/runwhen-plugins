@@ -1,0 +1,70 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most pods (and, per pod, queue items) a list output returns
+tasks:
+  - name: http-status
+    title: Jenkins HTTP status
+    description: >-
+      GET /login on each running pod through the API server's pod proxy (no exec, no
+      port-forward, no credential). A 200 whose page has the Jenkins footer ("Jenkins 2.452.3") is ok and the
+      footer is the version (versionSource login-footer); A 200 login
+      page without the footer (an SSO IdP) is ssoRedirect likely, ok null, with a
+      hint; a redirect to another host (never followed) is ssoRedirect redirect; any other 200 is an error, never ok. 503 and 404 are ok false. A version the page does
+      not give is the container image's tag (versionSource image-tag), else null. A 401 or 403 is
+      authRequired with a permission_denied error; skipped when every pod answers so. Pods not
+      Running are listed, not asked; replicas wanted with none Running is an unreachable error.
+      Inputs port, scheme, urlPrefix (Jenkins's --prefix, e.g. /jenkins): when not given, from the
+      Jenkins container's readiness probe (httpGet port and scheme, path minus a trailing /login),
+      else container port http (8080), http, no prefix.
+    script: scripts/http_status.py
+    timeout: 120s
+    tags: [jenkins, http, login, version]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Jenkins HTTP port; by default the port of the Jenkins container's readiness probe, else its container port named http, else 8080" }
+      scheme: { type: string, required: false, description: "http or https; by default the readiness probe's scheme, else http" }
+      urlPrefix: { type: string, required: false, description: "Jenkins's URL prefix (the chart's jenkinsUriPrefix), empty or plain path segments like /jenkins; by default the readiness probe's path minus a trailing /login" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      login: { schema: ./schemas/login.v1.json, description: "Per pod: the /login answer (HTTP status, ok, ssoRedirect), the Jenkins version and where it came from, and the workload's replica counts" }
+
+  - name: queue
+    title: Jenkins build queue and executors
+    description: >-
+      /queue/api/json and /computer/api/json on each running pod through the API server's pod
+      proxy, anonymously (?tree= asks only for the fields read; build parameters are never
+      fetched). Needs anonymous read, which the chart's default JCasC turns off; without it the
+      task is skipped, never an empty queue. Lists the queue items Jenkins flags stuck (any age)
+      and the blocked or buildable items waiting longer than stuckAfter (default 30m), each with
+      task name and url, age, flags and the why text; counts of items flagged stuck or blocked and
+      of items it only lets the caller discover (discoverableCount); and the offline executors
+      with their cause. A 401 or 403 is authRequired with a permission_denied error and an M4
+      hint; skipped when every endpoint answers so. A reply that is not the expected JSON is an
+      error, never an empty queue. Replicas wanted with none Running is an unreachable error.
+      Inputs stuckAfter, port, scheme, urlPrefix (from the readiness probe when not given, as for
+      http-status).
+    script: scripts/queue_status.py
+    timeout: 120s
+    tags: [jenkins, queue, stuck, executors, computers]
+    readOnly: true
+    inputs:
+      stuckAfter: { type: duration, default: 30m, description: "A queue item waiting longer than this is listed" }
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Jenkins HTTP port; by default the port of the Jenkins container's readiness probe, else its container port named http, else 8080" }
+      scheme: { type: string, required: false, description: "http or https; by default the readiness probe's scheme, else http" }
+      urlPrefix: { type: string, required: false, description: "Jenkins's URL prefix (the chart's jenkinsUriPrefix), empty or plain path segments like /jenkins; by default the readiness probe's path minus a trailing /login" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      queue: { schema: ./schemas/queue.v1.json, description: "Per pod: the queue items flagged stuck or waiting longer than stuckAfter, Jenkins's stuck, blocked and discoverable counts, and the offline executors" }

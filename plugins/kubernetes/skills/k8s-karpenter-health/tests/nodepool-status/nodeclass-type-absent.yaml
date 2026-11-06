@@ -1,0 +1,99 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/nodepools/aks-pool
+now: '2026-11-03T20:56:34.394Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - aks-pool
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "karpenter.sh/v1",
+        "kind": "NodePool",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodePool\",\"metadata\":{\"annotations\":{},\"name\":\"aks-pool\"},\"spec\":{\"disruption\":{\"budgets\":[{\"nodes\":\"10%\"}],\"consolidateAfter\":\"30s\",\"consolidationPolicy\":\"WhenEmpty\"},\"limits\":{\"cpu\":\"10\"},\"template\":{\"spec\":{\"expireAfter\":\"720h\",\"nodeClassRef\":{\"group\":\"karpenter.azure.com\",\"kind\":\"AKSNodeClass\",\"name\":\"default\"}}},\"weight\":1}}\n"
+            },
+            "creationTimestamp": "2026-11-03T20:40:16Z",
+            "generation": 1,
+            "name": "aks-pool",
+            "resourceVersion": "23219",
+            "uid": "52d312e2-90b6-48b2-8ea1-116a4159d61c"
+        },
+        "spec": {
+            "disruption": {
+                "budgets": [
+                    {
+                        "nodes": "10%"
+                    }
+                ],
+                "consolidateAfter": "30s",
+                "consolidationPolicy": "WhenEmpty"
+            },
+            "limits": {
+                "cpu": "10"
+            },
+            "template": {
+                "spec": {
+                    "expireAfter": "720h",
+                    "nodeClassRef": {
+                        "group": "karpenter.azure.com",
+                        "kind": "AKSNodeClass",
+                        "name": "default"
+                    }
+                }
+            },
+            "weight": 1
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "Ready",
+                    "status": "True",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:40:17Z",
+                    "message": "",
+                    "observedGeneration": 1,
+                    "reason": "NodeClassReady",
+                    "status": "True",
+                    "type": "NodeClassReady"
+                }
+            ]
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - aksnodeclasses.karpenter.azure.com
+  - default
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    error: the server doesn't have a resource type "aksnodeclasses"
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    pool: {name: aks-pool, ready: {status: 'True'}}
+    nodeClass:
+      ref: {group: karpenter.azure.com, kind: AKSNodeClass, name: default}
+      lookedUp: true
+      typeInstalled: false
+      exists: false
+      ready: null

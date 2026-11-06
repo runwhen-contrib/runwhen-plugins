@@ -1,0 +1,39 @@
+# Canned answers of scenario 'functions-partial-metrics', written by tests/stub/capture/capture_functions.py from the
+# real gcloud 592.0.0 in the runtime image (see ../../README.md). Project, functions and members are invented.
+# Every value is one line of JSON.
+- argv: ["functions", "describe", "orders-api", "--region=us-central1", "--project=shop-prod-1234", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "describe-us-central1-orders-api.json"
+  source: "https://cloud.google.com/functions/docs/reference/rest/v2/projects.locations.functions/get"
+  cli_source: "gcloud 592.0.0: googlecloudsdk/surface/functions/describe.py and command_lib/functions/util.py (FunctionResourceCommand: the v2 API names the generation, GEN_2 prints the v2 format, else the v1 one)"
+- argv: ["auth", "print-access-token", "--billing-project=shop-prod-1234"]
+  rc: 0
+  stdout: "token.txt"
+  source: "https://cloud.google.com/sdk/gcloud/reference/auth/print-access-token"
+  cli_source: "gcloud 592.0.0: surface/auth/print_access_token.py"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_count%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.response_code_class&pageSize=1000"]
+  rc: 0
+  stdout: "mon-orders-api-executions.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_50&pageSize=1000"]
+  rc: 0
+  stdout: "mon-orders-api-p50.json"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_95&pageSize=1000"]
+  rc: 22
+  stdout: "mon-orders-api-p95.json"
+  stderr: "curl: (22) The requested URL returned error: 429\n"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"
+- tool: "curl"
+  argv: ["-sS", "--fail-with-body", "--max-redirs", "0", "-H", "@.gcp-monitoring-header", "https://monitoring.googleapis.com/v3/projects/shop-prod-1234/timeSeries?filter=metric.type%20%3D%20%22run.googleapis.com%2Frequest_latencies%22%20AND%20resource.type%3D%22cloud_run_revision%22%20AND%20resource.labels.service_name%3D%22orders-api%22%20AND%20resource.labels.location%3D%22us-central1%22&interval.endTime=<T>&interval.startTime=<T>&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_PERCENTILE_99&pageSize=1000"]
+  rc: 22
+  stdout: "mon-orders-api-p99.json"
+  stderr: "curl: (22) The requested URL returned error: 429\n"
+  source: "https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list"
+  cli_source: "curl 8.14.1 (runtime image): -sS --fail-with-body keeps the error body on stdout, rc 22"

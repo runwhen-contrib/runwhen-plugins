@@ -1,0 +1,112 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-flux/helmreleases/podinfo-ok
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - podinfo-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"helm.toolkit.fluxcd.io/v2\",\"kind\":\"HelmRelease\",\"metadata\":{\"annotations\":{},\"name\":\"podinfo-ok\",\"namespace\":\"rw-flux\"},\"spec\":{\"chart\":{\"spec\":{\"chart\":\"podinfo\",\"sourceRef\":{\"kind\":\"HelmRepository\",\"name\":\"podinfo\"},\"version\":\"6.5.x\"}},\"interval\":\"10m\",\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 1,
+            "name": "podinfo-ok",
+            "namespace": "rw-flux",
+            "resourceVersion": "16107",
+            "uid": "c2c561b7-b525-4668-8533-6daa8e0ee485"
+        },
+        "spec": {
+            "chart": {
+                "spec": {
+                    "chart": "podinfo",
+                    "sourceRef": {
+                        "kind": "HelmRepository",
+                        "name": "podinfo"
+                    },
+                    "version": "6.5.x"
+                }
+            },
+            "interval": "10m",
+            "suspend": false
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:00:05Z",
+                    "message": "Helm upgrade succeeded for release rw-flux/podinfo-ok.v2 with chart podinfo@6.5.1",
+                    "observedGeneration": 1,
+                    "reason": "UpgradeSucceeded",
+                    "status": "True",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:00:05Z",
+                    "message": "Helm upgrade succeeded for release rw-flux/podinfo-ok.v2 with chart podinfo@6.5.1",
+                    "observedGeneration": 1,
+                    "reason": "UpgradeSucceeded",
+                    "status": "True",
+                    "type": "Released"
+                }
+            ],
+            "history": [
+                {
+                    "appVersion": "6.5.1",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.5.1",
+                    "lastDeployed": "2026-11-03T20:00:05Z",
+                    "name": "podinfo-ok",
+                    "namespace": "rw-flux",
+                    "status": "deployed",
+                    "version": 2
+                },
+                {
+                    "appVersion": "6.5.0",
+                    "chartName": "podinfo",
+                    "chartVersion": "6.5.0",
+                    "lastDeployed": "2026-11-02T20:00:05Z",
+                    "name": "podinfo-ok",
+                    "namespace": "rw-flux",
+                    "status": "superseded",
+                    "version": 1
+                }
+            ],
+            "lastAttemptedRevision": "6.5.1",
+            "lastHandledReconcileAt": "2026-11-03T20:00:00Z",
+            "observedGeneration": 1
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    state:
+      kind: HelmRelease
+      ready: 'True'
+      readyReason: UpgradeSucceeded
+      released: 'True'
+      stalled: null
+      suspended: false
+      generationObserved: true
+    revisions:
+      lastAppliedRevision: 6.5.1
+      lastAttemptedRevision: 6.5.1
+      revisionsDiffer: false
+      neverApplied: false
+    dependencies:
+      count: 0
+      truncated: false
+      items: []

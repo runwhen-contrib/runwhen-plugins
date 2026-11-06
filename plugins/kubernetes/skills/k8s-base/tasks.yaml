@@ -1,0 +1,97 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults: { credentials: kubernetes/kubeconfig, timeout: 60s }
+tasks:
+  - name: kubectl
+    title: kubectl (read-only)
+    description: Run a read-only kubectl command against this cluster. Secrets are never readable through it.
+    script: scripts/kubectl.py
+    tags: [cli]
+    readOnly: true
+    permissions:
+      - { apiGroups: ["*"], resources: ["*"], verbs: [get, list, watch] }   # secrets are still excluded by deniedResources
+      - { nonResourceURLs: [/api, /apis], verbs: [get] }                    # kubectl api-resources, to resolve a deniedResources name that is not a built-in kind
+    settings:
+      allowedVerbs: { type: "string[]", default: [get, describe, logs, top, events, explain, api-resources] }
+      deniedResources: { type: "string[]", default: [secrets], description: "Resource kinds the task refuses, whatever the verbs and flags allow, under any spelling (plural, singular, kind, short name); configmaps are not denied by default. secrets is always denied, even if it is removed here. A name that is not a built-in kind is resolved with kubectl api-resources and the task fails closed if it cannot be" }
+      allowedFlags: { type: "string[]", default: [n, A, l, o, since, tail, previous, container, show-labels, sort-by, field-selector, no-headers, timestamps, since-time, all-containers, prefix, for, types, show-kind, label-columns, ignore-not-found, containers, sum, api-group, namespaced, verbs, api-version, recursive, show-events], description: "Flags the task accepts, by long name or short letter, each also limited to the verbs that take it; chunk-size, max-log-requests and limit-bytes are off by default" }
+      maxOutputLines: { type: integer, default: 2000 }
+    inputs:
+      command: { type: string, pattern: '^[^\x00]+$', description: "kubectl arguments, e.g. get pods -o wide" }
+    outputs:
+      output: { schema: ./schemas/output.v1.json, description: "kubectl's standard output, cut to maxOutputLines lines" }
+      run: { schema: ./schemas/run.v1.json, description: "The normalised command that ran, how many lines it printed, whether output was cut, and its stderr" }
+  - name: discover
+    title: Discover cluster resources
+    description: >-
+      Lists every resource type of the integration that the cluster serves (types.yaml, minus
+      ephemeral types and Secrets) and reports it as an rw.discovery.v1 sync: the cluster root
+      with its canonical key (the kube-system namespace uid), then namespaces and everything
+      under them, with one partition per type and parent saying whether the list was read in full.
+      An API the cluster does not serve is skipped and recorded; a forbidden list is a scoped
+      permission_denied and the run continues (partial); so does an aggregated API group whose
+      discovery fails (its types are failed, never excluded).
+    script: scripts/discover.py
+    tags: [discovery]
+    readOnly: true
+    timeout: 600s
+    credentials: [kubernetes/kubeconfig, runwhen/sync]   # runwhen/sync is minted per run by the lease; without it (rwtask run, tests) the sync is only written to the artifact
+    permissions:
+      - { nonResourceURLs: [/version], verbs: [get] }
+      - { nonResourceURLs: [/api, /api/*, /apis, /apis/*], verbs: [get] }                # kubectl api-resources: which types the cluster serves
+      - { apiGroups: [""], resources: [configmaps, limitranges, namespaces, nodes, persistentvolumeclaims, persistentvolumes, replicationcontrollers, resourcequotas, serviceaccounts, services], verbs: [list] }
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }                          # kube-system's uid (the canonical key); each namespace named by the namespaces setting
+      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [list] }
+      - { apiGroups: [admissionregistration.k8s.io], resources: [mutatingwebhookconfigurations, validatingwebhookconfigurations], verbs: [list] }
+      - { apiGroups: [apiextensions.k8s.io], resources: [customresourcedefinitions], verbs: [list] }
+      - { apiGroups: [apps], resources: [daemonsets, deployments, statefulsets], verbs: [list] }
+      - { apiGroups: [argoproj.io], resources: [applications], verbs: [list] }
+      - { apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [list] }
+      - { apiGroups: [batch], resources: [cronjobs, jobs], verbs: [list] }
+      - { apiGroups: [cert-manager.io], resources: [certificates, clusterissuers, issuers], verbs: [list] }
+      - { apiGroups: [certificates.k8s.io], resources: [certificatesigningrequests], verbs: [list] }
+      - { apiGroups: [gateway.networking.k8s.io], resources: [gateways, httproutes], verbs: [list] }
+      - { apiGroups: [helm.toolkit.fluxcd.io], resources: [helmreleases], verbs: [list] }
+      - { apiGroups: [karpenter.sh], resources: [nodeclaims, nodepools], verbs: [list] }
+      - { apiGroups: [kustomize.toolkit.fluxcd.io], resources: [kustomizations], verbs: [list] }
+      - { apiGroups: [monitoring.coreos.com], resources: [prometheuses, servicemonitors], verbs: [list] }
+      - { apiGroups: [networking.k8s.io], resources: [ingressclasses, ingresses, networkpolicies], verbs: [list] }
+      - { apiGroups: [node.k8s.io], resources: [runtimeclasses], verbs: [list] }
+      - { apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [list] }
+      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [list] }
+      - { apiGroups: [rbac.authorization.k8s.io], resources: [clusterrolebindings, clusterroles, rolebindings, roles], verbs: [list] }
+      - { apiGroups: [scheduling.k8s.io], resources: [priorityclasses], verbs: [list] }
+      - { apiGroups: [storage.k8s.io], resources: [csidrivers, csinodes, storageclasses, volumeattachments], verbs: [list] }
+    settings:
+      namespaces: { type: "string[]", default: [], description: "Namespaces to cover. Empty: every namespace the identity can list. Naming namespaces narrows the run: the namespace partition is then never complete, so nothing outside them is swept; a named namespace that cannot be read still gets a stub item so its children have a parent" }
+      maxItems: { type: integer, default: 2000, min: 1, max: 100000, description: "Most objects of one type in one partition (a namespace, or the cluster). A longer list is cut and its partition is failed, never complete, so nothing is swept for it" }
+      deadline: { type: duration, default: 480s, description: "How long the enumeration may run (1s to 570s; the task's timeout is 600s). Once passed no further list is started, every type not yet listed is a failed partition with a scoped timeout error, and the sync is still pushed and committed" }
+      maxStringBytes: { type: integer, default: 4096, min: 64, max: 1048576, description: "Longest string kept in a document; longer ones are cut (and scrubbed of credential shapes)" }
+    outputs:
+      summary: { kind: rw.discovery.summary.v1, description: "Counts per type, partition totals by status, duration, per-step errors, and root.canonicalKey kubeSystemUid when kube-system is readable" }
+      sync: { artifact: { contentType: application/json, maxSize: 64Mi }, description: "The whole rw.discovery.v1 sync: open, item batches, commit with the partitions and the summary" }
+  - name: check-permissions
+    title: Check permissions
+    description: Tests each RBAC rule against this connection's kubeconfig and reports granted, partial (with the namespaces), denied or unverified per rule. Creates access reviews only; nothing persists.
+    script: scripts/check_permissions.py
+    tags: [permission-check, rbac]
+    readOnly: true
+    timeout: 300s
+    permissions:
+      - { apiGroups: [authorization.k8s.io], resources: [selfsubjectaccessreviews, selfsubjectrulesreviews], verbs: [create] }
+      - { nonResourceURLs: [/api, /apis], verbs: [get] }                                           # kubectl api-resources: which kinds are cluster-scoped
+      - { apiGroups: [""], resources: [namespaces], verbs: [list] }                                # the namespaces to probe when none are given
+      - { apiGroups: [""], resources: [namespaces], resourceNames: [kube-system], verbs: [get] }   # its uid, the cluster's canonical key
+    settings:
+      maxReviews: { type: integer, default: 3000, description: "Access and rules reviews one run may create; a rule that does not fit is unverified, never dropped" }
+      maxNamespaces: { type: integer, default: 500, description: "Namespaces probed one by one for the rules not granted cluster-wide; beyond this the rest are not probed and the run is partial" }
+    inputs:
+      rules:
+        type: object[]
+        schema:   # any non-empty object: a rule that is not an RBAC rule gets its own `unverified` entry
+          type: object
+          minProperties: 1
+        description: "RBAC rules to test, in the integration's permission shape; at most 500. The report has one entry per rule, in this order"
+      namespaces: { type: "string[]", default: [], description: "Namespaces to probe for rules not granted cluster-wide. Empty: every namespace this identity can list; if it cannot list them only cluster-wide verdicts are possible" }
+    outputs:
+      access: { kind: rw.access.v1, description: "One entry per rule, in input order: hash, the rule, granted | partial (with scope: the namespaces) | denied | unverified, and evidence. root.canonicalKey kubeSystemUid when kube-system is readable" }

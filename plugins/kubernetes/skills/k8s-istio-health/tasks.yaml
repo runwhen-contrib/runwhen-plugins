@@ -1,0 +1,104 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 120s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    min: 1
+    max: 10000
+    description: Most entries any list output returns (most relevant first); inspected.total and inspected.omitted say how many there were and how many were left out
+  maxPods:
+    type: integer
+    default: 20
+    min: 1
+    max: 500
+    description: Most pods whose istio-proxy log proxy-errors reads (pods with the most restarts, then not-ready pods, first); the rest are counted in inspected.podsNotRead
+  maxScanLines:
+    type: integer
+    default: 5000
+    min: 1
+    max: 100000
+    description: Most lines per pod proxy-errors reads from within since (the newest); a pod that reaches it is marked truncated
+  scanBudgetSeconds:
+    type: integer
+    default: 90
+    min: 1
+    max: 600
+    description: Wall-clock seconds proxy-errors spends reading logs (below the task timeout); when it runs out the pods not yet read are counted in inspected.podsNotRead, the result carries a timeout error with scope scan, and the rows read so far are kept
+tasks:
+  - name: injection-status
+    title: Sidecar injection status
+    description: >-
+      The namespace's injection labels (istio-injection, istio.io/rev) and, for
+      every Deployment, StatefulSet and DaemonSet in it, whether Istio's webhook
+      is expected to inject its pods, how many pods carry the istio-proxy sidecar
+      (a container or a native sidecar init container), which pods lack it, and
+      the sidecar's cpu and memory requests and limits. Reading the Namespace is
+      cluster-scoped: when it is forbidden the workloads are still reported with
+      injection.enabled null and a permission_denied error.
+    script: scripts/injection_status.py
+    tags: [injection, sidecar]
+    readOnly: true
+    permissions:
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+      - { apiGroups: [apps], resources: [deployments, statefulsets, daemonsets, replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      injection: { schema: ./schemas/injection.v1.json, description: "The namespace's injection labels and what they mean" }
+      workloads: { schema: ./schemas/workloads.v1.json, description: "Per workload: injection expected, pods with and without istio-proxy, sidecar resources" }
+      inspected: { schema: ./schemas/injection-inspected.v1.json, description: "What was listed (null: not readable), pods no listed workload owns, list totals" }
+
+  - name: control-plane-status
+    title: Istio control plane status
+    description: >-
+      For an istiod or Istio gateway Deployment: replica counts and conditions,
+      each pod's phase, readiness and container restarts, the Istio version from
+      the image tag, and Istio's mutating and validating webhook configurations
+      (failure policy, CA bundle, the Service each calls and whether that Service
+      has ready endpoints). The webhook configurations are cluster-scoped: when
+      listing them is forbidden the rest is still returned with a
+      permission_denied error. Does not run istioctl.
+    script: scripts/control_plane_status.py
+    tags: [control-plane, webhooks, version]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [admissionregistration.k8s.io], resources: [mutatingwebhookconfigurations, validatingwebhookconfigurations], verbs: [list] }
+      - { apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [list] }
+    inputs:
+      includeWebhooks: { type: boolean, default: true, description: "Read Istio's webhook configurations (turn off for a gateway Deployment, which no webhook calls)" }
+    outputs:
+      deployment: { schema: ./schemas/deployment.v1.json, description: "Replica counts, generation and conditions" }
+      version: { schema: ./schemas/version.v1.json, description: "Image tag(s) of the discovery or istio-proxy container" }
+      pods: { schema: ./schemas/control-pods.v1.json, description: "Pods with restarts per container; null when the pods could not be read" }
+      webhooks: { schema: ./schemas/webhooks.v1.json, description: "Istio webhook configurations and their endpoints; null when not read" }
+      inspected: { schema: ./schemas/control-inspected.v1.json, description: "How many pods and webhook configurations were looked at, list totals" }
+
+  - name: proxy-errors
+    title: Proxy log errors
+    description: >-
+      For each pod of the Deployment, the number of error and warning lines in
+      its istio-proxy container's log within since, the number of access-log
+      lines, those with an HTTP 5xx status, and a count per Envoy response flag
+      (UF, URX, NR, UH, ...), with up to three redacted sample lines per
+      category. Pods without istio-proxy, or whose proxy has not started, are
+      listed in unavailable.
+    script: scripts/proxy_errors.py
+    tags: [logs, proxy, errors]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [deployments], verbs: [get] }
+      - { apiGroups: [apps], resources: [replicasets], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods/log], verbs: [get] }
+    inputs:
+      since: { type: duration, default: 1h, description: Look-back window passed to kubectl logs --since }
+    outputs:
+      proxies: { schema: ./schemas/proxies.v1.json, description: "Per pod: error, warning, access and 5xx line counts, response flags, samples; most failed requests first" }
+      unavailable: { schema: ./schemas/unavailable.v1.json, description: "Pods whose istio-proxy log was not read, and why" }
+      inspected: { schema: ./schemas/proxy-inspected.v1.json, description: "Pods looked at, pods read, list totals and omissions" }

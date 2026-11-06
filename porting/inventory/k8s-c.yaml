@@ -1,0 +1,1289 @@
+# CNT-1 inventory, group k8s-c. rw-cli-codecollection origin/main @ 49ab483. Read-only study.
+# Common facts for every bundle below (not repeated per task):
+#  - Suite Setup calls RW.K8sHelper.Verify Cluster Connectivity (kubectl version, k8s_helper.py:42-76) except where noted;
+#    a failure raises a sev3 issue and aborts the suite (Fatal Error), so total-cluster-unreachable is NOT a false-pass.
+#  - RW.CLI.Run Cli never fails on rc!=0 and uses bash -c without pipefail. RW.CLI.Parse Cli Json Output DOES raise on rc!=0
+#    (cli_utils.verify_rsp) but then json.loads('') raises on empty stdout, so the task errors rather than passing.
+#  - Every bundle needs the kubeconfig secret (not repeated under inputs).
+- bundle: k8s-podresources-health
+  displayName: Kubernetes Pod Resources Health
+  classicResourceTypes: [namespace]
+  matchHints: "pattern '.' on name, substring; level of detail detailed; qualifiers namespace, cluster"
+  sli: false
+  sliAsserts: ""
+  egress: none
+  tools: [kubectl, jq, awk, sed, date (GNU)]
+  inputs: [NAMESPACE, CONTEXT, LABELS, KUBERNETES_DISTRIBUTION_BINARY, UTILIZATION_THRESHOLD, DEFAULT_INCREASE, RESTART_AGE]
+  tasks:
+    - title: Show Pods Without Resource Limit or Resource Requests Set in Namespace
+      at: runbook.robot:20
+      asserts: "Running pods (optionally label-filtered) have containers with no resources.limits, or no resources.requests; raised as sev4 issues."
+      reads:
+        - "kubectl get pods -n NS [-l LABELS] --field-selector=status.phase=Running -ojson | jq '[containers where .resources.limits==null]' (and again for requests)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "kubectl|jq has no pipefail, but a failed kubectl gives empty stdout and Parse Cli Json Output then json.loads('') raises, so the task errors (no healthy report). Zero Running pods = no issue (healthy by omission). NAMESPACE doc says csv supported but -n NS is used verbatim, so csv breaks. Counts containers but the issue text says pods. Init containers ignored. Report line sums limit+request container counts."
+    - title: Check Pod Resource Utilization with Top in Namespace
+      at: runbook.robot:93
+      asserts: "Nothing; informational. Prints kubectl top --containers per Running pod. No issue is ever raised."
+      reads:
+        - "kubectl get pods [-l LABELS] -n NS -o custom-columns=:metadata.name --field-selector=status.phase=Running"
+        - "kubectl top pod POD -n NS --containers (loop)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [metrics.k8s.io], resources: [pods], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Failure or no metrics-server yields the report text 'No resource utilization information could be found!' (inconclusive, not healthy). No assertion, so nothing to port as a check; candidate for a typed read output only."
+    - title: Identify VPA Pod Resource Recommendations in Namespace
+      at: runbook.robot:110
+      asserts: "A Deployment-targeted VerticalPodAutoscaler recommendation differs from the Deployment container request by more than 20 percent (CPU or memory); sev4."
+      reads:
+        - "kubectl get vpa -n NS --context CTX -o json"
+        - "kubectl get deployment TARGET -n NS -o json (per VPA, Deployment only)"
+      permissions:
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "vpa_recommendations.sh:142 vpa_json=$(kubectl get vpa ...) has no rc/stderr check; VPA CRD missing or Forbidden gives empty vpa_json, the loop at :149 never runs, and :161 prints 'No recommendations.' which the runbook treats as healthy."
+      notes: "get_current_requests only handles kind Deployment (vpa_recommendations.sh:55-60); StatefulSet/DaemonSet targets print 'Unsupported target kind' and are silently dropped. Division by vpa target 0 or empty would abort the shell arithmetic. Threshold variable is 20 though the comment says 10. The runbook re-extracts JSON by awk after 'Recommended Next Steps:' and passes stdout inside single quotes to echo, which breaks if output contains a quote."
+    - title: Identify Overutilized Pods in Namespace
+      at: runbook.robot:144
+      asserts: "Pods whose kubectl-top CPU or memory exceeds UTILIZATION_THRESHOLD percent of the pod limit (sev3), or whose last termination was OOMKilled/exit 137 within RESTART_AGE minutes (sev2)."
+      reads:
+        - "kubectl top pod -n NS --no-headers"
+        - "kubectl get pod POD -o jsonpath for limits.cpu, limits.memory, lastState.terminated.{reason,exitCode,finishedAt}"
+        - "find_resource_owners.sh: kubectl get Pod -n NS | grep NAME; kubectl get pod/replicaset ownerReferences"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [metrics.k8s.io], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [apps], resources: [replicasets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "identify_resource_contrained_pods.sh:37 pods=$(kubectl top pod ... | awk) with no rc check; metrics-server absent or top Forbidden gives empty pods, the :40 loop never runs, and :116-124 writes '[]' to overutilized_pods.json, which the runbook (:152-160) reads as no overutilized pods."
+      notes: "Bugs: multi-container pods make jsonpath limits space-separated so the arithmetic breaks (:44-63); only Gi/Mi memory and m/core CPU suffixes are converted; pods with no limits are skipped entirely. Combined reason 'CPU usage exceeds threshold and memory usage exceeds threshold' only matches the CPU branch in the runbook (:179 vs :191, capital M). check_pod_status uses GNU date -d, which is empty-safe only by accident. Output file overutilized_pods.json is relative to cwd. Owner lookup via grep on names can mis-attribute."
+  bundleNotes: "Generation rule is namespace-scoped (one SLX per namespace) though every task is pod-level. No SLI. Three of four tasks are check-like, one is informational."
+
+- bundle: k8s-postgres-healthcheck
+  displayName: Kubernetes Postgres Healthcheck
+  classicResourceTypes: [postgresclusters.postgres-operator.crunchydata.com, statefulset, postgresqls.acid.zalan.do]
+  matchHints: "crunchy: pattern '.+' on name, substring; zalando-ss: statefulset where label application equals spilo exactly; zalando: pattern '.+' on name, substring; all level of detail detailed, baseName postgres-health, qualifiers resource, namespace, cluster"
+  sli: true
+  sliAsserts: "Average of two binary scores: patroni_lag.sh Issues array empty (lag), backup_health.sh Issues array empty. Confirmed false-pass: patroni_lag.sh:35-37,49,52 (no pod, no output, parse failure all produce zero issues) and backup_health.sh:31 (date -d of empty string)."
+  egress: none
+  tools: [kubectl, jq, awk, sed, grep, date (GNU), bash, python3 (optional), psql and patronictl inside the DB pod]
+  inputs: [CONTEXT, OBJECT_NAME, RESOURCE_LABELS, WORKLOAD_NAME, DATABASE_CONTAINER, NAMESPACE, QUERY, HOSTNAME, KUBERNETES_DISTRIBUTION_BINARY, DATABASE_LAG_THRESHOLD, OBJECT_API_VERSION, OBJECT_KIND, BACKUP_MAX_AGE, CONNECTION_UTILIZATION_THRESHOLD, STORAGE_WARNING_THRESHOLD, STORAGE_CRITICAL_THRESHOLD]
+  tasks:
+    - title: List Resources Related to Postgres Cluster
+      at: runbook.robot:19
+      asserts: "Nothing; informational dump."
+      reads:
+        - "kubectl get all -l RESOURCE_LABELS -n NS"
+        - "kubectl describe OBJECT_KIND OBJECT_NAME -n NS"
+      permissions:
+        - {apiGroups: ["", apps, batch], resources: [pods, services, deployments, statefulsets, replicasets, jobs, cronjobs, daemonsets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+        - {apiGroups: [postgres-operator.crunchydata.com, acid.zalan.do], resources: [postgresclusters, postgresqls], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Two commands joined with && so a get-all failure suppresses describe. OBJECT_KIND defaults empty, which makes describe fail for spilo StatefulSet SLXs unless set."
+    - title: Get Postgres Pod Logs & Events
+      at: runbook.robot:31
+      asserts: "Nothing; informational. Last 100 log lines per labeled Running pod and events by involvedObject name."
+      reads:
+        - "kubectl get pods -l RESOURCE_LABELS -o=name --field-selector=status.phase=Running"
+        - "kubectl logs POD -c DATABASE_CONTAINER --tail=100"
+        - "kubectl get events --field-selector involvedObject.name=POD"
+      permissions:
+        - {apiGroups: [""], resources: [pods, events], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Empty output is reported as 'No logs found!'. Raises no issue ever."
+    - title: Get Postgres Pod Resource Utilization
+      at: runbook.robot:67
+      asserts: "Nothing; informational kubectl top pods --containers."
+      reads:
+        - "kubectl top pods -l RESOURCE_LABELS --containers -n NS"
+      permissions:
+        - {apiGroups: [metrics.k8s.io], resources: [pods], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No issue path."
+    - title: Check PostgreSQL Connection Health
+      at: runbook.robot:79
+      asserts: "psql SELECT 1 on a replica (else primary) fails; or connections / (max_connections - superuser_reserved) >= threshold (warn) or threshold+10 (critical); idle >30m count >10 with utilization >= threshold/2; idle-in-transaction >5m count >0; sessions waiting on Lock >5."
+      reads:
+        - "kubectl get pods -l role labels (crunchy/zalando/spilo) -o jsonpath"
+        - "kubectl exec POD -c CONTAINER -- psql -U postgres -t -c 'SELECT 1; SHOW max_connections; SELECT count(*) FROM pg_stat_activity ...'"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "connection_health.sh:217-220 unreadable max_connections only adds a report line and returns, no issue; :424-442 (long idle), :446-461 (idle in transaction), :465-479 (lock waits) sub-queries run with 2>/dev/null and a non-numeric/empty result falls to the 'OK: No ...' branches."
+      notes: "Preflight connectivity SELECT 1 (:133) does catch an exec or auth failure and raises an issue, which limits the exposure to mid-run failures. Requires passwordless psql -U postgres inside the pod. Crunchy container name hard-coded to database, zalando to postgres. No pod found raises a sev2 issue (good)."
+    - title: Check PostgreSQL Core Metrics
+      at: runbook.robot:112
+      asserts: "Filesystem matching pgdata|postgres|/home is >= STORAGE_WARNING/CRITICAL percent used; any table with >10000 dead tuples and >=30 percent dead; unused indexes over 1MB (sev4); backend-written buffers >20 percent (sev3)."
+      reads:
+        - "kubectl exec PRIMARY -- df -h | grep -E 'pgdata|postgres|/home'"
+        - "kubectl exec PRIMARY -- du -sh /pgdata; ls /pgdata/pg*/pg_wal"
+        - "kubectl exec PRIMARY -- psql -U postgres -t -c (pg_database_size, pg_stat_user_tables, pg_stat_user_indexes, pg_stat_database, pg_stat_bgwriter)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "core_metrics.sh:139 `df -h 2>/dev/null | grep | head`, a failed df prints 'Could not retrieve filesystem usage information' (:168) with no issue; every psql call has 2>/dev/null (e.g. :268-290 bloat, :315-330 indexes) and empty output is reported as 'No tables with significant bloat detected' (:305) / 'No unused indexes detected' (:343)."
+      notes: "Bug: the pg_stat_bgwriter issue (generate_issue at :411 inside `echo | while` at :393) is generated inside a piped while subshell (echo | while), so ISSUES+= is lost and the sev3 buffer issue never reaches the report. pg_stat_bgwriter.checkpoints_timed is removed in PG17, so that query errors silently. /pgdata paths hard-coded."
+    - title: Get Running Postgres Configuration
+      at: runbook.robot:145
+      asserts: "SHOW ALL output lacks shared_buffers or max_connections, or max_connections < 100 (sev4 fixed); pgbouncer ConfigMap max_client_conn missing or < 100 (crunchy)."
+      reads:
+        - "kubectl get pods -l role=master -o jsonpath"
+        - "kubectl exec POD -- psql -U postgres -c 'SHOW ALL'"
+        - "kubectl get postgresclusters.postgres-operator.crunchydata.com NAME -o jsonpath status.proxy.pgBouncer.readyReplicas; kubectl get configmap -l role=pgbouncer"
+      permissions:
+        - {apiGroups: [""], resources: [pods, configmaps], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "config_health.sh:124-127 spilo path with no running pod only echoes and returns (no issue); :208-209 unsupported OBJECT_API_VERSION with no spilo kind also only echoes. (Crunchy/Zalando exec failure produces bogus 'missing shared_buffers' issues instead, the opposite error.)"
+      notes: "max_connections < 100 is an arbitrary opinion, not a fault. Empty CONFIG makes MAX_CONNECTIONS empty and (( < 100 )) true, a false issue. Crunchy label role=master selects the first pod regardless of cluster (no cluster label). Zalando path uses -l application=spilo without cluster-name. The runbook json.loads has no empty guard, so a missing report file errors the task."
+    - title: Get Patroni Output and Add to Report
+      at: runbook.robot:176
+      asserts: "Nothing; informational patronictl list."
+      reads:
+        - "kubectl get pods (resolve_workload_exec_pod via patroni_helpers.sh)"
+        - "kubectl exec POD -c CONTAINER -- patronictl list"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No-pod and empty output are reported as text only; no issue path exists."
+    - title: Fetch Patroni Database Lag
+      at: runbook.robot:199
+      asserts: "A Patroni member reports Lag in MB greater than DATABASE_LAG_THRESHOLD (sev1 fixed in the runbook)."
+      reads:
+        - "kubectl get pods (resolve exec pod)"
+        - "kubectl exec POD -- patronictl list -f json (fallback: text table parsed by python3 or awk)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "patroni_lag.sh:35-37 no resolved pod only adds an ERROR report line; :49 empty patronictl output only adds a WARNING; :52 MEMBERS_JSON=$(... || echo '[]') then :56 lag // 0; patroni_helpers.sh:63 unparsable lag becomes 0. None of these add to ISSUES, so the Issues array is empty and the runbook and SLI treat it as healthy."
+      notes: "patronictl_list_text merges stderr into stdout (2>&1), so an error message is parsed as a table and yields no members. Sev1 for any lag breach is severe. Same script feeds the SLI lag score."
+    - title: Check Database Backup Status
+      at: runbook.robot:230
+      asserts: "Latest backup is older than BACKUP_MAX_AGE hours: crunchy status.pgbackrest.scheduledBackups max completionTime; zalando/spilo pg_stat_archiver.last_archived_time or wal-g backup-list; missing archive data also raises."
+      reads:
+        - "kubectl get postgresclusters.postgres-operator.crunchydata.com NAME -o json | jq max_by(.completionTime)"
+        - "kubectl exec POD -- psql -U postgres -t -A -c 'SELECT last_archived_time FROM pg_stat_archiver'"
+        - "kubectl exec POD -- bash -c 'wal-g backup-list | tail -1'; echo USE_WALG_BACKUP"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "backup_health.sh:28-31 crunchy: kubectl get failure or missing .status.pgbackrest.scheduledBackups gives empty LATEST_BACKUP_TIME, and GNU date -d '' returns midnight today, so BACKUP_AGE is under 24h and the backup is reported healthy; :165 unsupported OBJECT_API_VERSION only echoes."
+      notes: "Crunchy path ignores repo backups outside scheduledBackups (manual or full-only schedules). pg_stat_archiver last_archived_time proves WAL archiving, not a base backup. The runbook json.loads has no empty guard. sed -i with GNU syntax."
+    - title: Run DB Queries
+      at: runbook.robot:260
+      asserts: "psql exec of each line of the user QUERY variable returns non-zero; raises sev3 per failed query. Success only appends results to the report."
+      reads:
+        - "kubectl get pods -l role=master (crunchy) or application=spilo -o jsonpath"
+        - "kubectl exec POD -- bash -c 'psql -U postgres -c QUERY'"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "dbquery.sh:106 unsupported OBJECT_API_VERSION with no spilo kind only echoes (no issue); rc of exec IS checked per query (:44) so a failed query is an issue."
+      notes: "Runs arbitrary user-supplied SQL as postgres superuser; nominally read-only but the QUERY variable can write. Default QUERY lists database sizes. QUERY is interpolated into a double-quoted bash -c string (quote injection). generate_issue emits a duplicate JSON key description. Pod picked is first with the label, not necessarily the primary for zalando."
+  bundleNotes: "Three generation rules (Crunchy CR, Zalando CR, bare Spilo StatefulSet) share one runbook; behaviour branches on OBJECT_API_VERSION / OBJECT_KIND. Report files are written to ../ relative to cwd and re-read by awk. Pattern: every script builds an Issues JSON array and the runbook only reports what is in it, so any early-return path that does not add an issue is a pass. Bash scripts use set -uo pipefail (connection_health, core_metrics, patroni_lag) or nothing (backup, config, dbquery). The SLI score also depends on report files being fresh."
+
+- bundle: k8s-postgres-operations
+  displayName: PostgreSQL Operations
+  classicResourceTypes: [postgresclusters.postgres-operator.crunchydata.com, postgresqls.acid.zalan.do]
+  matchHints: "crunchy and zalando: pattern '.+' on name, substring; level of detail detailed; baseName postgres-operations; slx and runbook only"
+  sli: false
+  sliAsserts: ""
+  egress: none
+  tools: [kubectl, jq, bash, patronictl and psql inside the DB pod]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, OBJECT_NAME, OBJECT_API_VERSION, DATABASE_CONTAINER]
+  tasks:
+    - title: Reinitialize Failed PostgreSQL Cluster Members
+      at: runbook.robot:21
+      asserts: "WRITE. Runs patronictl reinit --force on any member with Patroni state failed/stopped or lag above LAG_THRESHOLD_BYTES (100MB, hard-coded env). Raises sev2 if script JSON contains severity error, else sev4 'Members Were Reinitialized'."
+      reads:
+        - "kubectl exec POD -- patronictl list -f json"
+        - "kubectl exec POD -- psql (replication lag, slots, WAL retention, disk)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [postgres-operator.crunchydata.com, acid.zalan.do], resources: [postgresclusters, postgresqls], verbs: [get]}
+      scope: ns:target
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "cluster_operations.sh:6 set -euo pipefail plus main returning 1 (e.g. :537, :548) aborts the script before the issues JSON is printed (:921-934); the runbook only looks for the literal string severity error, so an aborted run reports nothing and the else branch is silent or says reinitialized."
+      notes: "Destructive: reinit wipes the member data directory and re-clones from the leader. The runbook never checks rc or that the member recovered. The reinit lag reading is patronictl 'Lag in MB'."
+    - title: Perform PostgreSQL Cluster Failover Operation
+      at: runbook.robot:65
+      asserts: "WRITE. patronictl switchover (with TARGET_MEMBER) or failover --force on the current leader; verifies new leader by polling patronictl list after sleep 30. Raises sev1 if master unchanged or script reports errors, sev3 if result unclear, sev4 'Failover Completed' on success."
+      reads:
+        - "kubectl get pods -l role=master|spilo-role=master"
+        - "kubectl exec LEADER -- patronictl switchover|failover --force; patronictl list -f json"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "Success is decided by substring match of the stdout text (runbook.robot:93-94, 'completed successfully. New master:'); if the script aborts early under set -e the 'result unclear' sev3 fallback at :150 is the only signal."
+      notes: "TARGET_MEMBER is read from env but the runbook never sets it, so the automatic branch runs. Uses patronictl exit via if-capture; failures are captured and turned into text."
+    - title: Restart PostgreSQL Cluster with Rolling Update
+      at: runbook.robot:164
+      asserts: "WRITE. patronictl restart --force on every replica then the leader. Reports sev2 on 'severity: error' in output, otherwise raises a sev4 'Rolling Restart Completed' issue."
+      reads:
+        - "kubectl get pods -l instance labels"
+        - "kubectl exec POD -- patronictl list -f json; patronictl restart CLUSTER MEMBER --force"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:178-201 the success issue is the ELSE of a string check for severity error; cluster_operations.sh set -e (restart_cluster return 1 at :417, :461) aborts before any JSON is printed, so a failed restart is reported as 'Rolling Restart Completed' sev4."
+      notes: "Reports success (as an issue) regardless of rc. Does not wait for pods Ready or verify replication."
+    - title: Verify Cluster Recovery and Generate Summary
+      at: runbook.robot:203
+      asserts: "Runs OPERATION=overview (default) and raises sev4 'Operations Completed Successfully / cluster is now healthy' unless stdout contains severity error or critical; else sev2 'Still Has Issues'."
+      reads:
+        - "kubectl get postgresclusters|postgresqls NAME -o json"
+        - "kubectl get pods -l cluster labels -o jsonpath"
+        - "kubectl exec MASTER -- psql (pg_replication_slots, pg_stat_replication)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [postgres-operator.crunchydata.com, acid.zalan.do], resources: [postgresclusters, postgresqls], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:216-217 all_healthy = stdout does NOT contain 'severity: error'/'critical' (Should Not Contain Any); the script aborts under set -e (cluster_operations.sh:78, :137 return 1) before printing issues, and the generate_issue 'warning' severity never matches, so unreachable or missing clusters still yield 'cluster is now healthy'."
+      notes: "Tagged access:read-write but OPERATION defaults to overview which only reads. The only task here that is a pure check, and it is wrong. cluster_overview 'Cluster not found' uses get ... 2>/dev/null || echo {}, a rc swallow that later does raise an error-severity issue but then set -e kills output."
+  bundleNotes: "Remediation runbook; three of four tasks mutate via patronictl through pods/exec. All Add Issue sites are status issues (sev4 success reports), not findings. Script is 945 lines shared across tasks by OPERATION env via cmd_override. set -euo pipefail inverts the failure path as described. Hard-coded: LAG_THRESHOLD_BYTES=104857600, sleep 30 + 10 verification attempts."
+
+- bundle: k8s-prometheus-healthcheck
+  displayName: Kubeprometheus Operator Troubleshoot
+  classicResourceTypes: [prometheuses.monitoring.coreos.com]
+  matchHints: "pattern '.+' on name, substring; level of detail detailed; baseName kubeprom-hlthck; slx and runbook only"
+  sli: false
+  sliAsserts: ""
+  egress: none
+  tools: [kubectl, jq, grep (-P), awk, wget inside the prometheus container]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, PROM_NAMESPACE]
+  tasks:
+    - title: Check Prometheus Service Monitors in namespace
+      at: runbook.robot:20
+      asserts: "Intended: a ServiceMonitor selector matches no Service or matches a Service whose port names do not include the monitor's endpoint port. Actual: always raises a sev3 issue."
+      reads:
+        - "kubectl get servicemonitors -n NAMESPACE -o json"
+        - "kubectl get services -n NAMESPACE -l SELECTOR -o json (per ServiceMonitor)"
+      permissions:
+        - {apiGroups: [monitoring.coreos.com], resources: [servicemonitors], verbs: [get, list]}
+        - {apiGroups: [""], resources: [services], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "validate_servicemonitors.sh:115 tests [ -n $MISSING_MONITORS ] after they were defaulted to 'None detected' (:87-95), so NEXTSTEPS always contains 'Investigate the endpoints' and the runbook (:33) always raises the issue: always-fail false positive. Port loop (:62-69) resets PORT_MATCHES per port so only the last port counts. Uses literal kubectl, ignores KUBERNETES_DISTRIBUTION_BINARY, and passes no --context. NAMESPACE default is loki, unrelated to Prometheus. A failed get is tolerated (no -e) and also lands in the always-issue path."
+    - title: Check For Successful Rule Setup in Kubernetes Namespace
+      at: runbook.robot:46
+      asserts: "First prometheus pod (label app.kubernetes.io/name=prometheus) logs contain a line matching 'load.*.fail' that also contains the word error; sev2."
+      reads:
+        - "kubectl get pods -n PROM_NAMESPACE -l app.kubernetes.io/name=prometheus -o jsonpath items[0]"
+        - "kubectl logs POD -c prometheus | grep -iP '(load.*.fail)' || true"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:51 'kubectl logs $(kubectl get pods ... items[0]) | grep ... || true': an empty pod name, Forbidden on pods/log or any kubectl failure yields empty stdout and rc 0, and :57 Should Contain error on empty is false, so no issue; :69-71 turns empty into 'No error logs found.'."
+      notes: "Docs say operator logs but it reads the Prometheus server pod. A matching line without the substring error is ignored. Only the first pod is sampled. Task names itself 'prometheys' in tags."
+    - title: Verify Prometheus RBAC Can Access ServiceMonitors
+      at: runbook.robot:75
+      asserts: "The ClusterRole named kube-prometheus-stack-operator has a rule mentioning servicemonitors; otherwise sev2."
+      reads:
+        - "kubectl get clusterrole/kube-prometheus-stack-operator -ojson"
+      permissions:
+        - {apiGroups: [rbac.authorization.k8s.io], resources: [clusterroles], verbs: [get]}
+      scope: cluster
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "ClusterRole name hard-coded (breaks for any release not named kube-prometheus-stack). A failed or Forbidden get yields empty stdout, which the runbook treats as 'no servicemonitors' and raises the sev2 issue: false positive. The JSON is pasted inside double quotes into echo (runbook.robot:85), so embedded quotes likely break jq and force the issue even when RBAC is fine (not run). Title says namespace but the object is cluster-scoped."
+    - title: Inspect Prometheus Operator Logs for Scraping Errors
+      at: runbook.robot:100
+      asserts: "First prometheus pod logs contain a line matching 'scrape.*.error' that also contains the word error; sev2."
+      reads:
+        - "kubectl get pods -n PROM_NAMESPACE -l app.kubernetes.io/name=prometheus"
+        - "kubectl logs POD -c prometheus | grep -iP '(scrape.*.error)' || true"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:104 same '| grep ... || true' pattern as the rule-setup task; any failure or no pod gives empty stdout and no issue."
+      notes: "Near-duplicate of task 2 with a different regex; issue titles are identical text apart from this."
+    - title: Check Prometheus API Healthy
+      at: runbook.robot:128
+      asserts: "wget -S to 127.0.0.1:9090/-/healthy inside the first prometheus pod returns an HTTP status containing 200; otherwise sev2."
+      reads:
+        - "kubectl exec POD -c prometheus -- wget -qO- -S 127.0.0.1:9090/-/healthy 2>&1 | grep HTTP/ | awk"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: secondary-ns
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Empty output (exec failed, no pod) fails Should Not Contain 200 as true, so it raises: inconclusive reported as a problem, which is the safe direction. Pass test is a substring match for 200 in the status line."
+  bundleNotes: "Generation rule keys on a Prometheus CR but only task 1 and the RBAC check use NAMESPACE; the log/health tasks use PROM_NAMESPACE (default kube-prometheus-stack), so the SLX resource and the targets can disagree. Only first Prometheus pod is ever examined. Task 1 is a permanent false positive."
+
+- bundle: k8s-pvc-healthcheck
+  displayName: Kubernetes Persistent Volume Healthcheck
+  classicResourceTypes: [persistentvolumeclaim]
+  matchHints: "pattern '.' on name, substring; level of detail detailed; qualifiers namespace, cluster (so one SLX per namespace)"
+  sli: true
+  sliAsserts: "Runs pvc_utilization_check.sh and scores 1 if pvc_issues.json is an empty array else 0 (PVC pods not Running, df exec failed, or usage >= 80 percent of Gi/Ti/Pi PVCs). False-pass confirmed: pvc_utilization_check.sh:65 empty pod list gives []; also reads a possibly stale cwd file."
+  egress: none
+  tools: [kubectl, jq, awk, sed, base64]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE]
+  tasks:
+    - title: Fetch Events for Unhealthy Kubernetes PersistentVolumeClaims
+      at: runbook.robot:22
+      asserts: "A PVC with status.phase != Bound has at least one event; raises one sev2 issue with storage-class next steps."
+      reads:
+        - "kubectl get pvc -n NS -o json | jq phase != Bound"
+        - "kubectl get events -n NS --field-selector involvedObject.name=PVC -o json"
+      permissions:
+        - {apiGroups: [""], resources: [persistentvolumeclaims, events], verbs: [get, list]}
+        - {apiGroups: [storage.k8s.io], resources: [storageclasses], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:26 the pvc list is inside $(... | jq ...) of a for loop; a failed get gives an empty list, the loop never runs, and no issue is raised. Also an unbound PVC with zero events raises nothing (issue only created per event line, :58)."
+      notes: "WaitForFirstConsumer PVCs are Pending with a benign event and raise a sev2 false issue. Event parsing splits on ', ' in a shell echo, so messages with commas break. storage_next_steps.sh uses ${CONTEXT} but cluster-scoped get storageclass (cluster-scoped read)."
+    - title: List PersistentVolumeClaims in Terminating State
+      at: runbook.robot:79
+      asserts: "A PVC has metadata.deletionTimestamp set (stuck Terminating); sev4."
+      reads:
+        - "kubectl get pvc -n NS -o json | jq select(.metadata.deletionTimestamp != null)"
+      permissions:
+        - {apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:83 kubectl|jq without pipefail; failed get gives empty stdout, :89 Should Contain Terminating is false, no issue and the report prints an empty summary."
+      notes: "Any PVC mid-normal-deletion is flagged immediately (no age threshold) at sev4."
+    - title: List PersistentVolumes in Terminating State
+      at: runbook.robot:114
+      asserts: "Intended: a PV is Terminating, with events. Actual check is dead."
+      reads:
+        - "kubectl get pv -o json | jq select(.status.phase == Terminating)"
+        - "kubectl get events --all-namespaces --field-selector involvedObject.name=PV"
+      permissions:
+        - {apiGroups: [""], resources: [persistentvolumes], verbs: [get, list]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: cluster
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:118 for pv in $(kubectl get pv ... | jq ...) with no rc check (forbidden on cluster-scoped PVs is the common case) gives an empty loop and :124 Should Contain Name is false; additionally .status.phase is never the string Terminating (PV phases are Pending/Available/Bound/Released/Failed; Terminating is a kubectl display column from deletionTimestamp), so this never matches even with access."
+      notes: "Lists every PV in the cluster, not just those used in NAMESPACE, yet titled per namespace. Needs cluster-wide PV list and events across all namespaces."
+    - title: List Pods with Attached Volumes and Related PersistentVolume Details
+      at: runbook.robot:146
+      asserts: "Nothing; informational per-pod report of PVC, PV phase, node, zone, storage class, access mode, reclaim policy, CSI driver."
+      reads:
+        - "kubectl get pods -n NS --field-selector=status.phase=Running"
+        - "kubectl get pvc/pv/pod/nodes (many calls per pod volume)"
+      permissions:
+        - {apiGroups: [""], resources: [pods, persistentvolumeclaims], verbs: [get, list]}
+        - {apiGroups: [""], resources: [persistentvolumes, nodes], verbs: [get]}
+      scope: cluster
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No issue path. The && chain silently skips a pod/volume row if any lookup fails (e.g. nodes get Forbidden drops the whole row). jsonpath dots escaped with double backslash through Robot."
+    - title: Fetch the Storage Utilization for PVC Mounts
+      at: runbook.robot:160
+      asserts: "Pod using a PVC is not Running and not Job-owned (sev2); df exec on the PVC mount fails or returns no usage (sev4); df usage >= 80/90/95/100 percent (sev4/3/2/1) for PVCs sized in Gi, Ti or Pi."
+      reads:
+        - "kubectl get pods -n NS -o json | jq select(volumes persistentVolumeClaim)"
+        - "kubectl exec POD -c CONTAINER -- df -h MOUNT (twice: report loop and script)"
+        - "kubectl get pvc PVC -o json (.status.capacity.storage); kubectl get replicaset/pod ownerReferences"
+      permissions:
+        - {apiGroups: [""], resources: [pods, persistentvolumeclaims], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [apps], resources: [replicasets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "pvc_utilization_check.sh:65 for pod in $(kubectl get pods ... | jq ...) with no rc check: a failed list leaves the loop empty and :124 writes []; pvc_utilization_check.sh:15 convert_to_gigabytes returns 0 for Mi/Ki/G/M sized PVCs so calculate_recommendation emits nothing (:111) and they are never flagged."
+      notes: "Failed df is correctly turned into an issue (:99-103, a good pattern, though it fires for any exec RBAC denial). Summary text hard-codes 'StatefulSet' owner (:112). Not-Running pods flagged even if Succeeded bare pods. pvc_issues.json written to cwd; the runbook cats the same name, so a stale file could be read if the script dies before writing."
+    - title: Check for RWO Persistent Volume Node Attachment Issues
+      at: runbook.robot:200
+      asserts: "For each non-Job pod with a ReadWriteOnce PVC, the pod's node differs from the node whose status.volumesInUse contains the PV name; raises sev2 on any 'Error' line."
+      reads:
+        - "kubectl get pods -n NS -o json; kubectl get pod/pvc per volume"
+        - "kubectl get nodes -o json (volumesInUse)"
+      permissions:
+        - {apiGroups: [""], resources: [pods, persistentvolumeclaims], verbs: [get, list]}
+        - {apiGroups: [""], resources: [nodes], verbs: [get, list]}
+      scope: cluster
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:204 PODS=$(kubectl get pods ... -o json) with no check; empty PODS makes the for loop empty and the output has no 'Error' line, so no issue."
+      notes: "False-issue direction too: nodes get Forbidden or CSI volumesInUse naming not containing the PV name leaves STORAGE_NODE_NAME empty, which is reported as Mismatched (sev2). `contains($pv)` substring match. Inline function _jq with escaped dollar signs. Pods ending on different nodes legitimately during moves flagged."
+  bundleNotes: "Six tasks, three of which need cluster-scoped reads (PV, nodes, events -A) though the SLX is namespace-scoped. Shared failure idiom is $(kubectl ... | jq ...) feeding for-loops with no rc check. pvc_utilization_check.sh feeds both runbook and SLI."
+
+- bundle: k8s-redis-healthcheck
+  displayName: Kubernetes Redis Healthcheck
+  classicResourceTypes: [deployment]
+  matchHints: "pattern 'redis' on name, substring; level of detail detailed; qualifiers resource, namespace, cluster"
+  sli: false
+  sliAsserts: ""
+  egress: none
+  tools: [kubectl, redis-cli inside the redis pod]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, DEPLOYMENT_NAME, REDIS_HEALTHCHECK_KEY]
+  tasks:
+    - title: Ping Redis Workload
+      at: runbook.robot:20
+      asserts: "kubectl exec deployment/NAME -- redis-cli PING does not output PONG; sev2."
+      reads:
+        - "kubectl exec deployment/DEPLOYMENT_NAME -n NS -- redis-cli PING"
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Empty output (exec Forbidden, deployment missing, NOAUTH from a password-protected redis, redis-cli absent) all raise the same sev2 'PING failed' issue: wrong cause attribution but not a pass. next_steps point at PVC health."
+    - title: Verify Redis Read Write Operation
+      at: runbook.robot:44
+      asserts: "SET key 0 then INCR key then GET key does not return exactly 1; sev1."
+      reads:
+        - "kubectl exec deployment/NAME -- redis-cli SET KEY 0; INCR KEY; GET KEY"
+      permissions:
+        - {apiGroups: [apps], resources: [deployments], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Tagged access:read-only but it writes a key (default runwhen_task_rw_healthcheck) and leaves it behind. SET/INCR return codes ignored; only the final GET value is compared, so a failed GET (empty) raises sev1 (safe). With multiple replicas kubectl exec deployment/ picks one pod, which on a replica fails SET (READONLY) and raises. Key never deleted."
+  bundleNotes: "Classic type deployment matched by name substring 'redis' misses StatefulSet-based redis (very common) and also matches unrelated deployments such as redis-exporter. Redis auth not supported. Tiny bundle; both tasks are genuine checks with rc/empty treated as failure."
+
+- bundle: k8s-restart-resource
+  displayName: Kubernetes Restart resource
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules directory; not auto-generated (used with other tasksets)"
+  sli: false
+  sliAsserts: ""
+  egress: none
+  tools: [kubectl]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, LABELS]
+  tasks:
+    - title: Get Current Resource State with Labels
+      at: runbook.robot:20
+      asserts: "Nothing; informational YAML dump of daemonsets, deployments, statefulsets matching LABELS."
+      reads:
+        - "kubectl get daemonset,deployment,statefulset -l LABELS -n NS -oyaml"
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets, deployments, statefulsets], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No issue path."
+    - title: Get Resource Logs with Labels
+      at: runbook.robot:32
+      asserts: "Nothing; informational last 200 lines (256KB cap) from pods matching LABELS."
+      reads:
+        - "kubectl logs -l LABELS --tail=200 --limit-bytes=256000 -n NS"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "kubectl logs -l caps at 5 concurrent pods by default (--max-log-requests=5) and errors above that; the error is not checked."
+    - title: Restart Resource with Labels
+      at: runbook.robot:44
+      asserts: "WRITE. kubectl rollout restart of the first DaemonSet, Deployment or StatefulSet (in that kubectl ordering) matching LABELS. Asserts nothing about outcome."
+      reads:
+        - "kubectl get daemonset,deployment,statefulset -l LABELS -o jsonpath items[0].kind/items[0].metadata.name"
+        - "kubectl rollout restart KIND/NAME -n NS"
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets, deployments, statefulsets], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:48-59 no rc or stderr check; if no workload matches resource_name is '/', rollout restart fails, and :59 still reports 'Restarted the following workload: /'. Rollout is not awaited."
+      notes: "Only items[0] restarted although the doc says resource(s) with a set of labels; ordering across kinds is kubectl's. No rollout status wait, no pre-existing-state check."
+  bundleNotes: "Remediation helper used by other tasksets; no generation rules, so no classic resource type or matching. No Add Issue calls anywhere; the bundle asserts nothing."
+
+- bundle: k8s-seaweedfs-healthcheck
+  displayName: Kubernetes SeaweedFS Storage Health Check
+  classicResourceTypes: [statefulset]
+  matchHints: "StatefulSet whose label values contain both 'seaweedfs' and 'master' (substring, and); level of detail basic; baseName swfs-hlth; qualifiers namespace, cluster. One SLX per matching master StatefulSet but all tasks are namespace-wide."
+  sli: true
+  sliAsserts: "Average of four binary scores (workload ready replicas, master /cluster/healthz, topology Free >= MIN_FREE_VOLUME_SLOTS, filer /healthz or /status). Parse or script failure scores 0 (good). False-pass confirmed on two dimensions: workload score 1 when discovery fails (seaweedfs-lib.sh:328-335 || echo items []), and slots score 1 when /dir/status is not JSON (sli-seaweedfs-dimensions.sh:31 // 999 || echo 999)."
+  egress: none
+  tools: [kubectl, jq, awk, sed, grep (-P), bc (optional), wget or curl and aws and weed inside SeaweedFS pods]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, SEAWEEDFS_RELEASE_NAME, SEAWEEDFS_CHART, SEAWEEDFS_MASTER_SERVICE, SEAWEEDFS_FILER_SERVICE, SEAWEEDFS_S3_ENDPOINT, MIN_FREE_VOLUME_SLOTS, MIN_FREE_DISK_PERCENT, S3_PROBE_BUCKET, CAPACITY_WARN_PERCENT, MIN_PROJECTION_HOURS, MAX_PICK_FOR_WRITE_ERRORS, MAX_VOLUME_DISK_ERRORS, QUOTA_WARN_PCT, QUOTA_CRIT_PCT, MAX_BUCKETS_SHOWN, optional secret seaweedfs_s3_credentials]
+  tasks:
+    - title: List SeaweedFS Resources
+      at: runbook.robot:20
+      asserts: "No SeaweedFS StatefulSet/Deployment found (sev3), missing master, volume or filer component (sev4), or a workload with desired > 0 and 0 ready (sev3); namespace not readable (sev4)."
+      reads:
+        - "kubectl get ns NS"
+        - "kubectl get statefulset,deployment,svc,pvc -n NS -l app.kubernetes.io/name=seaweedfs -o json"
+      permissions:
+        - {apiGroups: [""], resources: [namespaces], verbs: [get]}
+        - {apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get, list]}
+        - {apiGroups: [""], resources: [services, persistentvolumeclaims], verbs: [get, list]}
+      scope: cluster
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Needs cluster-scoped namespaces get (list-seaweedfs-resources.sh:30); a namespace-only RBAC grant fails it and raises a sev4 'not accessible' issue then exits, hiding all discovery. Empty discovery from forbidden lists becomes 'No SeaweedFS workloads found' (issue), the safe direction. Output file stale-read risk: set -e plus cat of cwd file; unparsable JSON is warned and becomes an empty list (runbook.robot:38-43), a bundle-wide pass path."
+    - title: Check SeaweedFS Workload Replica Health
+      at: runbook.robot:61
+      asserts: "A SeaweedFS workload has readyReplicas < desired (sev2), a pod in CrashLoopBackOff (sev2) or Pending (sev3), or any Warning event naming the workload (sev3)."
+      reads:
+        - "kubectl get statefulset,deployment,svc,pvc -l app.kubernetes.io/name=seaweedfs (discovery)"
+        - "kubectl get pods -n NS -o json; kubectl get events -n NS -o json"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods, events, services, persistentvolumeclaims], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "seaweedfs-lib.sh:328-335 swf_discover_components uses `kubectl get ... 2>/dev/null || echo {items:[]}` so a Forbidden or failed list is an empty workload list; check-workload-health.sh:29-84 then has nothing to loop and writes [] (no 'no workloads' guard, unlike list-seaweedfs-resources.sh)."
+      notes: "Bug (false positive): check-workload-health.sh:75-77 the events jq lacks -r, so an empty result is the 2-character string quote-quote, which passes [[ -n ]] and != null, so every workload always gets a sev3 'Recent Warning events' issue (details empty). Pod match is name prefix (startswith), so seaweedfs also claims seaweedfs-volume-0. Warning events are not time-bounded. ImagePullBackOff is not detected (only CrashLoopBackOff/Pending)."
+    - title: Check SeaweedFS Master Cluster Status
+      at: runbook.robot:102
+      asserts: "No running master pod (sev2), /cluster/healthz or /cluster/status unreachable via pod exec (sev2), health text lacks ok|healthy|success, no Leader and IsLeader != true (sev2), zero Raft peers with master replicas > 1 (sev3)."
+      reads:
+        - "kubectl get pods -l app.kubernetes.io/component=master"
+        - "kubectl exec MASTER -- sh -c wget -qO- http://127.0.0.1:9333/cluster/healthz|status"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Probe exit status is checked, so exec failure raises an issue. set -e plus the trap means a mid-script abort leaves a stale or absent issues file. Only the first master pod is queried. Healthz returning an empty 200 body skips the unhealthy test (:51 -n guard), which is correct."
+    - title: Check SeaweedFS Volume Slot Availability
+      at: runbook.robot:142
+      asserts: "Master /dir/status Topology.Free < MIN_FREE_VOLUME_SLOTS (sev2); any datacenter/rack/node Free below the minimum (sev3); unparsable Topology.Free (sev3); master unreachable (sev2)."
+      reads:
+        - "kubectl exec MASTER -- wget -qO- http://127.0.0.1:9333/dir/status"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Unparsable response is an issue. If no master pod is found swf_master_http returns empty and non-zero, which raises the unreachable issue. Same stale-file/abort exposure as other tasks."
+    - title: Check SeaweedFS Volume Server Disk Capacity
+      at: runbook.robot:182
+      asserts: "Volume server disk percent_free < MIN_FREE_DISK_PERCENT (sev2), read-only volumes reported (sev2), topology nodes with Free/Max ratio under that percent (sev3), no volume pods (sev3), /status unreachable (sev3)."
+      reads:
+        - "kubectl get pods -n NS -o json | jq volume pods"
+        - "kubectl exec VOLUME_POD -- wget -qO- http://127.0.0.1:8080/status; master /dir/status"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check-volume-capacity.sh:48 and :64 `jq ... 2>/dev/null || true` / `|| echo 0` turn an unparsable or schema-mismatched /status body into no disk lines and zero read-only volumes; :75-76 same for the topology check."
+      notes: "Script reads .DiskUsages[] and percent_free; the SeaweedFS volume /status JSON uses DiskStatuses (from memory of the API, not verified against a live server), in which case the disk-free check never fires on a healthy HTTP 200. Very plausible no-op, flag for live validation."
+    - title: Check SeaweedFS Writable Volume Layout
+      at: runbook.robot:222
+      asserts: "A layout from master /dir/status has zero writable volumes (sev2), topology root has zero writables (sev2), or readOnlyVolumeIds are present (sev2)."
+      reads:
+        - "kubectl exec MASTER -- wget -qO- http://127.0.0.1:9333/dir/status"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check-writable-layouts.sh:30-35 layouts=$(jq ... 2>/dev/null || echo '[]'), :42 root_writables ... || echo '', :67 readonly_vols ... || echo 0: a body that fails to parse leaves layout_count 0 and no issue."
+      notes: "Unreachable master is an issue (:20-28). Read-only volume IDs inside any object named readOnlyVolumeIds are counted globally via recursive descent."
+    - title: Check SeaweedFS Filer and Component Connectivity
+      at: runbook.robot:262
+      asserts: "No filer pod (sev3), filer /healthz and /status both unhealthy (sev2), master topology lists zero (sev2) or fewer data nodes than Running volume pods (sev3), stale/unreachable/offline strings in /dir/status (sev3)."
+      reads:
+        - "kubectl get pods; kubectl exec FILER -- wget http://127.0.0.1:8888/healthz|status"
+        - "kubectl exec MASTER -- wget /dir/status; kubectl get pods (volume count)"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "jq failure turns data_nodes into 0 (:56), raising a false 'zero data nodes' issue rather than passing. Stale-string regex over the whole payload is a heuristic. Filer health uses substring ok|healthy|running|success|version."
+    - title: Verify SeaweedFS S3 Gateway Operations
+      at: runbook.robot:302
+      asserts: "S3 port not listening (sev3), ListBuckets fails (sev2), PUT, GET, or content check of a probe object fails (sev2). Uses aws CLI exec in the s3 or filer pod."
+      reads:
+        - "kubectl exec POD -- wget -S -O /dev/null http://127.0.0.1:8333/"
+        - "kubectl exec POD -- aws --endpoint-url http://127.0.0.1:8333 s3 ls|mb|cp|rm"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Tagged access:read-only but it creates bucket runwhen-healthcheck (when S3_PROBE_BUCKET empty), puts and deletes an object, i.e. writes to the storage under test. Likely always raises a sev2 'content mismatch': put_cmd does `cat > file` inside kubectl exec with no -i, so stdin is empty and the uploaded body is empty (verify-s3-gateway.sh:93,120); not run. aws CLI absent in the image is treated as continue (:76) then fails at PUT. Secret key passed on the in-pod command line (visible in ps). Delete failure leaves probe objects (|| true). S3 off gives a sev3 issue (false positive on deployments without S3)."
+    - title: Check SeaweedFS Volume Configuration
+      at: runbook.robot:344
+      asserts: "Helm-rendered config sanity: master -peers count != replicas (sev2), -mdir or -dir not mounted (sev2), filer missing WEED_CLUSTER_SW_MASTER (sev3), defaultReplication unparseable (sev3) or needing more volume servers than running (sev2), -max < 10 (sev3), single master with peers (sev3)."
+      reads:
+        - "kubectl get statefulset,deployment,svc,pvc -l app.kubernetes.io/name=seaweedfs -o json (spec.template command, env, volumeMounts)"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get, list]}
+        - {apiGroups: [""], resources: [services, persistentvolumeclaims], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "A failed discovery leaves defaultReplication empty, which raises the sev3 'defaultReplication not found' issue (safe direction but misleading). Only inspects container[0]. -max<10 and single-master+peers are opinions. Wrongly flags charts that set options via env/config files instead of command args."
+    - title: Check SeaweedFS Garbage Collection and Compaction Signals
+      at: runbook.robot:384
+      asserts: "Counters scraped from :9327/metrics via pod exec exceed thresholds: master pick_for_write_error > MAX_PICK_FOR_WRITE_ERRORS, any crowded layout, heartbeat errors > 0 (sev2), volume errorWriteToLocalDisk > MAX_VOLUME_DISK_ERRORS, noWriteOrDelete > 5 (sev2)."
+      reads:
+        - "kubectl exec MASTER|FILER|VOLUME_POD -- wget http://127.0.0.1:9327/metrics"
+        - "kubectl get pods -l app.kubernetes.io/component=volume -o jsonpath"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check-gc-compaction.sh:26 `if master_metrics=$(swf_fetch_pod_metrics ...)` skips silently on failure (also :62, :71); :100-102 pod list has 2>/dev/null so a failed list yields no volume pods; metrics endpoint disabled (no -metricsPort) equals no issues."
+      notes: "Cumulative counters since process start compared with fixed thresholds, so they rise monotonically until restart (will flap to permanent issue). No time window."
+    - title: Check SeaweedFS Capacity Projection
+      at: runbook.robot:424
+      asserts: "Slot utilization (Max-Free)/Max >= CAPACITY_WARN_PERCENT (sev2), crowded layouts (sev3), volume server disk util >= warn percent (sev2), or projected time-to-full below MIN_PROJECTION_HOURS from the prior snapshot (sev2)."
+      reads:
+        - "kubectl exec MASTER -- wget /dir/status and :9327/metrics"
+        - "kubectl exec VOLUME_POD -- wget /status"
+        - "reads and writes local snapshot file seaweedfs_capacity_<ns>_<release>.json in CODEBUNDLE_TEMP_DIR"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check-capacity-projection.sh:24 `if dir_status=$(swf_master_http ...)`, :44 and :62 all silently skip on failure and the script falls through to swf_write_issues with no issue."
+      notes: "Statefulness: the projection needs a prior snapshot in CODEBUNDLE_TEMP_DIR (default /tmp), absent on a fresh runner, so the projection branch rarely fires; V13 would need explicit state. Same DiskUsages vs DiskStatuses doubt as the capacity task (:65). Overlaps task 5 and 4."
+    - title: Check SeaweedFS Known Version Issues
+      at: runbook.robot:464
+      asserts: "The installed helm.sh/chart label version falls in a min_version..max_version range in a curated catalog (seaweedfs-known-issues.json) of known issues; catalog missing (sev4) or version unknown (sev3)."
+      reads:
+        - "kubectl get statefulset -l app.kubernetes.io/name=seaweedfs,component=master -o json (helm.sh/chart label)"
+        - "static catalog file in the bundle"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check-known-issues.sh:49-52 the catalog jq is `... 2>/dev/null || true`: a catalog row with a non-numeric version component (pad() tonumber fails on e.g. 4.20-rc) aborts the filter silently and no row matches."
+      notes: "Not a live health check; a static advisory catalog matched on the chart version label only. There is a committed known_issues.json output file in the bundle directory with the same name as the OUTPUT_FILE, so a stale copy can be read if the script fails before writing."
+    - title: Check SeaweedFS Bucket Quota and Usage
+      at: runbook.robot:504
+      asserts: "Parsed `weed shell s3.bucket.list` bucket usage >= QUOTA_WARN_PCT (sev3) or QUOTA_CRIT_PCT (sev1); always also adds a summary issue (sev4 'N buckets healthy' when all good)."
+      reads:
+        - "kubectl exec MASTER -- sh -c 'echo s3.bucket.list | weed shell -master=localhost:9333'"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check-bucket-usage.sh:99-103 `grep -oP 'quota:..' || echo 0` defaults to 0 for any field that fails to match, and usage 0 is below both thresholds; empty output and zero parsed buckets do raise sev3 issues."
+      notes: "Always emits a sev4 status issue even when healthy (issue used as report). Parser is text-scraping weed shell output, fragile across versions; GNU grep -P. Buckets without quota have usage 0 and are skipped. Hard-coded localhost:9333 master."
+  bundleNotes: "Mostly well-structured: scripts raise issues for unreachable endpoints. Systemic weaknesses: (1) every task wraps its issues file in `TRY json.loads EXCEPT Log WARN; issue_list = []` (runbook.robot:38-43 and the 12 copies), so any script crash, a missing file, or a stale cwd file becomes a pass; (2) set -e plus trap print_report EXIT leaves the file unwritten on error; (3) swf_discover_components swallows failures with `|| echo '{items:[]}'`. Overlap: tasks 4, 5, 6, 11 all read /dir/status; tasks 5 and 11 both read volume /status. Output JSON snapshots (gc_compaction_issues.json, known_issues.json, volume_config_issues.json, seaweedfs_*_snapshot.json) are committed inside the bundle directory."
+
+- bundle: k8s-serviceaccount-check
+  displayName: Kubernetes Service Account Check
+  classicResourceTypes: [namespace]
+  matchHints: "type and: pattern '.+' on name, substring; level of detail detailed; baseName sa-check; qualifiers namespace, cluster; slx and runbook only (every namespace gets an SLX)"
+  sli: false
+  sliAsserts: ""
+  egress: "in-cluster image pull of curlimages/curl:latest from Docker Hub by the node; no runner egress"
+  tools: [kubectl, grep, sed]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, SERVICE_ACCOUNT]
+  tasks:
+    - title: Test Service Account Access to Kubernetes API Server
+      at: runbook.robot:65
+      asserts: "A pod running as SERVICE_ACCOUNT receives a response containing 'Forbidden' from GET https://kubernetes.default.svc/ (the API root path); raises sev3 'cannot access Kubernetes API'."
+      reads:
+        - "kubectl run curl-pod --image=curlimages/curl:latest --overrides serviceAccountName=SA -- sleep infinity"
+        - "kubectl wait --for=condition=Ready pod/curl-pod --timeout=20s"
+        - "kubectl exec curl-pod -- cat /var/run/secrets/kubernetes.io/serviceaccount/token"
+        - "kubectl exec curl-pod -- curl -k -H 'Authorization: Bearer TOKEN' https://kubernetes.default.svc"
+        - "kubectl delete pod curl-pod"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [create, get, list, watch, delete]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+      scope: ns:target
+      readOnly: false
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:69 a single && chain; if kubectl run is Forbidden, image pull is blocked, or wait times out at 20s, the chain stops with stderr only, stdout has no 'Forbidden' and :79 passes; the delete step is also skipped, leaving curl-pod behind."
+      notes: "Creates and deletes a pod (writes) with no access tag; fixed pod name curl-pod collides on re-run if cleanup was skipped (AlreadyExists). Token printed via kubectl exec into the runner (bearer token in stdout/history). The default discovery rules grant no access to the API root '/', so most service accounts return 403 Forbidden on `GET /`, i.e. the issue is probably raised for nearly every non-admin SA (false positive; reasoned, not run). Uses curl -k (no TLS verification). Latest tag from Docker Hub needs egress and blocks on air-gapped clusters."
+  bundleNotes: "One task, mutating, generated for every namespace. The semantic check (does this SA have API access) is better answered by `kubectl auth can-i --as=system:serviceaccount:NS:SA` with no pod creation. No SLI."
+
+- bundle: k8s-stacktrace-health
+  displayName: Kubernetes Workload Stacktrace Analysis
+  classicResourceTypes: [deployment, statefulset, daemonset]
+  matchHints: "pattern '.+' on name, substring; level of detail detailed; qualifiers resource, namespace, cluster"
+  sli: true
+  sliAsserts: "1.0 if the most recent traceback extraction (RW_LOOKBACK_WINDOW, fast_exit) finds none, 0 if one is found; scaled to 0 gives 1.0. False-pass confirmed: kubectl logs failures yield empty logs and score 1 (k8s_log.py:759-760)."
+  egress: none
+  tools: [kubectl (hard-coded in K8sLog, ignores KUBERNETES_DISTRIBUTION_BINARY), jq, python (RW.LogAnalysis.ExtractTraceback)]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, WORKLOAD_NAME, WORKLOAD_TYPE, LOG_LINES, LOG_AGE, LOG_SIZE, EXCLUDED_CONTAINER_NAMES]
+  tasks:
+    - title: Analyze Workload Stacktraces
+      at: runbook.robot:151
+      asserts: "Python, Java or Go tracebacks found in the last LOG_AGE of the workload's pod logs (current and --previous, excluding sidecar containers); one sev2 issue per unique traceback. Skipped (sev4 info issue) if the workload is scaled to 0."
+      reads:
+        - "kubectl get TYPE/NAME -o json | jq (scale check in suite init)"
+        - "kubectl get TYPE NAME, replicaset, pods -o json (owner uid matching)"
+        - "kubectl logs POD -c CONTAINER --since=AGE --tail=N --limit-bytes=B [--previous]"
+      permissions:
+        - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets, replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "k8s_log.py:759-760 and :770-771 `if result.returncode == 0: logs_content += result.stdout`: a failed kubectl logs (pods/log Forbidden, container not started, timeout) contributes nothing; with no logs the runbook reports 'No Stacktraces Found' (runbook.robot:191-193). Also :692 a Deployment with no ReplicaSets returns [] (no pods) and passes."
+      notes: "Workload get / pod list errors do raise RuntimeError (task errors), good. Only the log fetch is silent. LOG_AGE default 15m with LOG_LINES 2000 (runbook) vs MAX_LOG_BYTES 256000 (SLI) differ. Excluded container defaults to mesh sidecars. Only three languages parsed. The RW_LOOKBACK_WINDOW import is SLI-only, platform variable."
+  bundleNotes: "WORKLOAD_TYPE is a user input rather than derived from the matched resource; the generated SLX presumably fills it. Suite init does a jq scale check; failure to read it continues with checks. Complement of k8s-tail-logs-dynamic (same goal, different parser)."
+
+- bundle: k8s-statefulset-healthcheck
+  displayName: Kubernetes StatefulSet Triage
+  classicResourceTypes: [statefulset]
+  matchHints: "pattern '.+' on name, substring; level of detail detailed; qualifiers resource, namespace, cluster"
+  sli: true
+  sliAsserts: "Mean of six sub-scores: container restarts <= threshold; critical log patterns (GenericError, AppFailure); unready pods == 0; replicas ready and rollout complete (1, 0.5 partial, 0); PVCs Bound; warning events <= threshold (1, 0.5 <= 2x, 0). Scaled to 0 gives 1.0. False-pass confirmed on four: not-ready pods (sli.robot kubectl|jq|jq -s length gives 0 on failure), PVC (empty stdout becomes {} -> total 0 -> 1), events (empty -> 0 events), logs (k8s_log.py:759)."
+  egress: none
+  tools: [kubectl, jq, awk, grep (-P), date (GNU), bash, python (K8sLog)]
+  inputs: [KUBERNETES_DISTRIBUTION_BINARY, CONTEXT, NAMESPACE, STATEFULSET_NAME, LOG_AGE, LOG_ANALYSIS_DEPTH, LOG_SEVERITY_THRESHOLD, LOG_PATTERN_CATEGORIES, ANOMALY_THRESHOLD, CONTAINER_RESTART_AGE, CONTAINER_RESTART_THRESHOLD, EXCLUDED_CONTAINER_NAMES]
+  tasks:
+    - title: Analyze Application Log Patterns for StatefulSet
+      at: runbook.robot:23
+      asserts: "Log lines from the StatefulSet pods match pattern categories (GenericError, AppFailure, StackTrace, Connection, Timeout, Auth, Exceptions, Resource) at severity <= LOG_SEVERITY_THRESHOLD (3)."
+      reads:
+        - "kubectl get statefulset/pods -o json; kubectl logs POD -c CONTAINER --since=LOG_AGE [--previous]"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "k8s_log.py:759-760 failed kubectl logs adds nothing; k8s_log.py:915-930 scan_logs_for_issues turns a timeout or exception into {issues: [], summary: [error]} with no issue."
+      notes: "KNOWN BUG, verified in source: runbook.robot:82 references ${LOG_PATTERN_CATEGORIES_STR}, which is only a local variable of Suite Initialization (assigned at :953, never Set Suite Variable; only @{LOG_PATTERN_CATEGORIES} at :985 is). The task FAILs with variable-not-found at the final Add Pre To Report, after issues were added, and Cleanup Temp Files (:84) is skipped. Seen as FAIL on every run per 2026-10-28 TSB notes. Fix is PR 783 (branch lazarus-sts-no-output), not on main 49ab483."
+    - title: Detect Log Anomalies for StatefulSet
+      at: runbook.robot:86
+      asserts: "Repeating patterns or unusual log volume found by RW.K8sLog.Analyze Log Anomalies (ANOMALY_THRESHOLD)."
+      reads:
+        - "kubectl get statefulset/pods -o json; kubectl logs POD -c CONTAINER --since=LOG_AGE"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "k8s_log.py:759-760 failed kubectl logs adds nothing, so no anomalies; ANOMALY_THRESHOLD is imported (runbook.robot:959) and set as a suite var (:1002) but not passed to Analyze Log Anomalies at :106."
+      notes: "KNOWN BUG, verified in source: runbook.robot:118 `Catenate SEPARATOR=\\n @{issue[next_steps]}` expands a string as a list, but k8s_log.py:1411 builds next_steps as a newline-joined string (also :1233); the task FAILs as soon as any anomaly is found, before Add Issue. So anomalies can never be raised; a healthy run passes. Fix in PR 783."
+    - title: Check Liveness Probe Configuration for StatefulSet
+      at: runbook.robot:138
+      asserts: "Per container: the liveness probe's httpGet/tcpSocket port is not among containerPorts (named ports compared against numbers) or an exec-probe command's :port is not exposed; also executes the exec probe command in a pod and tries substituting known ports. Raises one sev4 issue if any recommendation is produced."
+      reads:
+        - "kubectl get statefulset NAME -n NS -o json"
+        - "kubectl auth can-i create pods/exec -n NS"
+        - "kubectl get pods -n NS -l app=NAME; kubectl exec POD -- <probe exec command> (and port-substituted variants)"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [authorization.k8s.io], resources: [selfsubjectaccessreviews], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:154 cmd_override=`./validate_probes.sh livenessProbe | tee liveness_probe_output` returns tee's rc (0, no pipefail), so the `returncode != 0` guard just after it (:157-158) is dead and validate_probes.sh:17-21 `exit 1` on kubectl failure is masked; the recommendations awk then finds nothing and no issue is raised."
+      notes: "Missing probe is only echoed, never flagged. Named ports (httpGet.port: http) always mismatch numeric containerPort lists (false issue); substring match lets port 80 match 8080 (false pass). Pod chosen by hard-coded label app=NAME (validate_probes.sh:84), no --context on :83-84 and :93, kubectl literal at :110. Actually runs the probe's own command inside the pod, which is arbitrary workload code."
+    - title: Check Readiness Probe Configuration for StatefulSet
+      at: runbook.robot:197
+      asserts: "Same as liveness check but for readinessProbe."
+      reads:
+        - "kubectl get statefulset NAME -n NS -o json; kubectl auth can-i create pods/exec; kubectl exec POD -- <probe exec command>"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/exec], verbs: [create]}
+        - {apiGroups: [authorization.k8s.io], resources: [selfsubjectaccessreviews], verbs: [create]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:213 same `| tee readiness_probe_output` rc masking as the liveness task."
+      notes: "Duplicate of the liveness task with a different argument; the pair could be one parameterized task."
+    - title: Check for Container Restarts in StatefulSet
+      at: runbook.robot:256
+      asserts: "Containers in the StatefulSet's pods with restartCount > CONTAINER_RESTART_THRESHOLD (lifetime count) and a last termination within CONTAINER_RESTART_AGE; classified by exit code (error, misconfiguration, SIGINT, SIGABRT, SIGKILL with OOM vs liveness-probe analysis from events, SIGTERM, node shutdown)."
+      reads:
+        - "kubectl get statefulset NAME -o json | jq spec.selector.matchLabels"
+        - "kubectl get pods -l SELECTOR -o json"
+        - "kubectl get events --field-selector involvedObject.name=POD -o json; kubectl get pod/replicaset for owner"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, replicasets], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods, events], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "container_restarts.sh:191 STATEFULSET_LABEL_SELECTOR=$(kubectl ... | jq) and :194 pods_json=$(kubectl get pods ...) have no rc check; with a failed kubectl the script ends at :360 printing a lone `[]` (rc 0), which json.loads accepts as zero issues."
+      notes: "KNOWN BUG, verified in source: runbook.robot:277 `json.loads(stdout)` but the script prints plain text before the JSON: the healthy path prints 'No containers with restarts found ...' and exits 0 (container_restarts.sh:220) and every classification branch echoes text, so json.loads raises and the task FAILs on essentially every run, with or without restarts. Window bug (per 2026-10-28 TSB notes, not re-run here): container_restarts.sh:186 date -d '10m ago' is invalid in GNU date, THRESHOLD_TIME is empty, and the jq `finishedAt > $threshold_time` then matches every historical restart so CONTAINER_RESTART_AGE is ignored. Also restart_count -gt threshold compares lifetime counts. In the failure branch runbook.robot:274 observed_at=${issue_timestamp} is undefined (never set in that branch). Fix in PR 783."
+    - title: Inspect StatefulSet Warning Events
+      at: runbook.robot:292
+      asserts: "Warning events from the last hour for the StatefulSet, its Pods, or its PVCs (name contains STATEFULSET_NAME); mapped by message to issue templates (ContainersNotReady, probe failures, PodFailed, ImagePullBackOff, etc.), consolidated into pod, PVC and StatefulSet issues."
+      reads:
+        - "kubectl get events -n NS -o json | jq (Warning, last 60 minutes)"
+        - "kubectl get statefulset NAME -o json"
+      permissions:
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:292-301 events=kubectl get events|jq (rc is jq's), so the returncode != 0 guard (:303) is dead for events Forbidden; empty stdout then hits the json.loads EXCEPT (json.loads at :342), `Warning in ''` is false, object_list is [] and nothing is raised."
+      notes: "Event jq requires a non-null lastTimestamp (`(.lastTimestamp // empty | ...) >= $time_limit`), so events.k8s.io-style events with only eventTime are dropped silently. Matching is by name substring (contains), so the sts name `db` also matches db-replica pods. Details of the workload GET failure do raise (rc checked)."
+    - title: Fetch StatefulSet Workload Details
+      at: runbook.robot:487
+      asserts: "Nothing beyond retrievability; dumps the StatefulSet YAML. Sev2 issue if the get fails."
+      reads:
+        - "kubectl get statefulset/NAME -n NS -o yaml"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Direct kubectl (no pipe), rc is checked, good."
+    - title: Inspect StatefulSet Replicas
+      at: runbook.robot:516
+      asserts: "ready replicas == 0 with desired > 0 (sev1), ready < desired (sev3), or updatedReplicas < currentReplicas (sev3, rolling update in progress)."
+      reads:
+        - "kubectl get statefulset/NAME -o json | jq '.status | {replicas, readyReplicas, currentReplicas, updatedReplicas, ...}'"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:516-525 `kubectl get ... | jq` rc is jq's, so the returncode guard (:529-530) is dead; empty stdout becomes {} at :556 (`if strip() else {}`), ready 0 and desired 0 defaults, and none of the IF branches (:568-605) fires."
+      notes: "Uses status.replicas as desired, not spec.replicas; a StatefulSet scaled up but with no pods created yet (status.replicas 0) passes. Healthy path writes no report at all (empty-looking pass, per the TSB notes). Duplicates the SLI replica sub-score with different rules."
+    - title: Check StatefulSet PersistentVolumeClaims
+      at: runbook.robot:609
+      asserts: "A PVC matching the StatefulSet by app.kubernetes.io/name label (else by name) has status.phase != Bound; one sev2 issue listing unbound PVCs."
+      reads:
+        - "kubectl get pvc -n NS -o json | jq select(label-or-name test STATEFULSET_NAME) | {name,status,capacity,storageClass,volumeName}"
+      permissions:
+        - {apiGroups: [""], resources: [persistentvolumeclaims], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:643 `json.loads('[' + stdout + ']')`: the jq emits one object per PVC with no comma separators, so any StatefulSet with 2 or more PVCs raises JSONDecodeError and the EXCEPT (:644-646) sets pvc_list [] and skips analysis ('0/0 bound'); and the pipe masks kubectl failure (rc is jq's)."
+      notes: "Selector precedence bug: `.metadata.labels[app.kubernetes.io/name] // .metadata.name | test(NAME)` uses the label when present, so a PVC labelled with the app name but not equal to the StatefulSet name is dropped. The SLI uses the correct `-NAME-[0-9]+$` regex instead. This is a second 'no output' defect (not in the 2026-10-28 note, new finding)."
+    - title: Identify Recent Configuration Changes for StatefulSet
+      at: runbook.robot:690
+      asserts: "ControllerRevision history in the last 24h shows a volume claim template change (sev2), image change (sev3), env var change (sev4), resource change (sev4), a rollback pattern (sev2), a recent kubectl apply generation gap (sev4), or config drift (sev4)."
+      reads:
+        - "kubectl get statefulset NAME; kubectl get controllerrevisions -n NS -o json; kubectl get controllerrevision REV -o json"
+        - "kubectl get events -n NS -o json (rollback evidence)"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, controllerrevisions], verbs: [get, list]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "track_statefulset_config_changes.sh:35-39 StatefulSet get failure prints ERROR and `exit 0` (comment: exit gracefully); :43-58 controllerrevisions get has no rc check, empty REVISIONS prints 'No ControllerRevisions found' and exits 0; the runbook then matches no marker strings."
+      notes: "Output is text-scraped by substring and emoji-stripped line state machines in Robot (runbook.robot:720-880). Change feeds are informational ('this may be related'), not faults: sev2/3 issues fire on any deploy in the last 24h. Uses date -d GNU."
+  bundleNotes: "Source of the known StatefulSet 'no output' bugs (also memory note 2026-10-28; fix PR 783 not on main). Recorded exactly: (1) container restarts task fails on json.loads of text (runbook.robot:277 vs container_restarts.sh:220 and the per-branch echoes); (2) log patterns task fails on undefined ${LOG_PATTERN_CATEGORIES_STR} (runbook.robot:82, defined at :953 only locally); (3) anomaly task fails on @{issue[next_steps]} list expansion of a string (runbook.robot:118 vs k8s_log.py:1233/1411); (4) replicas task passes with no report when healthy and with kubectl failure (runbook.robot:516-556); (5) PVC task drops all PVCs when the StatefulSet has >= 2 (runbook.robot:643); (6) restart window ignored via invalid GNU date '10m ago' (container_restarts.sh:186). Probe tasks have dead rc guards because of `| tee`. The runbook has a different PVC regex than the SLI, and the SLI scores 1 on parse failure in PVC and events."
+
+- bundle: k8s-statefulset-ops
+  displayName: Kubernetes StatefulSet Operations
+  classicResourceTypes: [statefulset]
+  matchHints: "pattern '.+' on name, substring; level of detail detailed; baseName sts-ops; slx and runbook only"
+  sli: false
+  sliAsserts: ""
+  egress: none
+  tools: [kubectl, jq]
+  inputs: [STATEFULSET_NAME, NAMESPACE, CONTEXT, KUBERNETES_DISTRIBUTION_BINARY, SCALE_UP_FACTOR, MAX_REPLICAS, ALLOW_SCALE_TO_ZERO, HPA_SCALE_FACTOR, HPA_MAX_REPLICAS, HPA_MIN_REPLICAS, RESOURCE_SCALE_DOWN_FACTOR]
+  tasks:
+    - title: Restart StatefulSet
+      at: runbook.robot:22
+      asserts: "WRITE. kubectl rollout restart statefulset; sev3 issue only if the command wrote to stderr."
+      reads:
+        - "kubectl logs statefulset/NAME --tail 50 --all-containers (pre-restart)"
+        - "kubectl rollout restart statefulset/NAME; rollout status loop"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, patch]}
+        - {apiGroups: [apps], resources: [statefulsets/status], verbs: [get]}
+        - {apiGroups: [""], resources: [pods, pods/log], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:48-57 after a stderr-clean restart the `while true; rollout status` loop (:50) output is only appended to the report; a restart that never completes (timeout 180) produces no issue."
+      notes: "Stderr, not rc, is the signal (:59). The infinite status loop runs to the 180s Run Cli timeout if it never reports success."
+    - title: Force Delete Pods for StatefulSet
+      at: runbook.robot:72
+      asserts: "WRITE. Deletes every pod matching the StatefulSet's pod-template labels; sev3 issue if stderr."
+      reads:
+        - "kubectl get statefulset NAME -o jsonpath spec.template.metadata.labels (used as -l selector)"
+        - "kubectl delete pods -l SELECTOR; kubectl get pods -l SELECTOR"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list, delete]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Despite the name there is no --force --grace-period=0; this is a plain delete. Selector from template labels may match pods of other workloads sharing the labels (blast radius). A label value containing a colon breaks the tr transform."
+    - title: Rollback StatefulSet to Previous Version
+      at: runbook.robot:122
+      asserts: "WRITE. kubectl rollout undo statefulset; sev3 issue only if stderr."
+      reads:
+        - "kubectl rollout undo statefulset/NAME; rollout status loop"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, controllerrevisions], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: likely
+      falsePassWhy: "runbook.robot:145-157 same as restart: the status-wait loop (:150) result is reported but never turned into an issue."
+      notes: "No-previous-revision produces stderr and an issue (good)."
+    - title: Scale Down StatefulSet
+      at: runbook.robot:172
+      asserts: "WRITE. Scales to 0 if ALLOW_SCALE_TO_ZERO=true else to 1 (raising a sev4 'not permitted to scale to 0' issue); sev3 if stderr."
+      reads:
+        - "kubectl logs statefulset/NAME (pre); kubectl scale statefulset/NAME --replicas=N; kubectl get statefulset NAME"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, statefulsets/scale], verbs: [get, patch, update]}
+        - {apiGroups: [""], resources: [pods, pods/log], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Scale to 1 when zero is disallowed still reduces availability. Does not check dependent PVC retention."
+    - title: Scale Up StatefulSet
+      at: runbook.robot:237
+      asserts: "WRITE. replicas = max(1, current * SCALE_UP_FACTOR) if <= MAX_REPLICAS else sev3 'cannot scale beyond MAX'; sev3 if stderr."
+      reads:
+        - "kubectl get statefulset NAME -o jsonpath spec.replicas; kubectl scale ...; kubectl get statefulset"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets, statefulsets/scale], verbs: [get, patch, update]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Replica parse failure silently defaults current_replicas to 1 (TRY/EXCEPT WARN), so a failed read still proceeds to scale to FACTOR."
+    - title: Scale Up HPA for StatefulSet
+      at: runbook.robot:302
+      asserts: "WRITE (unless GitOps-managed). Multiplies HPA min and max by HPA_SCALE_FACTOR capped at HPA_MAX_REPLICAS; sev3 if no HPA found or patch stderr; GitOps-managed HPAs get a sev4 suggestion only."
+      reads:
+        - "kubectl get hpa -n NS -o json | jq scaleTargetRef; kubectl get hpa NAME -o jsonpath minReplicas, maxReplicas; kubectl patch hpa"
+      permissions:
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "GitOps detection is label/annotation substring match on flux|argocd|gitops. Success is reported as a sev4 issue."
+    - title: Scale Down HPA for StatefulSet
+      at: runbook.robot:438
+      asserts: "WRITE (unless GitOps-managed). Lowers HPA min/max toward HPA_MIN_REPLICAS; sev3 on missing HPA or stderr."
+      reads:
+        - "kubectl get hpa -o json | jq; kubectl patch hpa NAME --patch minReplicas,maxReplicas"
+      permissions:
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list, patch]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Mirror of scale-up HPA."
+    - title: Increase CPU Resources for StatefulSet
+      at: runbook.robot:555
+      asserts: "WRITE (unless GitOps or HPA, then suggestion only). Sets CPU request (and limit if set) to VPA upperBound or 2x the current value via kubectl set resources; reports success as a sev4 issue."
+      reads:
+        - "kubectl get statefulset NAME -o name/json/jsonpath containers[0].resources; kubectl get hpa; kubectl get vpa -o json"
+        - "kubectl set resources statefulset/NAME --requests=cpu=X [--limits=cpu=X]"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, patch]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "kubectl set resources has no -c, so it applies the same request/limit to EVERY container including sidecars, while the value is computed from containers[0]. Triggers a rolling restart of the StatefulSet. Mixed-unit CPU parse (cores vs millicores) via inline Python evaluate."
+    - title: Increase Memory Resources for StatefulSet
+      at: runbook.robot:759
+      asserts: "WRITE (same gates). Memory request/limit to VPA upperBound or 2x current via kubectl set resources."
+      reads:
+        - "same as CPU: get statefulset/hpa/vpa; kubectl set resources --requests=memory"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, patch]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same all-containers caveat as CPU."
+    - title: Decrease CPU Resources for StatefulSet
+      at: runbook.robot:963
+      asserts: "WRITE (same gates). Divides CPU request/limit by RESOURCE_SCALE_DOWN_FACTOR via kubectl set resources."
+      reads:
+        - "same as CPU increase"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, patch]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Same caveats as increase."
+    - title: Decrease Memory Resources for StatefulSet
+      at: runbook.robot:1152
+      asserts: "WRITE (same gates). Divides memory request/limit by RESOURCE_SCALE_DOWN_FACTOR."
+      reads:
+        - "same as memory increase"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get, patch]}
+        - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [get, list]}
+        - {apiGroups: [autoscaling.k8s.io], resources: [verticalpodautoscalers], verbs: [get, list]}
+      scope: ns:target
+      readOnly: false
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Lowering memory below usage can trigger OOMKills after the rolling restart."
+  bundleNotes: "All eleven tasks are write actions (tagged access:read-write). Pattern: mutation outcome judged by empty stderr, rollout/pod readiness never verified. 'Cannot Access StatefulSet - Connection or Permission Issue' sev2 pre-check exists in the resource tasks. Many Add Issue calls are success reports (sev4), not problems. Name vs behaviour: 'Force Delete Pods' does a graceful delete."
+
+- bundle: k8s-tail-logs-dynamic
+  displayName: Kubernetes Tail Application Logs
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules directory; not auto-generated"
+  sli: true
+  sliAsserts: "Metric is the count of parsed stacktraces in the last LOGS_SINCE (30m) of kubectl logs -l LABELS; 0 is healthy. False-pass confirmed: failed kubectl logs gives empty stdout -> count 0 (sli.robot:22-25 the command is `... | grep -Ev EXCLUDE || true`, so rc is always 0)."
+  egress: none
+  tools: [kubectl, grep, python (RW.K8sApplications stacktrace parsers)]
+  inputs: [NAMESPACE, CONTEXT, KUBERNETES_DISTRIBUTION_BINARY, LOGS_SINCE, EXCLUDE_PATTERN, CONTAINER_NAME, MAX_LOG_LINES, LABELS, STACKTRACE_PARSER, INPUT_MODE, MAX_LOG_BYTES]
+  tasks:
+    - title: Get Application Logs
+      at: runbook.robot:20
+      asserts: "Nothing; informational dump of the last MAX_LOG_LINES from pods matching LABELS."
+      reads:
+        - "kubectl logs -l LABELS --tail=N --max-log-requests=10 --limit-bytes=B --since=SINCE --container=CONTAINER -n NS"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No assertion."
+    - title: Tail Application Logs For Stacktraces
+      at: runbook.robot:30
+      asserts: "RW.K8sApplications.Dynamic Parse Stacktraces (Dynamic, GoLang, GoLangJson, CSharp, Python, Django, DjangoJson parsers) finds at least one stacktrace in the log tail; sev3 issue."
+      reads:
+        - "kubectl logs -l LABELS --tail --since --container ... | grep -Ev EXCLUDE_PATTERN || true"
+      permissions:
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:46-49 the command is `kubectl logs ... | grep -Ev EXCLUDE || true`: rc is always 0 and a failed logs call (Forbidden, no matching pod, wrong container name) yields empty stdout, so zero stacktraces and no issue."
+      notes: "Default EXCLUDE_PATTERN is the placeholder 'FalseError|SecondErrorToSkip'. NAMESPACE defaults to sock-shop and CONTEXT to sandbox-cluster-1 (demo values in code). The CONTAINER_NAME must exist in every pod matched by LABELS or the whole logs call fails. Without an EXCLUDE_PATTERN, no grep stage."
+  bundleNotes: "No generation rules, so this is used via explicit config only (or a manual SLX). Overlaps k8s-stacktrace-health. No Verify Cluster Connectivity call in the SLI (SLI suite init does not call it), so the SLI has no cluster-down guard other than count=0."
+
+- bundle: k8s-vault-healthcheck
+  displayName: Kubernetes Vault Triage
+  classicResourceTypes: []
+  matchHints: "no .runwhen/generation-rules directory; not auto-generated"
+  sli: false
+  sliAsserts: ""
+  egress: "runner or task pod curls VAULT_URL (customer-defined, in-network or public)"
+  tools: [kubectl, curl, grep, python (json.loads)]
+  inputs: [NAMESPACE, CONTEXT, LABELS, VAULT_URL, KUBERNETES_DISTRIBUTION_BINARY]
+  tasks:
+    - title: Fetch Vault CSI Driver Logs
+      at: runbook.robot:18
+      asserts: "Nothing; informational last 100 lines of daemonset vault-csi-provider logs."
+      reads:
+        - "kubectl logs --tail=100 daemonset.apps/vault-csi-provider -n NS"
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Hard-coded daemonset name vault-csi-provider. Empty/failed output reported as 'No Vault CSI driver logs found!'."
+    - title: Get Vault CSI Driver Warning Events
+      at: runbook.robot:34
+      asserts: "Nothing; informational Warning events grep'd for vault-csi-provider."
+      reads:
+        - "kubectl get events --field-selector type=Warning -n NS | grep -i vault-csi-provider || true"
+      permissions:
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No issue path; `|| true` masks failure but nothing is asserted."
+    - title: Check Vault CSI Driver Replicas
+      at: runbook.robot:50
+      asserts: "vault-csi-provider DaemonSet: currentNumberScheduled < 1, desiredNumberScheduled < 1, numberAvailable < 1, numberReady < 1, numberMisscheduled > 0, numberUnavailable > 0 (all sev2), unavailable > maxUnavailable, or currentScheduled != available."
+      reads:
+        - "kubectl describe daemonset.apps/vault-csi-provider -n NS"
+        - "kubectl get daemonset.apps/vault-csi-provider -n NS -o json (status fields)"
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+        - {apiGroups: [""], resources: [events], verbs: [list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Parse Cli Json Output raises on rc != 0 (DaemonSet NotFound) so the task errors rather than passing. JMESPath `|| 0` defaults a missing field to 0, which raises issues (safe). A cluster without the CSI provider (common) makes the whole bundle noisy or erroring. Several overlapping findings fire together for one fault."
+    - title: Fetch Vault Pod Workload Logs
+      at: runbook.robot:208
+      asserts: "Nothing; informational last 100 lines of statefulset.apps/vault logs (kubectl picks one pod and the first container)."
+      reads:
+        - "kubectl logs --tail=100 statefulset.apps/vault -n NS"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+        - {apiGroups: [""], resources: [pods], verbs: [get, list]}
+        - {apiGroups: [""], resources: [pods/log], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "LABELS imported and used in the task title only, not in the command. Hard-coded statefulset name vault."
+    - title: Get Related Vault Events
+      at: runbook.robot:224
+      asserts: "Nothing; informational Warning events grep'd for vault."
+      reads:
+        - "kubectl get events --field-selector type=Warning -n NS | grep -i vault || true"
+      permissions:
+        - {apiGroups: [""], resources: [events], verbs: [get, list]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "No issue path."
+    - title: Fetch Vault StatefulSet Manifest Details
+      at: runbook.robot:240
+      asserts: "Nothing; informational YAML dump."
+      reads:
+        - "kubectl get statefulset.apps/vault -n NS -o yaml"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Output may contain env vars and config from the manifest (no secrets values but possible sensitive config)."
+    - title: Fetch Vault DaemonSet Manifest Details
+      at: runbook.robot:252
+      asserts: "Nothing; informational YAML dump of vault-csi-provider."
+      reads:
+        - "kubectl get daemonset.apps/vault-csi-provider -n NS -o yaml"
+      permissions:
+        - {apiGroups: [apps], resources: [daemonsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Title/tag says statefulset though it fetches a daemonset (copy-paste)."
+    - title: Verify Vault Availability
+      at: runbook.robot:264
+      asserts: "curl VAULT_URL returns JSON where initialized is not true or sealed is not false; sev2 'Vault API Responded With Error State'."
+      reads:
+        - "curl VAULT_URL (expects the /v1/sys/health JSON body)"
+      permissions: []
+      scope: n/a
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Network call from the runner, no kubectl; no RBAC. Unreachable or non-JSON responses make curl rc != 0 or json.loads('') raise, so the task errors (no healthy report). Standby/HA state fields extracted but not asserted (standby ignored). The rsp.stdout is substituted into a Python json.loads('...') string literal (quote injection). Vault returns HTTP 503 for sealed with a JSON body, which curl without -f accepts, so sealed is detected."
+    - title: Check Vault StatefulSet Replicas
+      at: runbook.robot:294
+      asserts: "statefulset vault: status.availableReplicas < 1, status.replicas < 1, or availableReplicas != status.replicas (sev2 each)."
+      reads:
+        - "kubectl get statefulset.apps/vault -n NS -o json"
+      permissions:
+        - {apiGroups: [apps], resources: [statefulsets], verbs: [get]}
+      scope: ns:target
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Compares against status.replicas rather than spec.replicas; a scaled-down StatefulSet raises 'No desired replicas'. Parse Cli Json Output enforces rc 0. Task title has literal `NAMESPACE` without ${} (cosmetic)."
+  bundleNotes: "No generation rules and no SLI; hard-coded object names (vault, vault-csi-provider), so only works for default-named Helm installs. Mostly informational dumps (6 of 9). Only the replica and availability tasks assert anything and those are rc-checked."

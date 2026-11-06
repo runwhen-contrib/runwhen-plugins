@@ -1,0 +1,56 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types live beside it in types.yaml.
+# Design: lane F plan, Appendix C (C2 credentials, C3 types).
+apiVersion: runwhen.com/integration/v1
+platform: gcp
+title: Google Cloud
+docs: https://docs.runwhen.com/integrations/gcp
+
+# --- what tools read (D38, D45) ---------------------------------------------
+# gcloud reads one credential file named by CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE. A task script
+# never prints it; the gcloud helper reads only its `type`. The file is a service-account key
+# (method sa-key) or, for a cloud-identity connection, a marker that says "use the metadata
+# server": gcloud cannot take the ambient identity through a file, so gcp-base's gcloud helper
+# blanks the variable for the child process and the CLI falls back to the metadata server itself
+# (see auth/cloud-identity.py). The type materializes only that path: no project id or region
+# goes into the environment (the executor redacts every value an auth script produces from the
+# task's output, and a task's project is its ctx.resource). content: gcp-sa-key is what a reference must say to match the
+# passthrough method (call F1); the GKE method of the kubernetes plugin accepts the same token.
+credentialTypes:
+  gcp/adc:
+    title: Google application default credentials
+    description: "One credential file for gcloud: a service-account key, or the cloud-identity marker. The tools read it from CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE."
+    content: gcp-sa-key
+    materialize: { file: { env: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE, mode: "0600" } }
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Each method is self-contained: it accepts its own reference kinds, has its own inputs, and
+# produces the type. No method depends on another connection.
+authMethods:
+  sa-key:
+    title: Service-account key
+    description: "A service-account JSON key from a Secret, Vault or a file. The key already is the credential file, so the runner writes it as it is; nothing is converted or checked beyond the reference."
+    produces: gcp/adc
+    accepts: [k8s-secret, vault, file]     # a storage kind matches a passthrough method by kind and content (gcp-sa-key)
+    native: passthrough                    # one key in the reference: the runner writes it to the file (value for Vault, the Secret key otherwise)
+    inputs:
+      project: { type: string, required: true, derived: true, description: "The project to inspect (the connection's root). Defaults to the key's own project_id, which is only a default: a service account can be granted access to other projects, and this names the one the tasks look at" }
+  cloud-identity:
+    title: Cloud identity
+    description: "The identity the runner pod runs as (GKE Workload Identity, a GCE service account) through the metadata server. No key is stored; the script checks the metadata server answers and writes the marker file."
+    produces: gcp/adc
+    accepts: [cloud-identity]              # matched by kind; ambient, so the reference carries no material
+    script: auth/cloud-identity.py         # relative to this file: integration/auth/
+    inputs:
+      project: { type: string, required: true, description: "The project to inspect (the connection's root); the identity must be allowed to read it" }
+      serviceAccount: { type: string, description: "Optional: the service account e-mail the pod is expected to run as. When set, the connection fails (permission_denied) if the metadata server reports another identity" }
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/gcp-permission.json    # one permission = one IAM permission name, as testIamPermissions takes it (D68)
+
+# --- how the platform plugs this integration in -------------------------------
+entryPoints:
+  discovery: { task: gcp-base/discover, schedule: "*/15 * * * *" }
+  # permissionCheck (gcp-base/check-permissions, resourcemanager projects.testIamPermissions) comes after the pilot.
+
+recognizers: []                            # gcp recognizes nothing

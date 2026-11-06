@@ -1,0 +1,147 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-redis/deployments/redis-sentinel
+inputs:
+  port: 26379
+now: '2026-11-03T23:15:42.262Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - deployments.apps
+  - redis-sentinel
+  - -o
+  - jsonpath={"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=redis-sentinel
+    s:metadata.namespace=rw-redis
+    s:metadata.uid=27b12a7d-f467-4720-a46a-749c45f4fb9d
+    j:spec.selector={"matchLabels":{"app":"redis-sentinel"}}
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - replicasets.apps
+  - -l
+  - app=redis-sentinel
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=redis-sentinel-5c646c5cf9
+    s:metadata.uid=3ab0a1ba-6653-4e94-a3d9-8385a9804d37
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"Deployment","name":"redis-sentinel","uid":"27b12a7d-f467-4720-a46a-749c45f4fb9d"}]
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - get
+  - pods
+  - -l
+  - app=redis-sentinel
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.uid="}{.metadata.uid}{"\n"}{"s:spec.nodeName="}{.spec.nodeName}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:metadata.ownerReferences="}{.metadata.ownerReferences}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"|"}{.image}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=redis-sentinel-5c646c5cf9-zphfq
+    s:metadata.uid=22631066-39c0-48f8-9117-736e811f36b4
+    s:spec.nodeName=rw-plugins-control-plane
+    j:metadata.labels={"app":"redis-sentinel","pod-template-hash":"5c646c5cf9"}
+    j:metadata.ownerReferences=[{"apiVersion":"apps/v1","blockOwnerDeletion":true,"controller":true,"kind":"ReplicaSet","name":"redis-sentinel-5c646c5cf9","uid":"3ab0a1ba-6653-4e94-a3d9-8385a9804d37"}]
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:40Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:40Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:41Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:41Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-03T23:14:40Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:sentinel|redis:7-alpine
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - exec
+  - redis-sentinel-5c646c5cf9-zphfq
+  - -c
+  - sentinel
+  - --
+  - sh
+  - -c
+  - pw="${REDIS_PASSWORD:-}"; if [ -z "$pw" ] && [ -n "${REDIS_PASSWORD_FILE:-}" ] && [ -r "$REDIS_PASSWORD_FILE"
+    ]; then pw=$(cat "$REDIS_PASSWORD_FILE"); fi; if [ -z "$pw" ]; then pw="${VALKEY_PASSWORD:-}"; fi;
+    if [ -z "$pw" ] && [ -n "${VALKEY_PASSWORD_FILE:-}" ] && [ -r "$VALKEY_PASSWORD_FILE" ]; then pw=$(cat
+    "$VALKEY_PASSWORD_FILE"); fi; if [ -n "$pw" ]; then REDISCLI_AUTH="$pw"; export REDISCLI_AUTH; fi;
+    if command -v redis-cli >/dev/null; then exec redis-cli "$@"; fi; exec valkey-cli "$@"
+  - sh
+  - -p
+  - '26379'
+  - PING
+  rc: 0
+  stdout: |
+    PONG
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-redis
+  - exec
+  - redis-sentinel-5c646c5cf9-zphfq
+  - -c
+  - sentinel
+  - --
+  - sh
+  - -c
+  - pw="${REDIS_PASSWORD:-}"; if [ -z "$pw" ] && [ -n "${REDIS_PASSWORD_FILE:-}" ] && [ -r "$REDIS_PASSWORD_FILE"
+    ]; then pw=$(cat "$REDIS_PASSWORD_FILE"); fi; if [ -z "$pw" ]; then pw="${VALKEY_PASSWORD:-}"; fi;
+    if [ -z "$pw" ] && [ -n "${VALKEY_PASSWORD_FILE:-}" ] && [ -r "$VALKEY_PASSWORD_FILE" ]; then pw=$(cat
+    "$VALKEY_PASSWORD_FILE"); fi; if [ -n "$pw" ]; then REDISCLI_AUTH="$pw"; export REDISCLI_AUTH; fi;
+    if command -v redis-cli >/dev/null; then exec redis-cli "$@"; fi; exec valkey-cli "$@"
+  - sh
+  - -p
+  - '26379'
+  - INFO
+  rc: 0
+  stdout: "# Server\r\nredis_version:7.4.12\r\nredis_git_sha1:00000000\r\nredis_git_dirty:0\r\nredis_build_id:2d3dd1569b92d75e\r\
+    \nredis_mode:sentinel\r\nos:Linux 6.12.76-linuxkit aarch64\r\narch_bits:64\r\nmonotonic_clock:POSIX\
+    \ clock_gettime\r\nmultiplexing_api:epoll\r\natomicvar_api:c11-builtin\r\ngcc_version:14.2.0\r\nprocess_id:1\r\
+    \nprocess_supervised:no\r\nrun_id:23e3eba2933e43dac4eb6edca34aa01d06b85cf0\r\ntcp_port:26379\r\nserver_time_usec:1793747743141625\r\
+    \nuptime_in_seconds:63\r\nuptime_in_days:0\r\nhz:12\r\nconfigured_hz:10\r\nlru_clock:15362847\r\n\
+    executable:/data/redis-sentinel\r\nconfig_file:/tmp/sentinel.conf\r\nio_threads_active:0\r\nlistener0:name=tcp,bind=*,bind=-::*,port=26379\r\
+    \n\r\n# Clients\r\nconnected_clients:1\r\ncluster_connections:0\r\nmaxclients:10000\r\nclient_recent_max_input_buffer:0\r\
+    \nclient_recent_max_output_buffer:0\r\nblocked_clients:0\r\ntracking_clients:0\r\npubsub_clients:0\r\
+    \nwatching_clients:0\r\nclients_in_timeout_table:0\r\ntotal_watched_keys:0\r\ntotal_blocking_keys:0\r\
+    \ntotal_blocking_keys_on_nokey:0\r\n\r\n# Stats\r\ntotal_connections_received:15\r\ntotal_commands_processed:1\r\
+    \ninstantaneous_ops_per_sec:0\r\ntotal_net_input_bytes:28\r\ntotal_net_output_bytes:7\r\ntotal_net_repl_input_bytes:0\r\
+    \ntotal_net_repl_output_bytes:0\r\ninstantaneous_input_kbps:0.01\r\ninstantaneous_output_kbps:0.01\r\
+    \ninstantaneous_input_repl_kbps:0.00\r\ninstantaneous_output_repl_kbps:0.00\r\nrejected_connections:0\r\
+    \nsync_full:0\r\nsync_partial_ok:0\r\nsync_partial_err:0\r\nexpired_subkeys:0\r\nexpired_keys:0\r\n\
+    expired_stale_perc:0.00\r\nexpired_time_cap_reached_count:0\r\nexpire_cycle_cpu_milliseconds:1\r\n\
+    evicted_keys:0\r\nevicted_clients:0\r\nevicted_scripts:0\r\ntotal_eviction_exceeded_time:0\r\ncurrent_eviction_exceeded_time:0\r\
+    \nkeyspace_hits:0\r\nkeyspace_misses:0\r\npubsub_channels:0\r\npubsub_patterns:0\r\npubsubshard_channels:0\r\
+    \nlatest_fork_usec:0\r\ntotal_forks:0\r\nmigrate_cached_sockets:0\r\nslave_expires_tracked_keys:0\r\
+    \nactive_defrag_hits:0\r\nactive_defrag_misses:0\r\nactive_defrag_key_hits:0\r\nactive_defrag_key_misses:0\r\
+    \ntotal_active_defrag_time:0\r\ncurrent_active_defrag_time:0\r\ntracking_total_keys:0\r\ntracking_total_items:0\r\
+    \ntracking_total_prefixes:0\r\nunexpected_error_replies:0\r\ntotal_error_replies:0\r\ndump_payload_sanitizations:0\r\
+    \ntotal_reads_processed:16\r\ntotal_writes_processed:1\r\nio_threaded_reads_processed:0\r\nio_threaded_writes_processed:0\r\
+    \nclient_query_buffer_limit_disconnections:0\r\nclient_output_buffer_limit_disconnections:0\r\nreply_buffer_shrinks:0\r\
+    \nreply_buffer_expands:0\r\neventloop_cycles:951\r\neventloop_duration_sum:205579\r\neventloop_duration_cmd_sum:2\r\
+    \ninstantaneous_eventloop_cycles_per_sec:18\r\ninstantaneous_eventloop_duration_usec:189\r\nacl_access_denied_auth:0\r\
+    \nacl_access_denied_cmd:0\r\nacl_access_denied_key:0\r\nacl_access_denied_channel:0\r\n\r\n# CPU\r\
+    \nused_cpu_sys:0.016651\r\nused_cpu_user:0.185271\r\nused_cpu_sys_children:0.001383\r\nused_cpu_user_children:0.000941\r\
+    \nused_cpu_sys_main_thread:0.016541\r\nused_cpu_user_main_thread:0.184872\r\n\r\n# Sentinel\r\nsentinel_masters:1\r\
+    \nsentinel_tilt:0\r\nsentinel_tilt_since_seconds:-1\r\nsentinel_running_scripts:0\r\nsentinel_scripts_queue_length:0\r\
+    \nsentinel_simulate_failure_flags:0\r\nmaster0:name=mymaster,status=odown,address=127.0.0.1:6379,slaves=0,sentinels=1\r\
+    \n"
+  stderr: ''
+expect:
+  status: failed
+  errorCodes:
+  - invalid_input

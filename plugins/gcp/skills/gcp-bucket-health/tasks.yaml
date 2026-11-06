@@ -1,0 +1,57 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: gcp@1                 # gcloud, pinned; runtimes/gcp
+defaults: { credentials: gcp/adc, timeout: 120s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most buckets a task looks at on a project target, and most entries a list output returns; the total and the number left out are reported beside it" }
+  commandTimeout: { type: duration, default: 60s, description: "How long one gcloud call may take before it fails with timeout" }
+  usageThresholdTib: { type: number, default: 0.5, min: 0, description: "bucket-size: a bucket holding more than this many TiB (1024^4 bytes) is flagged overThreshold" }
+  sizeTimeout: { type: duration, default: 300s, description: "bucket-size: how long the gcloud storage du fallback (a single-bucket target Cloud Monitoring has no series for) may take; it walks every object" }
+  publicBucketThreshold: { type: integer, default: 0, min: 0, description: "public-access: more public buckets than this sets overThreshold in totals" }
+tasks:
+  - name: bucket-config
+    title: Bucket configuration
+    description: Reads each bucket's settings from the API's bucket resource - location, storage class, versioning, uniform bucket-level access, public access prevention, retention, lifecycle rule count, soft delete, customer-managed key, labels - for the bucket, or for the project's buckets. Read-only.
+    script: scripts/bucket_config.py
+    tags: [config, storage]
+    readOnly: true
+    timeout: 600s
+    permissions:
+      - { permission: storage.buckets.list }               # project target only: the bucket list, whose rows are full bucket resources
+      - { permission: storage.buckets.get }                # bucket target only: gcloud storage buckets describe
+      - { permission: storage.buckets.getIamPolicy }       # list and describe ask for the FULL projection (ACLs, IAM settings), which the JSON API gates on this permission
+      - { permission: serviceusage.services.use }          # every call carries --billing-project=<the target's project>
+    outputs:
+      buckets: { schema: ./schemas/bucket-config.v1.json, description: "Settings of each bucket, cut to maxItems" }
+      totals: { schema: ./schemas/config-totals.v1.json, description: "Buckets read, the total the target covers, how many maxItems left out, and whether the read is complete" }
+  - name: public-access
+    title: Public access
+    description: Reads each bucket's IAM policy, legacy ACLs and default object ACL for grants to allUsers or allAuthenticatedUsers, with uniform bucket-level access and public access prevention, for the bucket or the project's buckets, and counts the public ones against publicBucketThreshold. Stops starting new buckets when the task's time budget is nearly used up and says which were skipped. Read-only.
+    script: scripts/public_access.py
+    tags: [security, storage]
+    readOnly: true
+    timeout: 600s
+    permissions:
+      - { permission: storage.buckets.list }               # project target only: the bucket list (full bucket resources, ACLs included)
+      - { permission: storage.buckets.get }                # bucket target only
+      - { permission: storage.buckets.getIamPolicy }       # the IAM policy read per bucket (and the FULL projection); if one read still fails, that bucket's publicViaIam is null (partial), not false
+      - { permission: serviceusage.services.use }          # every call carries --billing-project=<the target's project>
+    outputs:
+      access: { schema: ./schemas/public-access.v1.json, description: "Per bucket: the public grants in IAM, ACLs and the default object ACL, uniform access and public access prevention, cut to maxItems" }
+      totals: { schema: ./schemas/public-totals.v1.json, description: "Buckets examined, public, undecided, and whether the public count is over publicBucketThreshold" }
+  - name: bucket-size
+    title: Bucket size
+    description: Reads each bucket's bytes from Cloud Monitoring (storage/v2/total_bytes, one query for the whole project, per object type), for the bucket or the project's buckets, largest first, and flags the ones over usageThresholdTib. A single bucket Monitoring has no series for is measured with gcloud storage du instead. Read-only.
+    script: scripts/bucket_size.py
+    tags: [usage, storage]
+    readOnly: true
+    timeout: 600s                                          # a du fallback of a large bucket takes minutes; gcp_bucket_health/size.py reserves the last seconds
+    permissions:
+      - { permission: storage.buckets.list }               # project target only
+      - { permission: storage.buckets.get }                # bucket target only
+      - { permission: storage.buckets.getIamPolicy }       # list and describe ask for the FULL projection
+      - { permission: monitoring.timeSeries.list }         # the Monitoring REST query for storage/v2/total_bytes
+      - { permission: storage.objects.list }               # gcloud storage du, the single-bucket fallback only
+      - { permission: serviceusage.services.use }          # every call, the Monitoring query included, is billed to the target's project
+    outputs:
+      sizes: { schema: ./schemas/bucket-size.v1.json, description: "Bytes per bucket (and per object type), largest first, cut to maxItems" }
+      totals: { schema: ./schemas/size-totals.v1.json, description: "Buckets measured and not measured, the total the target covers, the total bytes, how many are over usageThresholdTib, and whether the read is complete" }

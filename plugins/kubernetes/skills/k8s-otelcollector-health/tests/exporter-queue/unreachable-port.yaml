@@ -1,0 +1,471 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-otel/deployments/otel-ok
+settings:
+  metricsPort: 9999
+now: '2026-11-04T01:44:17.641Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-otel
+  - get
+  - deployments
+  - otel-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "2",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"otel-ok\",\"app.kubernetes.io/name\":\"opentelemetry-collector\"},\"name\":\"otel-ok\",\"namespace\":\"rw-otel\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"otel-ok\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"otel-ok\",\"app.kubernetes.io/name\":\"opentelemetry-collector\"}},\"spec\":{\"containers\":[{\"args\":[\"--config=/conf/config.yaml\"],\"image\":\"otel/opentelemetry-collector:0.164.0\",\"name\":\"otelcol\",\"ports\":[{\"containerPort\":4317,\"name\":\"otlp-grpc\"},{\"containerPort\":4318,\"name\":\"otlp-http\"},{\"containerPort\":8888,\"name\":\"metrics\"}],\"resources\":{\"limits\":{\"memory\":\"128Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"24Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/conf\",\"name\":\"conf\",\"readOnly\":true}]}],\"volumes\":[{\"configMap\":{\"name\":\"otel-ok-config\"},\"name\":\"conf\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-04T01:41:47Z",
+            "generation": 2,
+            "labels": {
+                "app": "otel-ok",
+                "app.kubernetes.io/name": "opentelemetry-collector"
+            },
+            "name": "otel-ok",
+            "namespace": "rw-otel",
+            "resourceVersion": "75884",
+            "uid": "416f3fcf-a360-4bb5-a360-6490dd33aa3a"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 600,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "otel-ok"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": "2026-11-04T07:11:48+05:30"
+                    },
+                    "labels": {
+                        "app": "otel-ok",
+                        "app.kubernetes.io/name": "opentelemetry-collector"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "--config=/conf/config.yaml"
+                            ],
+                            "image": "otel/opentelemetry-collector:0.164.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "otelcol",
+                            "ports": [
+                                {
+                                    "containerPort": 4317,
+                                    "name": "otlp-grpc",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 4318,
+                                    "name": "otlp-http",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "metrics",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "24Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/conf",
+                                    "name": "conf",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "otel-ok-config"
+                            },
+                            "name": "conf"
+                        }
+                    ]
+                }
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-04T01:41:48Z",
+                    "lastUpdateTime": "2026-11-04T01:41:48Z",
+                    "message": "Deployment has minimum availability.",
+                    "reason": "MinimumReplicasAvailable",
+                    "status": "True",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-04T01:41:47Z",
+                    "lastUpdateTime": "2026-11-04T01:41:48Z",
+                    "message": "ReplicaSet \"otel-ok-6644fbf6f7\" has successfully progressed.",
+                    "reason": "NewReplicaSetAvailable",
+                    "status": "True",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 2,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "terminatingReplicas": 0,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-otel
+  - get
+  - pods
+  - -l
+  - app=otel-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": "2026-11-04T07:11:48+05:30"
+                    },
+                    "creationTimestamp": "2026-11-04T01:41:48Z",
+                    "generateName": "otel-ok-6644fbf6f7-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "otel-ok",
+                        "app.kubernetes.io/name": "opentelemetry-collector",
+                        "pod-template-hash": "6644fbf6f7"
+                    },
+                    "name": "otel-ok-6644fbf6f7-jh9td",
+                    "namespace": "rw-otel",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "otel-ok-6644fbf6f7",
+                            "uid": "04537190-c986-4af7-8081-86feed5bcdbd"
+                        }
+                    ],
+                    "resourceVersion": "76130",
+                    "uid": "a9d7318d-252b-4e26-8885-754c1b33c2a9"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "--config=/conf/config.yaml"
+                            ],
+                            "image": "otel/opentelemetry-collector:0.164.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "otelcol",
+                            "ports": [
+                                {
+                                    "containerPort": 4317,
+                                    "name": "otlp-grpc",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 4318,
+                                    "name": "otlp-http",
+                                    "protocol": "TCP"
+                                },
+                                {
+                                    "containerPort": 8888,
+                                    "name": "metrics",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "24Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/conf",
+                                    "name": "conf",
+                                    "readOnly": true
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-dbpdw",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "otel-ok-config"
+                            },
+                            "name": "conf"
+                        },
+                        {
+                            "name": "kube-api-access-dbpdw",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "memory": "24Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:41:48Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "memory": "24Mi"
+                            },
+                            "containerID": "containerd://c8edd05690523d4e058902a26f822f5fb4226bfef67b8cb364872afea432fd33",
+                            "image": "docker.io/otel/opentelemetry-collector:0.164.0",
+                            "imageID": "docker.io/otel/opentelemetry-collector@sha256:28b6d41ac51bff6b41ba5e8fe503569ffb9d6a1ea90f7a78419e86f34e44f750",
+                            "lastState": {},
+                            "name": "otelcol",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "128Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "24Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-04T01:41:48Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0
+                                    ],
+                                    "uid": 10001
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/conf",
+                                    "name": "conf",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-dbpdw",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.104",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.104"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "128Mi"
+                        },
+                        "requests": {
+                            "memory": "24Mi"
+                        }
+                    },
+                    "startTime": "2026-11-04T01:41:48Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-otel
+    kind: pods
+    name: otel-ok-6644fbf6f7-jh9td
+    port: 9999
+    path: /metrics
+    scheme: http
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: error trying to reach service: dial tcp 10.244.0.104:9999:
+      connect: connection refused'
+    scope: rw-otel/pods/otel-ok-6644fbf6f7-jh9td:9999
+expect:
+  status: failed
+  errorCodes:
+  - unreachable

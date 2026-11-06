@@ -1,0 +1,27 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1          # ships psql; no other runtime is named for non-Kubernetes plugins (42a)
+defaults: { credentials: postgres/libpq, timeout: 60s }
+settings:
+  maxItems: { type: integer, default: 200, min: 1, max: 10000, description: "Most entries a list output returns; the total and the number left out are reported beside it" }
+  connectTimeout: { type: duration, default: 10s, description: "How long psql waits for a connection (PGCONNECT_TIMEOUT)" }
+  statementTimeout: { type: duration, default: 30s, description: "statement_timeout of the session; a statement that runs longer is cancelled (timeout)" }
+tasks:
+  - name: connections
+    title: Connections in use against the limit
+    description: >-
+      Reads max_connections, superuser_reserved_connections and reserved_connections (when the
+      server has it) and the connections in use against the usable limit, as a percentage; counts
+      them by state, backend type, database and user with application_name; and reports the age of
+      the oldest idle-in-transaction session and of the oldest open transaction, and the backends
+      waiting on a lock. The task's own connection is left out. A role without pg_read_all_stats
+      cannot see the state of other roles' sessions: the result is partial, says visibility is
+      partial, and withholds the figures it cannot read. Read-only.
+    script: scripts/connections.py
+    tags: [connections, sessions, capacity]
+    readOnly: true
+    permissions:
+      - { role: pg_read_all_stats }                                    # state, wait events and times of other roles' sessions (pg_monitor includes it)
+      - { function: pg_catalog.pg_backend_pid, privilege: EXECUTE }    # leaves the task's own session out
+      - { function: pg_catalog.pg_has_role, privilege: EXECUTE }       # decides whether other roles' sessions are visible
+    outputs:
+      connections: { schema: ./schemas/connections.v1.json, description: "Limits, in use and percentage, counts by state, backend type, database and user with application_name (cut to maxItems), oldest idle-in-transaction and open transaction ages in ms, lock waiters, and visibility" }

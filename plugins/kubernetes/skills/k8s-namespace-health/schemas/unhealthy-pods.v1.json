@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pods in a bad state right now",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "phase": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "states": {
+        "type": "array",
+        "items": {
+          "enum": [
+            "pending",
+            "failed",
+            "notReady",
+            "waiting",
+            "restarts"
+          ]
+        }
+      },
+      "owner": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "resolved": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "resolved"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "node": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "created": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "terminating": {
+        "type": "boolean"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "pending": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "scheduled": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "scheduled",
+              "reason",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "failed": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "terminated": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "container": {
+                      "type": "string"
+                    },
+                    "init": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "exitCode": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "container",
+                    "init",
+                    "reason",
+                    "exitCode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "reason",
+              "message",
+              "terminated"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "waiting": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "container": {
+              "type": "string"
+            },
+            "init": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "container",
+            "init",
+            "reason",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "restarts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "container": {
+              "type": "string"
+            },
+            "init": {
+              "type": "boolean"
+            },
+            "restartCount": {
+              "type": "integer"
+            },
+            "recent": {
+              "type": "boolean"
+            },
+            "lastTerminated": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "exitCode": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "reason",
+                    "exitCode",
+                    "finishedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "container",
+            "init",
+            "restartCount",
+            "recent",
+            "lastTerminated"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "name",
+      "phase",
+      "ready",
+      "states",
+      "owner",
+      "node",
+      "created",
+      "terminating",
+      "truncated",
+      "pending",
+      "failed",
+      "waiting",
+      "restarts"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,107 @@
+# Scenario for the k8s-cronjob-health skill, all in its own namespace rw-cron:
+#   ok-every-minute  succeeds every minute (the healthy target)
+#   always-fails     every run exits 3 (backoffLimit 0 -> Failed, reason BackoffLimitExceeded)
+#   paused           suspended
+#   forbid-long      concurrencyPolicy Forbid with a Job that runs for an hour, so every
+#                    later minute is skipped (JobAlreadyActive); startingDeadlineSeconds 90
+#   tz-daily         once a day at 03:00 in Europe/London (no run yet within a test's lifetime)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-cron
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ok-every-minute
+  namespace: rw-cron
+spec:
+  schedule: "* * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: job
+              image: busybox:1.36
+              command: ["sh", "-c", "echo ok"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: always-fails
+  namespace: rw-cron
+spec:
+  schedule: "* * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: job
+              image: busybox:1.36
+              command: ["sh", "-c", "echo about to fail; exit 3"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: paused
+  namespace: rw-cron
+spec:
+  schedule: "*/5 * * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: job
+              image: busybox:1.36
+              command: ["sh", "-c", "echo never runs"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: forbid-long
+  namespace: rw-cron
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 90
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: job
+              image: busybox:1.36
+              command: ["sh", "-c", "sleep 3600"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tz-daily
+  namespace: rw-cron
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Europe/London
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: job
+              image: busybox:1.36
+              command: ["sh", "-c", "echo daily"]

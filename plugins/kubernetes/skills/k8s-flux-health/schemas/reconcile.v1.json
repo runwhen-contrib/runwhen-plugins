@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconcile request",
+  "description": "applied is true when the reconcile.fluxcd.io/requestedAt annotation was written; on a dry run it is false, wouldApply is true and requestedAt is null. reset and force say whether the resetAt and forceAt annotations (HelmRelease only) were part of the request. completed is true when the controller reported the request handled (status.lastHandledReconcileAt equals requestedAt, and status.lastHandledResetAt equals it for a reset) and the object is no longer Reconciling: the controller records a request when it starts on it, so polling goes on until Reconciling is not True. completed is false when the timeout input ran out first: completionReason timeout means the request was not handled, reconciling that it was handled and the object was still Reconciling. completed is null when the task did not wait (timeout 0s, dry run) or could not observe it (completionReason not_waited, dry_run, not_observed). A request handled is not a request succeeded: read after.ready. after is the object as last read.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": "boolean"
+    },
+    "wouldApply": {
+      "type": "boolean"
+    },
+    "reset": {
+      "type": "boolean"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "requestedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previousRequestedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lastHandledBefore": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completionReason": {
+      "enum": [
+        "handled",
+        "reconciling",
+        "timeout",
+        "not_waited",
+        "not_observed",
+        "dry_run"
+      ]
+    },
+    "waitedSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "after": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "ready": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readyReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "readyMessage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "readyMessageTruncated": {
+          "type": "boolean"
+        },
+        "reconciling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stalled": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generationObserved": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "lastAppliedRevision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastAttemptedRevision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastHandledReconcileAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastHandledResetAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ready",
+        "readyReason",
+        "readyMessage",
+        "readyMessageTruncated",
+        "reconciling",
+        "stalled",
+        "generationObserved",
+        "lastAppliedRevision",
+        "lastAttemptedRevision",
+        "lastHandledReconcileAt",
+        "lastHandledResetAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "applied",
+    "wouldApply",
+    "reset",
+    "force",
+    "requestedAt",
+    "previousRequestedAt",
+    "lastHandledBefore",
+    "completed",
+    "completionReason",
+    "waitedSeconds",
+    "after"
+  ],
+  "additionalProperties": false
+}

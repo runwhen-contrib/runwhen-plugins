@@ -1,0 +1,233 @@
+"""discover: the instance and its databases, as facts and as an rw.discovery.v1 sync.
+
+The queries return plain facts; `build_sync` turns them into the recorded sync (open, item
+batches, commit) that papi's resource-sync API takes (CONTRACTS.md, "Discovery sync")."""
+
+import os
+import time
+
+from .errors import RwError
+from .pg import psql_json
+
+PLATFORM = "postgres"
+SOURCE = "pg-base/discover"
+BATCH = 500  # items per batch (rw.discovery.v1 itemsBatch)
+CANONICAL_KEY = "systemIdentifier"
+
+INSTANCE_SQL = """SELECT json_build_object(
+  'version', current_setting('server_version'),
+  'versionNum', current_setting('server_version_num')::int,
+  'inRecovery', pg_is_in_recovery(),
+  'currentUser', current_user::text
+)"""
+
+SYSTEM_IDENTIFIER_SQL = (
+    "SELECT json_build_object('systemIdentifier', system_identifier::text) FROM pg_control_system()"
+)
+
+# Not templates, and only databases that accept connections. pg_database_size() needs CONNECT
+# on the database or pg_read_all_stats, and raises for the whole statement otherwise, so it is
+# asked only where `sizeAllowed`; for the others the size is left out and the error reported.
+DATABASES_SQL = """SELECT coalesce(json_agg(json_build_object(
+  'name', d.datname,
+  'owner', pg_get_userbyid(d.datdba)::text,
+  'encoding', pg_encoding_to_char(d.encoding),
+  'sizeAllowed', p.ok,
+  'sizeBytes', CASE WHEN p.ok THEN pg_database_size(d.oid) END
+) ORDER BY d.datname), '[]'::json)
+FROM pg_database d
+CROSS JOIN LATERAL (
+  SELECT has_database_privilege(d.oid, 'CONNECT')
+      OR pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AS ok
+) p
+WHERE NOT d.datistemplate AND d.datallowconn"""
+
+
+def target_name(resource):
+    """The instance name from the run's target; anything but a postgres/instance is refused."""
+    resource = resource or {}
+    if resource.get("type") != f"{PLATFORM}/instance" or not resource.get("name"):
+        raise RwError(
+            "invalid_input",
+            f"discover runs on a postgres/instance, got {resource.get('type')!r}",
+        )
+    return str(resource["name"])
+
+
+def instance_facts(ctx):
+    """The `instance` output: the connection's host and port, and what the server says about itself.
+    systemIdentifier is filled in by the caller."""
+    row = psql_json(ctx, INSTANCE_SQL)
+    if not isinstance(row, dict):
+        raise RwError("internal", "the server returned no instance facts")
+    port = os.environ.get("PGPORT") or "5432"
+    return {
+        "host": os.environ.get("PGHOST") or "localhost",
+        "port": int(port) if port.isdigit() else 5432,
+        "version": row["version"],
+        "versionNum": row["versionNum"],
+        "inRecovery": bool(row["inRecovery"]),
+        "systemIdentifier": None,
+        "currentUser": row["currentUser"],
+    }
+
+
+def read_system_identifier(ctx, errors):
+    """The system_identifier, or None with the reason appended to `errors` when this role may
+    not read it (permission_denied). Any other failure propagates."""
+    try:
+        row = psql_json(ctx, SYSTEM_IDENTIFIER_SQL)
+    except RwError as exc:
+        if exc.code != "permission_denied":
+            raise
+        errors.append(
+            {
+                "code": exc.code,
+                "message": f"system_identifier: {exc.message}",
+                "scope": CANONICAL_KEY,
+            }
+        )
+        return None
+    if not isinstance(row, dict):
+        raise RwError("internal", "the server returned no system identifier row")
+    value = row.get(CANONICAL_KEY)
+    return value if isinstance(value, str) and value else None
+
+
+def read_databases(ctx, errors):
+    """The database facts; `sizeBytes` is left out (and an error appended) where the role may
+    not size the database."""
+    rows = psql_json(ctx, DATABASES_SQL)
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise RwError("internal", "the server returned no database list")
+    databases = []
+    for row in rows:
+        database = {"name": row["name"], "owner": row["owner"], "encoding": row["encoding"]}
+        if row.get("sizeAllowed"):
+            if row.get("sizeBytes") is not None:
+                database["sizeBytes"] = row["sizeBytes"]
+        else:
+            errors.append(
+                {
+                    "code": "permission_denied",
+                    "message": (
+                        "sizeBytes needs CONNECT on the database or membership of pg_read_all_stats"
+                    ),
+                    "scope": row["name"],
+                }
+            )
+        databases.append(database)
+    return databases
+
+
+def bound(items, limit):
+    """(first `limit` items, total, omitted)."""
+    return items[:limit], len(items), max(len(items) - limit, 0)
+
+
+def database_listing(databases, limit):
+    items, total, omitted = bound(databases, limit)
+    return {"items": items, "total": total, "omitted": omitted}
+
+
+def database_partitions(path, count):
+    """The one partition a full sync of an instance sweeps: its databases."""
+    return [{"type": "database", "parentPath": path, "status": "complete", "count": count}]
+
+
+def summarize(counts, partitions, errors, duration_ms, system_identifier=None):
+    """The rw.discovery.summary.v1 value, also the commit's `summary`. The script builds it a
+    second time after the push, with the push's errors and the partitions the platform accepted."""
+    totals = {"complete": 0, "failed": 0, "forbidden": 0, "excluded": 0}
+    for p in partitions:
+        totals[p["status"]] += 1
+    summary = {"counts": dict(counts), "partitions": totals, "durationMs": duration_ms}
+    if errors:
+        summary["errors"] = list(errors)
+    if system_identifier:
+        summary["root"] = {"canonicalKey": {"name": CANONICAL_KEY, "value": system_identifier}}
+    return summary
+
+
+def build_sync(path, name, instance, databases, summary):
+    """The rw.discovery.v1 document for one full sync of the instance at `path`."""
+    root = {"type": "instance", "name": name}
+    items = [
+        {
+            "identity": {"platform": PLATFORM, "chain": [root]},
+            **(
+                {"providerUid": instance["systemIdentifier"]}
+                if instance["systemIdentifier"]
+                else {}
+            ),
+            "displayName": name,
+            "document": {
+                "host": instance["host"],
+                "port": instance["port"],
+                "version": instance["version"],
+                "versionNum": instance["versionNum"],
+                **(
+                    {"systemIdentifier": instance["systemIdentifier"]}
+                    if instance["systemIdentifier"]
+                    else {}
+                ),
+            },
+            "status": {"inRecovery": instance["inRecovery"]},
+        }
+    ]
+    for db in databases:
+        items.append(
+            {
+                "identity": {
+                    "platform": PLATFORM,
+                    "chain": [root, {"type": "database", "name": db["name"]}],
+                },
+                "displayName": db["name"],
+                "document": {
+                    k: db[k] for k in ("name", "owner", "encoding", "sizeBytes") if k in db
+                },
+            }
+        )
+    batches = [
+        {"seq": i // BATCH + 1, "items": items[i : i + BATCH]} for i in range(0, len(items), BATCH)
+    ]
+    return {
+        "apiVersion": "rw.discovery.v1",
+        "open": {"source": SOURCE, "scopePath": path, "mode": "full"},
+        "batches": batches,
+        "commit": {
+            "partitions": database_partitions(path, len(databases)),
+            "summary": summary,
+        },
+    }
+
+
+def discover(ctx, max_items):
+    """Run discovery on the instance this task targets; returns the task's outputs and the
+    sync document. A failure to connect or to list databases raises; a size the role may not
+    read, or an unreadable system_identifier, is a ctx.error and discovery goes on."""
+    started = time.monotonic()
+    resource = ctx.resource
+    name = target_name(resource)
+    path = resource["path"]
+    errors = []
+    instance = instance_facts(ctx)  # connect first: a failure here fails the task
+    instance["systemIdentifier"] = read_system_identifier(ctx, errors)
+    databases = read_databases(ctx, errors)
+    for error in errors:
+        ctx.error(error["code"], error["message"], scope=error["scope"])
+
+    summary = summarize(
+        {"instance": 1, "database": len(databases)},
+        database_partitions(path, len(databases)),
+        errors,
+        int((time.monotonic() - started) * 1000),
+        instance["systemIdentifier"],
+    )
+    sync = build_sync(path, name, instance, databases, summary)
+    outputs = {
+        "summary": summary,
+        "instance": instance,
+        "databases": database_listing(databases, max_items),
+    }
+    return outputs, sync

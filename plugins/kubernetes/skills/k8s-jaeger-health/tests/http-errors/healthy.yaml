@@ -1,0 +1,310 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jaeger/deployments/jaeger
+inputs:
+  services:
+  - catalog
+now: '2026-11-04T01:47:24.573Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jaeger
+  - get
+  - deployments.apps
+  - jaeger
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=Deployment
+    s:metadata.name=jaeger
+    s:metadata.namespace=rw-jaeger
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app":"jaeger","app.kubernetes.io/component":"all-in-one"}}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-jaeger
+  - get
+  - pods
+  - -l
+  - app=jaeger,app.kubernetes.io/component=all-in-one
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"s:status.startTime="}{.status.startTime}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"c:"}{.name}{"="}{.image}{"\n"}{range .ports[*]}{"p:"}{.name}{"="}{.containerPort}{"\n"}{end}{end}{range
+    .status.containerStatuses[*]}{"r:"}{.name}{"="}{.restartCount}{"|"}{.state.running.startedAt}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=jaeger-f6bd9dd68-pdjp5
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    s:status.startTime=2026-11-04T01:46:54Z
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:54Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:54Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:55Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:55Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:46:54Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    c:jaeger=jaegertracing/all-in-one:1.76.0
+    p:query=16686
+    p:otlp-http=4318
+    p:admin=14269
+    r:jaeger=0|2026-11-04T01:46:54Z
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/services
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '118'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-7a11735024c281133ca9ed3162206a72-0740b5dbac5e78d9-01
+      connection: close
+    body: '{"data":["checkout","catalog","gateway","inventory","jaeger-all-in-one"],"total":5,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22error%22%3A%22true%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-681fc9fde582e6995176a4a9f15c8f0f-473bfb3d6f831519-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.status_code%22%3A%22400%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-f4d8dc04d154d36f896879bf6d23c088-10195a0116d9dbea-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.status_code%22%3A%22401%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-3a1d414eff9ef678ffd4d44716c04cf9-9dd18259da54e2df-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.status_code%22%3A%22403%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-548f3c9b96b249e96a81697e9e0ecc42-057c63012498f9be-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.status_code%22%3A%22404%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '1969'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-3964dacf901f3cce14f1a6ce0af046ff-bb7e431c30ce74ed-01
+      connection: close
+    body: '{"data":[{"traceID":"e1bf6e8451f9782bc10a0b2bc71119b7","spans":[{"traceID":"e1bf6e8451f9782bc10a0b2bc71119b7","spanID":"7fc8e9afe1c53c5f","operationName":"GET
+      /items/{id}","references":[],"startTime":1793756768129554,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/items/9?debug=1"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"catalog","tags":[]}},"warnings":null},{"traceID":"0500c84bde491003508e1786210b1291","spans":[{"traceID":"0500c84bde491003508e1786210b1291","spanID":"2b587e17c2f56832","operationName":"GET
+      /items/{id}","references":[],"startTime":1793756763129556,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/items/9?debug=1"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"catalog","tags":[]}},"warnings":null},{"traceID":"51652dea2d4848df17e2bec6882ac709","spans":[{"traceID":"51652dea2d4848df17e2bec6882ac709","spanID":"9032806398d53105","operationName":"GET
+      /items/{id}","references":[],"startTime":1793756789129550,"duration":5000,"tags":[{"key":"http.method","type":"string","value":"GET"},{"key":"http.status_code","type":"int64","value":404},{"key":"http.target","type":"string","value":"/items/9?debug=1"},{"key":"otel.scope.name","type":"string","value":"rw-scenario"},{"key":"span.kind","type":"string","value":"server"}],"logs":[],"processID":"p1","warnings":null}],"processes":{"p1":{"serviceName":"catalog","tags":[]}},"warnings":null}],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.status_code%22%3A%22429%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-02626f3f7a751cc96a8fcb966e7fbddb-63e8fd552779fc8a-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.response.status_code%22%3A%22400%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-b29d01d1c47ace859ff36be5b10026c4-943e77923cc6c394-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.response.status_code%22%3A%22401%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-ca5250043f8ae67403b31ffaa13a93a5-3e43f39e45fbb431-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.response.status_code%22%3A%22403%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-e42491cf627df1c1005cf3b5cc121295-1edee6f3041b6423-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.response.status_code%22%3A%22404%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-9b783d914ce0471936e76a607b674602-d99614dd65081e09-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jaeger
+    kind: pods
+    name: jaeger-f6bd9dd68-pdjp5
+    port: 16686
+    path: /api/traces?service=catalog&start=1793753244573000&end=1793756844573000&limit=100&tags=%7B%22http.response.status_code%22%3A%22429%22%7D
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '56'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:47:25 GMT
+      traceresponse: 00-1cbdf57a4ac0bc0c3e071ef9c926c63d-9df4bad47559a407-01
+      connection: close
+    body: '{"data":[],"total":0,"limit":0,"offset":0,"errors":null}'
+    truncated: false
+    location: null
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    httpErrors:
+      serverErrorSpans: 0
+      clientErrorSpans: 3
+      outboundErrorSpans: 0
+      queriedCount: 1
+      services:
+        $containsWhere: {name: catalog, queried: true, complete: true, serverErrorSpans: 0, clientErrorSpans: 3, limitReached: false}

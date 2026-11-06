@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The subscription's resource groups",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "As ARM spells it; the identity uses it lower-cased"},
+          "location": {"type": "string"},
+          "id": {"type": "string", "description": "The ARM resource id"},
+          "keyvaults": {"type": ["integer", "null"], "description": "Key Vaults found in the group; null when the group's vaults could not be listed"},
+          "aksClusters": {"type": ["integer", "null"], "description": "AKS clusters found in the group; null when the group's clusters could not be listed"},
+          "providerNotRegistered": {"type": "array", "items": {"type": "string"}, "maxItems": 50, "description": "Types (keyvault, aks-cluster...) whose resource provider the subscription has not registered: Azure refuses the listing, no such resource can exist, and the type's partition is complete with count 0"}
+        },
+        "required": ["name", "location", "id", "keyvaults", "aksClusters", "providerNotRegistered"],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Resource groups found"},
+    "omitted": {"type": "integer", "description": "Resource groups left out of items by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}

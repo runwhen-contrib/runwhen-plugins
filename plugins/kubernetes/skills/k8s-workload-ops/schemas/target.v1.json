@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The workload a write task acted on",
+  "description": "gitopsManaged is true when Flux or Argo CD labels or annotations are on the workload; the controller may revert the change. Only keys are reported.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "namespace": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "paused": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "updateStrategy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "gitopsManaged": {
+      "type": "boolean"
+    },
+    "gitops": {
+      "type": "object",
+      "properties": {
+        "managed": {
+          "type": "boolean"
+        },
+        "tool": {
+          "enum": [
+            "flux",
+            "argocd",
+            null
+          ]
+        },
+        "signals": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "label",
+                  "annotation"
+                ]
+              },
+              "key": {
+                "type": "string"
+              },
+              "tool": {
+                "enum": [
+                  "flux",
+                  "argocd"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "key",
+              "tool"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "managed",
+        "tool",
+        "signals"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "kind",
+    "name",
+    "namespace",
+    "generation",
+    "paused",
+    "updateStrategy",
+    "gitopsManaged",
+    "gitops"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,62 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-prometheus/prometheuses/rw-prom-idle
+now: '2026-11-04T01:21:33.539Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-prometheus
+  - get
+  - prometheuses.monitoring.coreos.com
+  - rw-prom-idle
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "monitoring.coreos.com/v1",
+        "kind": "Prometheus",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"monitoring.coreos.com/v1\",\"kind\":\"Prometheus\",\"metadata\":{\"annotations\":{},\"name\":\"rw-prom-idle\",\"namespace\":\"rw-prometheus\"},\"spec\":{\"replicas\":1}}\n"
+            },
+            "creationTimestamp": "2026-11-04T01:20:21Z",
+            "generation": 1,
+            "name": "rw-prom-idle",
+            "namespace": "rw-prometheus",
+            "resourceVersion": "72076",
+            "uid": "f79f429a-fd77-4916-bce2-51d5900d31eb"
+        },
+        "spec": {
+            "replicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-prometheus
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=prometheus,prometheus=rw-prom-idle
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: failed
+  errorCodes: [unreachable]

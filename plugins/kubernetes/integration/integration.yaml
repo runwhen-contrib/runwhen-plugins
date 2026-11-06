@@ -1,0 +1,56 @@
+# source: 41a-integration-spec.md "## integration.yaml"; types, facets and dependencies live beside it.
+apiVersion: runwhen.com/integration/v1
+platform: kubernetes
+title: Kubernetes
+docs: https://docs.runwhen.com/integrations/kubernetes
+
+# --- what tools read (D38, D45) ---------------------------------------------
+credentialTypes:
+  kubernetes/kubeconfig:
+    title: kubeconfig file
+    content: kubeconfig
+    materialize: { file: { env: KUBECONFIG, mode: "0600" } }   # the whole contract a task script sees
+
+# --- how a credential reference becomes that type (D67) -----------------------
+# Each method is self-contained: it accepts its own reference kinds, has its own
+# inputs, and produces the type. No method depends on another connection.
+authMethods:
+  kubeconfig:
+    title: kubeconfig Secret
+    produces: kubernetes/kubeconfig
+    accepts: [k8s-secret, vault, file]
+    native: passthrough                      # the reference already is the type; runner writes it to the file
+    contexts: true                           # one proposed connection per context (D50)
+    inputs:
+      context: { type: string, derived: true }
+  in-cluster:
+    title: In-cluster ServiceAccount
+    produces: kubernetes/kubeconfig
+    accepts: [in-cluster-sa]
+    native: in-cluster-token                 # kubeconfig from the pod's token, CA and API server
+    inputs:
+      apiServer: { type: string, default: "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" }
+      tokenPath: { type: string, default: /var/run/secrets/kubernetes.io/serviceaccount/token }
+      serviceAccount: { type: string, derived: true }
+  gke:
+    title: GKE
+    produces: kubernetes/kubeconfig
+    accepts: [gcp-sa-key, cloud-identity]    # a vault or file reference matches by its content (gcp-sa-key)
+    script: auth/gke.py                      # relative to this file's directory (integration/), like every relPath
+    inputs:
+      project:  { type: string, required: true }
+      location: { type: string, required: true }
+      cluster:  { type: string, required: true }
+  # eks and aks (script methods, D67) are added with their auth/*.py scripts (CON-5, M3).
+
+# --- what a task may declare and a connection verifies (CD3) ----------------
+permissions:
+  schema: ./schemas/rbac-rule.json           # one permission = one RBAC rule (D68)
+
+# --- how the platform plugs this integration in -------------------------------
+entryPoints:
+  discovery: { task: k8s-base/discover, schedule: "*/15 * * * *" }
+  cli: { task: k8s-base/kubectl }
+  permissionCheck: { task: k8s-base/check-permissions }
+
+recognizers: []                              # kubernetes recognizes nothing; postgres and redis recognize kubernetes Services

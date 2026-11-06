@@ -1,0 +1,397 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-prometheus/prometheuses/rw-prom
+now: '2026-11-04T01:21:28.024Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-prometheus
+  - get
+  - prometheuses.monitoring.coreos.com
+  - rw-prom
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "monitoring.coreos.com/v1",
+        "kind": "Prometheus",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"monitoring.coreos.com/v1\",\"kind\":\"Prometheus\",\"metadata\":{\"annotations\":{},\"name\":\"rw-prom\",\"namespace\":\"rw-prometheus\"},\"spec\":{\"replicas\":1,\"serviceAccountName\":\"prometheus-rw\",\"serviceMonitorNamespaceSelector\":{\"matchLabels\":{\"monitoring\":\"rw\"}},\"serviceMonitorSelector\":{\"matchLabels\":{\"release\":\"rw\"}}}}\n"
+            },
+            "creationTimestamp": "2026-11-04T01:20:21Z",
+            "generation": 1,
+            "name": "rw-prom",
+            "namespace": "rw-prometheus",
+            "resourceVersion": "72075",
+            "uid": "d635a04b-148c-468e-aa1a-a2d2734c4b24"
+        },
+        "spec": {
+            "replicas": 1,
+            "serviceAccountName": "prometheus-rw",
+            "serviceMonitorNamespaceSelector": {
+                "matchLabels": {
+                    "monitoring": "rw"
+                }
+            },
+            "serviceMonitorSelector": {
+                "matchLabels": {
+                    "release": "rw"
+                }
+            }
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-prometheus
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/name=prometheus,prometheus=rw-prom
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-04T01:20:15Z",
+                    "generateName": "prometheus-rw-prom-86464988db-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/instance": "rw-prom",
+                        "app.kubernetes.io/managed-by": "prometheus-operator",
+                        "app.kubernetes.io/name": "prometheus",
+                        "operator.prometheus.io/name": "rw-prom",
+                        "pod-template-hash": "86464988db",
+                        "prometheus": "rw-prom"
+                    },
+                    "name": "prometheus-rw-prom-86464988db-cjltb",
+                    "namespace": "rw-prometheus",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "ReplicaSet",
+                            "name": "prometheus-rw-prom-86464988db",
+                            "uid": "0ba8908b-1cf3-452f-a1b4-9f83196023d5"
+                        }
+                    ],
+                    "resourceVersion": "72070",
+                    "uid": "5b76f5ee-e4f0-4ea2-9639-84003b9fe270"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "--config.file=/etc/prometheus/prometheus.yml",
+                                "--storage.tsdb.path=/prometheus",
+                                "--storage.tsdb.retention.time=1h",
+                                "--web.listen-address=:9090"
+                            ],
+                            "image": "prom/prometheus:v3.1.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "prometheus",
+                            "ports": [
+                                {
+                                    "containerPort": 9090,
+                                    "name": "web",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/-/ready",
+                                    "port": "web",
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/etc/prometheus",
+                                    "name": "config"
+                                },
+                                {
+                                    "mountPath": "/prometheus",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-6747t",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "prometheus-rw",
+                    "serviceAccountName": "prometheus-rw",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "prometheus-rw-prom-config"
+                            },
+                            "name": "config"
+                        },
+                        {
+                            "emptyDir": {
+                                "sizeLimit": "128Mi"
+                            },
+                            "name": "data"
+                        },
+                        {
+                            "name": "kube-api-access-6747t",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "10m",
+                        "memory": "64Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:20:16Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:20:15Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:20:16Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:20:16Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:20:15Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "10m",
+                                "memory": "64Mi"
+                            },
+                            "containerID": "containerd://27980a9451aa078d9387741db11f224fabdb77c83e5858f8c9d0cc656ed69594",
+                            "image": "docker.io/prom/prometheus:v3.1.0",
+                            "imageID": "docker.io/prom/prometheus@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218",
+                            "lastState": {},
+                            "name": "prometheus",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-04T01:20:16Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 65534,
+                                    "supplementalGroups": [
+                                        65534
+                                    ],
+                                    "uid": 65534
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/etc/prometheus",
+                                    "name": "config"
+                                },
+                                {
+                                    "mountPath": "/prometheus",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-6747t",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.32",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.32"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "192Mi"
+                        },
+                        "requests": {
+                            "memory": "64Mi"
+                        }
+                    },
+                    "startTime": "2026-11-04T01:20:15Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-prometheus
+    kind: pods
+    name: prometheus-rw-prom-86464988db-cjltb
+    port: 9090
+    path: /api/v1/targets?state=active
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '1512'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:21:28 GMT
+      connection: close
+    body: '{"status":"success","data":{"activeTargets":[{"discoveredLabels":{"__address__":"rw-nothing.rw-prometheus.svc.cluster.local:9100","__metrics_path__":"/metrics","__param_token":"not-a-secret","__scheme__":"http","__scrape_interval__":"15s","__scrape_timeout__":"5s","job":"rw-down"},"labels":{"instance":"rw-nothing.rw-prometheus.svc.cluster.local:9100","job":"rw-down"},"scrapePool":"rw-down","scrapeUrl":"http://rw-nothing.rw-prometheus.svc.cluster.local:9100/metrics?token=not-a-secret","globalUrl":"http://rw-nothing.rw-prometheus.svc.cluster.local:9100/metrics?token=not-a-secret","lastError":"Get
+      \"http://rw-nothing.rw-prometheus.svc.cluster.local:9100/metrics?token=not-a-secret\": dial tcp:
+      lookup rw-nothing.rw-prometheus.svc.cluster.local on 10.96.0.10:53: no such host","lastScrape":"2026-11-04T01:21:14.074317678Z","lastScrapeDuration":0.001547541,"health":"down","scrapeInterval":"15s","scrapeTimeout":"5s"},{"discoveredLabels":{"__address__":"localhost:9090","__metrics_path__":"/metrics","__scheme__":"http","__scrape_interval__":"15s","__scrape_timeout__":"5s","job":"sm-ok"},"labels":{"instance":"localhost:9090","job":"sm-ok"},"scrapePool":"serviceMonitor/rw-prometheus/sm-ok/0","scrapeUrl":"http://localhost:9090/metrics","globalUrl":"http://prometheus-rw-prom-86464988db-cjltb:9090/metrics","lastError":"","lastScrape":"2026-11-04T01:21:27.73682251Z","lastScrapeDuration":0.006435625,"health":"up","scrapeInterval":"15s","scrapeTimeout":"5s"}],"droppedTargets":[],"droppedTargetCounts":null}}'
+    truncated: false
+    location: null
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    targets:
+      total: 2
+      up: 1
+      down: 1
+      unhealthyCount: 1
+      pools:
+        $contains:
+        - {scrapePool: rw-down, down: 1, up: 0}
+        - {scrapePool: serviceMonitor/rw-prometheus/sm-ok/0, up: 1, down: 0}
+      unhealthy:
+        $containsWhere: {scrapePool: rw-down, job: rw-down, health: down, scrapeUrl: 'http://rw-nothing.rw-prometheus.svc.cluster.local:9100/metrics'}

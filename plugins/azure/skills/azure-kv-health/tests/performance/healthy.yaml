@@ -1,0 +1,415 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: azure/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourcegroups/rg-orders-prod/keyvaults/kv-orders-prod
+now: '2026-11-04T02:20:16.014Z'
+calls:
+- argv:
+  - az
+  - keyvault
+  - show
+  - --name
+  - kv-orders-prod
+  - -g
+  - rg-orders-prod
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod",
+      "location": "eastus",
+      "name": "kv-orders-prod",
+      "properties": {
+        "accessPolicies": [],
+        "createMode": null,
+        "enablePurgeProtection": true,
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "enabledForDeployment": false,
+        "enabledForDiskEncryption": false,
+        "enabledForTemplateDeployment": false,
+        "hsmPoolResourceId": null,
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "defaultAction": "Deny",
+          "ipRules": [
+            {
+              "value": "203.0.113.0/24"
+            }
+          ],
+          "virtualNetworkRules": []
+        },
+        "privateEndpointConnections": [
+          {
+            "etag": null,
+            "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/privateEndpointConnections/pe-orders",
+            "privateEndpoint": {
+              "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.Network/privateEndpoints/pe-orders",
+              "resourceGroup": "rg-orders-prod"
+            },
+            "privateLinkServiceConnectionState": {
+              "actionsRequired": "None",
+              "description": "Auto-Approved",
+              "status": "Approved"
+            },
+            "provisioningState": "Succeeded",
+            "resourceGroup": "rg-orders-prod"
+          }
+        ],
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Disabled",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "softDeleteRetentionInDays": 90,
+        "tenantId": "c0ffee00-1234-4abc-8def-0123456789ab",
+        "vaultUri": "https://kv-orders-prod.vault.azure.net/"
+      },
+      "resourceGroup": "rg-orders-prod",
+      "systemData": null,
+      "tags": {
+        "env": "prod",
+        "team": "orders"
+      },
+      "type": "Microsoft.KeyVault/vaults"
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - metrics
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod
+  - --metrics
+  - ServiceApiHit
+  - --aggregation
+  - Count
+  - --interval
+  - PT1H
+  - --start-time
+  - '2026-11-03T02:20:16Z'
+  - --end-time
+  - '2026-11-04T02:20:16Z'
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "cost": 0,
+      "interval": "1:00:00",
+      "namespace": "microsoft.keyvault/vaults",
+      "resourceregion": "eastus",
+      "timespan": "2026-11-03T00:00:00+00:00/2026-11-04T00:00:00+00:00",
+      "value": [
+        {
+          "displayDescription": "Total Service Api Hits",
+          "errorCode": "Success",
+          "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/providers/Microsoft.Insights/metrics/ServiceApiHit",
+          "name": {
+            "localizedValue": "Total Service Api Hits",
+            "value": "ServiceApiHit"
+          },
+          "timeseries": [
+            {
+              "data": [
+                {
+                  "timeStamp": "2026-11-03T00:00:00+00:00",
+                  "count": 120.0
+                },
+                {
+                  "timeStamp": "2026-11-03T01:00:00+00:00",
+                  "count": 131.0
+                },
+                {
+                  "timeStamp": "2026-11-03T02:00:00+00:00",
+                  "count": 142.0
+                },
+                {
+                  "timeStamp": "2026-11-03T03:00:00+00:00",
+                  "count": 153.0
+                },
+                {
+                  "timeStamp": "2026-11-03T04:00:00+00:00",
+                  "count": 164.0
+                },
+                {
+                  "timeStamp": "2026-11-03T05:00:00+00:00",
+                  "count": 120.0
+                },
+                {
+                  "timeStamp": "2026-11-03T06:00:00+00:00",
+                  "count": 131.0
+                },
+                {
+                  "timeStamp": "2026-11-03T07:00:00+00:00",
+                  "count": 142.0
+                },
+                {
+                  "timeStamp": "2026-11-03T08:00:00+00:00",
+                  "count": 153.0
+                },
+                {
+                  "timeStamp": "2026-11-03T09:00:00+00:00",
+                  "count": 164.0
+                },
+                {
+                  "timeStamp": "2026-11-03T10:00:00+00:00",
+                  "count": 120.0
+                },
+                {
+                  "timeStamp": "2026-11-03T11:00:00+00:00",
+                  "count": 131.0
+                },
+                {
+                  "timeStamp": "2026-11-03T12:00:00+00:00",
+                  "count": 142.0
+                },
+                {
+                  "timeStamp": "2026-11-03T13:00:00+00:00",
+                  "count": 153.0
+                },
+                {
+                  "timeStamp": "2026-11-03T14:00:00+00:00",
+                  "count": 164.0
+                },
+                {
+                  "timeStamp": "2026-11-03T15:00:00+00:00",
+                  "count": 120.0
+                },
+                {
+                  "timeStamp": "2026-11-03T16:00:00+00:00",
+                  "count": 131.0
+                },
+                {
+                  "timeStamp": "2026-11-03T17:00:00+00:00",
+                  "count": 142.0
+                },
+                {
+                  "timeStamp": "2026-11-03T18:00:00+00:00",
+                  "count": 153.0
+                },
+                {
+                  "timeStamp": "2026-11-03T19:00:00+00:00",
+                  "count": 164.0
+                },
+                {
+                  "timeStamp": "2026-11-03T20:00:00+00:00",
+                  "count": 120.0
+                },
+                {
+                  "timeStamp": "2026-11-03T21:00:00+00:00",
+                  "count": 131.0
+                },
+                {
+                  "timeStamp": "2026-11-03T22:00:00+00:00",
+                  "count": 142.0
+                },
+                {
+                  "timeStamp": "2026-11-03T23:00:00+00:00",
+                  "count": 153.0
+                }
+              ],
+              "metadatavalues": []
+            }
+          ],
+          "type": "Microsoft.Insights/metrics",
+          "unit": "Count"
+        }
+      ]
+    }
+  stderr: ''
+- argv:
+  - az
+  - monitor
+  - metrics
+  - list
+  - --resource
+  - /subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod
+  - --metrics
+  - ServiceApiLatency
+  - --aggregation
+  - Average
+  - Maximum
+  - --interval
+  - PT1H
+  - --start-time
+  - '2026-11-03T02:20:16Z'
+  - --end-time
+  - '2026-11-04T02:20:16Z'
+  - --subscription
+  - 4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71
+  - --output
+  - json
+  rc: 0
+  stdout: |
+    {
+      "cost": 0,
+      "interval": "1:00:00",
+      "namespace": "microsoft.keyvault/vaults",
+      "resourceregion": "eastus",
+      "timespan": "2026-11-03T00:00:00+00:00/2026-11-04T00:00:00+00:00",
+      "value": [
+        {
+          "displayDescription": "Overall Service Api Latency",
+          "errorCode": "Success",
+          "id": "/subscriptions/4b1d1f7e-6f0a-4c5e-9a43-0c8a2d9e5b71/resourceGroups/rg-orders-prod/providers/Microsoft.KeyVault/vaults/kv-orders-prod/providers/Microsoft.Insights/metrics/ServiceApiLatency",
+          "name": {
+            "localizedValue": "Overall Service Api Latency",
+            "value": "ServiceApiLatency"
+          },
+          "timeseries": [
+            {
+              "data": [
+                {
+                  "timeStamp": "2026-11-03T00:00:00+00:00",
+                  "average": 14.0,
+                  "maximum": 42.0
+                },
+                {
+                  "timeStamp": "2026-11-03T01:00:00+00:00",
+                  "average": 15.0,
+                  "maximum": 45.0
+                },
+                {
+                  "timeStamp": "2026-11-03T02:00:00+00:00",
+                  "average": 16.0,
+                  "maximum": 48.0
+                },
+                {
+                  "timeStamp": "2026-11-03T03:00:00+00:00",
+                  "average": 17.0,
+                  "maximum": 51.0
+                },
+                {
+                  "timeStamp": "2026-11-03T04:00:00+00:00",
+                  "average": 14.0,
+                  "maximum": 42.0
+                },
+                {
+                  "timeStamp": "2026-11-03T05:00:00+00:00",
+                  "average": 15.0,
+                  "maximum": 45.0
+                },
+                {
+                  "timeStamp": "2026-11-03T06:00:00+00:00",
+                  "average": 16.0,
+                  "maximum": 48.0
+                },
+                {
+                  "timeStamp": "2026-11-03T07:00:00+00:00",
+                  "average": 17.0,
+                  "maximum": 51.0
+                },
+                {
+                  "timeStamp": "2026-11-03T08:00:00+00:00",
+                  "average": 14.0,
+                  "maximum": 42.0
+                },
+                {
+                  "timeStamp": "2026-11-03T09:00:00+00:00",
+                  "average": 15.0,
+                  "maximum": 45.0
+                },
+                {
+                  "timeStamp": "2026-11-03T10:00:00+00:00",
+                  "average": 16.0,
+                  "maximum": 48.0
+                },
+                {
+                  "timeStamp": "2026-11-03T11:00:00+00:00",
+                  "average": 17.0,
+                  "maximum": 51.0
+                },
+                {
+                  "timeStamp": "2026-11-03T12:00:00+00:00",
+                  "average": 14.0,
+                  "maximum": 42.0
+                },
+                {
+                  "timeStamp": "2026-11-03T13:00:00+00:00",
+                  "average": 15.0,
+                  "maximum": 45.0
+                },
+                {
+                  "timeStamp": "2026-11-03T14:00:00+00:00",
+                  "average": 16.0,
+                  "maximum": 48.0
+                },
+                {
+                  "timeStamp": "2026-11-03T15:00:00+00:00",
+                  "average": 17.0,
+                  "maximum": 51.0
+                },
+                {
+                  "timeStamp": "2026-11-03T16:00:00+00:00",
+                  "average": 14.0,
+                  "maximum": 42.0
+                },
+                {
+                  "timeStamp": "2026-11-03T17:00:00+00:00",
+                  "average": 15.0,
+                  "maximum": 45.0
+                },
+                {
+                  "timeStamp": "2026-11-03T18:00:00+00:00",
+                  "average": 16.0,
+                  "maximum": 48.0
+                },
+                {
+                  "timeStamp": "2026-11-03T19:00:00+00:00",
+                  "average": 17.0,
+                  "maximum": 51.0
+                },
+                {
+                  "timeStamp": "2026-11-03T20:00:00+00:00",
+                  "average": 14.0,
+                  "maximum": 42.0
+                },
+                {
+                  "timeStamp": "2026-11-03T21:00:00+00:00",
+                  "average": 15.0,
+                  "maximum": 45.0
+                },
+                {
+                  "timeStamp": "2026-11-03T22:00:00+00:00",
+                  "average": 16.0,
+                  "maximum": 48.0
+                },
+                {
+                  "timeStamp": "2026-11-03T23:00:00+00:00",
+                  "average": 17.0,
+                  "maximum": 51.0
+                }
+              ],
+              "metadatavalues": []
+            }
+          ],
+          "type": "Microsoft.Insights/metrics",
+          "unit": "MilliSeconds"
+        }
+      ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    performance:
+      requests:
+        metric: ServiceApiHit
+        crossed: false
+        crossings: 0
+        grains: 24
+      latency:
+        metric: ServiceApiLatency
+        crossed: false
+        crossings: 0

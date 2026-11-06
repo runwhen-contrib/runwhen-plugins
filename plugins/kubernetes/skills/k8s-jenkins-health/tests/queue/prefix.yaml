@@ -1,0 +1,106 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-prefix
+now: '2026-11-04T01:58:27.272Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - statefulsets.apps
+  - jenkins-prefix
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 0
+  stdout: |
+    @
+    s:kind=StatefulSet
+    s:metadata.name=jenkins-prefix
+    s:metadata.namespace=rw-jenkins
+    j:spec.replicas=1
+    j:spec.selector={"matchLabels":{"app.kubernetes.io/instance":"jenkins-prefix","app.kubernetes.io/name":"jenkins"}}
+    j:spec.template.metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-prefix","app.kubernetes.io/name":"jenkins"}
+    j:status.readyReplicas=1
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/instance=jenkins-prefix,app.kubernetes.io/name=jenkins
+  - -o
+  - jsonpath={range .items[*]}{"@\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.deletionTimestamp="}{.metadata.deletionTimestamp}{"\n"}{"s:status.phase="}{.status.phase}{"\n"}{"j:metadata.labels="}{.metadata.labels}{"\n"}{"j:status.conditions="}{.status.conditions}{"\n"}{range
+    .spec.containers[*]}{"k:"}{.name}{"="}{.ports}{"\n"}{"i:"}{.name}{"="}{.image}{"\n"}{"p:"}{.name}{"="}{.readinessProbe.httpGet.path}{"|"}{.readinessProbe.httpGet.port}{"|"}{.readinessProbe.httpGet.scheme}{"\n"}{end}{end}
+  rc: 0
+  stdout: |
+    @
+    s:metadata.name=jenkins-prefix-0
+    s:metadata.deletionTimestamp=
+    s:status.phase=Running
+    j:metadata.labels={"app.kubernetes.io/component":"jenkins-controller","app.kubernetes.io/instance":"jenkins-prefix","app.kubernetes.io/name":"jenkins","apps.kubernetes.io/pod-index":"0","controller-revision-hash":"jenkins-prefix-5dfc8b6bc5","statefulset.kubernetes.io/pod-name":"jenkins-prefix-0"}
+    j:status.conditions=[{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:40Z","observedGeneration":1,"status":"True","type":"PodReadyToStartContainers"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:38Z","observedGeneration":1,"status":"True","type":"Initialized"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:48Z","observedGeneration":1,"status":"True","type":"Ready"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:48Z","observedGeneration":1,"status":"True","type":"ContainersReady"},{"lastProbeTime":null,"lastTransitionTime":"2026-11-04T01:57:38Z","observedGeneration":1,"status":"True","type":"PodScheduled"}]
+    k:jenkins=[{"containerPort":8080,"name":"http","protocol":"TCP"}]
+    i:jenkins=python:3.12-alpine
+    p:jenkins=/jenkins/login|http|HTTP
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jenkins
+    kind: pods
+    name: jenkins-prefix-0
+    port: 8080
+    path: /jenkins/queue/api/json?tree=discoverableItems[id],items[id,blocked,buildable,stuck,inQueueSince,why,task[name,url]]
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '70'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:58:28 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '{"_class": "hudson.model.Queue", "discoverableItems": [], "items": []}'
+    truncated: false
+    location: null
+- type: k8s-proxy-get
+  request:
+    namespace: rw-jenkins
+    kind: pods
+    name: jenkins-prefix-0
+    port: 8080
+    path: /jenkins/computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,numExecutors,offlineCauseReason]
+    scheme: http
+  response:
+    status: 200
+    headers:
+      cache-control: no-cache, private
+      content-length: '305'
+      content-type: application/json
+      date: Wed, 04 Nov 2026 01:58:28 GMT
+      server: BaseHTTP/0.6 Python/3.12.16
+      connection: close
+    body: '{"_class": "hudson.model.ComputerSet", "busyExecutors": 0, "computer": [{"_class": "hudson.model.Hudson$MasterComputer",
+      "displayName": "Built-In Node", "idle": true, "offline": false, "temporarilyOffline": false, "numExecutors":
+      2, "offlineCauseReason": ""}], "displayName": "Nodes", "totalExecutors": 2}'
+    truncated: false
+    location: null
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    queue:
+      stuckAfterCount: 0
+      offlineCount: 0
+      pods:
+        $containsWhere:
+          name: jenkins-prefix-0
+          urlPrefix: /jenkins
+          queue: {itemCount: 0, stuckAfterItems: []}
+          computers: {computerCount: 1, offlineCount: 0}

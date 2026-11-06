@@ -1,0 +1,488 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-loki/statefulsets/loki
+inputs:
+  scheme: https
+now: '2026-11-04T01:28:31.518Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-loki
+  - get
+  - statefulsets.apps
+  - loki
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"loki\",\"namespace\":\"rw-loki\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/component\":\"single-binary\",\"app.kubernetes.io/name\":\"loki\"}},\"serviceName\":\"loki-headless\",\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/component\":\"single-binary\",\"app.kubernetes.io/name\":\"loki\"}},\"spec\":{\"containers\":[{\"args\":[\"-config.file=/etc/loki/loki.yaml\"],\"image\":\"grafana/loki:3.3.2\",\"name\":\"loki\",\"ports\":[{\"containerPort\":3100,\"name\":\"http-metrics\"}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/ready\",\"port\":\"http-metrics\"},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"192Mi\"},\"requests\":{\"cpu\":\"10m\",\"memory\":\"64Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/etc/loki\",\"name\":\"config\"},{\"mountPath\":\"/loki\",\"name\":\"data\"}]}],\"volumes\":[{\"configMap\":{\"items\":[{\"key\":\"loki.yaml\",\"path\":\"loki.yaml\"}],\"name\":\"loki-config\"},\"name\":\"config\"},{\"emptyDir\":{\"sizeLimit\":\"128Mi\"},\"name\":\"data\"}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-04T01:23:59Z",
+            "generation": 1,
+            "name": "loki",
+            "namespace": "rw-loki",
+            "resourceVersion": "72810",
+            "uid": "8956a136-3930-4355-9f0b-ac55fb555715"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/component": "single-binary",
+                    "app.kubernetes.io/name": "loki"
+                }
+            },
+            "serviceName": "loki-headless",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/component": "single-binary",
+                        "app.kubernetes.io/name": "loki"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "-config.file=/etc/loki/loki.yaml"
+                            ],
+                            "image": "grafana/loki:3.3.2",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "loki",
+                            "ports": [
+                                {
+                                    "containerPort": 3100,
+                                    "name": "http-metrics",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/ready",
+                                    "port": "http-metrics",
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/etc/loki",
+                                    "name": "config"
+                                },
+                                {
+                                    "mountPath": "/loki",
+                                    "name": "data"
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30,
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "items": [
+                                    {
+                                        "key": "loki.yaml",
+                                        "path": "loki.yaml"
+                                    }
+                                ],
+                                "name": "loki-config"
+                            },
+                            "name": "config"
+                        },
+                        {
+                            "emptyDir": {
+                                "sizeLimit": "128Mi"
+                            },
+                            "name": "data"
+                        }
+                    ]
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "collisionCount": 0,
+            "currentReplicas": 1,
+            "currentRevision": "loki-767b998595",
+            "observedGeneration": 1,
+            "readyReplicas": 1,
+            "replicas": 1,
+            "updateRevision": "loki-767b998595",
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-loki
+  - get
+  - pods
+  - -l
+  - app.kubernetes.io/component=single-binary,app.kubernetes.io/name=loki
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-04T01:23:59Z",
+                    "generateName": "loki-",
+                    "generation": 1,
+                    "labels": {
+                        "app.kubernetes.io/component": "single-binary",
+                        "app.kubernetes.io/name": "loki",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "loki-767b998595",
+                        "statefulset.kubernetes.io/pod-name": "loki-0"
+                    },
+                    "name": "loki-0",
+                    "namespace": "rw-loki",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "loki",
+                            "uid": "8956a136-3930-4355-9f0b-ac55fb555715"
+                        }
+                    ],
+                    "resourceVersion": "72811",
+                    "uid": "a3d5ac57-af3b-4858-90b7-5936a07d43cf"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "args": [
+                                "-config.file=/etc/loki/loki.yaml"
+                            ],
+                            "image": "grafana/loki:3.3.2",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "loki",
+                            "ports": [
+                                {
+                                    "containerPort": 3100,
+                                    "name": "http-metrics",
+                                    "protocol": "TCP"
+                                }
+                            ],
+                            "readinessProbe": {
+                                "failureThreshold": 3,
+                                "httpGet": {
+                                    "path": "/ready",
+                                    "port": "http-metrics",
+                                    "scheme": "HTTP"
+                                },
+                                "periodSeconds": 5,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/etc/loki",
+                                    "name": "config"
+                                },
+                                {
+                                    "mountPath": "/loki",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-x6lw9",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "loki-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "loki-headless",
+                    "terminationGracePeriodSeconds": 30,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "items": [
+                                    {
+                                        "key": "loki.yaml",
+                                        "path": "loki.yaml"
+                                    }
+                                ],
+                                "name": "loki-config"
+                            },
+                            "name": "config"
+                        },
+                        {
+                            "emptyDir": {
+                                "sizeLimit": "128Mi"
+                            },
+                            "name": "data"
+                        },
+                        {
+                            "name": "kube-api-access-x6lw9",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "10m",
+                        "memory": "64Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:24:00Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:24:00Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:24:25Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:24:25Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-04T01:23:59Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "10m",
+                                "memory": "64Mi"
+                            },
+                            "containerID": "containerd://f3f4b1e30b0d2f51f57e218a09699db47c7573bb71291c057d9f8f450524ebbe",
+                            "image": "docker.io/grafana/loki:3.3.2",
+                            "imageID": "docker.io/grafana/loki@sha256:8af2de1abbdd7aa92b27c9bcc96f0f4140c9096b507c77921ffddf1c6ad6c48f",
+                            "lastState": {},
+                            "name": "loki",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "10m",
+                                    "memory": "64Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-04T01:24:00Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 10001,
+                                    "supplementalGroups": [
+                                        10001
+                                    ],
+                                    "uid": 10001
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/etc/loki",
+                                    "name": "config"
+                                },
+                                {
+                                    "mountPath": "/loki",
+                                    "name": "data"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-x6lw9",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.42",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.42"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "192Mi"
+                        },
+                        "requests": {
+                            "memory": "64Mi"
+                        }
+                    },
+                    "startTime": "2026-11-04T01:24:00Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- type: k8s-proxy-get
+  request:
+    namespace: rw-loki
+    kind: pods
+    name: loki-0
+    port: 3100
+    path: /ready
+    scheme: https
+  error:
+    code: unreachable
+    message: 'the API server could not reach the backend: error trying to reach service: tls: first record
+      does not look like a TLS handshake'
+    scope: rw-loki/pods/loki-0:3100
+expect:
+  status: failed
+  errorCodes: [unreachable]

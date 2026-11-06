@@ -1,0 +1,61 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns (not-ready and most-restarted first)
+tasks:
+  - name: server-status
+    title: Vault server status
+    description: >-
+      For every Running pod of the Vault StatefulSet (a StatefulSet target) or of every StatefulSet
+      labelled app.kubernetes.io/name=vault (a namespace target), asks Vault's unauthenticated
+      /v1/sys/health through the API server's pod proxy (no port-forward, no exec, no token) and
+      reports whether it is initialized, sealed, standby, a performance standby or a DR secondary,
+      its version, cluster name and id and replication modes, with the StatefulSet's desired,
+      ready and updated replicas. The health status codes (429, 472, 473, 501, 503, 530) are facts,
+      not errors: the code is derived and reported as state and healthCode. A pod that is not
+      Running, or that the 45 second budget of the task ran out before, is listed and not asked. A
+      StatefulSet that wants pods and has none to ask makes the result partial (unreachable for
+      the pods scope).
+    script: scripts/server_status.py
+    tags: [vault, sealed, health, statefulset]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+    inputs:
+      scheme: { type: enum, enum: [http, https], default: http, description: "What the Vault listener serves: http, or https for a TLS listener (the API server does not verify the pod's certificate)" }
+      port: { type: integer, default: 8200, min: 1, max: 65535, description: "The Vault API port of the pod" }
+    outputs:
+      statefulsets: { schema: ./schemas/statefulsets.v1.json, description: "Desired, ready and updated replicas of each Vault StatefulSet" }
+      pods: { schema: ./schemas/pods.v1.json, description: "One entry per pod: sealed, initialized, standby, version, replication modes; sealed pods first" }
+      counts: { schema: ./schemas/counts.v1.json, description: "Pods by state before the maxItems cap" }
+
+  - name: csi-provider-status
+    title: Vault CSI provider status
+    description: >-
+      The Vault CSI provider DaemonSet (a DaemonSet target) or every DaemonSet labelled
+      app.kubernetes.io/name=vault-csi-provider (a namespace target): desired, current, ready,
+      updated, available, unavailable and misscheduled counts against its maxUnavailable; every
+      pod with its node, containers (init ones flagged), restart counts and how each last ended;
+      and Warning events about the DaemonSet and its pods within the look-back window.
+    script: scripts/csi_provider_status.py
+    tags: [vault, csi, daemonset]
+    readOnly: true
+    permissions:
+      - { apiGroups: [apps], resources: [daemonsets], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods, events], verbs: [list] }
+      - { apiGroups: [""], resources: [namespaces], verbs: [get] }
+    inputs:
+      since: { type: duration, default: 1h, description: Look-back window for the Warning events }
+    outputs:
+      daemonsets: { schema: ./schemas/daemonsets.v1.json, description: "Scheduled, ready and available counts of each CSI provider DaemonSet" }
+      pods: { schema: ./schemas/csi-pods.v1.json, description: "One entry per provider pod with its containers' restarts and states" }
+      events: { schema: ./schemas/events.v1.json, description: "Warning events about the DaemonSet and its pods, grouped by object and reason" }

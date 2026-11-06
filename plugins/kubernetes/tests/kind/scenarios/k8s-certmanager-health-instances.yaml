@@ -1,0 +1,70 @@
+# Instances for 30-k8s-certmanager-health.sh (applied after the synthetic CRDs are Established).
+# issuers: ca-ready (made Ready), broken-issuer (made not Ready); rw-cluster-issuer is cluster-scoped.
+# certificates: ready-cert (valid), expiring-cert (expires within days, renewal overdue),
+# failed-cert (issuer not Ready, two failed requests), orphan-cert (issuer does not exist),
+# external-cert (issuerRef of another group: an external issuer cert-manager.io cannot look up), new-cert (no status yet).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: ca-ready, namespace: rw-certs}
+spec: {ca: {secretName: ca-key-pair}}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: broken-issuer, namespace: rw-certs}
+spec: {ca: {secretName: missing-key-pair}}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata: {name: rw-cluster-issuer}
+spec: {selfSigned: {}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: ready-cert, namespace: rw-certs}
+spec:
+  secretName: ready-cert-tls
+  dnsNames: [ready.rw.example, www.ready.rw.example]
+  issuerRef: {name: ca-ready, kind: Issuer, group: cert-manager.io}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: expiring-cert, namespace: rw-certs}
+spec:
+  secretName: expiring-cert-tls
+  dnsNames: [expiring.rw.example]
+  duration: 2160h
+  renewBefore: 360h
+  issuerRef: {name: rw-cluster-issuer, kind: ClusterIssuer, group: cert-manager.io}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: failed-cert, namespace: rw-certs}
+spec:
+  secretName: failed-cert-tls
+  dnsNames: [failed.rw.example]
+  issuerRef: {name: broken-issuer}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: orphan-cert, namespace: rw-certs}
+spec:
+  secretName: orphan-cert-tls
+  dnsNames: [orphan.rw.example]
+  issuerRef: {name: missing-issuer, kind: Issuer}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: new-cert, namespace: rw-certs}
+spec:
+  secretName: new-cert-tls
+  dnsNames: [new.rw.example]
+  issuerRef: {name: ca-ready, kind: Issuer}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: external-cert, namespace: rw-certs}
+spec:
+  secretName: external-cert-tls
+  dnsNames: [external.rw.example]
+  ipAddresses: [10.1.2.3]
+  issuerRef: {name: pca, kind: AWSPCAIssuer, group: awspca.cert-manager.aws.com}

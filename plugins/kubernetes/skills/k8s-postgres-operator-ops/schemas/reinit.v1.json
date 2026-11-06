@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reinitialise one Patroni member",
+  "description": "applied is true only when patronictl printed 'Success: reinitialize for member <member>' (and no 'Failed:' line); a dry run sets wouldRun and runs nothing. reinit only starts the re-clone: the member is then read until it runs or streams again. completed is true when it did, false when the command was not confirmed or the member was not back within the wait, null when not waited or not observed. stateAfter is the last state read.",
+  "type": "object",
+  "properties": {
+    "applied": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "wouldRun": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "member": {
+      "type": [
+        "string"
+      ]
+    },
+    "role": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stateBefore": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lagBeforeMb": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "leader": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "const": "patronictl"
+        },
+        "subcommand": {
+          "type": [
+            "string"
+          ]
+        },
+        "cluster": {
+          "type": [
+            "string"
+          ]
+        },
+        "member": {
+          "type": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "tool",
+        "subcommand",
+        "cluster"
+      ]
+    },
+    "ranIn": {
+      "type": "object",
+      "properties": {
+        "pod": {
+          "type": [
+            "string"
+          ]
+        },
+        "container": {
+          "type": [
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "pod",
+        "container"
+      ]
+    },
+    "output": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "outputTruncated": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "stateAfter": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "roleAfter": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "completed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "completionReason": {
+      "enum": [
+        "running",
+        "timeout",
+        "budget",
+        "not_observed",
+        "not_waited",
+        "failed",
+        "unconfirmed",
+        null
+      ]
+    },
+    "waitedSeconds": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "applied",
+    "wouldRun",
+    "member",
+    "role",
+    "stateBefore",
+    "lagBeforeMb",
+    "leader",
+    "command",
+    "ranIn",
+    "output",
+    "outputTruncated",
+    "stateAfter",
+    "roleAfter",
+    "completed",
+    "completionReason",
+    "waitedSeconds"
+  ]
+}

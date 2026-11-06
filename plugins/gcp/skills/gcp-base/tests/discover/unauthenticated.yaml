@@ -1,0 +1,84 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234
+now: '2026-11-04T05:10:06.608Z'
+calls:
+- argv:
+  - gcloud
+  - storage
+  - buckets
+  - list
+  - --project=shop-prod-1234
+  - --raw
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: |
+    []
+  stderr: |
+    ERROR: (gcloud.storage.buckets.list) You do not currently have an active account selected.
+    Please run:
+
+      $ gcloud auth login
+
+    to obtain new credentials.
+
+    If you have already logged in with a different account, run:
+
+      $ gcloud config set account ACCOUNT
+
+    to select an already authenticated account to use.
+- argv:
+  - gcloud
+  - projects
+  - describe
+  - shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.projects.describe) You do not currently have an active account selected.
+    Please run:
+
+      $ gcloud auth login
+
+    to obtain new credentials.
+
+    If you have already logged in with a different account, run:
+
+      $ gcloud config set account ACCOUNT
+
+    to select an already authenticated account to use.
+- argv:
+  - gcloud
+  - functions
+  - list
+  - --project=shop-prod-1234
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: ''
+  stderr: |
+    ERROR: (gcloud.functions.list) You do not currently have an active account selected.
+    Please run:
+
+      $ gcloud auth login
+
+    to obtain new credentials.
+
+    If you have already logged in with a different account, run:
+
+      $ gcloud config set account ACCOUNT
+
+    to select an already authenticated account to use.
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

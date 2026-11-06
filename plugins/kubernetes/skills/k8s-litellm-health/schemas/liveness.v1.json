@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LiteLLM liveness per pod",
+  "description": "What each pod of the workload answered on /health/liveliness and /health/liveness through the API server's pod proxy. alive is true when every served path answered 200 with the alive text and at least one is served, false when a served path answered 503 (a draining proxy; the proxy does not pass the 503 body on), null when the pod was not asked or an answer was an error.",
+  "type": "object",
+  "properties": {
+    "workload": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "readyReplicas": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "replicas",
+        "readyReplicas"
+      ],
+      "additionalProperties": false
+    },
+    "podCount": {
+      "type": "integer"
+    },
+    "queriedCount": {
+      "type": "integer",
+      "description": "Pods asked (Running ones, at most 10; a failed ask still counts)"
+    },
+    "unaskedCount": {
+      "type": "integer",
+      "description": "Pods of the workload not asked: not Running, past the cap of 10, or past maxItems (a scoped error names them)"
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "pods were cut at maxItems"
+    },
+    "aliveCount": {
+      "type": "integer"
+    },
+    "notAliveCount": {
+      "type": "integer"
+    },
+    "pods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "podReady": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "the pod's own Ready condition"
+          },
+          "port": {
+            "type": "integer",
+            "description": "the port asked"
+          },
+          "queried": {
+            "type": "boolean",
+            "description": "false for a pod that is not Running or was not asked before the deadline"
+          },
+          "alive": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "served": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "false for a 404; null when the ask failed or the pod was not asked"
+                },
+                "httpStatus": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "alive": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "body": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "LiteLLM's liveness text for a 200"
+                }
+              },
+              "required": [
+                "path",
+                "served",
+                "httpStatus",
+                "alive",
+                "body"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 2
+          }
+        },
+        "required": [
+          "name",
+          "phase",
+          "podReady",
+          "port",
+          "queried",
+          "alive",
+          "paths"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "workload",
+    "podCount",
+    "queriedCount",
+    "unaskedCount",
+    "truncated",
+    "aliveCount",
+    "notAliveCount",
+    "pods"
+  ],
+  "additionalProperties": false
+}

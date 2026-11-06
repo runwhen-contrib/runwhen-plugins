@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bytes held by each bucket, largest first",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "One entry per bucket measured, largest first. A bucket that could not be measured has no entry and an error (scoped to monitoring for the buckets Cloud Monitoring has no series for)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "sizeBytes": {"type": "integer", "description": "Bytes the bucket holds, summed over byType (Cloud Monitoring storage/v2/total_bytes), or the live objects' bytes when source is du"},
+          "sizeTiB": {"type": "number", "description": "sizeBytes / 1024^4, to four decimals"},
+          "overThreshold": {"type": "boolean", "description": "sizeTiB is above the usageThresholdTib setting"},
+          "source": {"enum": ["monitoring", "du"], "description": "Where the size comes from: Cloud Monitoring, or (single-bucket targets only, when Monitoring has no series for the bucket) gcloud storage du"},
+          "byType": {
+            "type": "object",
+            "description": "Bytes by object type: live-object, noncurrent-object, soft-deleted-object, multipart-upload (Monitoring); {live-object} when source is du. At most 50 types",
+            "additionalProperties": {"type": "integer"}
+          }
+        },
+        "required": ["name", "sizeBytes", "sizeTiB", "overThreshold", "source", "byType"],
+        "additionalProperties": false
+      }
+    },
+    "total": {"type": "integer", "description": "Buckets the target covers"},
+    "omitted": {"type": "integer", "description": "Buckets left out of the run by maxItems"}
+  },
+  "required": ["items", "total", "omitted"],
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+now: '2026-11-03T21:18:53.547Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /version
+  rc: 1
+  stdout: ''
+  stderr: |
+    The connection to the server 127.0.0.1:1 was refused - did you specify the right host or port?
+expect:
+  status: failed
+  errorCodes:
+  - unreachable

@@ -1,0 +1,318 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/orders-api
+now: '2026-11-04T02:13:47.328Z'
+calls:
+- argv:
+  - aws
+  - lambda
+  - get-function-configuration
+  - --function-name
+  - arn:aws:lambda:eu-west-1:123456789012:function:orders-api
+  - --query
+  - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
+    Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
+    Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason,
+    LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason:
+    LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount:
+    length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds
+    || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup:
+    LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode,
+    EnvironmentErrorMessage: Environment.Error.Message}'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "FunctionName": "orders-api",
+        "FunctionArn": "arn:aws:lambda:eu-west-1:123456789012:function:orders-api",
+        "Runtime": "python3.12",
+        "PackageType": "Zip",
+        "Handler": "app.handler",
+        "MemorySize": 256,
+        "Timeout": 30,
+        "EphemeralStorageMb": 512,
+        "Architectures": [
+            "arm64"
+        ],
+        "State": "Active",
+        "StateReasonCode": null,
+        "StateReason": null,
+        "LastUpdateStatus": "Successful",
+        "LastUpdateStatusReasonCode": null,
+        "LastUpdateStatusReason": null,
+        "LastModified": "2026-10-28T09:14:03.000+0000",
+        "CodeSize": 4821337,
+        "Version": "$LATEST",
+        "LayerCount": 1,
+        "SubnetCount": 0,
+        "SecurityGroupCount": 0,
+        "DeadLetterTargetArn": null,
+        "TracingMode": "PassThrough",
+        "LogGroup": "/aws/lambda/orders-api",
+        "LogFormat": "Text",
+        "EnvironmentErrorCode": null,
+        "EnvironmentErrorMessage": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Invocations
+  - --dimensions
+  - Name=FunctionName,Value=orders-api
+  - --start-time
+  - '2026-11-04T01:13:47Z'
+  - --end-time
+  - '2026-11-04T02:13:47Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Invocations",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T00:00:00+00:00",
+                "Sum": 400.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 420.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T02:05:00+00:00",
+                "Sum": 380.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Errors
+  - --dimensions
+  - Name=FunctionName,Value=orders-api
+  - --start-time
+  - '2026-11-04T01:13:47Z'
+  - --end-time
+  - '2026-11-04T02:13:47Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Errors",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T00:00:00+00:00",
+                "Sum": 0.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 0.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T02:05:00+00:00",
+                "Sum": 0.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Throttles
+  - --dimensions
+  - Name=FunctionName,Value=orders-api
+  - --start-time
+  - '2026-11-04T01:13:47Z'
+  - --end-time
+  - '2026-11-04T02:13:47Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Throttles",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T00:00:00+00:00",
+                "Sum": 0.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Sum": 0.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T02:05:00+00:00",
+                "Sum": 0.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Duration
+  - --dimensions
+  - Name=FunctionName,Value=orders-api
+  - --start-time
+  - '2026-11-04T01:13:47Z'
+  - --end-time
+  - '2026-11-04T02:13:47Z'
+  - --period
+  - '300'
+  - --statistics
+  - Average
+  - Maximum
+  - SampleCount
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Duration",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T00:00:00+00:00",
+                "SampleCount": 400.0,
+                "Average": 182.4,
+                "Maximum": 902.1,
+                "Unit": "Milliseconds"
+            },
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "SampleCount": 420.0,
+                "Average": 175.0,
+                "Maximum": 640.5,
+                "Unit": "Milliseconds"
+            },
+            {
+                "Timestamp": "2026-11-04T02:05:00+00:00",
+                "SampleCount": 380.0,
+                "Average": 190.2,
+                "Maximum": 1210.8,
+                "Unit": "Milliseconds"
+            }
+        ]
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - ConcurrentExecutions
+  - --dimensions
+  - Name=FunctionName,Value=orders-api
+  - --start-time
+  - '2026-11-04T01:13:47Z'
+  - --end-time
+  - '2026-11-04T02:13:47Z'
+  - --period
+  - '300'
+  - --statistics
+  - Maximum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "ConcurrentExecutions",
+        "Datapoints": [
+            {
+                "Timestamp": "2026-11-04T00:00:00+00:00",
+                "Maximum": 6.0,
+                "Unit": "Count"
+            },
+            {
+                "Timestamp": "2026-11-04T01:05:00+00:00",
+                "Maximum": 12.0,
+                "Unit": "Count"
+            }
+        ]
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    metrics:
+      invocations: 1200
+      errors: 0
+      throttles: 0
+      errorRate: 0.0
+      datapoints:
+        Invocations: 3
+        Errors: 3
+        Throttles: 3
+        Duration: 3
+        ConcurrentExecutions: 2
+      errorRateAboveThreshold: false
+      throttlesAboveThreshold: false
+      durationNearTimeout: false
+      timeoutSeconds: 30
+      hasData: true
+      idle: false
+      concurrentExecutionsMax: 12

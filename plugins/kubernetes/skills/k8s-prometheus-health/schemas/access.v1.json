@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prometheus ServiceAccount discovery access",
+  "description": "Whether the ServiceAccount the Prometheus runs as may list and watch what its service discovery needs (services, pods, and endpoints or endpointslices) in the namespaces the selected ServiceMonitors point at, from SubjectAccessReviews. null when the reviews could not be created.",
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "serviceAccount": {
+      "type": "string"
+    },
+    "serviceDiscoveryRole": {
+      "type": "string"
+    },
+    "namespaces": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "namespaces checked; \"\" is cluster-wide (a ServiceMonitor with namespaceSelector.any)"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "list": {
+            "type": "boolean"
+          },
+          "watch": {
+            "type": "boolean"
+          },
+          "evaluationError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "status.evaluationError of the review, when the authorizer reported one"
+          },
+          "evaluationErrorTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "namespace",
+          "resource",
+          "group",
+          "list",
+          "watch",
+          "evaluationError",
+          "evaluationErrorTruncated"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "deniedCount": {
+      "type": "integer",
+      "description": "reviews that came back not allowed"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "serviceAccount",
+    "serviceDiscoveryRole",
+    "namespaces",
+    "checks",
+    "deniedCount",
+    "notes"
+  ],
+  "additionalProperties": false
+}

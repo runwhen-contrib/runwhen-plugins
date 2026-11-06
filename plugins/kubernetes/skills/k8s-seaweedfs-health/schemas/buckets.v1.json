@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeaweedFS buckets",
+  "description": "One entry per collection that has volumes on the master (buckets are approximated by collections with volumes; an empty bucket, a filer group's bucket and erasure-coded volumes are not seen, so a bucket may exist that is not listed): bytes used (usedBytes is live bytes, Size minus DeletedByteCount, one replica per volume: what a quota is measured against), the filer entry's quota (quotaState none: unset; enabled: quotaBytes is the limit and quotaUsedPercent the share used; disabled: quotaBytes is the limit that was set but is not enforced), the NAMES of its extended attributes (never values), and whether an unauthenticated S3 list of the bucket is allowed, denied (401/403) or finds no such bucket. entryFound false is a collection with no /buckets/<name> entry in the filer; null is not read. inspected is capped by the maxBuckets setting.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "inspected": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "usedBytes": {
+            "type": "integer"
+          },
+          "entryFound": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "quotaState": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "none",
+              "enabled",
+              "disabled",
+              null
+            ]
+          },
+          "quotaBytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quotaUsedPercent": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "extendedKeys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "anonymousList": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "allowed",
+              "denied",
+              "no_such_bucket",
+              null
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "usedBytes",
+          "entryFound",
+          "quotaState",
+          "quotaBytes",
+          "quotaUsedPercent",
+          "extendedKeys",
+          "anonymousList"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "count",
+    "inspected",
+    "truncated",
+    "items"
+  ],
+  "additionalProperties": false
+}

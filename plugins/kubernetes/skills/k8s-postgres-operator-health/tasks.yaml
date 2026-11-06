@@ -1,0 +1,105 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most entries any list output returns
+tasks:
+  - name: cluster-status
+    title: Postgres cluster status
+    description: >-
+      The Crunchy PostgresCluster or Zalando postgresql object as the operator
+      reports it: instances desired and ready (Crunchy from status.instances,
+      Zalando counted from the member pods), the Postgres version, the
+      conditions, whether the latest spec was seen, and for Zalando
+      status.PostgresClusterStatus. For Crunchy also the pgBackRest backup status
+      (repos, the last completed full, incremental and differential backup with
+      its age, scheduled backups that never completed, a manual backup and a
+      restore in progress). Lists the member pods the operator's labels select,
+      with phase, ready, restarts, role label and every container. Reads the
+      Kubernetes API only; it does not exec into a pod.
+    script: scripts/cluster_status.py
+    tags: [postgres, crunchy, zalando, status, backup, pgbackrest]
+    readOnly: true
+    permissions:
+      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get] }
+      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    outputs:
+      cluster: { schema: ./schemas/cluster.v1.json, description: "Instances desired and ready, version, conditions, Zalando cluster status" }
+      backups: { schema: ./schemas/backups.v1.json, description: "pgBackRest repos and the last completed backup per type (Crunchy)" }
+      members: { schema: ./schemas/members.v1.json, description: "The member pods with ready, restarts and role label" }
+
+  - name: patroni-status
+    title: Patroni members
+    description: >-
+      Runs patronictl list -f json inside one Running member pod (the pod's own
+      patronictl, no credential) and reports the members with role, state,
+      timeline and replication lag in MB, whether a leader is present, whether
+      members are on different timelines, which members are not running or
+      streaming and which lag more than the lagThresholdMb setting. A cluster with
+      no leader, a member that is stopped and a lag Patroni cannot tell are facts
+      in the output. With no Running member pod nothing can be asked: the output
+      is all null and an error says so.
+    script: scripts/patroni_status.py
+    tags: [postgres, patroni, replication, lag, leader, exec]
+    readOnly: true
+    permissions:
+      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get] }
+      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+    settings:
+      lagThresholdMb: { type: number, default: 100, description: "A member whose Patroni lag in MB is above this is listed in aboveLagThreshold" }
+    outputs:
+      patroni: { schema: ./schemas/patroni.v1.json, description: "Members, leader, timelines and lag from patronictl list" }
+
+  - name: connections
+    title: Connections on the primary
+    description: >-
+      Runs one psql query in the primary pod's database container (local socket,
+      the pod's own psql, no credential): client connections by state against
+      max_connections (less superuser_reserved_connections), the utilization
+      percent and whether it is at or above the connectionUtilizationPercent
+      setting, the age in seconds of the longest running query and of the longest
+      idle-in-transaction session, and the count of locks not granted. No query
+      text is read. The primary is the Running pod carrying the operator's primary
+      role label; none is a not_found error.
+    script: scripts/connections.py
+    tags: [postgres, connections, locks, exec, psql]
+    readOnly: true
+    permissions:
+      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get] }
+      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+    settings:
+      connectionUtilizationPercent: { type: number, default: 80, description: "aboveThreshold is true when connections use at least this percent of the usable max_connections" }
+    outputs:
+      connections: { schema: ./schemas/connections.v1.json, description: "Connections by state against max_connections, longest query and idle-in-transaction age, waiting locks" }
+
+  - name: settings
+    title: Non-default settings
+    description: >-
+      Runs one psql query in the primary pod (local socket, no credential) and
+      lists the pg_settings rows that are not at their default: name, setting,
+      unit and source. Settings with a password, passwd, passphrase, secret,
+      token, credential, dsn, uri, auth or key part in their name (split at _ and
+      .: ssl_key_file yes, autovacuum no), and ssl_*file, are never returned (their
+      number is excludedCount). A setting that can hold a connection string or a
+      command line (primary_conninfo, archive_command ...) and every dotted
+      extension setting (pgaudit.log ...) is listed with its value withheld.
+    script: scripts/settings.py
+    tags: [postgres, configuration, settings, exec, psql]
+    readOnly: true
+    permissions:
+      - { apiGroups: [postgres-operator.crunchydata.com], resources: [postgresclusters], verbs: [get] }
+      - { apiGroups: [acid.zalan.do], resources: [postgresqls], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [get, list] }
+      - { apiGroups: [""], resources: [pods/exec], verbs: [create, get] }
+    outputs:
+      settings: { schema: ./schemas/settings.v1.json, description: "Non-default pg_settings rows, secrets excluded" }

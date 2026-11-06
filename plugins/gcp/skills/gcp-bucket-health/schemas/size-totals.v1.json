@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Totals over the buckets measured by bucket-size",
+  "type": "object",
+  "properties": {
+    "examined": {"type": "integer", "description": "Buckets with an entry in sizes"},
+    "total": {"type": "integer", "description": "Buckets the target covers"},
+    "omitted": {"type": "integer", "description": "Buckets left out of the run by maxItems"},
+    "complete": {"type": "boolean", "description": "Every bucket of the target has a size (nothing omitted by maxItems, nothing failed, notMeasured is 0)"},
+    "notMeasured": {"type": "integer", "description": "Buckets looked at that have no size: Cloud Monitoring has no series for them (project targets), or their read failed"},
+    "totalBytes": {"type": "integer", "description": "Sum of sizeBytes over the buckets measured"},
+    "thresholdTiB": {"type": "number", "description": "The usageThresholdTib setting"},
+    "overThreshold": {"type": "integer", "description": "Buckets with overThreshold true"}
+  },
+  "required": ["examined", "total", "omitted", "complete", "notMeasured", "totalBytes", "thresholdTiB", "overThreshold"],
+  "additionalProperties": false
+}

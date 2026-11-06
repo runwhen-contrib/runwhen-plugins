@@ -1,0 +1,136 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "autoscaling.k8s.io/v1",
+   "kind": "VerticalPodAutoscaler",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:50:15Z",
+    "generation": 1,
+    "name": "rollout",
+    "namespace": "rw-nsres",
+    "resourceVersion": "15036",
+    "uid": "b8815140-f148-48ba-9fe5-3e59e61d5301"
+   },
+   "spec": {
+    "targetRef": {
+     "apiVersion": "argoproj.io/v1alpha1",
+     "kind": "Rollout",
+     "name": "nope"
+    }
+   }
+  },
+  {
+   "apiVersion": "autoscaling.k8s.io/v1",
+   "kind": "VerticalPodAutoscaler",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:50:15Z",
+    "generation": 1,
+    "name": "sized",
+    "namespace": "rw-nsres",
+    "resourceVersion": "15037",
+    "uid": "fc007b47-2a75-4787-8945-0240ba920dd2"
+   },
+   "spec": {
+    "targetRef": {
+     "apiVersion": "apps/v1",
+     "kind": "Deployment",
+     "name": "sized"
+    },
+    "updatePolicy": {
+     "updateMode": "Off"
+    }
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T00:00:00Z",
+      "status": "True",
+      "type": "RecommendationProvided"
+     }
+    ],
+    "recommendation": {
+     "containerRecommendations": [
+      {
+       "containerName": "app",
+       "lowerBound": {
+        "cpu": "15m",
+        "memory": "10Mi"
+       },
+       "target": {
+        "cpu": "25m",
+        "memory": "16Mi"
+       },
+       "uncappedTarget": {
+        "cpu": "25m",
+        "memory": "16Mi"
+       },
+       "upperBound": {
+        "cpu": "100m",
+        "memory": "64Mi"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "apiVersion": "autoscaling.k8s.io/v1",
+   "kind": "VerticalPodAutoscaler",
+   "metadata": {
+    "creationTimestamp": "2026-11-03T19:50:15Z",
+    "generation": 1,
+    "name": "unsized",
+    "namespace": "rw-nsres",
+    "resourceVersion": "15038",
+    "uid": "807790a3-7cf0-4b5f-902c-0003e8ac753c"
+   },
+   "spec": {
+    "targetRef": {
+     "apiVersion": "apps/v1",
+     "kind": "Deployment",
+     "name": "unsized"
+    },
+    "updatePolicy": {
+     "updateMode": "Auto"
+    }
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T00:00:00Z",
+      "status": "True",
+      "type": "RecommendationProvided"
+     }
+    ],
+    "recommendation": {
+     "containerRecommendations": [
+      {
+       "containerName": "main",
+       "lowerBound": {
+        "cpu": "10m",
+        "memory": "8Mi"
+       },
+       "target": {
+        "cpu": "12m",
+        "memory": "10Mi"
+       },
+       "uncappedTarget": {
+        "cpu": "12m",
+        "memory": "10Mi"
+       },
+       "upperBound": {
+        "cpu": "50m",
+        "memory": "32Mi"
+       }
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "kind": "List",
+ "metadata": {
+  "resourceVersion": ""
+ }
+}

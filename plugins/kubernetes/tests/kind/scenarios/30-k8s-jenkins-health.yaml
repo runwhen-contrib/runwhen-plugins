@@ -1,0 +1,358 @@
+# k8s-jenkins-health scenarios, applied by up.sh. A real Jenkins is too heavy for the 4 GiB kind
+# VM, so each "Jenkins" is a ~40-line python:3.12-alpine stub (memory limit 64Mi) that serves
+# /login and the JSON of /queue/api/json and /computer/api/json in the shape the Jenkins remote
+# API documents, with the labels and ports of the jenkinsci Helm chart (StatefulSet
+# app.kubernetes.io/{name,instance,component=jenkins-controller}; container port http 8080,
+# Service jenkins port http). Namespace rw-jenkins:
+#   jenkins         StatefulSet, healthy: /login 200 with the page footer "Jenkins 2.452.3", an
+#                   empty queue, every node online
+#   jenkins-stuck   StatefulSet, queue holds one item waiting for days (stuck) and one blocked for
+#                   a minute, and one node is offline (temporarily, with a cause)
+#   jenkins-down    StatefulSet that is still starting: every path answers 503 (Jenkins's "Please
+#                   wait while Jenkins is getting ready to work"), so /login is not ok and the
+#                   pod is Running but not Ready
+#   jenkins-locked  StatefulSet with anonymous read turned off: /login is 200, every /api/json
+#                   answers 403 (what Jenkins does for an anonymous caller without Overall/Read)
+#   jenkins-sso     StatefulSet behind an SSO realm: every request, /login included, is answered
+#                   302 with a Location on another host (http://example.invalid/sso), which the
+#                   S17 proxy helper must report and never follow
+#   jenkins-prefix  StatefulSet healthy like `jenkins` but served under the prefix /jenkins (the
+#                   chart's jenkinsUriPrefix): its readinessProbe asks /jenkins/login, which is
+#                   where the skill takes the prefix from; every other path is a 404
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-jenkins
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-stub
+  namespace: rw-jenkins
+data:
+  stub.py: |
+    import json, sys, time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    MODE = sys.argv[1]  # healthy | stuck | locked | down | prefix | sso
+    PREFIX = "/jenkins" if MODE == "prefix" else ""
+    DAY = 86400000
+    LOGIN = ('<html><head><title>Sign in [Jenkins]</title></head><body>'
+             '<div class="page-footer"><a href="https://www.jenkins.io/">Jenkins 2.452.3</a></div>'
+             '</body></html>')
+
+    def queue():
+        now = int(time.time() * 1000)
+        if MODE != "stuck":
+            return {"_class": "hudson.model.Queue", "discoverableItems": [], "items": []}
+        return {"_class": "hudson.model.Queue", "discoverableItems": [], "items": [
+            {"_class": "hudson.model.Queue$BuildableItem", "blocked": False, "buildable": True,
+             "id": 41, "inQueueSince": now - 3 * DAY, "stuck": True, "pending": False,
+             "task": {"_class": "hudson.model.FreeStyleProject", "name": "nightly-build",
+                      "url": "http://jenkins:8080/job/nightly-build/"},
+             "url": "queue/item/41/",
+             "why": "There are no nodes with the label 'arm64'"},
+            {"_class": "hudson.model.Queue$BlockedItem", "blocked": True, "buildable": False,
+             "id": 42, "inQueueSince": now - 60000, "stuck": False, "pending": False,
+             "task": {"_class": "hudson.model.FreeStyleProject", "name": "deploy",
+                      "url": "http://jenkins:8080/job/deploy/"},
+             "url": "queue/item/42/",
+             "why": "Build #17 is already in progress (ETA: 2 min 0 sec)"}]}
+
+    def computers():
+        nodes = [{"_class": "hudson.model.Hudson$MasterComputer", "displayName": "Built-In Node",
+                  "idle": True, "offline": False, "temporarilyOffline": False,
+                  "numExecutors": 2, "offlineCauseReason": ""}]
+        if MODE == "stuck":
+            nodes.append({"_class": "hudson.slaves.SlaveComputer", "displayName": "agent-arm64-1",
+                          "idle": True, "offline": True, "temporarilyOffline": True,
+                          "numExecutors": 1,
+                          "offlineCauseReason": "Disconnected by admin: node maintenance"})
+        return {"_class": "hudson.model.ComputerSet", "busyExecutors": 0, "computer": nodes,
+                "displayName": "Nodes", "totalExecutors": sum(n["numExecutors"] for n in nodes)}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def send(self, code, body, ctype="application/json"):
+            data = body if isinstance(body, bytes) else body.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            if MODE == "down":
+                return self.send(503, "Please wait while Jenkins is getting ready to work", "text/plain")
+            if MODE == "sso":  # an SSO realm sends an anonymous caller to its identity provider
+                self.send_response(302)
+                self.send_header("Location", "http://example.invalid/sso")
+                self.send_header("Content-Length", "0")
+                return self.end_headers()
+            if not path.startswith(PREFIX):
+                return self.send(404, "not found", "text/plain")
+            path = path[len(PREFIX):]
+            if path == "/login":
+                return self.send(200, LOGIN, "text/html;charset=utf-8")
+            if path in ("/queue/api/json", "/computer/api/json"):
+                if MODE == "locked":
+                    return self.send(403, "<html><body>Authentication required</body></html>", "text/html;charset=utf-8")
+                return self.send(200, json.dumps(queue() if path.startswith("/queue") else computers()))
+            self.send(404, "not found", "text/plain")
+
+    ThreadingHTTPServer(("", 8080), H).serve_forever()
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-stuck
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-stuck}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-locked
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-locked}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, healthy]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /login, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins-stuck
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins-stuck
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-stuck}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-stuck, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, stuck]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /login, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-prefix
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-prefix}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins-prefix
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins-prefix
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-prefix}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-prefix, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, prefix]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /jenkins/login, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-down
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-down}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins-down
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins-down
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-down}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-down, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, down]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /login, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins-locked
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins-locked
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-locked}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-locked, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, locked]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /login, port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-sso
+  namespace: rw-jenkins
+spec:
+  selector: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-sso}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jenkins-sso
+  namespace: rw-jenkins
+spec:
+  replicas: 1
+  serviceName: jenkins-sso
+  selector:
+    matchLabels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-sso}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: jenkins, app.kubernetes.io/instance: jenkins-sso, app.kubernetes.io/component: jenkins-controller}
+    spec:
+      containers:
+        - name: jenkins
+          image: python:3.12-alpine
+          command: [python, /stub/stub.py, sso]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: stub, mountPath: /stub}
+      volumes:
+        - name: stub
+          configMap: {name: jenkins-stub}

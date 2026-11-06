@@ -19,6 +19,7 @@ plugins/
         tasks.yaml
         scripts/ lib/ schemas/ references/ assets/ tests/
 ci/                          repo tooling (changed-plugin selection, tag checks) and its tests
+runtimes/                    runtime images plugin tasks run in (kubernetes@1, aws@1), with their runtime.yaml
 porting/                     classic-bundle inventory and parity tracking
 .github/workflows/           per-plugin CI and release
 ```
@@ -27,3 +28,4 @@ porting/                     classic-bundle inventory and parity tracking
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): the porting checklist every ported skill follows.
 - [RELEASING.md](RELEASING.md): version bump rules and per-plugin tags.
+- [runtimes/README.md](runtimes/README.md): the runtime images, their `runtime.yaml` and release flow.

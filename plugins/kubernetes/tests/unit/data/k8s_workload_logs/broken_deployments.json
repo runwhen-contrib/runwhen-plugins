@@ -1,0 +1,296 @@
+{
+ "apiVersion": "v1",
+ "kind": "List",
+ "items": [
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"bad-image\",\"namespace\":\"rw-broken\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"bad-image\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"bad-image\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:does-not-exist-0.0.0\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"8Mi\"}}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T17:33:03Z",
+    "generation": 1,
+    "name": "bad-image",
+    "namespace": "rw-broken",
+    "resourceVersion": "2071",
+    "uid": "8a662b44-fa9b-4a2c-96a8-f728b3647bd0"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "bad-image"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "bad-image"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "image": "nginx:does-not-exist-0.0.0",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "8Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T17:33:03Z",
+      "lastUpdateTime": "2026-11-03T17:33:03Z",
+      "message": "Deployment does not have minimum availability.",
+      "reason": "MinimumReplicasUnavailable",
+      "status": "False",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T17:43:04Z",
+      "lastUpdateTime": "2026-11-03T17:43:04Z",
+      "message": "ReplicaSet \"bad-image-866577b69d\" has timed out progressing.",
+      "reason": "ProgressDeadlineExceeded",
+      "status": "False",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "unavailableReplicas": 1,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "1",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"crashloop\",\"namespace\":\"rw-broken\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"crashloop\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"crashloop\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"echo 'fatal: cannot load config' \\u003e\\u00262; exit 1\"],\"image\":\"busybox:1.36\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"2Mi\"}}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T17:33:02Z",
+    "generation": 1,
+    "name": "crashloop",
+    "namespace": "rw-broken",
+    "resourceVersion": "5388",
+    "uid": "cfc9bed4-bbca-4712-9d63-9451f0f52343"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "crashloop"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "crashloop"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sh",
+         "-c",
+         "echo 'fatal: cannot load config' >&2; exit 1"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "2Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T17:33:02Z",
+      "lastUpdateTime": "2026-11-03T17:33:19Z",
+      "message": "ReplicaSet \"crashloop-77d67d4789\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T18:20:29Z",
+      "lastUpdateTime": "2026-11-03T18:20:29Z",
+      "message": "Deployment does not have minimum availability.",
+      "reason": "MinimumReplicasUnavailable",
+      "status": "False",
+      "type": "Available"
+     }
+    ],
+    "observedGeneration": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "unavailableReplicas": 1,
+    "updatedReplicas": 1
+   }
+  },
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+    "annotations": {
+     "deployment.kubernetes.io/revision": "2",
+     "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"noisy\",\"namespace\":\"rw-broken\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"noisy\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"noisy\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"while true; do\\n  printf '%s\\\\n' 'GET /healthz 200 3ms'\\n  printf '%s\\\\n' 'GET /orders 200 41ms'\\n  printf '%s\\\\n' 'ERROR payment failed: connection refused to 10.0.0.9:5432'\\n  printf '%s\\\\n' 'request timeout after 30s calling inventory'\\n  printf '%s\\\\n' 'Traceback (most recent call last):'\\n  printf '%s\\\\n' '  File \\\"/app/main.py\\\", line 42, in handle'\\n  printf '%s\\\\n' '    total = compute(order)'\\n  printf '%s\\\\n' '  File \\\"/app/pricing.py\\\", line 7, in compute'\\n  printf '%s\\\\n' '    return order[\\\"price\\\"] / order[\\\"qty\\\"]'\\n  printf '%s\\\\n' 'ZeroDivisionError: division by zero'\\n  printf '%s\\\\n' 'GET /orders 200 38ms'\\n  printf '%s\\\\n' 'Exception in thread \\\"main\\\" java.lang.NullPointerException: Cannot invoke \\\"String.length()\\\" because \\\"s\\\" is null'\\n  printf '\\\\tat com.example.App.process(App.java:42)\\\\n'\\n  printf '\\\\tat com.example.App.main(App.java:10)\\\\n'\\n  printf '%s\\\\n' 'Caused by: java.io.IOException: boom'\\n  printf '\\\\tat com.example.Io.read(Io.java:7)\\\\n'\\n  printf '\\\\t... 2 more\\\\n'\\n  printf '%s\\\\n' 'GET /healthz 200 2ms'\\n  printf '%s\\\\n' 'panic: runtime error: index out of range [5] with length 3'\\n  printf '\\\\n'\\n  printf '%s\\\\n' 'goroutine 1 [running]:'\\n  printf '%s\\\\n' 'main.process(...)'\\n  printf '\\\\t/app/main.go:25\\\\n'\\n  printf '%s\\\\n' 'main.main()'\\n  printf '\\\\t/app/main.go:12 +0x1d\\\\n'\\n  printf '%s\\\\n' 'exit status 2'\\n  printf '%s\\\\n' 'TypeError: Cannot read properties of undefined (reading \\\"x\\\")'\\n  printf '%s\\\\n' '    at Object.\\u003canonymous\\u003e (/app/index.js:3:9)'\\n  printf '%s\\\\n' '    at Module._compile (node:internal/modules/cjs/loader:1256:14)'\\n  printf '%s\\\\n' 'Unhandled exception. System.InvalidOperationException: Sequence contains no elements'\\n  printf '%s\\\\n' '   at System.Linq.ThrowHelper.ThrowNoElementsException()'\\n  printf '%s\\\\n' '   at MyApp.Program.Main(String[] args) in /src/Program.cs:line 12'\\n  printf '%s\\\\n' 'GET /orders 200 40ms'\\n  sleep 5\\ndone\\n\"],\"image\":\"busybox:1.36\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"2Mi\"}}},{\"command\":[\"sh\",\"-c\",\"while true; do echo 'tick ok'; sleep 5; done\"],\"image\":\"busybox:1.36\",\"name\":\"quiet\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"2Mi\"}}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-11-03T18:24:58Z",
+    "generation": 2,
+    "name": "noisy",
+    "namespace": "rw-broken",
+    "resourceVersion": "6064",
+    "uid": "dd179a81-b96f-49d6-a80c-3e0dca33c76b"
+   },
+   "spec": {
+    "progressDeadlineSeconds": 600,
+    "replicas": 1,
+    "revisionHistoryLimit": 10,
+    "selector": {
+     "matchLabels": {
+      "app": "noisy"
+     }
+    },
+    "strategy": {
+     "rollingUpdate": {
+      "maxSurge": "25%",
+      "maxUnavailable": "25%"
+     },
+     "type": "RollingUpdate"
+    },
+    "template": {
+     "metadata": {
+      "labels": {
+       "app": "noisy"
+      }
+     },
+     "spec": {
+      "containers": [
+       {
+        "command": [
+         "sh",
+         "-c",
+         "while true; do\n  printf '%s\\n' 'GET /healthz 200 3ms'\n  printf '%s\\n' 'GET /orders 200 41ms'\n  printf '%s\\n' 'ERROR payment failed: connection refused to 10.0.0.9:5432'\n  printf '%s\\n' 'request timeout after 30s calling inventory'\n  printf '%s\\n' 'Traceback (most recent call last):'\n  printf '%s\\n' '  File \"/app/main.py\", line 42, in handle'\n  printf '%s\\n' '    total = compute(order)'\n  printf '%s\\n' '  File \"/app/pricing.py\", line 7, in compute'\n  printf '%s\\n' '    return order[\"price\"] / order[\"qty\"]'\n  printf '%s\\n' 'ZeroDivisionError: division by zero'\n  printf '%s\\n' 'GET /orders 200 38ms'\n  printf '%s\\n' 'Exception in thread \"main\" java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"s\" is null'\n  printf '\\tat com.example.App.process(App.java:42)\\n'\n  printf '\\tat com.example.App.main(App.java:10)\\n'\n  printf '%s\\n' 'Caused by: java.io.IOException: boom'\n  printf '\\tat com.example.Io.read(Io.java:7)\\n'\n  printf '\\t... 2 more\\n'\n  printf '%s\\n' 'GET /healthz 200 2ms'\n  printf '%s\\n' 'panic: runtime error: index out of range [5] with length 3'\n  printf '\\n'\n  printf '%s\\n' 'goroutine 1 [running]:'\n  printf '%s\\n' 'main.process(...)'\n  printf '\\t/app/main.go:25\\n'\n  printf '%s\\n' 'main.main()'\n  printf '\\t/app/main.go:12 +0x1d\\n'\n  printf '%s\\n' 'exit status 2'\n  printf '%s\\n' 'TypeError: Cannot read properties of undefined (reading \"x\")'\n  printf '%s\\n' '    at Object.<anonymous> (/app/index.js:3:9)'\n  printf '%s\\n' '    at Module._compile (node:internal/modules/cjs/loader:1256:14)'\n  printf '%s\\n' 'Unhandled exception. System.InvalidOperationException: Sequence contains no elements'\n  printf '%s\\n' '   at System.Linq.ThrowHelper.ThrowNoElementsException()'\n  printf '%s\\n' '   at MyApp.Program.Main(String[] args) in /src/Program.cs:line 12'\n  printf '%s\\n' 'GET /orders 200 40ms'\n  sleep 5\ndone\n"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "app",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "2Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       },
+       {
+        "command": [
+         "sh",
+         "-c",
+         "while true; do echo 'tick ok'; sleep 5; done"
+        ],
+        "image": "busybox:1.36",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "quiet",
+        "resources": {
+         "requests": {
+          "cpu": "1m",
+          "memory": "2Mi"
+         }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File"
+       }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "restartPolicy": "Always",
+      "schedulerName": "default-scheduler",
+      "securityContext": {},
+      "terminationGracePeriodSeconds": 30
+     }
+    }
+   },
+   "status": {
+    "availableReplicas": 1,
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-11-03T18:25:07Z",
+      "lastUpdateTime": "2026-11-03T18:25:07Z",
+      "message": "Deployment has minimum availability.",
+      "reason": "MinimumReplicasAvailable",
+      "status": "True",
+      "type": "Available"
+     },
+     {
+      "lastTransitionTime": "2026-11-03T18:25:00Z",
+      "lastUpdateTime": "2026-11-03T18:26:34Z",
+      "message": "ReplicaSet \"noisy-7cc85fc74\" has successfully progressed.",
+      "reason": "NewReplicaSetAvailable",
+      "status": "True",
+      "type": "Progressing"
+     }
+    ],
+    "observedGeneration": 2,
+    "readyReplicas": 1,
+    "replicas": 1,
+    "terminatingReplicas": 0,
+    "updatedReplicas": 1
+   }
+  }
+ ]
+}

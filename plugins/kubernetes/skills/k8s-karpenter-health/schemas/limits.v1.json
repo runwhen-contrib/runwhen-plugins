@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "spec.limits of a NodePool against status.resources",
+  "type": "object",
+  "properties": {
+    "declared": {
+      "type": "boolean"
+    },
+    "thresholdPercent": {
+      "type": "number"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "cores",
+              "bytes",
+              "count"
+            ]
+          },
+          "limit": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "used": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "percent": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "atOrAbove": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "exhausted": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "resource",
+          "unit",
+          "limit",
+          "used",
+          "percent",
+          "atOrAbove",
+          "exhausted"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 50,
+      "description": "limit and used in base units; null when the pool has no limit for it or the controller reported no usage"
+    }
+  },
+  "required": [
+    "declared",
+    "thresholdPercent",
+    "items"
+  ],
+  "additionalProperties": false
+}

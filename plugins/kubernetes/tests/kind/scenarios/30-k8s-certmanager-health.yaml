@@ -1,0 +1,86 @@
+# k8s-certmanager-health scenarios, applied by up.sh. Synthetic cert-manager.io/v1
+# CRDs (no controller runs: nothing issues or renews anything), so the objects in
+# rw-certs carry the status a controller would have written. The instances and their
+# status are created by 30-k8s-certmanager-health.sh once the CRDs are Established;
+# a manifest cannot do that in one apply. The acme.cert-manager.io types are
+# deliberately absent: the `requests` task must report Orders as not applicable.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-certs
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificates.cert-manager.io
+spec:
+  group: cert-manager.io
+  scope: Namespaced
+  names: {kind: Certificate, listKind: CertificateList, plural: certificates, singular: certificate}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificaterequests.cert-manager.io
+spec:
+  group: cert-manager.io
+  scope: Namespaced
+  names: {kind: CertificateRequest, listKind: CertificateRequestList, plural: certificaterequests, singular: certificaterequest}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: issuers.cert-manager.io
+spec:
+  group: cert-manager.io
+  scope: Namespaced
+  names: {kind: Issuer, listKind: IssuerList, plural: issuers, singular: issuer}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterissuers.cert-manager.io
+spec:
+  group: cert-manager.io
+  scope: Cluster
+  names: {kind: ClusterIssuer, listKind: ClusterIssuerList, plural: clusterissuers, singular: clusterissuer}
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}

@@ -1,0 +1,1056 @@
+- bundle: gcp-apigateway-health
+  displayName: GCP API Gateway Health
+  classicResourceTypes: [gcp_apigateway_gateways]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project]"
+  sli: true
+  sliAsserts: "Weighted 0-1 composite of 6 dimensions (states .20, drift .20, invoker .20, managed svc .15, error rate .15, latency .10); each scored 1/0 on issue count. Rc and issues-file are checked and a failed check Fails the task; no-traffic error/latency dims are 'unmeasured' and dropped from the weighting. Residual false-pass: Monitoring query errors become 0 -> 'unmeasured' (not healthy), and an empty Cloud Run list makes invoker score 1. Status: likely"
+  egress: "cloud API (apigateway, run, serviceusage, monitoring googleapis.com)"
+  tools: [gcloud, jq, yq, curl, bc, base64, awk]
+  inputs: [GCP_PROJECT_ID, GCP_REGIONS, API_NAME, API_CONFIG_NAME, METRIC_LOOKBACK_PERIOD, ERROR_RATE_THRESHOLD, AUTH_ERROR_RATE_THRESHOLD, LATENCY_THRESHOLD_MS, LATENCY_GAP_THRESHOLD_MS, OPERATIONS_LOOKBACK]
+  tasks:
+    - title: Check GCP API Gateway Resource States
+      at: runbook.robot:18
+      asserts: "Any Api, ApiConfig or Gateway is not ACTIVE (FAILED etc.)"
+      reads: ["gcloud api-gateway apis|api-configs|gateways list --format=json", "gcloud api-gateway gateways describe", "gcloud api-gateway api-configs describe (via discover_apigateway.sh inventory)"]
+      permissions: [apigateway.apis.list, apigateway.apiconfigs.list, apigateway.apiconfigs.get, apigateway.gateways.list, apigateway.gateways.get]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Reads apigateway_inventory.json, which only sli.robot Suite Initialization writes (discover_apigateway.sh); runbook.robot never calls discover, so a runbook-only run Fails with 'inventory not found' (loud, not false-pass) unless a stale file exists in the workdir. Discovery itself fails loudly if a list fails (apigw_gcloud_list). Issues are one per problem class, project scoped."
+    - title: Check GCP API Gateway Config Drift
+      at: runbook.robot:59
+      asserts: "A Gateway is pinned to an ApiConfig older than the newest ACTIVE ApiConfig of its API"
+      reads: ["inventory json", "gcloud api-gateway gateways describe <gw> --location --format=value(apiConfig) (fallback)"]
+      permissions: [apigateway.gateways.get, apigateway.gateways.list, apigateway.apiconfigs.list]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_config_drift.sh:59-60 fallback describe uses 2>/dev/null || echo '' -> empty cfg_id -> `continue` (gateway skipped, no drift); only hit when inventory apiConfig is empty"
+      notes: "Same inventory dependency as states check. 'Newest' is by createTime among ACTIVE configs; a gateway with no resolvable config is silently skipped."
+    - title: Verify API Gateway Managed Service is Enabled
+      at: runbook.robot:100
+      asserts: "No enabled Service Usage service matches <api-id>-*.apigateway.<project>.cloud.goog for an Api"
+      reads: ["gcloud services list --enabled --format=value(config.name)"]
+      permissions: [serviceusage.services.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "check_managed_service.sh:38-39 swallows a services-list failure (2>/dev/null || echo ''), but empty list makes every API look disabled -> false ALARM, not false pass. Early exit with no issues when inventory has 0 apis."
+    - title: Check Gateway Backend Invoker Permissions
+      at: runbook.robot:141
+      asserts: "The gateway service account lacks roles/run.invoker (and allUsers/allAuthenticatedUsers is absent) on a Cloud Run backend referenced by x-google-backend.address"
+      reads: ["gcloud api-gateway api-configs describe --view=FULL (openapiDocuments, gatewayServiceAccount)", "gcloud run services list --format=json", "gcloud run services get-iam-policy <svc> --region"]
+      permissions: [apigateway.apiconfigs.get, run.services.list, run.services.getIamPolicy]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "apigateway_common.sh:324-325 gcloud run services list 2>/dev/null || echo '[]' -> backend address unresolved -> `continue` (:~498) -> no finding. Also gateway with no gatewayServiceAccount -> '[]'."
+      notes: "Only Cloud Run (*.run.app) backends are checked; other backends ignored. get-iam-policy and api-config describe failures are loud (return 1)."
+    - title: Detect Dangling and Unreachable Gateway Backends
+      at: runbook.robot:182
+      asserts: "A x-google-backend.address *.run.app host matches no Cloud Run service in the project (dangling); any 504 in serviceruntime request_count during lookback"
+      reads: ["api-configs describe --view=FULL", "gcloud run services list", "GET monitoring.googleapis.com/v3/projects/<p>/timeSeries serviceruntime.googleapis.com/api/request_count response_code=504"]
+      permissions: [apigateway.apiconfigs.get, run.services.list, monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_backends.sh:101-102 curl -s 2>/dev/null || echo '{}' then jq '... | add // 0' || echo 0 -> API error/403 = 0 504s = no issue"
+      notes: "If `run services list` fails, common.sh:325 returns [] so EVERY run.app backend is reported dangling (false alarm). 504 query is project-wide (not scoped to this gateway's managed service)."
+    - title: Analyze GCP API Gateway Error Rates
+      at: runbook.robot:223
+      asserts: "5xx ratio > ERROR_RATE_THRESHOLD or 401/403 ratio > AUTH_ERROR_RATE_THRESHOLD over METRIC_LOOKBACK_PERIOD"
+      reads: ["GET monitoring timeSeries apigateway.googleapis.com/proxy/request_count (resolved metric)", "serviceruntime api/request_count scoped to managed services"]
+      permissions: [monitoring.timeSeries.list, monitoring.metricDescriptors.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_error_rates.sh:60-61 curl 2>/dev/null || echo '{}' ; jq 'add // 0' || echo 0 -> Monitoring error = total 0 = 'No request data' = no issue (runbook has no unmeasured concept)"
+      notes: "Token acquisition failure exits 1 (loud). SLI variant writes error_rate_measured=false so the dimension is excluded rather than scored 1."
+    - title: Analyze GCP API Gateway Latency
+      at: runbook.robot:264
+      asserts: "p95 total latency > LATENCY_THRESHOLD_MS, or gateway-vs-backend p95 gap > LATENCY_GAP_THRESHOLD_MS"
+      reads: ["GET monitoring timeSeries total/backend latency metrics, scoped to managed service"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_latency.sh:80-81 curl 2>/dev/null || echo '{}' ; jq 'max // 0' || echo 0 -> API error = p95 0 = 'no latency data' = no issue; also exits 0 with no issues if no managed service known (:~60)"
+      notes: "SLI marks no data as unmeasured."
+    - title: Check for Failed GCP API Gateway Operations
+      at: runbook.robot:305
+      asserts: "An API Gateway long-running operation within OPERATIONS_LOOKBACK finished with an error"
+      reads: ["GET apigateway.googleapis.com/v1/projects/<p>/locations/<region>/operations"]
+      permissions: [apigateway.operations.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_operations.sh:60-61 HTTP status != 200 for a region -> `continue` (silently skipped); curl 2>/dev/null || echo 000 -> same. All regions failing = no issues"
+      notes: "Lookback parsed with sed|bc, falls back to 86400. If no regions known, uses 'global'. Operations are not paginated (first page only)."
+  bundleNotes: "Hardened bundle: every task checks rc, removes stale output files first, parses the issues file in TRY/EXCEPT. Remaining holes are the curl/jq '|| echo 0' Monitoring idiom and run services list fallback. runbook.robot lacks the discover_apigateway.sh step that sli.robot has. GCP_REGIONS/API_NAME/API_CONFIG_NAME imported; API_NAME and API_CONFIG_NAME are only referenced by common.sh defaults."
+- bundle: gcp-apigee-environment-health
+  displayName: GCP Apigee Environment and Edge Health
+  classicResourceTypes: [gcp_apigee_organizations]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource]"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (apigee.googleapis.com via curl, gcloud services/compute); plus direct TCP/DNS probes from the runner to customer target-server hosts"
+  tools: [gcloud, curl, jq, getent, timeout, bash /dev/tcp, xargs]
+  inputs: [GCP_PROJECT_ID, APIGEE_ORG, ENVIRONMENTS, CERT_EXPIRY_WARNING_DAYS, TARGET_REACHABILITY_TIMEOUT]
+  tasks:
+    - title: Check Apigee Organization and Environment State
+      at: runbook.robot:18
+      asserts: "Org state not ACTIVE (FAILED/UNKNOWN worse), or any environment not ACTIVE / stuck CREATING/UPDATING, or env unreadable"
+      reads: ["topology json from discover_topology.sh (GET organizations/<org>)", "GET apigee v1 organizations/<org>/environments/<env>"]
+      permissions: [apigee.organizations.get, apigee.environments.get, apigee.environments.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:30-33 rc ignored, `except` on unparseable/missing issues file -> 'defaulting to empty list' (script exit 1 when topology missing = no issues). apigee_common.sh apigee_get curl ... || true -> empty (but unreadable envs ARE raised as an issue in check_org_env_state.sh:104-108); empty org_state is skipped (script :61)"
+      notes: "Depends on apigee_topology.json from Suite Initialization discovery. Discovery failures surface through discovery_issues.json (sev 4) and an up-front token check (sev 1), which is the only guard."
+    - title: Check Apigee Environment to Instance Attachment Coverage
+      at: runbook.robot:51
+      asserts: "An environment has no instance attachment (cannot serve traffic)"
+      reads: ["topology json (instance attachments from GET organizations/<org>/instances/<i>/attachments)"]
+      permissions: [apigee.instances.list, apigee.instanceattachments.list, apigee.environments.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot rc ignored + parse-fail -> empty list; check_instance_attachments.sh:53-66 exits 0 with no issues when org/instances empty, and discover_topology.sh apigee_list_field returns [] on any curl failure (a failed attachments fetch makes every env look unattached = false alarm, a failed instances fetch = skip = no issue)"
+      notes: "No live calls of its own; pure function of the topology dump."
+    - title: Check Apigee Environment Group Attachments and Hostname Routing
+      at: runbook.robot:84
+      asserts: "An env group has no environment attachments or no hostnames"
+      reads: ["topology json (GET organizations/<org>/envgroups and .../attachments)"]
+      permissions: [apigee.envgroups.list, apigee.envgroupattachments.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_envgroup_attachments.sh:~58 'No environment groups found' exit with empty issues; discover_topology.sh apigee_list_field -> [] on API failure"
+      notes: "Same topology dependency."
+    - title: Check Apigee Keystore Alias Certificate Expiry
+      at: runbook.robot:117
+      asserts: "A keystore/truststore alias certificate is expired or expires within CERT_EXPIRY_WARNING_DAYS (only for envs attached to an env group)"
+      reads: ["GET organizations/<org>/environments/<env>/keystores", ".../keystores/<ks>", ".../keystores/<ks>/aliases/<alias>"]
+      permissions: [apigee.keystores.list, apigee.keystores.get, apigee.keyaliases.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_keystore_cert_expiry.sh keystore list `case ... *) continue`, empty keystore/alias body `continue` -> any API error skips the keystore/alias silently (apigee_common.sh apigee_get ... || true)"
+      notes: "Envs not attached to any env group are skipped deliberately. Expiry from alias certsInfo expiryDate ms."
+    - title: Check Apigee Target Server Configuration and Reachability
+      at: runbook.robot:150
+      asserts: "A target server is disabled, its host does not resolve (getent) or its host:port does not accept a TCP connection from the runner within TARGET_REACHABILITY_TIMEOUT"
+      reads: ["GET .../environments/<env>/targetservers and /<ts>", "getent hosts <host>", "bash /dev/tcp/<host>/<port>"]
+      permissions: [apigee.targetservers.list, apigee.targetservers.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_target_servers.sh targetservers list `case *) echo 'No target servers accessible'; continue` and empty detail `continue` -> API error = no finding"
+      notes: "Reachability is from the runner's network position, not from Apigee runtime, so private targets reachable only from the Apigee VPC will false-alarm; public targets are probed from wherever the runner is."
+    - title: Check Apigee Southbound VPC Peering and Private Service Connect
+      at: runbook.robot:183
+      asserts: "Service networking peering list fails, or a PSC forwarding rule has pscConnectionStatus != ACCEPTED; org network missing"
+      reads: ["gcloud services vpc-peerings list --network", "gcloud compute addresses describe <range> --global", "gcloud compute forwarding-rules list --filter=pscConnectionStatus:*"]
+      permissions: [servicenetworking.services.get, compute.addresses.get, compute.forwardingRules.list]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "gcloud failures are captured and raised as issues (good), but `compute addresses describe ... 2>/dev/null || continue` swallows range lookups; skipped entirely when disableVpcPeering true or topology missing org"
+      notes: "Only PENDING/REJECTED/CLOSED PSC status raises; peering status itself (ACTIVE) is not inspected, only that list succeeded."
+    - title: Check Apigee Instance Capacity and Regional Failover
+      at: runbook.robot:216
+      asserts: "Instance not ACTIVE / provisioning, capacity reductionStatus != NORMAL, or an environment attached to only one instance (no regional failover); org has no instances"
+      reads: ["topology json instances", "GET organizations/<org>/instances/<inst>?entity=asyncRuntime"]
+      permissions: [apigee.instances.list, apigee.instances.get, apigee.environments.list]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_instance_capacity.sh capacity body `if [ -n cap_body ]` skipped on API failure (apigee_get || true); failed instances list is reported as 'no instances' (false alarm, not pass)"
+      notes: "Single-instance 'no failover' is a design observation, not a fault."
+  bundleNotes: "Pattern for all apigee-* bundles: apigee_common.sh apigee_get = curl -fsS ... || true so every API error becomes empty output, and runbook.robot never checks returncode and swallows unparseable issue files. Only guards: Suite Initialization token check (sev 1 issue) and discovery_issues.json (sev 4) for org lookup failure. discover_topology.sh and the issue-file contract run in Suite Initialization, so runbook tasks are not self-contained. Scripts run with set -x (token hidden via set +x in helpers)."
+- bundle: gcp-apigee-product-governance
+  displayName: GCP Apigee Product and Developer Governance
+  classicResourceTypes: [gcp_apigee_organizations]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource]; runbook only in generation rule (no sli output item)"
+  sli: true
+  sliAsserts: "Mean of 4 binary dimension scores (products, key expiry, orphaned entitlements, developer status). Each dimension scores 0 (count -1) when the status sidecar access_ok != true, so unreadable != healthy. Status: none (the generation rule does not emit the SLI, so it is not deployed by default)"
+  egress: "cloud API (apigee.googleapis.com via curl)"
+  tools: [curl, jq, gcloud, date]
+  inputs: [GCP_PROJECT_ID, APIGEE_ORG, APIPRODUCTS, DEVELOPER_APPS, KEY_EXPIRY_WARNING_DAYS, USAGE_LOOKBACK_DAYS]
+  tasks:
+    - title: Check Apigee API Product Expiry and Status
+      at: runbook.robot:18
+      asserts: "An API product has approvalType auto (unapproved access) or a missing/zero quota"
+      reads: ["GET apigee v1 organizations/<org>/apiproducts?expand=true (paged)", "GET organizations (org ownership probe)"]
+      permissions: [apigee.apiproducts.list, apigee.organizations.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Task name says Expiry and Status but the script checks neither: it checks approvalType and product-level quota (false alarm if quota is defined per operation group instead). Access failure writes api_products_status.json access_ok=false and runbook Report Access Failure raises a sev-2 issue; script exits 0 on failure. Status/issues files are not deleted before the run, so a crashed script could leave stale files."
+    - title: Check Apigee Developer App Credential Expiry
+      at: runbook.robot:32
+      asserts: "A developer-app consumer key is expired, expires within KEY_EXPIRY_WARNING_DAYS, or has an unparseable expiresAt"
+      reads: ["GET organizations/<org>/apps?expand=true (paged, via apigee_list_apps)"]
+      permissions: [apigee.developerapps.list, apigee.appkeys.get]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Consumer keys/secrets are redacted from output (APIGEE_REDACT_FILTER). expiresAt -1/0 treated as never expires. Status sidecar guard as above."
+    - title: Check Apigee Orphaned and Unused Products and Apps
+      at: runbook.robot:46
+      asserts: "A product referenced by no app credential, an app with no credentials, or (via analytics) an app with zero traffic over USAGE_LOOKBACK_DAYS"
+      reads: ["apps list", "apiproducts list", "GET organizations/<org>/environments", "GET .../environments/<env>/stats/developer_app?select=sum(message_count)"]
+      permissions: [apigee.apiproducts.list, apigee.developerapps.list, apigee.environments.list, apigee.environments.getStats]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "If any env returns no analytics the usage part is skipped with a reason and a sev-4 issue about missing analyticsViewer rather than treating all apps as unused. Housekeeping findings, not faults."
+    - title: Check Apigee Developer Status and Dangling References
+      at: runbook.robot:60
+      asserts: "A developer is inactive/blocked but owns active apps, or an app credential references an API product that no longer exists"
+      reads: ["apps list", "apiproducts list", "GET organizations/<org>/developers?expand=true (paged)"]
+      permissions: [apigee.developers.list, apigee.developerapps.list, apigee.apiproducts.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Developer list truncation is detected (apigee_developers_truncated)."
+  bundleNotes: "Best-hardened Apigee bundle: apigee_common.sh tracks access failures in .apigee_access_failures, writes *_status.json {access_ok,reason}, runbook Report Issues From File raises a sev-2 'could not run' issue when access_ok is false or the sidecar is missing, and an unparseable issues file is an issue, not empty. Its apigee_common.sh differs from the one in the other apigee-* bundles (which use apigee_get ... || true). Weakness: runbook ignores script returncode and status files are not cleared before a run."
+- bundle: gcp-apigee-proxy-health
+  displayName: GCP Apigee API Proxy Deployment and Traffic Health
+  classicResourceTypes: [gcp_apigee_organizations]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource]"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (apigee.googleapis.com via curl; Apigee Analytics stats endpoint)"
+  tools: [curl, jq, gcloud, awk, "GNU date -d"]
+  inputs: [GCP_PROJECT_ID, APIGEE_ORG, PROXIES, ENVIRONMENTS, POLICY_ERROR_THRESHOLD, TARGET_ERROR_THRESHOLD, LATENCY_MS_THRESHOLD, OVERHEAD_MS_THRESHOLD, AUTH_ERROR_RATE_THRESHOLD, RATE_LIMIT_ERROR_THRESHOLD, ANALYTICS_WINDOW_MIN, APIGEE_MAX_STATUS_CALLS, REVISION_ACCUMULATION_THRESHOLD]
+  tasks:
+    - title: Check Apigee Proxy Deployment Health
+      at: runbook.robot:18
+      asserts: "A proxy deployment has runtime state ERROR or PROGRESSING, status unreadable (UNKNOWN), or non-empty errors[] while serving"
+      reads: ["inventory from discover_proxies.sh: GET organizations/<org>/deployments, apis, per-deployment status (capped by APIGEE_MAX_STATUS_CALLS)"]
+      permissions: [apigee.deployments.list, apigee.deployments.get, apigee.proxies.list, apigee.proxyrevisions.get]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Hardened: Suite Initialization Fails on discovery rc!=0, deletes stale topology first, raises discovery issues (API errors sev 2, no token sev 3, org lookup sev 2) before failing. Per-task runbook wrapper still ignores script rc and parse failure -> empty list, but the issues file is pre-initialised to [] and inputs come from a verified inventory. Deployments past the status cap are reported UNKNOWN, not healthy."
+    - title: Check Apigee Deployed Revision vs Expected and Revision Drift
+      at: runbook.robot:52
+      asserts: "A proxy runs a revision older than its latest revision in some environment, or different environments run different revisions"
+      reads: ["inventory deployments", "inventory proxies (latestRevisionId)"]
+      permissions: [apigee.deployments.list, apigee.proxies.list, apigee.proxyrevisions.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "'Expected' is just the latest revision; no real expected-revision input. Latest-revision drift is often intentional (staged rollouts)."
+    - title: Check Apigee Undeployed and Orphaned Proxies
+      at: runbook.robot:86
+      asserts: "A proxy exists with zero deployments in any in-scope environment"
+      reads: ["inventory proxies and deployments"]
+      permissions: [apigee.proxies.list, apigee.deployments.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Script is named check_failed_deployments.sh but only finds undeployed proxies; failed deployments are covered by the state task. Housekeeping finding."
+    - title: Check Apigee Environment Deployment Coverage
+      at: runbook.robot:120
+      asserts: "An environment has no API proxies deployed (sev 4); skipped when PROXIES filter is set"
+      reads: ["inventory environments (GET organizations/<org>/environments) and deployments"]
+      permissions: [apigee.environments.list, apigee.deployments.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Housekeeping finding, not a fault."
+    - title: Check Apigee Proxy Revision Housekeeping
+      at: runbook.robot:154
+      asserts: "A proxy has >= REVISION_ACCUMULATION_THRESHOLD stored revisions"
+      reads: ["inventory proxies revision arrays and deployments"]
+      permissions: [apigee.proxies.list, apigee.proxyrevisions.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Hygiene finding, not a fault."
+    - title: Analyze Apigee policy_error vs target_error Split
+      at: runbook.robot:188
+      asserts: "Per proxy/env, policy_error/message_count > POLICY_ERROR_THRESHOLD or target_error/message_count > TARGET_ERROR_THRESHOLD over ANALYTICS_WINDOW_MIN"
+      reads: ["GET organizations/<org>/environments/<env>/stats/apiproxy?select=sum(message_count),sum(is_error),sum(policy_error),sum(target_error)"]
+      permissions: [apigee.environments.list, apigee.environments.getStats]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "Stats API failures are recorded and appended as a sev-3 'API calls failed' issue (analyze_error_split.sh:~end), but only counted via apigee_api_error_count; empty analytics ('No proxies returned metrics data') is treated as no problem"
+      notes: "Uses GNU date -d (fails on BSD/mac). No-traffic proxies skipped silently."
+    - title: Analyze Apigee Latency and Processing Overhead
+      at: runbook.robot:222
+      asserts: "Per proxy/env, LATENCY_PERCENTILE_FN(total_response_time) > LATENCY_MS_THRESHOLD or total minus target response time overhead > OVERHEAD_MS_THRESHOLD"
+      reads: ["GET .../environments/<env>/stats/apiproxy?select=<pctl>(total_response_time),<pctl>(target_response_time)"]
+      permissions: [apigee.environments.list, apigee.environments.getStats]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "Same pattern as error split: API errors surface via apigee_append_api_error_issue, empty analytics = no issue"
+      notes: "LATENCY_PERCENTILE_FN is read from env but not an imported runbook variable (default in script)."
+    - title: Analyze Apigee Auth and Quota Error Elevation
+      at: runbook.robot:256
+      asserts: "401/403 ratio > AUTH_ERROR_RATE_THRESHOLD or 429 ratio > RATE_LIMIT_ERROR_THRESHOLD of total messages per proxy"
+      reads: ["GET .../environments/<env>/stats/apiproxy,response_status_code?select=sum(message_count)"]
+      permissions: [apigee.environments.list, apigee.environments.getStats]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "analyze_http_error_rates.sh: empty counts file -> echo 'No HTTP error rate data' + append API-error issue only if calls failed; otherwise exit 0 clean"
+      notes: ""
+    - title: Check Apigee Failed Long-Running Operations
+      at: runbook.robot:290
+      asserts: "A completed Apigee long-running operation carries an error, excluding ones already reported as ERROR deployments"
+      reads: ["GET organizations/<org>/operations (paginated)"]
+      permissions: [apigee.operations.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_failed_operations.sh:59 ops=$(apigee_list_operations) -> apigee_curl records the error but returns body; paginate then yields [] ; this script never calls apigee_reset_api_errors/apigee_append_api_error_issue so a 403 = zero ops = no issue"
+      notes: "The only inventory-independent check without an API-error issue."
+  bundleNotes: "Hardest of the apigee bundles on discovery (status field in apigee_topology.json, discovery issues surfaced before Fail, stale files deleted). apigee_common.sh apigee_curl returns 000/non-2xx bodies and records them in apigee_api_errors.json; four check scripts exit 0 with an initialised '[]' issues file when no token or org (relying on the discovery issue). Runbook wrappers for each check still ignore rc and default parse failures to empty. Analytics tasks use GNU `date -d`."
+- bundle: gcp-apigee-security-config
+  displayName: GCP Apigee Security and Configuration Health
+  classicResourceTypes: [gcp_apigee_organizations]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource]"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (apigee.googleapis.com, monitoring.googleapis.com via curl)"
+  tools: [curl, jq, gcloud, awk, date]
+  inputs: [APIGEE_ORG, GCP_PROJECT_ID, QUOTA_ABUSE_THRESHOLD, SECURITY_SCORE_THRESHOLD, SECURITY_WINDOW_HOURS]
+  tasks:
+    - title: Check Apigee API Product Quota and Rate Limits
+      at: runbook.robot:26
+      asserts: "An API product has no quota, a quota >= QUOTA_ABUSE_THRESHOLD, or approvalType auto"
+      reads: ["GET apigee v1 organizations/<org>/apiproducts"]
+      permissions: [apigee.apiproducts.list, apigee.apiproducts.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "apigee_common.sh:107-110 apigee_get curl -fsS 2>/dev/null, error swallowed -> empty body -> apigee_obj_list returns [] -> check_quota_limits.sh 'has no API products; nothing to evaluate' writes [] ; runbook.robot:36-39 unparseable issues file -> empty list"
+      notes: "Token absence IS raised as an issue. List is requested without expand=true, so per-product quota fields may be absent and every product could be flagged 'no quota' (unverified; the script reads .quota from the list items). Overlaps the auto-approval/quota checks in gcp-apigee-product-governance."
+    - title: Check Apigee Developer App Access Scope
+      at: runbook.robot:59
+      asserts: "An approved app or approved consumer key has a wildcard (*) scope, or a key is revoked"
+      reads: ["GET organizations/<org>/developers", "GET .../developers/<email>/apps", "GET .../developers/<email>/apps/<app>"]
+      permissions: [apigee.developers.list, apigee.developerapps.list, apigee.developerapps.get, apigee.appkeys.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_app_access.sh: empty developer list -> 'no registered developers; nothing to evaluate' writes []; per-app `[ -z app ] && continue` skips unreadable apps; apigee_get swallows curl errors (apigee_common.sh:107-110)"
+      notes: "N+1 REST calls (developer x app). Consumer-key prefixes (8 chars) are echoed into the report."
+    - title: Check Apigee Security Score and Incidents
+      at: runbook.robot:92
+      asserts: "Cloud Monitoring apigee.googleapis.com/security/score below SECURITY_SCORE_THRESHOLD (sev 4 under 40), or any security/detected_request_count or incident_request_count in SECURITY_WINDOW_HOURS"
+      reads: ["POST monitoring.googleapis.com/v3/projects/<p>/timeSeries:list for apigee security score / detected_request_count / incident_request_count"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_security_score.sh query(): curl -s 2>/dev/null, `|| _resp=''` then `{}` ; latest_value/sum_value jq || echo '' -> 'No security/score data returned ... raising nothing' (explicit by design: absence is not unhealthy)"
+      notes: "Requires Advanced API Security metrics; not enabled = silent. Uses GNU date -d with BSD fallback. Query is a POST on a read API (read-only)."
+    - title: Check Apigee Target Server and Virtual Host Configuration
+      at: runbook.robot:125
+      asserts: "A target server has sSLInfo.enabled != true (plaintext backend connection)"
+      reads: ["GET organizations/<org>/environments", ".../environments/<env>/targetservers", ".../targetservers/<ts>"]
+      permissions: [apigee.environments.list, apigee.targetservers.list, apigee.targetservers.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_target_vhost_config.sh: empty environments list -> 'no environments; nothing to evaluate' (:~30); empty target server list or unreadable target server -> skipped (`continue`); apigee_get swallows errors"
+      notes: "Task name mentions virtual hosts but only target-server TLS is checked (no virtualhost/envgroup logic). Dedicated keystore expiry task was intentionally removed (duplicates gcp-apigee-environment-health)."
+  bundleNotes: "Least hardened apigee bundle. apigee_common.sh:107-110 apigee_get = curl -fsS 2>/dev/null returning the (possibly empty) body with exit 0, every script treats empty as 'nothing to evaluate'. Runbook wrapper ignores rc and defaults an unparseable issues file to empty. The only guards are the Suite Initialization token check (sev 1) and per-script token check. Scripts run `set -x` with xtrace suppression around token handling."
+- bundle: gcp-apigee-traffic-health
+  displayName: GCP Apigee Traffic and Performance Health
+  classicResourceTypes: [gcp_apigee_organizations]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource]"
+  sli: false
+  sliAsserts: "no sli.robot"
+  egress: "cloud API (monitoring.googleapis.com, apigee.googleapis.com via curl)"
+  tools: [curl, jq, gcloud, awk, "GNU date -d (BSD -r fallback)"]
+  inputs: [APIGEE_ORG, GCP_PROJECT_ID, ERROR_RATE_THRESHOLD, LATENCY_MS_THRESHOLD, METRIC_WINDOW_MIN, THROUGHPUT_DEVIATION_PCT]
+  tasks:
+    - title: Check Apigee API Error and Fault Rates
+      at: runbook.robot:18
+      asserts: "Per proxy, (5xx + server fault_count) / proxyv2 request_count over METRIC_WINDOW_MIN exceeds ERROR_RATE_THRESHOLD percent"
+      reads: ["GET monitoring v3 projects/<p>/timeSeries apigee.googleapis.com/proxyv2/request_count (+response_code_class=5xx), apigee.googleapis.com/server/fault_count, per proxy from apigee_scope.json"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_error_rates.sh query_metric_count: curl -s 2>/dev/null || echo '{}' then jq '[...] | add // 0' || echo 0 -> Monitoring error = 0 requests = rate 0 = healthy; runbook.robot:30-33 unparseable issues file -> empty list"
+      notes: "Has MOCK_DATA_FILE hook in production script. Proxy list comes from discover_metrics_scope.sh (Suite Init); empty proxy list -> 'nothing to evaluate' exit 0. Discovery failure is raised as discovery_issues.json issues."
+    - title: Check Apigee API Latency Performance
+      at: runbook.robot:51
+      asserts: "Per proxy, p95 of apigee.googleapis.com/proxyv2/latencies_percentile exceeds LATENCY_MS_THRESHOLD ms"
+      reads: ["GET monitoring v3 timeSeries proxyv2/latencies_percentile per proxy"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_latency.sh:133,136 curl 2>/dev/null || echo '{}' ; jq 'max // 0' || echo 0 -> 0 ms = fine"
+      notes: "Takes max of doubleValue points x1000; a metric reported in ms (not s) would be 1000x off - unverified."
+    - title: Check Apigee Throughput and Anomalies
+      at: runbook.robot:84
+      asserts: "Live path: apigee.googleapis.com/environment/anomaly_count > 0 for an environment. (Throughput deviation vs previous window exists only in the MOCK_DATA_FILE branch)"
+      reads: ["GET monitoring timeSeries environment/api_call_count and environment/anomaly_count per environment"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_throughput.sh:153,155 curl 2>/dev/null || echo '{}' ; add // 0 || echo 0 -> anomaly 0 = no issue"
+      notes: "BUG: THROUGHPUT_DEVIATION_PCT and the 'throughput changed sharply' finding are computed only from mock rows (check_throughput.sh:63-99); the live branch (160-180) never computes previous-window deviation, so the documented spike/drop detection does not run in production."
+    - title: Check Apigee Target and Backend Performance
+      at: runbook.robot:117
+      asserts: "Per target server, 5xx / targetv2 request_count over the window exceeds ERROR_RATE_THRESHOLD percent"
+      reads: ["GET monitoring timeSeries apigee.googleapis.com/targetv2/request_count (+response_code_class=5xx) per target server"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_target_performance.sh:143,145 curl 2>/dev/null || echo '{}' ; add // 0 || echo 0 -> total 0 -> err_rate 0"
+      notes: "Report row has p95_latency_ms hard-coded 0 (latency not measured despite the task title/doc). Target servers come from discovery (environment targetservers)."
+  bundleNotes: "Monitoring-only bundle (no apigee runtime Management reads except discovery). Discovery (discover_metrics_scope.sh) raises issues on missing token/org/error response but api_get converts curl failure to '{}' so a failed environments or targetservers list yields an empty scope = 'nothing to evaluate'. Every check script contains a MOCK_DATA_FILE test branch in the production path. Suite Init runs discovery and surfaces discovery_issues.json."
+- bundle: gcp-artifact-registry-governance
+  displayName: GCP Artifact Registry Governance & Cleanup
+  classicResourceTypes: [gcp_artifactregistry_repositories]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project, resource]"
+  sli: true
+  sliAsserts: "Mean of 4 binary scores (cleanup policies, stale images, untagged images, storage utilization), 0 if any issue or script rc!=0 or issue-file unparseable. False-pass status: confirmed (list failures and an empty repository list produce no issues -> score 1; discovery issues are never read)"
+  egress: "cloud API (artifactregistry.googleapis.com via gcloud; gcr.io and artifacts.<project>.appspot.com for legacy check)"
+  tools: [gcloud, jq, awk, "GNU date -d"]
+  inputs: [GCP_PROJECT_ID, ARTIFACT_REGISTRY_LOCATIONS, ARTIFACT_REGISTRY_REPOSITORIES, ARTIFACT_REGISTRY_LOCATION, ARTIFACT_REGISTRY_REPOSITORY, STALE_IMAGE_THRESHOLD_DAYS, UNTAGGED_IMAGE_THRESHOLD_DAYS, STORAGE_UTILIZATION_THRESHOLD_GB, MIN_TAGS_TO_KEEP]
+  tasks:
+    - title: Check Cleanup Policy Configuration for Repositories
+      at: runbook.robot:19
+      asserts: "A Docker repository has no cleanup policies, or lacks an untagged-manifest rule or an aged-tag rule, or has dry-run on"
+      reads: ["gcloud artifacts repositories describe <repo> --location --format=json"]
+      permissions: [artifactregistry.repositories.get, artifactregistry.repositories.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "gcp-artifact-registry-helpers.sh:119 `gcloud artifacts locations list 2>/dev/null || true` and discover_repositories `continue` on a failed repositories list (issue goes to discover_repositories_issues.json which no runbook or SLI step reads) -> zero repositories -> no issues. The describe failure itself is raised as an issue (check-cleanup-policies.sh)."
+      notes: "Runbook raises an issue on rc!=0. Non-Docker repositories are skipped. Discovery runs in Suite Initialization (runbook.robot:431) with its return value ignored."
+    - title: Identify Stale Container Images
+      at: runbook.robot:70
+      asserts: "A Docker repository has tagged images not updated for STALE_IMAGE_THRESHOLD_DAYS"
+      reads: ["gcloud artifacts docker images list <repo path> --include-tags --limit=500 --format=json"]
+      permissions: [artifactregistry.dockerimages.list, artifactregistry.repositories.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "gcp-artifact-registry-helpers.sh:215 list_docker_images ... 2>/dev/null || echo '[]' -> permission error = no images = no stale images"
+      notes: "Limited to IMAGE_LIST_MAX=500 images per repository (silent truncation, sorting undefined). days_since_timestamp falls back to now (age 0) if date parsing fails (BSD -j form lacks timezone)."
+    - title: Identify Untagged Images Consuming Storage
+      at: runbook.robot:121
+      asserts: "A Docker repository has untagged images older than UNTAGGED_IMAGE_THRESHOLD_DAYS"
+      reads: ["gcloud artifacts docker images list ... --include-tags"]
+      permissions: [artifactregistry.dockerimages.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "same list_docker_images ... || echo '[]' (helpers:215)"
+      notes: "Same 500-image cap. Multi-arch child manifests appear as untagged and can be over-counted (unverified)."
+    - title: Detect Legacy Container Registry Usage
+      at: runbook.robot:172
+      asserts: "gcr.io/<project> still holds images or legacy artifacts*.appspot.com buckets hold objects (sev 2 if no Artifact Registry repos exist)"
+      reads: ["gcloud container images list --repository=gcr.io/<project>", "gcloud storage ls gs://[us.|eu.|asia.]artifacts.<project>.appspot.com/ and -r gs://.../**"]
+      permissions: [storage.objects.list, storage.buckets.get, artifactregistry.repositories.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "detect-legacy-gcr-usage.sh `gcloud container images list ... 2>/dev/null` inside `if` and `gcloud storage ls ... >/dev/null 2>&1` -> any error (denied, API disabled) = zero legacy usage = no issue"
+      notes: "Recursive object count `gcloud storage ls -r` of whole legacy bucket can be very slow/large. Raises a sev-4 'nothing found' note when no AR repos and no legacy found."
+    - title: Report Artifact Registry Storage Utilization by Repository
+      at: runbook.robot:223
+      asserts: "Estimated repository size (max of repo sizeBytes and sampled image bytes) exceeds STORAGE_UTILIZATION_THRESHOLD_GB (0 disables)"
+      reads: ["repositories list sizeBytes (discovery)", "gcloud artifacts docker images list"]
+      permissions: [artifactregistry.repositories.list, artifactregistry.dockerimages.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "helpers:215 list_docker_images || echo '[]' ; discovery repos list failure -> continue; threshold 0 (disables) is allowed"
+      notes: "Writes storage_utilization_report.json. Docker-only image sampling; other formats rely on repo sizeBytes only."
+    - title: Generate Artifact Registry Cleanup Policy Recommendations
+      at: runbook.robot:280
+      asserts: "A Docker repository lacks cleanup-policy coverage (untagged and/or aged); raises a sev-4 recommendation with a suggested policy JSON (apply command printed, not run)"
+      reads: ["gcloud artifacts repositories describe <repo>"]
+      permissions: [artifactregistry.repositories.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "helpers.sh repository_cleanup_policy_gaps: describe failed -> `echo \"\"; return 0` -> empty gaps = 'already covered; no recommendation'"
+      notes: "Duplicates check-cleanup-policies logic. Recommendation only; does not apply."
+  bundleNotes: "Runbook raises an issue on non-zero script rc (hardened) but the scripts themselves swallow the data-producing gcloud calls (helpers:119, :215, :264). Repository discovery is cached per scope key in discovered_repositories.<key>.json and its issues (discover_repositories_issues.json) are never surfaced. SLI tasks Fetch the same cached list. Scripts use set -x."
+- bundle: gcp-artifact-registry-spend-analysis
+  displayName: GCP Artifact Registry Spend Analysis
+  classicResourceTypes: [project]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project]; baseName gcp-artifact-registry-spend (resource type is the generic 'project', not an artifact registry type)"
+  sli: true
+  sliAsserts: "Mean of 3 binary scores (anomaly spike, MoM growth, project concentration) from artifact-spend-sli-check.sh JSON on stdout; unparseable output -> 0 (fails closed) and billing-table not found -> default zeros. False-pass status: likely - an empty BigQuery result (wrong project filter, no export rows) gives total 0 and every score 1"
+  egress: "cloud API (BigQuery via bq CLI / python google-cloud-bigquery; billing export table)"
+  tools: [bq, gcloud, jq, bc, awk, "python3 + google-cloud-bigquery (fallback)", "GNU date -d"]
+  inputs: [GCP_PROJECT_IDS, GCP_BILLING_EXPORT_TABLE, GCP_BILLING_QUERY_PROJECT, COST_ANALYSIS_LOOKBACK_DAYS, ARTIFACT_COST_SPIKE_MULTIPLIER, ARTIFACT_MOM_GROWTH_THRESHOLD_PERCENT, ARTIFACT_PROJECT_COST_THRESHOLD_PERCENT, OUTPUT_FORMAT, GCP_ORG_WIDE_REPORT]
+  tasks:
+    - title: Analyze Artifact Registry Spend by Project and SKU
+      at: runbook.robot:19
+      asserts: "Raises only an access issue when the billing export table cannot be found; otherwise produces a spend report (per project/SKU totals with daily/weekly/monthly rollups) with no threshold"
+      reads: ["bq ls (auto-discover gcp_billing_export_v1_* table)", "bq query: SUM(cost)+credits grouped by project/SKU/day over artifact-registry/container-registry SKUs"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list, bigquery.tables.getData, bigquery.jobs.create]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "runbook.robot:30-33 script rc ignored; reads artifact_spend_analysis_output.json if present else '[]' (file never deleted before the run, so a crashed bq query leaves a stale file or none); common.sh run_bq_json_query returns '[]' with rc 1 on failure"
+      notes: "Informational report; real findings only when billing context is missing. If no billing export exists and GCP_BILLING_EXPORT_TABLE is empty it tries `bq ls` across projects (discover_billing_table, 2>/dev/null)."
+    - title: Report Top Artifact Registry Cost Contributors
+      at: runbook.robot:61
+      asserts: "A single project accounts for >= ARTIFACT_PROJECT_COST_THRESHOLD_PERCENT of artifact spend, or legacy Container Registry SKUs have cost > 0"
+      reads: ["bq query (same cost rows over lookback)"]
+      permissions: [bigquery.tables.getData, bigquery.jobs.create]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "same rc-ignored / stale *_output.json / '[]' fallback as the analyze task; threshold default 0 in script disables the share check"
+      notes: "Cost/FinOps observation, not a fault in the source system."
+    - title: Compare Artifact Registry Spend Month-over-Month
+      at: runbook.robot:103
+      asserts: "Last complete month total (or storage / transfer component) grew >= ARTIFACT_MOM_GROWTH_THRESHOLD_PERCENT over the prior month"
+      reads: ["bq query: monthly SUM(cost)+credits for last 3 complete months, total / storage SKUs / transfer SKUs"]
+      permissions: [bigquery.tables.getData, bigquery.jobs.create]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "compare-artifact-spend-mom.sh: `run_bq_json_query | jq -r '.[0].total_cost // 0'` -> failed/empty query = 0, and `if m2_total > 0` guard skips the comparison; runbook ignores rc"
+      notes: "Uses bc for arithmetic (bc must be installed)."
+    - title: Detect Artifact Storage Cost Anomalies
+      at: runbook.robot:145
+      asserts: "A storage SKU's single-day cost is >= ARTIFACT_COST_SPIKE_MULTIPLIER x its 7-day average, or weekly cost >= 1.5x the monthly-implied weekly cost"
+      reads: ["bq query: daily cost per storage SKU over the lookback window"]
+      permissions: [bigquery.tables.getData, bigquery.jobs.create]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "run_bq_json_query returns '[]' on failure (common.sh:~190); empty rows -> no SKUs -> no spike; rc ignored; stale artifact_anomaly_output.json"
+      notes: "Average only includes days with cost > 0."
+    - title: Generate Artifact Registry Spend Optimization Summary
+      at: runbook.robot:187
+      asserts: "Recommendation findings: legacy GCR cost > 0; storage > 60% of artifact spend; vulnerability scanning > 15%; high-cost projects"
+      reads: ["bq query (cost rows over lookback)"]
+      permissions: [bigquery.tables.getData, bigquery.jobs.create]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "same query-failure -> empty rows -> no recommendations; rc ignored; stale artifact_recommendations_output.json"
+      notes: "Advice generator, not a health check."
+  bundleNotes: "Billing-export (BigQuery) bundle; all five runbook scripts follow the same shape: `ensure_billing_context` (loud access issue if table not found) then queries whose failure becomes '[]'/0. Runbook never checks rc and reads a persistent *_output.json that is not cleared, so stale results can masquerade. SLI is the safer half (fails closed on parse failure). The classic resource type is the generic `project`, so one SLX per GCP project is generated (not per repository). Requires GNU or BSD date for ranges."
+- bundle: gcp-bigquery-dataset-health
+  displayName: GCP BigQuery Dataset Health
+  classicResourceTypes: [gcp_bigquery_datasets]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project]"
+  sli: true
+  sliAsserts: "Mean of 5 binary scores (table size, dataset access, expiration, audit logging, table optimization); each 1 if its issues file has 0 entries. Issues file is produced by scripts that treat bq/gcloud errors as an empty dataset list -> score 1. Status: confirmed"
+  egress: "cloud API (bigquery via bq CLI, cloud logging and resourcemanager via gcloud)"
+  tools: [bq, gcloud, jq, python3]
+  inputs: [GCP_PROJECT_ID, TABLE_SIZE_THRESHOLD_GB, TABLE_GROWTH_THRESHOLD_PERCENT, INCLUDE_STREAMING_BUFFER]
+  tasks:
+    - title: Check BigQuery Table Size Trends
+      at: runbook.robot:20
+      asserts: "A table's numBytes exceeds TABLE_SIZE_THRESHOLD_GB (default 100)"
+      reads: ["bq --project_id <p> ls --format=json", "bq ls --format=json <dataset>", "bq show --format=json <dataset>.<table>"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list, bigquery.tables.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_table_size_trends.sh:~7 datasets=$(bq ... ls 2>/dev/null || echo '[]') then 'No datasets found' + '[]' + exit 0; per-table `bq show ... 2>/dev/null` -> empty -> numBytes 0 -> skipped"
+      notes: "Name says 'trends' and TABLE_GROWTH_THRESHOLD_PERCENT/INCLUDE_STREAMING_BUFFER are imported but never used; only an absolute size threshold is checked. `bq ls` returns at most 50 datasets/tables by default (no --max_results), so larger projects are silently truncated. Writes issue JSON via printf (backticks in titles)."
+    - title: Check BigQuery Dataset Access Configuration
+      at: runbook.robot:53
+      asserts: "A dataset ACL contains allUsers/allAuthenticatedUsers (sev high) or a role matching owner|admin|editor"
+      reads: ["bq ls --format=json", "bq show --format=json <dataset> | jq .access"]
+      permissions: [bigquery.datasets.get, bigquery.datasets.getIamPolicy]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_dataset_access.sh: `bq ls 2>/dev/null || echo '[]'` -> 'No datasets found'; `bq show ... 2>/dev/null | jq '.access // []'` -> failed show = no ACL entries = no issue"
+      notes: "Matches role names loosely (regex owner|admin|editor), so legacy basic role OWNER on the dataset creator is flagged on nearly every dataset (false alarms). Same 50-item truncation."
+    - title: Check BigQuery Table Expiration Policies
+      at: runbook.robot:86
+      asserts: "A dataset has no default table expiration, or a table has no expirationTime"
+      reads: ["bq ls", "bq show dataset", "bq ls <dataset>", "bq show <dataset.table>"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list, bigquery.tables.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_table_expiration.sh: bq ls 2>/dev/null || echo '[]' -> 'No datasets found'. (A failed `bq show` yields empty and is reported as 'no expiration', i.e. a false alarm, not a false pass)"
+      notes: "Flags every table and dataset without an expiry, which is a hygiene preference not a fault; very noisy (one issue per table)."
+    - title: Check BigQuery Audit Logging Configuration
+      at: runbook.robot:119
+      asserts: "No Cloud Logging sink exists, or none of the sinks has a filter mentioning bigquery / broad filter (treated as evidence audit logs are captured)"
+      reads: ["gcloud projects get-iam-policy <p> --format=json (fetched but unused)", "gcloud logging sinks list --format=json"]
+      permissions: [logging.sinks.list, resourcemanager.projects.getIamPolicy]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_audit_logging.sh: any broad sink (null/empty filter) or a sink whose filter contains the word bigquery is accepted as 'audit logs captured' without checking auditConfigs / DATA_READ enablement; the IAM policy audit_config is read but never inspected. A sinks list failure (|| echo '[]') produces a false 'no sinks' alarm instead"
+      notes: "Does not actually verify Data Access audit logging (auditConfigs). Exits 0 early after writing the issue file."
+    - title: Analyze BigQuery Table Partitioning and Clustering
+      at: runbook.robot:152
+      asserts: "A table with numBytes > 0 has no time/range partitioning, or is partitioned but not clustered"
+      reads: ["bq ls", "bq ls <dataset>", "bq show <dataset.table>"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list, bigquery.tables.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "bq ls 2>/dev/null || echo '[]' -> 'No datasets found'; bq show 2>/dev/null empty -> numBytes 0 -> `continue`"
+      notes: "Flags any non-empty unpartitioned table regardless of size ('Large table' wording but no size floor). Views/external tables numBytes 0 are skipped."
+    - title: Generate BigQuery Dataset Health Summary Report
+      at: runbook.robot:185
+      asserts: "No fault assertion; builds a summary (dataset/table counts, total storage, datasets without default expiration, largest tables)"
+      reads: ["bq ls", "bq show <dataset>", "bq ls <dataset>", "bq show <dataset.table>"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list, bigquery.tables.get]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "generate_dataset_summary.sh: errors -> '[]' / empty -> a summary with zero datasets is emitted as a valid report"
+      notes: "Writes scratch files to fixed /tmp paths (/tmp/bq_summary_parts.jsonl, bq_largest_tables.jsonl): not safe for concurrent runs. Report only."
+  bundleNotes: "Oldest-style bundle: scripts never check the bq exit status; every list/show is `2>/dev/null || echo '[]'`; runbook ignores returncode and defaults an unparseable issues file to empty. The task docs claim 'trends'/'streaming buffer' analysis that is not implemented. `bq ls` pagination default (50) means projects with >50 datasets/tables are partially inspected. SLI (cat <file> | jq length) fails loudly only if the file is missing."
+- bundle: gcp-bigquery-job-health
+  displayName: GCP BigQuery Job Health
+  classicResourceTypes: [project]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project] (generic 'project' resource type)"
+  sli: true
+  sliAsserts: "Mean of 3 binary scores (success rate, slow jobs, slot contention) from each script's output-issues file; unparseable file -> 0 (fails closed). False-pass status: likely - bq failure is raised as an issue (good) but queries are hard-wired to region-us so non-US projects see zero jobs = 100% success"
+  egress: "cloud API (BigQuery via bq CLI)"
+  tools: [bq, jq, bc]
+  inputs: [GCP_PROJECT_ID, JOB_LOOKBACK_HOURS, SUCCESS_RATE_THRESHOLD, SLOW_JOB_DURATION_MINUTES, SLOT_CONTENTION_THRESHOLD]
+  tasks:
+    - title: Check BigQuery Job Success Rate
+      at: runbook.robot:19
+      asserts: "Success rate of QUERY jobs in JOBS_BY_PROJECT over JOB_LOOKBACK_HOURS is below SUCCESS_RATE_THRESHOLD percent (only when total_jobs > 0)"
+      reads: ["bq query INFORMATION_SCHEMA.JOBS_BY_PROJECT (`<p>.region-us`) COUNT/COUNTIF error_result"]
+      permissions: [bigquery.jobs.create, bigquery.jobs.listAll]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_job_success_rate.sh:~13 hard-coded `region-us` INFORMATION_SCHEMA: a project whose jobs run in EU/other regions returns 0 rows, `.success_rate // 100` -> 'HEALTHY'; also `total_jobs > 0` guard. A bq failure IS raised as an issue (exit 0 with issue JSON)."
+      notes: "Only job_type = 'QUERY' is counted (load/copy/extract jobs ignored). bq query itself creates a (billed, tiny) query job. Runbook defaults unparseable output file to empty and the output file is not removed before the run (stale risk); ISSUE rc not checked."
+    - title: Analyze Failed BigQuery Job Error Patterns
+      at: runbook.robot:55
+      asserts: "Any failed QUERY job exists in the lookback window; raises one issue per error_result.reason with a severity map (quotaExceeded, accessDenied, invalidQuery, timeout, ...)"
+      reads: ["bq query JOBS_BY_PROJECT GROUP BY error_result.reason"]
+      permissions: [bigquery.jobs.create, bigquery.jobs.listAll]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "same hard-coded region-us -> 'No failed jobs found' for non-US; bq failure is raised as an issue"
+      notes: "Any failed job (even a user typo, invalidQuery) raises an issue regardless of rate."
+    - title: Identify Slow Running BigQuery Jobs
+      at: runbook.robot:91
+      asserts: "QUERY jobs whose end_time - start_time exceeds SLOW_JOB_DURATION_MINUTES in the lookback (LIMIT 50); severity by count (>20 sev4, >5 sev3)"
+      reads: ["bq query JOBS_BY_PROJECT with duration filter"]
+      permissions: [bigquery.jobs.create, bigquery.jobs.listAll]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "hard-coded region-us -> zero rows = 'No slow jobs'; bq failure raised as an issue"
+      notes: "Completed jobs only (end_time must be non-null); jobs still running past the threshold are not counted."
+    - title: Check BigQuery Job Slot Contention
+      at: runbook.robot:127
+      asserts: "Hourly SUM(period_slot_ms) from JOBS_TIMELINE exceeds SLOT_CONTENTION_THRESHOLD (default 1,000,000 ms) in any of the last 48 hours"
+      reads: ["bq query INFORMATION_SCHEMA.JOBS_TIMELINE (region-us) grouped by hour"]
+      permissions: [bigquery.jobs.create, bigquery.jobs.listAll]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "hard-coded region-us -> no rows -> 'no slot contention'; bq failure raised as an issue (script blames a missing reservation)"
+      notes: "Measures slot-ms consumed per hour, which is usage, not contention (no wait/queue measure, no comparison with reservation capacity). Message claims JOBS_TIMELINE needs a reservation, which is not true for on-demand projects (unverified)."
+  bundleNotes: "Better than the dataset-health bundle: bq query failure is detected (`if ! query_result=$(bq query ... 2>/dev/null)`) and raised as an issue, but stderr is discarded so the cause is lost. The region is hard-coded to region-us in all four scripts (no input for location). The SLI task list omits error-pattern scoring although its doc mentions it. SLI fails closed on unparseable output."
+- bundle: gcp-bigquery-quota-health
+  displayName: GCP BigQuery Quota Health
+  classicResourceTypes: [gcp_bigquery_datasets]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project]"
+  sli: true
+  sliAsserts: "Mean of 4 binary scores (slot utilization, storage quota, daily query count, dataset/table limits); each 1 when its issues file has 0 entries. Status: confirmed - every script writes [] when its data source failed or returned nothing"
+  egress: "cloud API (bigquery via bq, gcloud bigquery reservations, monitoring.googleapis.com via curl)"
+  tools: [bq, gcloud, jq, curl, python3]
+  inputs: [GCP_PROJECT_ID, SLOT_UTILIZATION_THRESHOLD, STORAGE_QUOTA_THRESHOLD, DAILY_QUERY_THRESHOLD, DATASET_TABLE_THRESHOLD, DAILY_QUERY_LIMIT, BIGQUERY_STORAGE_QUOTA_BYTES]
+  tasks:
+    - title: Check BigQuery Slot Reservation Utilization
+      at: runbook.robot:19
+      asserts: "Reserved slot utilization >= SLOT_UTILIZATION_THRESHOLD percent (sev 3 at >=95), derived from reservation slot_capacity and bigquery.googleapis.com/slots/available_capacity"
+      reads: ["gcloud bigquery reservations list --project=<admin> --location=<BIGQUERY_LOCATION|US> --format=json", "GET monitoring v3 timeSeries bigquery.googleapis.com/slots/available_capacity"]
+      permissions: [bigquery.reservations.list, monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_slot_utilization.sh:~8 `gcloud bigquery reservations list ... 2>/dev/null || echo '[]'` -> capacity 0 -> 'No reservations found. Nothing to monitor.' exit 0; monitoring curl `2>/dev/null || echo ''`; no data -> 'Reporting 0% utilized'"
+      notes: "Unverified: whether `gcloud bigquery reservations` exists as a command group in stock gcloud (bq reservations are normally `bq ls --reservation`); if it does not, this task always reports 'nothing to monitor'. On-demand projects (no reservations) are skipped. Utilization math (capacity - available_capacity) is only valid for a single reservation location. BIGQUERY_ADMIN_PROJECT and BIGQUERY_LOCATION env read but not imported as runbook variables."
+    - title: Check BigQuery Storage Quota
+      at: runbook.robot:52
+      asserts: "Sum of TABLE_STORAGE logical bytes across datasets >= STORAGE_QUOTA_THRESHOLD percent of BIGQUERY_STORAGE_QUOTA_BYTES (default 10 TB)"
+      reads: ["bq ls --format=json", "bq query SELECT SUM(TOTAL_LOGICAL_BYTES) FROM `<p>.<dataset>.INFORMATION_SCHEMA.TABLE_STORAGE` per dataset"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list, bigquery.jobs.create, bigquery.tables.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_storage_quota.sh:~20-30 per-dataset `bq query ... 2>/dev/null || echo ''` -> l=p=0 -> 'No storage data reported' -> []; bq ls failure also -> 'No datasets found or bq ls failed' -> []"
+      notes: "Likely never returns data: TABLE_STORAGE is believed to be a region-qualified view (`region-us.INFORMATION_SCHEMA.TABLE_STORAGE`) not dataset-qualified (unverified). The 10 TB 'quota' default is an assumption; BigQuery has no per-project storage quota of that kind. 50-dataset `bq ls` default page applies."
+    - title: Check BigQuery Query Per-Day Limit
+      at: runbook.robot:85
+      asserts: "Count of QUERY jobs created today (JOBS_BY_PROJECT, region-us) >= DAILY_QUERY_THRESHOLD percent of DAILY_QUERY_LIMIT (default 100000)"
+      reads: ["bq query COUNT(*) FROM `<p>.region-us.INFORMATION_SCHEMA.JOBS_BY_PROJECT` WHERE creation_time >= today AND job_type='QUERY'"]
+      permissions: [bigquery.jobs.create, bigquery.jobs.listAll]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_query_daily_limit.sh:~16 `bq query ... 2>/dev/null | jq -r '.[0].cnt // 0'` -> failure (or non-US region) -> 0 (pipefail then set -e aborts only if the pipeline fails, leaving a stale/missing output file that runbook defaults to empty)"
+      notes: "Hard-coded region-us. DAILY_QUERY_LIMIT is a user-supplied number, not read from any GCP quota (BigQuery has no default per-day query-count limit; it has custom byte quotas). Compares a count to an invented limit."
+    - title: Check BigQuery Dataset and Table Limits
+      at: runbook.robot:118
+      asserts: "A dataset's table count or the project's dataset count is >= DATASET_TABLE_THRESHOLD percent of hard-coded caps (10000 tables/dataset, 10000 datasets/project)"
+      reads: ["bq ls --format=json", "bq ls --format=json <dataset>"]
+      permissions: [bigquery.datasets.get, bigquery.tables.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_dataset_table_limits.sh:~8 `bq ls 2>/dev/null || echo '[]'` -> 'No datasets found' -> []; per-dataset ls `|| echo '[]'` -> 0 tables"
+      notes: "`bq ls` pages at 50 by default so counts above 50 are capped and never approach 80% of 10000: this check cannot trigger in practice. Cap values are assumptions (unverified against GCP documented limits)."
+  bundleNotes: "Quota-themed but mostly checks invented limits (10 TB storage, 100k queries/day, 10k tables) rather than real GCP quotas (no serviceusage / consumer quota API is read). All four scripts use `2>/dev/null || echo ...`; none checks the exit status of bq/gcloud; runbook ignores rc and treats a parse failure of the issues file as empty. SLI uses `cat file | jq length` so a missing file fails loudly but a stale one scores as truth."
+- bundle: gcp-bucket-health
+  displayName: GCP Storage Bucket Health
+  classicResourceTypes: [gcp_storage_buckets]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project]; also emits an slo"
+  sli: true
+  sliAsserts: "Mean of 3 binary scores: any bucket > USAGE_THRESHOLD TB (default 0.5), public buckets <= PUBLIC_ACCESS_BUCKET_THRESHOLD (default 0), any bucket total ops/s > OPS_RATE_THRESHOLD (default 10). Status: confirmed - empty bucket list / failed Monitoring or ACL/IAM reads score 1"
+  egress: "cloud API (gcloud storage, gsutil, Cloud Monitoring PromQL endpoint monitoring.googleapis.com/v1/.../prometheus)"
+  tools: [gcloud, gsutil, curl, jq, awk]
+  inputs: [PROJECT_IDS, USAGE_THRESHOLD, OPS_RATE_THRESHOLD, PUBLIC_ACCESS_BUCKET_THRESHOLD]
+  tasks:
+    - title: Fetch GCP Bucket Storage Utilization
+      at: runbook.robot:18
+      asserts: "A bucket's size (Monitoring storage_total_bytes, or gsutil du fallback) is above USAGE_THRESHOLD TB"
+      reads: ["gsutil ls -p <project>", "gcloud services list --enabled (monitoring check)", "POST monitoring.googleapis.com/v1/projects/<p>/location/global/prometheus/api/v1/query storage_googleapis_com:storage_total_bytes", "gsutil du -s gs://<bucket> (fallback)", "gcloud storage buckets describe gs://<bucket>"]
+      permissions: [storage.buckets.list, storage.buckets.get, serviceusage.services.list, monitoring.timeSeries.list, storage.objects.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "bucket_size.sh list_buckets: `gsutil ls -p 2>/dev/null | sed` -> empty on denied -> no buckets -> bucket_report.json '[]'; get_bucket_size_gsutil `gsutil du ... 2>/dev/null ... || true`, `${size_bytes:-0}` -> 0 TB; buckets with no Monitoring series just 'No size data found'"
+      notes: "Runbook ignores script rc and reads bucket_report.json (not removed first, stale risk). Monitoring path uses avg_over_time 30m so new buckets/empty buckets are skipped. gsutil du of a large bucket can take very long (180s task timeout). Task name says 'utilization' but this is absolute size, not a quota."
+    - title: Add GCP Bucket Storage Configuration to Report
+      at: runbook.robot:49
+      asserts: "None; adds each bucket's `gcloud storage buckets describe` JSON to the report"
+      reads: ["gsutil ls -p <project>", "gcloud storage buckets describe gs://<bucket> --format=json"]
+      permissions: [storage.buckets.list, storage.buckets.get]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "bucket_details.sh: describe `2>/dev/null` and `[ -n metadata ]` -> unreadable bucket silently omitted; no issues are raised by design"
+      notes: "Report-only; Documentation is copy-pasted from the utilization task."
+    - title: Check GCP Bucket Security Configuration
+      at: runbook.robot:60
+      asserts: "A bucket is public (allUsers/allAuthenticatedUsers in IAM policy when uniform access is on, or in ACLs otherwise); raised when public count > PUBLIC_ACCESS_BUCKET_THRESHOLD"
+      reads: ["gsutil ls -p <project>", "gcloud storage buckets describe gs://<bucket> --format=json", "gcloud storage buckets get-iam-policy gs://<bucket>", "gsutil acl get gs://<bucket>"]
+      permissions: [storage.buckets.list, storage.buckets.get, storage.buckets.getIamPolicy]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_security.sh: `gcloud storage buckets get-iam-policy ... 2>/dev/null || echo '{}'` and `gsutil acl get ... 2>/dev/null || echo '[]'` -> permission error = 'not publicly accessible'; `gsutil ls -p ... 2>/dev/null` empty -> 'No security issues found'; describe failure -> 'Error fetching settings' + return (skipped)"
+      notes: "Task doc claims risky IAM permissions and encryption are checked; encryption is only echoed and no risky-role check exists. A PUBLIC_ACCESS_BUCKET_THRESHOLD above 0 suppresses all findings. Does not check public access prevention (iamConfiguration.publicAccessPrevention) or conditional bindings."
+    - title: Fetch GCP Bucket Storage Operations Rate
+      at: runbook.robot:96
+      asserts: "A bucket's 30-minute rate of read+write API requests exceeds OPS_RATE_THRESHOLD ops/s"
+      reads: ["gsutil ls -p <project>", "PromQL query storage_googleapis_com:api_request_count read and write rates (Cloud Monitoring prometheus endpoint)", "gcloud storage buckets describe"]
+      permissions: [storage.buckets.list, storage.buckets.get, serviceusage.services.list, monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "bucket_ops_costs.sh: read_ops/write_ops `select(...) | .ops // 0 | tonumber | round`, `${read_ops:-0}` -> a Monitoring error response parses to empty -> 0 ops; projects without the Monitoring API enabled are silently skipped ('Monitoring API is not enabled')"
+      notes: "rate() is rounded to integer ops/s before comparing, so rates below 0.5 round to 0. The token fetch failure exits 1 (loud)."
+  bundleNotes: "Bash scripts, first generation. Runbook tasks do not check rc; two tasks hard-fail (json.loads error) when the report file is absent but read stale files otherwise. Bucket enumeration is `gsutil ls -p <project> 2>/dev/null` everywhere, so any listing failure means 'no buckets, no problems'. PROJECT_IDS accepts a comma list although the SLX is per-bucket-resource-type with qualifier project. The generation rule matches on gcp_storage_buckets yet the scripts re-enumerate all buckets in the project (not the matched bucket)."
+- bundle: gcp-cloud-composer-health
+  displayName: GCP Cloud Composer Health
+  classicResourceTypes: [gcp_composer_environments]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource, project]; baseName gcp-composer-health"
+  sli: true
+  sliAsserts: "Mean of 5 binary scores (env state, config, DAG/scheduler, worker/queue, error logs), each 1 when its issues file has 0 entries; an empty/missing file explicitly scores 0 issues = 1 (runbook `Set Variable If '${count}' == '' 0`). Status: confirmed"
+  egress: "cloud API (composer, logging, monitoring via gcloud/curl) plus HTTPS to each environment's Airflow web server (airflowUri, /api/v1)"
+  tools: [gcloud, curl, jq, awk, sed]
+  inputs: [GCP_PROJECT_ID, ENV_NAME, LOCATIONS, LOG_LOOKBACK_WINDOW_DAYS, STALE_QUEUE_AGE_MINUTES]
+  tasks:
+    - title: Check Cloud Composer Environment Health State
+      at: runbook.robot:19
+      asserts: "A Composer environment's control-plane state is not RUNNING, or Monitoring web_server/health reports unhealthy samples in the last 15m"
+      reads: ["gcloud composer environments list --locations=<LOCATIONS> --format=json", "gcloud composer environments describe --format=value(state)", "POST monitoring.googleapis.com/v3/projects/<p>/timeSeries:query web_server/health"]
+      permissions: [composer.environments.list, composer.environments.get, monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_env_state.sh:~20 `gcloud composer environments list ... 2>/dev/null || echo '[]'` -> 'No Cloud Composer environments found' -> [] ; get_web_server_health curl 2>/dev/null | jq -> empty -> total 0 -> skipped. (describe failure becomes state UNKNOWN which IS flagged)"
+      notes: "LOCATIONS default us-central1 only, so environments in other regions are silently not seen. Runbook ignores rc and falls back to empty list on parse failure."
+    - title: Fetch Cloud Composer Environment Configurations
+      at: runbook.robot:52
+      asserts: "Environment uses a composer-1 image, an Airflow major < 2, or has no Airflow web server URI"
+      reads: ["gcloud composer environments list", "gcloud composer environments describe --format=json"]
+      permissions: [composer.environments.list, composer.environments.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "fetch_env_config.sh: list `2>/dev/null || echo '[]'` -> 'No environments'; describe `2>/dev/null || echo '{}'` -> empty image_version -> no version issue (only the 'no Airflow URI' issue would fire)"
+      notes: "Configuration dump plus version-deprecation heuristic; no drift comparison despite the bundle doc saying 'configuration drift'."
+    - title: Check Cloud Composer DAG and Scheduler Health
+      at: runbook.robot:85
+      asserts: "Airflow web server URI missing/unreachable, /api/v1/health scheduler or metadatabase status != healthy, or failed DAG runs (and their failed task instances) exist"
+      reads: ["gcloud composer environments describe --format=value(config.airflowUri)", "Airflow REST: GET /api/v1/health, /api/v1/dags?limit=200, /api/v1/dags/<id>/dagRuns?state=failed&limit=100, /dagRuns/<run>/taskInstances"]
+      permissions: [composer.environments.get, composer.environments.list]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_jobs_and_scheduler.sh: unreachable web server / empty dag list are raised as issues (good), but per-DAG `[ -z \"$dag_runs\" ] && continue` and `[ -z \"$ti\" ] && continue` silently skip a failed Airflow API call; env list `|| echo '[]'` -> none found"
+      notes: "Needs network path from the runner to the Airflow web UI (private IP/IAP Composer environments will report 'unreachable') and the SA must have Airflow API access (Composer User/Airflow role) - the IAM list above is only the GCP side. failed dagRuns query has no time window (all-time failed runs, limit 100), so one ancient failure raises a standing issue. Limit 200 DAGs; no pagination."
+    - title: Check Cloud Composer Worker and Queue Health
+      at: runbook.robot:118
+      asserts: "Queued task instances across running DAG runs exceed 2x running task instances (queue backlog), or an environment has no configured worker count (not set/0)"
+      reads: ["Airflow REST: /api/v1/dags, dagRuns?state=running, taskInstances", "gcloud composer environments describe --format=json (workloadsConfig.worker)"]
+      permissions: [composer.environments.get, composer.environments.list]
+      scope: project
+      readOnly: true
+      falsePass: likely
+      falsePassWhy: "check_workers_and_queues.sh: `[ -z \"$dag_runs\" ] && continue` / `[ -z \"$ti\" ] && continue` skip failed API calls; queue test requires queued_sum>0 and running_sum>0; describe `|| echo '{}'` -> worker 'not set' raises issue (false alarm)"
+      notes: "STALE_QUEUE_AGE_MINUTES is passed into the issue text but no task age is measured (only counts). Composer 1 environments have no workloadsConfig, so they always flag 'not set'."
+    - title: Get Error Logs for Cloud Composer Environments
+      at: runbook.robot:151
+      asserts: "Any ERROR-or-higher cloud_composer_environment log entry exists in the last LOG_LOOKBACK_WINDOW_DAYS days (grouped per environment with sample messages)"
+      reads: ["gcloud logging read 'resource.type=cloud_composer_environment AND severity>=ERROR' --freshness=<N>d --limit=1000"]
+      permissions: [logging.logEntries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "get_error_logs.sh:~12 `gcloud logging read ... 2>/dev/null || echo '[]'` -> 'No Cloud Composer error logs found' -> []"
+      notes: "Default lookback 14 days, so a task failing once 13 days ago keeps the issue alive (noisy). Limit 1000 entries."
+    - title: Generate Cloud Composer Health Summary
+      at: runbook.robot:184
+      asserts: "Environment state != RUNNING (summary table; duplicate of the state task)"
+      reads: ["gcloud composer environments list", "gcloud composer environments describe x4 per env (state, imageVersion, worker.count, scheduler.count)"]
+      permissions: [composer.environments.list, composer.environments.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "composer_health_summary.sh: list `|| echo '[]'` -> 'No environments'; describe `|| echo UNKNOWN` fields then `state != RUNNING` flags (UNKNOWN is flagged)"
+      notes: "Four separate describe calls per environment. Re-raises the RUNNING check already done by the first task."
+  bundleNotes: "Every list/describe is `2>/dev/null || echo ...`; no script checks gcloud rc; runbook ignores rc and treats unparseable issues files as empty; SLI treats an empty file as zero issues. Default LOCATIONS=us-central1 is a silent scope limit. Stray file error_logs_issues.json.tmp (977 bytes, a leftover run artifact) is checked in at the bundle root. Airflow REST calls use the gcloud access token against airflowUri."
+- bundle: gcp-cloud-composer-performance
+  displayName: GCP Cloud Composer Performance & Capacity
+  classicResourceTypes: [gcp_composer_environments]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [resource, project]"
+  sli: true
+  sliAsserts: "Mean of 3 dimension scores (worker capacity: CPU avg >= UTILIZATION_THRESHOLD_PERCENT or >=50% of samples above; queue health: avg queue depth >= QUEUE_BACKLOG_THRESHOLD; utilization balance: CPU avg < UNDERUTILIZATION_THRESHOLD_PERCENT), averaged over environments. No data scores 1 (`if $n == 0 then 1`, compute_composer_sli.sh:109-113) and zero environments scores health 1.0. Status: confirmed"
+  egress: "cloud API (composer list via gcloud, Cloud Monitoring MQL timeSeries:query via curl)"
+  tools: [gcloud, curl, jq]
+  inputs: [GCP_PROJECT_ID, ENV_NAME, LOCATIONS, LOOKBACK_WINDOW_MINUTES, BASELINE_WINDOW_MINUTES, UTILIZATION_THRESHOLD_PERCENT, UNDERUTILIZATION_THRESHOLD_PERCENT, DELTA_THRESHOLD_PERCENT, QUEUE_BACKLOG_THRESHOLD]
+  tasks:
+    - title: Analyze Cloud Composer Worker Utilization
+      at: runbook.robot:20
+      asserts: "Worker CPU quota usage / quota (%) averages >= UTILIZATION_THRESHOLD_PERCENT or is above it for >= SATURATION_PERCENT_OF_TIME (50%) of samples over LOOKBACK_WINDOW_MINUTES (default 1440)"
+      reads: ["POST monitoring v3 projects/<p>/timeSeries:query MQL workloads_cpu_quota_usage, workloads_cpu_quota, executor/running_tasks per environment"]
+      permissions: [monitoring.timeSeries.list, composer.environments.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "composer_metrics_common.sh mql_query: no token -> '{\"timeSeriesData\":[]}'; `curl -s --fail ... 2>/dev/null || echo '{\"timeSeriesData\":[]}'`; analyze_worker_utilization.sh verdict stays 'NO DATA' and no issue is added when cpu_count == 0; runbook.robot parse failure -> empty"
+      notes: "Loops over environments in RESOURCE_LIST from discovery; per-env MQL filter uses ENV_NAME interpolated into the query text unescaped."
+    - title: Analyze Cloud Composer Scheduler and Queue Utilization
+      at: runbook.robot:59
+      asserts: "task_queue_length is >= QUEUE_BACKLOG_THRESHOLD for >= QUEUE_BACKLOG_PERCENT_OF_TIME (30%) of samples; optionally scheduler_heartbeat_count < SCHEDULER_HEARTBEAT_MIN (disabled when 0)"
+      reads: ["MQL fetch composer.googleapis.com/environment/task_queue_length and scheduler_heartbeat_count"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "same mql_query -> empty series; 'NO DATA' verdict raises nothing (analyze_scheduler_and_queues.sh `if [ \"$queue_count\" -gt 0 ]`)"
+      notes: "Scheduler heartbeat check is off by default (SCHEDULER_HEARTBEAT_MIN=0), so a stalled scheduler is not detected. SCHEDULER_HEARTBEAT_MIN / QUEUE_BACKLOG_PERCENT_OF_TIME / SATURATION_PERCENT_OF_TIME are not exposed as runbook inputs."
+    - title: Detect Cloud Composer Over-Provisioning
+      at: runbook.robot:97
+      asserts: "Worker CPU usage/quota averages below UNDERUTILIZATION_THRESHOLD_PERCENT (idle capacity, cost)"
+      reads: ["MQL workloads_cpu_quota_usage and workloads_cpu_quota"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "same mql_query -> empty -> 'NO DATA' -> no issue (for this check missing data is a no-finding, not a false alarm)"
+      notes: "Cost/FinOps finding, not a fault."
+    - title: Detect Cloud Composer Usage Deltas Over Normal Baseline
+      at: runbook.robot:135
+      asserts: "Current-window CPU utilization or queue depth deviates from the BASELINE_WINDOW_MINUTES (default 10080 = 7d) average by more than DELTA_THRESHOLD_PERCENT"
+      reads: ["MQL for current window and baseline window of cpu quota usage/quota and task_queue_length"]
+      permissions: [monitoring.timeSeries.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "detect_usage_deltas.sh:54,61 mql_query | extract_point_values | jq 'if length>0 then add/length else 0' -> failed query = 0 current and 0 baseline = no delta"
+      notes: "Baseline includes the current window; division by a zero baseline is guarded."
+  bundleNotes: "Monitoring-only bundle. composer_metrics_common.sh converts every auth/API failure to an empty timeseries, and every analysis treats empty as NO DATA / healthy. Suite Initialization runs discover_composer_environments.sh, which writes '[]' and exits 0 on a failed `composer environments list` (LOCATIONS default us-central1), producing zero iterations (tasks pass vacuously). Runbook ignores script rc. Environment name is interpolated into MQL unescaped."
+- bundle: gcp-cloud-function-health
+  displayName: GCP Cloud Function Health
+  classicResourceTypes: [gcp_functions_functions, gcp_functionsv2_functions]
+  matchHints: "pattern .+ on property project_id (substring); level of detail basic; qualifiers [project]; also emits an slo"
+  sli: true
+  sliAsserts: "Binary: 1 only if all 4 dimensions pass (no functions in non-ACTIVE state, no public invokers, no failed builds/deployments, gen2 Cloud Run services Ready with traffic on latest). Status: confirmed - IAM, build and gen2 dimensions read files written by scripts that turn gcloud failures into an empty list; the function-state dimension fails loudly on an empty gcloud output"
+  egress: "cloud API (cloudfunctions, run, cloudbuild, logging via gcloud)"
+  tools: [gcloud, jq, awk, sed, xargs]
+  inputs: [GCP_PROJECT_ID]
+  tasks:
+    - title: List Unhealthy Cloud Functions
+      at: runbook.robot:18
+      asserts: "Any Cloud Function (gen1 or gen2) matches gcloud filter `state!=ACTIVE OR status!=ACTIVE`; one sev-1 issue per function with state messages and tailored next steps"
+      reads: ["gcloud functions list --filter='state!=ACTIVE OR status!=ACTIVE' --format=json|table --project"]
+      permissions: [cloudfunctions.functions.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Output is parsed with json.loads in Robot, so a failing gcloud (empty stdout) raises an error instead of reporting zero. Gen1 functions have `status` and gen2 have `state`; the OR filter's behaviour on the field a given generation lacks is unverified (could flag every function). Sev 1 for any non-active function. Runs gcloud list three times."
+    - title: Get Error Logs for Unhealthy Cloud Functions
+      at: runbook.robot:84
+      asserts: "An unhealthy function has severity=ERROR log entries in the last 14 days (cloud_function or cloud_run_revision resource types)"
+      reads: ["gcloud functions list --filter=... --format=json", "gcloud logging read 'severity=ERROR AND (resource.type=cloud_function ... OR resource.type=cloud_run_revision ...)' --limit 50 --freshness=14d --format=json"]
+      permissions: [cloudfunctions.functions.list, logging.logEntries.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Both list and log read are json.loads-parsed, so command failures raise. Only functions already flagged unhealthy are searched for errors, so a healthy-but-erroring function is not reported. Function names are interpolated into shell commands unquoted."
+    - title: Fetch Cloud Function Configurations
+      at: runbook.robot:151
+      asserts: "A function has no dedicated service account (falls back to default compute/appspot SA)"
+      reads: ["gcloud functions list --format=json", "gcloud functions describe <name> --region [--gen2] --format=json"]
+      permissions: [cloudfunctions.functions.list, cloudfunctions.functions.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "fetch_function_config.sh:~7 `gcloud functions list ... 2>/dev/null || echo '[]'` -> 'No Cloud Functions found' -> []; describe `2>/dev/null || echo '{}'` -> empty SA -> flagged (false alarm)"
+      notes: "Treats an absent serviceAccountEmail as 'default SA'; for gen2 it is under serviceConfig. Runbook ignores rc."
+    - title: Check Cloud Function IAM Policies
+      at: runbook.robot:184
+      asserts: "A function's IAM policy binds allUsers or allAuthenticatedUsers (publicly invocable)"
+      reads: ["gcloud functions list", "gcloud functions get-iam-policy <name> --region [--gen2] --format=json"]
+      permissions: [cloudfunctions.functions.list, cloudfunctions.functions.getIamPolicy]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_function_iam.sh: list `2>/dev/null || echo '[]'` -> 'No Cloud Functions found'; get-iam-policy `2>/dev/null || echo '{}'` -> no bindings -> not public"
+      notes: "Any public invoker is flagged regardless of whether public is intended (e.g. public webhook). Ignores Cloud Run service-level IAM for gen2 (run.invoker on the service) and ingress settings."
+    - title: Check Gen2 Cloud Run Service Health
+      at: runbook.robot:217
+      asserts: "Cloud Run service backing a gen2 function has Ready != True, or its latest ready revision receives 0% traffic"
+      reads: ["gcloud functions list (filter GEN_2 in jq)", "gcloud run services describe <name> --region --format=json"]
+      permissions: [cloudfunctions.functions.list, run.services.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_gen2_run_health.sh: list `|| echo '[]'` -> 'No gen2 Cloud Functions found'; describe `2>/dev/null || echo '{}'` -> ready 'Unknown' != True -> flagged (a failure is a false ALARM, but a failed function list is a false pass)"
+      notes: "Assumes the Cloud Run service name equals the function name (lower-cased id)."
+    - title: Check for Failed Cloud Function Builds
+      at: runbook.robot:250
+      asserts: "Any function appears non-ACTIVE (jq `.state != \"ACTIVE\" or .status != \"ACTIVE\"`), or any of the last 20 Cloud Build jobs with status=FAILURE exists in the project"
+      reads: ["gcloud functions list --format=json", "gcloud builds list --filter=status=FAILURE --limit=20 --format=json"]
+      permissions: [cloudfunctions.functions.list, cloudbuild.builds.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_function_builds.sh: both lists `2>/dev/null || echo '[]'` -> no issues. Conversely the jq predicate is true whenever either field is absent (gen1 lacks .state, gen2 lacks .status), so it likely flags every function as a deployment problem (false alarm)"
+      notes: "BUG (jq semantics): null != \"ACTIVE\" is true, so functions with only one of state/status are always raised. The Cloud Build FAILURE list is project-wide (not filtered to functions) and unbounded in age, so a standing old failed build keeps the issue open. Needs cloudbuild API enabled."
+    - title: Check Cloud Function Scaling and Timeout Configuration
+      at: runbook.robot:283
+      asserts: "An HTTP function has a timeout > HTTP_TIMEOUT_WARN_SECONDS (300), or a gen2 function has no maxInstanceCount cap"
+      reads: ["gcloud functions list", "gcloud functions describe <name> --region [--gen2] --format=json"]
+      permissions: [cloudfunctions.functions.list, cloudfunctions.functions.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_function_scaling.sh: list `|| echo '[]'`; describe `2>/dev/null || echo '{}'` -> no timeout, trigger unknown, then an empty maxInstanceCount raises 'no cap' (false alarm)"
+      notes: "HTTP_TIMEOUT_WARN_SECONDS is read from env but not a runbook input. Best-practice / cost finding rather than a fault."
+  bundleNotes: "Mixed: the first two tasks parse gcloud output with json.loads and fail loudly, but all five script-based tasks use `2>/dev/null || echo '[]'` for the list and `|| echo '{}'` for describes, and the runbook ignores script rc. Missing-field failures usually appear as false alarms (empty SA, no cap, not Ready) while a failed top-level list appears as a pass. Resource types include both gen1 and gen2 function types but the SLX is project-scoped (matches on project_id). SLI aggregate is all-or-nothing (1 or 0)."
+- bundle: gcp-cloud-loadbalancer-health
+  displayName: GCP Cloud Load Balancer Health
+  classicResourceTypes: [gcp_compute_forwarding_rules]
+  matchHints: "pattern .+ on name (substring); level of detail basic; qualifiers [project]; also emits an slo"
+  sli: true
+  sliAsserts: "Mean of 4 binary scores (SSL cert expiry, backend health, 5xx ratio, p95 latency), each 1 when its issues file has 0 entries (`jq length file 2>/dev/null || echo 0`). sli.robot never runs discover_loadbalancers.sh, so lb_config.json (with .type) is absent and the SSL/error/latency scripts fall back to raw forwarding rules without a type, evaluating nothing. Status: confirmed"
+  egress: "cloud API (compute via gcloud, monitoring.googleapis.com via curl)"
+  tools: [gcloud, jq, curl, awk, "GNU date -d", "grep -P"]
+  inputs: [GCP_PROJECT_ID, SSL_WARNING_DAYS, ERROR_RATE_THRESHOLD, LATENCY_THRESHOLD_MS, METRIC_LOOKBACK_PERIOD]
+  tasks:
+    - title: Discover GCP Cloud Load Balancers and Configurations
+      at: runbook.robot:18
+      asserts: "Forwarding-rule listing fails (raised as an issue); otherwise inventory only (type HTTPS/HTTP/SSL/TCP/NETWORK, IP, target proxy, backend service)"
+      reads: ["gcloud compute forwarding-rules list --format=json"]
+      permissions: [compute.forwardingRules.list]
+      scope: project
+      readOnly: true
+      falsePass: none
+      falsePassWhy: ""
+      notes: "Writes lb_config.json that every later runbook task depends on. gcloud failure is captured via err.log and raised as an issue, then exit 0. Type is inferred from the target URL string (targetHttpsProxies etc.); internal/regional LBs without a target are labelled NETWORK."
+    - title: Check SSL Certificate Expiry for HTTPS/SSL Load Balancers
+      at: runbook.robot:51
+      asserts: "A certificate attached to a target HTTPS/SSL proxy expires within SSL_WARNING_DAYS (expired is higher severity)"
+      reads: ["lb_config.json (or gcloud compute forwarding-rules list fallback)", "gcloud compute target-https-proxies|target-ssl-proxies describe <proxy>", "gcloud compute ssl-certificates describe <cert>"]
+      permissions: [compute.targetHttpsProxies.get, compute.targetSslProxies.get, compute.sslCertificates.get, compute.forwardingRules.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_ssl_certificates.sh: proxy describe `2>/dev/null | jq ... || echo '[]'` -> `continue`; cert describe `2>/dev/null || echo '{}'` -> empty expireTime -> `continue`; `date -d ... 2>/dev/null || echo ''` -> `continue`; without lb_config.json the fallback list has no `.type` so nothing is selected"
+      notes: "Uses GNU date -d and grep -oP (fails on macOS/BusyBox). Certificates referenced by certificate maps / Certificate Manager are not seen (only sslCertificates on the proxy)."
+    - title: Check Load Balancer Backend Health
+      at: runbook.robot:84
+      asserts: "A backend instance/endpoint in `backend-services get-health` is not HEALTHY (DRAINING sev 2, otherwise higher)"
+      reads: ["gcloud compute backend-services list --format=json", "gcloud compute backend-services get-health <bs> --global|--region --format=json"]
+      permissions: [compute.backendServices.list, compute.backendServices.get, compute.regionBackendServices.get]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_backend_health.sh: get-health `2>/dev/null || echo '{}'` -> 'returned no health status' -> `continue` (error = skipped); backend services with no backends are skipped. The list failure itself IS raised as an issue"
+      notes: "Does not use lb_config.json (lists all backend services in the project, not those behind matched forwarding rules). Serverless NEG / Cloud Run backends return no health status and are silently skipped."
+    - title: Analyze Load Balancer Error Rates via Cloud Monitoring
+      at: runbook.robot:117
+      asserts: "Per forwarding rule, 5xx / total request_count ratio over METRIC_LOOKBACK_PERIOD exceeds ERROR_RATE_THRESHOLD (default 0.01)"
+      reads: ["GET monitoring timeSeries loadbalancing.googleapis.com/https|http/request_count (or compute.googleapis.com/backend/request_count for others) filtered by forwarding_rule_name"]
+      permissions: [monitoring.timeSeries.list, compute.forwardingRules.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_error_rates.sh query_metric_count: curl -s 2>/dev/null || echo '{}' ; jq 'add // 0' || echo 0 -> total 0 -> 'no request data in lookback window' -> `continue` (no issue)"
+      notes: "Token failure IS raised as an issue (exit 0 with issue). For TCP/SSL/NETWORK LBs it queries compute.googleapis.com/backend/request_count with a forwarding_rule_name label that metric does not carry (unverified), so non-HTTP LBs are effectively unmeasured. Uses GNU date -d."
+    - title: Analyze Load Balancer Latency Performance
+      at: runbook.robot:150
+      asserts: "Per forwarding rule, p95 of loadbalancing total_latencies (ms) exceeds LATENCY_THRESHOLD_MS (default 5000)"
+      reads: ["GET monitoring timeSeries loadbalancing.googleapis.com/https|http/total_latencies with ALIGN_PERCENTILE_95"]
+      permissions: [monitoring.timeSeries.list, compute.forwardingRules.list]
+      scope: project
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "check_latency.sh: curl 2>/dev/null || echo '{}' ; jq 'max // 0' || echo 0 -> p95 0 -> 'no latency data' -> `continue`"
+      notes: "For non-HTTP LBs the script queries compute.googleapis.com/backend/request_count and reads .value.doubleValue which a count metric lacks, so it always yields 0 (unmeasured). Token failure raised as issue."
+    - title: Generate Load Balancer Health Summary
+      at: runbook.robot:183
+      asserts: "Builds a per-LB table (SSL/BACKEND/ERROR_RATE/LATENCY/verdict) by counting issues in the other tasks' output files whose title contains the LB name"
+      reads: ["lb_config.json", "ssl_certificate_issues.json, backend_health_issues.json, error_rate_issues.json, latency_issues.json (outputs of earlier tasks in the same workdir)"]
+      permissions: []
+      scope: n/a
+      readOnly: true
+      falsePass: confirmed
+      falsePassWhy: "generate_lb_summary.sh count_issues_for_lb: missing file -> echo 0 -> 'OK'; a task that did not run or failed leaves no file so its column reads OK/healthy; reads stale files from prior runs"
+      notes: "No cloud calls of its own; depends on task order and on titles containing the forwarding-rule name (backend-health titles name backend services, not LBs, so backend column mostly stays OK)."
+  bundleNotes: "Only the discovery task (runbook) and the backend-service checks are robust against a failing gcloud list; everything else is `2>/dev/null || echo ...` and treats no-data as 'continue'. Dependency bug: lb_config.json is produced only by runbook task 1; sli.robot has no discovery step, so SLI SSL/error/latency dimensions run against raw forwarding rules lacking `.type` and report 0 issues. Runbook ignores script rc; SLI swallows missing issue files with `|| echo 0`. Several scripts use set -x and GNU-only date -d/grep -P."

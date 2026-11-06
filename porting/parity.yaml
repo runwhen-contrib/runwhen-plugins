@@ -1,0 +1,500 @@
+# Classic rw-cli-codecollection bundle -> V13 skill coverage (CNT-1, CNT-5).
+# Source: rw-cli-codecollection origin/main @ 49ab483. Per-task detail: porting/inventory/*.yaml.
+# status: planned | partial | ported | dropped; `ported:` lists the skills of `skills:` that are merged. A bundle may map to several skills; a skill may absorb several bundles.
+# Porters fill `tasks:` (classic task title -> <skill>/<task> or "dropped: <reason>") when they port (CONTRIBUTING.md step 11).
+# Grouping rule: one skill per V13 type set + symptom an engineer would page on; tasks touch only the target and
+# objects inside it (namespace -> its pods; workload -> its pods, ReplicaSets, PVCs, events).
+# App-on-Kubernetes skills target kubernetes types narrowed by `labels` (D70); database-level checks belong to the
+# postgres plugin, not to kubernetes skills (D53, D72).
+
+kubernetes:
+  # --- pilot (CNT-3) -----------------------------------------------------------------------------------------
+  - { bundle: k8s-deployment-healthcheck,  skills: [k8s-workload-health, k8s-workload-logs], status: ported, ported: [k8s-workload-health, k8s-workload-logs], pilot: true }
+  - { bundle: k8s-statefulset-healthcheck, skills: [k8s-workload-health, k8s-workload-logs], status: ported, ported: [k8s-workload-health, k8s-workload-logs], pilot: true,
+      note: "classic restarts/log-pattern/anomaly/PVC tasks never produce output on main (json.loads on text, undefined var, list vs string, comma-less jq); re-derived, not fixed" }
+  - { bundle: k8s-daemonset-healthcheck,   skills: [k8s-workload-health, k8s-workload-logs], status: ported, ported: [k8s-workload-health, k8s-workload-logs], pilot: true }
+  - { bundle: k8s-namespace-healthcheck,   skills: [k8s-namespace-health], status: ported, ported: [k8s-namespace-health], pilot: true,
+      note: "'Get Listing Of Resources' (report-only dump needing */* list incl. secrets) and 'Check Event Anomalies' (non-Warning event rate, no assertion) dropped" }
+  - { bundle: k8s-tail-logs-dynamic,       skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs], pilot: true }
+  - { bundle: k8s-app-troubleshoot,        skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs], pilot: true,
+      note: "'misconfigured environment' grep task dropped: asserts nothing (report-only grep for 'env')" }
+  - { bundle: k8s-pvc-healthcheck,         skills: [k8s-pvc-health], status: ported, ported: [k8s-pvc-health], pilot: true,
+      note: "'Pods with attached volumes' report-only dump dropped; 'PVs in Terminating' re-derived from deletionTimestamp" }
+  - { bundle: k8s-cluster-node-health,     skills: [k8s-node-health], status: ported, ported: [k8s-node-health], pilot: true }
+  - { bundle: k8s-ingress-healthcheck,     skills: [k8s-ingress-health], status: ported, ported: [k8s-ingress-health], pilot: true }
+  - bundle: k8s-deployment-ops
+    skills: [k8s-workload-ops]
+    status: partial
+    ported: [k8s-workload-ops]
+    pilot: true
+    note: "partial: the 2 HPA tasks (Scale Up HPA by factor, Scale Down HPA to Min) are deferred work, an hpa-bounds task has yet to join k8s-workload-ops. classic 'Scale Down Stale ReplicaSets' scales the active RS to 0; not ported as written. `scale` refuses when a HorizontalPodAutoscaler targets the workload unless `overrideHpa` is true (the classic scaled it and the HPA undid it). The classic pre-action log dump (every task first printed the workload's logs) is dropped: it asserts nothing, k8s-workload-logs/recent-logs reads them"
+    tasks:
+      "Restart Deployment": k8s-workload-ops/rollout-restart
+      "Force Delete Pods in Deployment": k8s-workload-ops/delete-pods
+      "Rollback Deployment to Previous Version": k8s-workload-ops/rollback
+      "Scale Down Deployment": k8s-workload-ops/scale
+      "Scale Up Deployment by factor": k8s-workload-ops/scale
+      "Clean Up Stale ReplicaSets": "dropped: deletes rollout history (breaks rollback); revisionHistoryLimit is the native mechanism and is reported by rollback"
+      "Scale Down Stale ReplicaSets": "dropped: classic selector matched the active ReplicaSet too and scaled it to 0"
+      "Scale Up HPA by factor": "dropped: not in the pilot; a hpa-bounds task can join k8s-workload-ops in the wave"
+      "Scale Down HPA to Min": "dropped: not in the pilot; a hpa-bounds task can join k8s-workload-ops in the wave"
+      "Increase CPU Resources for Deployment": "k8s-workload-ops/set-resources (explicit cpuRequest/cpuLimit; no VPA guessing)"
+      "Increase Memory Resources for Deployment": "k8s-workload-ops/set-resources (explicit memoryRequest/memoryLimit; no VPA guessing)"
+      "Decrease CPU Resources for Deployment": "k8s-workload-ops/set-resources (explicit values)"
+      "Decrease Memory Resources for Deployment": "k8s-workload-ops/set-resources (explicit values)"
+
+  # --- workloads ---------------------------------------------------------------------------------------------
+  - bundle: k8s-statefulset-ops
+    skills: [k8s-workload-ops]
+    status: partial
+    ported: [k8s-workload-ops]
+    note: "9 of 11 classic tasks map to k8s-workload-ops tasks that already accept a StatefulSet; the 2 HPA tasks have no V13 counterpart yet (same gap as k8s-deployment-ops: k8s-workload-health/hpa-status is read-only, there is no HPA write task), so the bundle stays partial until an hpa-bounds task joins k8s-workload-ops. `scale` refuses when a HorizontalPodAutoscaler targets the workload unless `overrideHpa` is true; the classic pre-action log dump is dropped (it asserts nothing, k8s-workload-logs/recent-logs reads the logs). Decided differences: a classic factor (SCALE_UP_FACTOR, RESOURCE_SCALE_DOWN_FACTOR) becomes the explicit replicas or quantity the caller passes; the MAX_REPLICAS cap and the 'scale down to 1 when zero is not allowed' fallback are not ported (a refused scale is an error the caller sees); the classic resource tasks applied one value to every container (kubectl set resources without -c) and guessed from VPA, set-resources changes one named container with explicit values"
+    tasks:
+      "Restart StatefulSet": k8s-workload-ops/rollout-restart
+      "Force Delete Pods for StatefulSet": "k8s-workload-ops/delete-pods (the classic selector from the pod template's labels could match other workloads' pods and its delete had no --force; delete-pods confirms ownership through ownerReferences and can name pods)"
+      "Rollback StatefulSet to Previous Version": "k8s-workload-ops/rollback (ControllerRevision history; reports the revisions and images it moves between)"
+      "Scale Down StatefulSet": "k8s-workload-ops/scale (replicas input; 0 needs the allowScaleToZero setting, the classic ALLOW_SCALE_TO_ZERO)"
+      "Scale Up StatefulSet by factor": "k8s-workload-ops/scale (the caller passes the replica count; the classic factor and MAX_REPLICAS are not ported)"
+      "Scale Up HPA for StatefulSet": "dropped: no HPA write task in k8s-workload-ops yet; an hpa-bounds task can join the wave"
+      "Scale Down HPA for StatefulSet": "dropped: no HPA write task in k8s-workload-ops yet; an hpa-bounds task can join the wave"
+      "Increase CPU Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit cpuRequest/cpuLimit on one container; no VPA guessing)"
+      "Increase Memory Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit memoryRequest/memoryLimit on one container; no VPA guessing)"
+      "Decrease CPU Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit values on one container)"
+      "Decrease Memory Resources for StatefulSet": "k8s-workload-ops/set-resources (explicit values on one container)"
+  - bundle: k8s-restart-resource
+    skills: [k8s-workload-ops]
+    status: ported
+    ported: [k8s-workload-ops]
+    note: "label-selected restart becomes rollout-restart on the target workload"
+    tasks:
+      "Get Current Resource State with Labels": "dropped: report-only YAML dump of the labelled workloads, asserts nothing; the workload's state is k8s-workload-health/rollout-status"
+      "Get Resource Logs with Labels": "dropped: report-only log dump, asserts nothing; k8s-workload-logs/recent-logs reads the workload's logs"
+      "Restart Resource with Labels": "k8s-workload-ops/rollout-restart (the target is the workload itself, not the first of a label match; the classic reported 'Restarted' even when nothing matched and never waited for the rollout)"
+  - { bundle: k8s-stacktrace-health,       skills: [k8s-workload-logs], status: ported, ported: [k8s-workload-logs] }
+  - { bundle: k8s-labeledpods-healthcheck, skills: [k8s-workload-health], status: ported, ported: [k8s-workload-health], note: "running-pod count is part of rollout-status" }
+  - { bundle: k8s-cluster-resource-health, skills: [k8s-node-health], status: ported, ported: [k8s-node-health],
+      note: "classic task 2 reads files nothing creates; task 1 misreads whole-core CPU as millicores" }
+
+  # --- namespace ---------------------------------------------------------------------------------------------
+  - bundle: k8s-podresources-health
+    skills: [k8s-namespace-resources]
+    status: ported
+    ported: [k8s-namespace-resources]
+    note: "classic 'no metrics-server' and 'no VPA CRD' paths wrote an empty result the runbook read as healthy; both are dependency errors now. The OOMKilled/exit-137 half of 'Identify Overutilized Pods' is a restart fact: k8s-workload-health/pod-restarts"
+    tasks:
+      "Show Pods Without Resource Limit or Resource Requests Set in Namespace": k8s-namespace-resources/resource-settings
+      "Check Pod Resource Utilization with Top in Namespace": k8s-namespace-resources/resource-usage
+      "Identify VPA Pod Resource Recommendations in Namespace": k8s-namespace-resources/vpa-recommendations
+      "Identify Overutilized Pods in Namespace": k8s-namespace-resources/resource-usage
+  - bundle: k8s-image-check
+    skills: [k8s-namespace-resources]
+    status: ported
+    ported: [k8s-namespace-resources]
+    note: "classic launched a skopeo pod from quay.io and exec'd into it; not ported (a read skill creates nothing). Pull failures are read from the container status"
+    tasks:
+      "Check Image Rollover Times for Namespace": "dropped: report only (asserts nothing); image and imageID per container are in k8s-namespace-resources/images"
+      "List Images and Tags for Every Container in Running Pods": k8s-namespace-resources/images
+      "List Images and Tags for Every Container in Failed Pods": "k8s-namespace-resources/images (pods of every phase; each entry has phase)"
+      "List ImagePullBackOff Events and Test Path and Tags": "k8s-namespace-resources/images (pullFailures); the skopeo path/tag probe is dropped: creates and deletes a pod and needs egress to quay.io"
+  - bundle: k8s-serviceaccount-check
+    skills: [k8s-namespace-resources]
+    status: ported
+    ported: [k8s-namespace-resources]
+    note: "classic created a pod, printed its token and curled the API root, and passed when the pod could not start; re-derived as LocalSubjectAccessReviews (read-only, nothing created or run in the cluster)"
+    tasks:
+      "Test Service Account Access to Kubernetes API Server": k8s-namespace-resources/serviceaccount-permissions
+  - bundle: k8s-job-namespace-health
+    skills: [k8s-namespace-health, k8s-cronjob-health]
+    status: ported
+    ported: [k8s-namespace-health, k8s-cronjob-health]
+    note: "classic cronjob task re-derived: the schedule is evaluated (cron parsed, time zone and startingDeadlineSeconds honoured) instead of trusting a lastScheduleTime freshness filter that dropped CronJobs that stopped long ago; k8s-cronjob-health/recent-runs is new (classic looked only at the latest child Job)"
+    tasks:
+      "Summarize Job Status in Namespace": k8s-namespace-health/failed-jobs
+      "Identify Failed Jobs and Backoff in Namespace": k8s-namespace-health/failed-jobs
+      "Correlate Job Failures with Recent Events in Namespace": k8s-namespace-health/warning-events
+      "Check CronJob Schedule Health in Namespace": k8s-cronjob-health/schedule-health
+  - bundle: k8s-chaos-namespace
+    skills: [k8s-chaos]
+    status: ported
+    ported: [k8s-chaos]
+    note: "classic ignored every exec/delete/patch exit code (the script ended in a kubectl get, so rc was always 0) and never restored a mangled Service; re-derived with typed errors, observed results and a verified restore. The 50% coin flip per pod and 3s pauses are replaced by a seeded pick of count pods. The classic mangle tasks picked a random Service of the namespace; the port requires the `service` input (a namespace target names the Service to break), and the namespace pick skips pods no controller owns, mirror pods, DaemonSet pods and the task's own pod"
+    tasks:
+      "Kill Random Pods In Namespace": k8s-chaos/delete-pods
+      "OOMKill Pods In Namespace": k8s-chaos/oomkill-pod
+      "Mangle Service Selector In Namespace": k8s-chaos/mangle-service
+      "Mangle Service Port In Namespace": "k8s-chaos/mangle-service (mode: port)"
+      "Fill Random Pod Tmp Directory In Namespace": k8s-chaos/fill-tmp
+      "Test Node Drain": "dropped: commented out in the classic runbook (never ran) and cluster-scoped: it drains a node, outside the namespace/workload targets of this skill"
+  - bundle: k8s-chaos-workload
+    skills: [k8s-chaos]
+    status: ported
+    ported: [k8s-chaos]
+    note: "classic fell through to every pod of the namespace when the workload lookup failed (empty selector), tagged the selector mangle access:read-only, and passed `kubectl describe <bare name>`; re-derived: an empty selector refuses, the workload's pods are confirmed through ownerReferences, Services are matched by subset of the pod template labels (not a substring) and restored"
+    tasks:
+      "Test Workload High Availability": "k8s-chaos/delete-pods (workload target: reports whether and how fast ready replicas return)"
+      "OOMKill Workload Pod": k8s-chaos/oomkill-pod
+      "Mangle Service Selector For Workload": k8s-chaos/mangle-service
+      "Mangle Service Port For Workload": "k8s-chaos/mangle-service (mode: port)"
+      "Fill Tmp Directory Of Pod From Workload": k8s-chaos/fill-tmp
+
+  # --- networking ----------------------------------------------------------------------------------------------
+  - { bundle: k8s-ingress-gce-healthcheck, skills: [k8s-ingress-health], status: ported, ported: [k8s-ingress-health],
+      note: "backends annotation check ported; Cloud Logging and LB-config tasks need a GCP credential -> gcp plugin (D72)" }
+  - bundle: k8s-istio-system-health
+    skills: [k8s-istio-health]
+    status: ported
+    ported: [k8s-istio-health]
+    note: "all seven classic tasks swept every namespace of the cluster and were confirmed false-pass (2>/dev/null, no rc checks); split by target (D47): namespace -> injection-status, istiod/gateway Deployment -> control-plane-status, Deployment -> proxy-errors. istioctl analyze and mTLS certificate validity are not ported: the runtime has no istioctl. The usage-vs-limit part of the sidecar resource task (kubectl top) is not ported; requests and limits are"
+    tasks:
+      "Verify Istio Sidecar Injection for Cluster": k8s-istio-health/injection-status
+      "Check Istio Sidecar Resource Usage for Cluster": "k8s-istio-health/injection-status (requests and limits only; live usage from the metrics API is not read)"
+      "Validate Istio Installation in Cluster": k8s-istio-health/control-plane-status
+      "Check Istio Controlplane Logs For Errors in Cluster": "k8s-workload-logs/error-patterns (target the istiod or gateway Deployment; the classic task guessed pods by app=<component> labels)"
+      "Fetch Istio Proxy Logs in Cluster": k8s-istio-health/proxy-errors
+      "Verify Istio SSL Certificates in Cluster": "dropped: needs istioctl proxy-config secret (Envoy admin through exec or port-forward); the runtime has no istioctl and mTLS certificate validity is not observable from the Kubernetes API"
+      "Check Istio Configuration Health in Cluster": "dropped: needs istioctl analyze; the runtime has no istioctl"
+
+  # --- GitOps CRDs ---------------------------------------------------------------------------------------------
+  - bundle: k8s-fluxcd-helm-health
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "classic error-messages task always fired (jsonpath outside {}) and the mismatch task passed when both revisions were null; ready-status reads the Ready/Stalled conditions and reports neverApplied"
+    tasks:
+      "List all available FluxCD Helmreleases": "dropped: report-only table of every HelmRelease in the namespace; the skill's target is one HelmRelease"
+      "Fetch Installed FluxCD Helmrelease Versions": k8s-flux-health/ready-status
+      "Fetch Mismatched FluxCD HelmRelease Version": k8s-flux-health/ready-status
+      "Fetch FluxCD HelmRelease Error Messages": k8s-flux-health/ready-status
+      "Check for Available Helm Chart Updates": "dropped: D72 / no egress; needs the chart repository (helm repo add) from the runner, and a failed lookup read as 'up to date'"
+  - bundle: k8s-fluxcd-kustomization-health
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "classic unready task dropped any Ready=False Kustomization without a Reconciling condition (e.g. Stalled); conditions are now reported independently"
+    tasks:
+      "List All FluxCD Kustomization objects": "dropped: report-only table of every Kustomization in the namespace; the skill's target is one Kustomization"
+      "List Suspended FluxCD Kustomization objects": "k8s-flux-health/ready-status (suspended; no duration: Flux records no suspend time and the Ready transition time is not it)"
+      "List Unready FluxCD Kustomizations": k8s-flux-health/ready-status
+  - bundle: k8s-fluxcd-reconcile
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "the classic task reads the Flux controllers' logs for level=error (target: the flux-system namespace); the new tasks target HelmRelease/Kustomization. Controller logs are read with k8s-workload-logs/error-patterns on the controller Deployments. The classic 'reconcile' naming matches the new reconcile write task, not this check"
+    tasks:
+      "Check FluxCD Reconciliation Health in Kubernetes Namespace": "dropped: namespace-target controller-log grep (no rc checks: a failed kubectl logs read as zero errors); object-level health is ready-status, controller logs are kubernetes:k8s-workload-logs/error-patterns"
+  - bundle: k8s-chaos-flux
+    skills: [k8s-flux-health]
+    status: ported
+    ported: [k8s-flux-health]
+    note: "suspend/resume are flux write tasks; the arbitrary-command chaos tasks are dropped"
+    tasks:
+      "Suspend the Flux Resource Reconciliation": k8s-flux-health/suspend
+      "Resume Flux Resource Reconciliation": k8s-flux-health/resume
+      "Select Random FluxCD Workload for Chaos Target": "dropped: picks a random target (and never index 0); a target is given, not picked"
+      "Execute Chaos Command on target resource": "dropped: arbitrary command exec in a workload container (CHAOS_COMMAND)"
+      "Execute Additional Chaos Command": "dropped: arbitrary command exec in a workload container (ADDNL_COMMAND)"
+  - bundle: k8s-argocd-application-health
+    skills: [k8s-argocd-health]
+    status: ported
+    ported: [k8s-argocd-health]
+    note: "start/finish labels of the last sync were swapped in the classic bundle; OutOfSync resources and resources without health are now listed"
+    tasks:
+      "Fetch ArgoCD Application Sync Status & Health": k8s-argocd-health/sync-status
+      "Fetch ArgoCD Application Last Sync Operation Details": k8s-argocd-health/sync-status
+      "Fetch Unhealthy ArgoCD Application Resources": k8s-argocd-health/unhealthy-resources
+      "Scan For Errors in Pod Logs Related to ArgoCD Application": "dropped: reads pods in the destination namespace by a guessed instance label (D47); the agent runs k8s-workload-logs/error-patterns on the workloads unhealthy-resources names"
+      "Fully Describe ArgoCD Application": "dropped: report-only describe dump; the Application's status is returned as data by sync-status, helm-source and unhealthy-resources"
+  - bundle: k8s-argocd-helm-health
+    skills: [k8s-argocd-health]
+    status: ported
+    ported: [k8s-argocd-health]
+    note: "both classic tasks listed every Application in a namespace (needs list, kubectl|jq without pipefail); the skill is per Application and also covers multi-source"
+    tasks:
+      "Fetch all available ArgoCD Helm releases": "k8s-argocd-health/helm-source (the target Application only; listing Applications is discovery, not a health task)"
+      "Fetch Installed ArgoCD Helm release versions": k8s-argocd-health/helm-source
+  - { bundle: k8s-gitops-gh-remediate,         skills: [], status: dropped,
+      note: "D72: needs a GitHub credential on a kubernetes target; re-home as github plugin skills later" }
+
+  # --- cluster add-ons -----------------------------------------------------------------------------------------
+  - bundle: k8s-certmanager-healthcheck
+    skills: [k8s-certmanager-health]
+    status: ported
+    ported: [k8s-certmanager-health]
+    note: "per-Certificate target, not a namespace sweep; classic jq aborted on Certificates without status.conditions and dropped CertificateRequests lacking Approved/ownerReferences; classic only flagged notAfter <= now, now expiresInDays/expiringSoon against expiryWarningDays; Issuer/ClusterIssuer Ready and ACME Orders are new facts; the SLI count (unready + expired) is the platform's job over certificate-status"
+    tasks:
+      "Get Namespace Certificate Summary": k8s-certmanager-health/certificate-status
+      "Find Unhealthy Certificates": k8s-certmanager-health/certificate-status
+      "Find Failed Certificate Requests and Identify Issues": k8s-certmanager-health/requests
+  - bundle: k8s-karpenter-autoscaling-health
+    skills: [k8s-karpenter-health]
+    status: ported
+    ported: [k8s-karpenter-health]
+    note: "per-NodePool target, not a cluster sweep; classic ran every list as `2>/dev/null || echo {items:[]}` (forbidden or failing lists became zero items; a forbidden `get crd` read as 'CRD not installed'); NodeClaim/Node/pod facts are now bounded to the pool; the SLI score (conditions, pending count, stuck claims) is the platform's job over the three tasks"
+    tasks:
+      "Summarize NodePool and NodeClaim Health in Cluster": k8s-karpenter-health/nodepool-status
+      "Detect Workloads Blocked on Provisioning or Capacity in Cluster": k8s-karpenter-health/pending-pods
+      "Scan Karpenter Controller Logs for Errors": "dropped: the controller is an ordinary Deployment; k8s-workload-logs/error-patterns and recent-logs on it"
+      "Check Cloud NodeClass Resources for Misconfiguration Signals": k8s-karpenter-health/nodepool-status
+      "Identify Stale or Stuck NodeClaims in Cluster": k8s-karpenter-health/nodeclaims
+      "Correlate Recent Karpenter Log Patterns with Pending Pods": "dropped: optional log grep that matched pod names by substring; pending-pods carries the scheduler's and Karpenter's events on each pod, and k8s-workload-logs/recent-logs reads the controller"
+  - bundle: k8s-karpenter-control-plane-health
+    skills: [k8s-karpenter-health]
+    status: ported
+    ported: [k8s-karpenter-health]
+    note: "controller health maps to k8s-workload-health / k8s-workload-logs on the karpenter Deployment (no task in this skill); webhook and API-group inventory are not NodePool facts"
+    tasks:
+      "Check Karpenter Controller Workload Health in Cluster": "dropped: k8s-workload-health/rollout-status and pod-status on the karpenter Deployment"
+      "Verify Karpenter Admission Webhooks in Cluster": "dropped (gap): Karpenter webhook configurations, caBundle and the webhook Service are covered by no skill (k8s-ingress-health has no such task); a failing webhook shows only in the controller's pod-status and logs"
+      "Inspect Warning Events in Karpenter Namespace": "dropped: k8s-workload-health/warning-events on the karpenter Deployment"
+      "Summarize Installed Karpenter API Versions and CRDs": "dropped: the nodepool type only has targets where the CRD is installed; an absent NodeClass type is reported by nodepool-status (nodeClass.typeInstalled)"
+      "Check Karpenter Service and Metrics Endpoints": "dropped: Service/Endpoints inventory of the controller namespace is not a NodePool fact; no sibling skill reads Services yet"
+
+  # --- apps on kubernetes (labels-scoped) ------------------------------------------------------------------------
+  - bundle: k8s-postgres-healthcheck
+    skills: [k8s-postgres-operator-health]
+    status: partial
+    ported: [k8s-postgres-operator-health]
+    note: "D72: only the kubernetes connection, so database facts come from kubectl exec of the pod's own psql/patronictl on the local socket (no credential, no port-forward); SQL that needs a login (bloat, unused indexes, bgwriter, free-form queries) waits for the postgres plugin. Classic false passes not reproduced: patroni lag with no pod / empty output / unparsable lag was zero issues; a missing scheduledBackups status read as a backup made today (date -d ''); unreadable max_connections only added a report line; every sub-query ran with 2>/dev/null and empty meant 'OK'; SHOW ALL with no pod only echoed. Classic Core Metrics lost its bgwriter issue in a piped subshell and queried pg_stat_bgwriter.checkpoints_timed, removed in PG17"
+    tasks:
+      "List Resources Related to Postgres Cluster": "k8s-postgres-operator-health/cluster-status (the cluster object and its member pods; the `get all` + describe dump is dropped: report only)"
+      "Get Postgres Pod Logs & Events": "dropped: logs are kubernetes:k8s-workload-logs/recent-logs and events kubernetes:k8s-namespace-health/warning-events on the namespace; neither is postgres-specific"
+      "Get Postgres Pod Resource Utilization": "dropped: kubectl top asserts nothing; pod usage is kubernetes:k8s-namespace-resources/resource-usage (metrics API); members' ready and restarts are in cluster-status"
+      "Check PostgreSQL Connection Health": "k8s-postgres-operator-health/connections (partial: states against max_connections, longest query and idle-in-transaction age, waiting locks; the replica-first SELECT 1 preflight and the idle >30m count are not ported)"
+      "Check PostgreSQL Core Metrics": "dropped: filesystem usage is kubernetes:k8s-pvc-health/usage on the data claim (classic hard-coded /pgdata); dead tuples, unused indexes and bgwriter ratios need a database login: postgres plugin"
+      "Get Running Postgres Configuration": "k8s-postgres-operator-health/settings (partial: non-default pg_settings instead of SHOW ALL, secrets excluded; the max_connections < 100 opinion and the pgbouncer ConfigMap max_client_conn check are dropped)"
+      "Get Patroni Output and Add to Report": k8s-postgres-operator-health/patroni-status
+      "Fetch Patroni Database Lag": k8s-postgres-operator-health/patroni-status
+      "Check Database Backup Status": "k8s-postgres-operator-health/cluster-status (partial: Crunchy pgBackRest status only; the Zalando pg_stat_archiver / wal-g backup-list check is dropped: archiving is not a base backup and wal-g reads the pod environment)"
+      "Run DB Queries": "dropped: free-form SQL as the postgres superuser (QUERY interpolated into bash -c) is an agent-run query, not a health fact; bounded queries live in the typed tasks and anything needing a login moves to the postgres plugin (D53, D72)"
+  - bundle: k8s-postgres-operations
+    skills: [k8s-postgres-operator-ops]
+    status: ported
+    ported: [k8s-postgres-operator-ops]
+    note: "classic reported success whatever happened (set -e aborted before the issues JSON, the runbook looked for 'severity error', the success issue was its ELSE): a failed patronictl is a failed task now and every task reports what it read afterwards. Not reproduced: reinit of every member the script thought failed or lagging (the member is an explicit input and the leader is refused), the pod-deletion fallback, the sleep 30 verification, scale and the default 'overview' operation. Behaviour change: on Crunchy classic restarted Postgres in place with patronictl, the port rolls the pods through the operator (the documented spec.metadata.annotations 'restarted' annotation), which also rolls the pgBouncer and pgBackRest repo host pods; on Zalando it restarts member by member, replicas first and the leader last, each verified"
+    tasks:
+      "Reinitialize Failed PostgreSQL Cluster Members": "k8s-postgres-operator-ops/reinit-member (one explicit member; which members are failed or lagging is health/patroni-status)"
+      "Perform PostgreSQL Cluster Failover Operation": k8s-postgres-operator-ops/switchover
+      "Restart PostgreSQL Cluster with Rolling Update": k8s-postgres-operator-ops/rolling-restart
+      "Verify Cluster Recovery and Generate Summary": k8s-postgres-operator-health/patroni-status
+  - bundle: k8s-redis-healthcheck
+    skills: [k8s-redis-health]
+    status: ported
+    ported: [k8s-redis-health]
+    note: "SET/INCR test is a write: separate write task (read-write-check, readOnly false, dryRun). Classic Redis auth was unsupported (NOAUTH read as a PING failure); re-derived: redis-cli runs inside the container with the container's own password (REDIS_PASSWORD, REDIS_PASSWORD_FILE, VALKEY_PASSWORD, VALKEY_PASSWORD_FILE, in that order) as REDISCLI_AUTH (no Secret read, nothing on argv), and a refused or missing password is permission_denied. Cluster and Sentinel are not supported (cluster is invalid_input unsupported_mode, a sentinel is not a Redis server); the port is an input. Classic exec'd deployment/NAME, which on several replicas picked one pod (a replica fails SET with READONLY); every ready pod is now asked, and the write goes to ONE primary (the first by pod name; any other role:master pod is reported as otherPrimaries). A run that proves nothing fails (no ready pod: unreachable; no primary: not_found) instead of reporting ok. StatefulSet-based Redis, the common shape, is a target. The healthcheck key is deleted (it was left behind) and carries an expiry. Classic compared only the final GET and ignored SET/INCR codes; each step is checked. INCR is not ported: SET, GET and DEL prove the write path"
+    tasks:
+      "Ping Redis Workload": "k8s-redis-health/ping (also reports role, replica link, memory, evictions, clients and persistence status from INFO)"
+      "Verify Redis Read Write Operation": "k8s-redis-health/read-write-check (SET NX EX 60, GET, DEL on one primary; the classic SET 0 / INCR / GET sequence is replaced)"
+  - bundle: k8s-vault-healthcheck
+    skills: [k8s-vault-health]
+    status: ported
+    ported: [k8s-vault-health]
+    note: "classic hard-coded the object names (vault, vault-csi-provider), curled a customer-supplied VAULT_URL from the runner, substituted the response into a Python string literal (quote injection), ignored standby and performance standby, and compared replicas with status.replicas (a scaled-down StatefulSet raised 'No desired replicas'). Re-derived by target (decision): server-status takes the Vault StatefulSet or a namespace (StatefulSets labelled app.kubernetes.io/name=vault) and asks each Running pod /v1/sys/health through the API server pod proxy (pods/proxy get; no VAULT_URL, no egress, no port-forward, no exec, no token), all health codes overridden to 200 so 429/472/473/501/503/530 arrive as facts (state, healthCode; 530 is state removed); the kubectl fetches are narrowed with -o jsonpath so no env value is ever recorded; csi-provider-status takes the CSI DaemonSet or a namespace (DaemonSets labelled app.kubernetes.io/name=vault-csi-provider). The two manifest dumps, the log fetches and the unfiltered events grep assert nothing and are routed to existing skills"
+    tasks:
+      "Fetch Vault CSI Driver Logs": "dropped: report-only log tail; k8s-workload-logs/recent-logs and error-patterns on the CSI provider DaemonSet"
+      "Get Vault CSI Driver Warning Events": "k8s-vault-health/csi-provider-status (events: Warning events about the DaemonSet and its pods, matched by uid, within since)"
+      "Check Vault CSI Driver Replicas": "k8s-vault-health/csi-provider-status (daemonsets: desired, current, ready, updated, available, unavailable, misscheduled against maxUnavailable, with each pod's container restarts)"
+      "Fetch Vault Pod Workload Logs": "dropped: report-only log tail; k8s-workload-logs/recent-logs and error-patterns on the Vault StatefulSet"
+      "Get Related Vault Events": "dropped: a substring grep of every Warning event in the namespace; k8s-workload-health/warning-events on the Vault StatefulSet, or k8s-namespace-health/warning-events"
+      "Fetch Vault StatefulSet Manifest Details": "dropped: report-only manifest dump (asserts nothing); k8s-workload-health/rollout-status, config-changes and probe-config on the StatefulSet"
+      "Fetch Vault DaemonSet Manifest Details": "dropped: report-only manifest dump (asserts nothing; the classic title says StatefulSet for a DaemonSet); k8s-workload-health on the DaemonSet"
+      "Verify Vault Availability": "k8s-vault-health/server-status (pods[].health: initialized, sealed, standby, performanceStandby, version, clusterName, replication modes; per pod instead of one URL)"
+      "Check Vault StatefulSet Replicas": "k8s-vault-health/server-status (statefulsets: desired, current, ready, updated, available against spec.replicas)"
+  - bundle: k8s-prometheus-healthcheck
+    skills: [k8s-prometheus-health]
+    status: ported
+    ported: [k8s-prometheus-health]
+    note: "per-Prometheus-CR target (appliesTo prometheus only: no task is about one ServiceMonitor); everything goes through the API server's pod proxy (no exec, no port-forward, no log grep); classic 'Check Prometheus Service Monitors' always raised its issue (a defaulted 'None detected' string tested with -n) and only compared Service port names, now selection by serviceMonitorSelector/NamespaceSelector plus the active targets the Prometheus really has; the RBAC check named a ClusterRole by a release-specific name and read a failed get as 'no servicemonitors', now SubjectAccessReviews for the ServiceAccount the CR runs as; the two log greps (first pod only, '|| true') are replaced by the rules and targets APIs; the health check treated an empty answer as a failure and now distinguishes 200, 503 and a reply that is not the probe text"
+    tasks:
+      "Check Prometheus Service Monitors in namespace": "k8s-prometheus-health/servicemonitor-coverage (selection and produced targets replace the always-firing Service port-name comparison; a Service whose port name does not match shows as a selected ServiceMonitor with activeTargets 0)"
+      "Check For Successful Rule Setup in Kubernetes Namespace": "k8s-prometheus-health/rules (rule evaluation errors and unevaluated rules from /api/v1/rules) and k8s-prometheus-health/server-status (runtime.reloadConfigSuccess: a rule file that failed to load fails the reload); the 'load.*fail' log grep is dropped"
+      "Verify Prometheus RBAC Can Access ServiceMonitors": "k8s-prometheus-health/servicemonitor-coverage (serviceAccountAccess: SubjectAccessReviews for the Prometheus ServiceAccount on services, pods and endpoints (or endpointslices) in the target namespaces, cluster-wide for namespaceSelector.any; impersonation was rejected as too broad. Parity differs: the classic check read the operator's ClusterRole, this one covers the Prometheus ServiceAccount, which is what discovery needs; the operator's own reconcile status is server-status prometheus.conditions)"
+      "Inspect Prometheus Operator Logs for Scraping Errors": "k8s-prometheus-health/targets (each down target's lastError is the scrape error); the log grep is dropped, k8s-workload-logs/error-patterns on the Prometheus pods covers the rest"
+      "Check Prometheus API Healthy": k8s-prometheus-health/server-status
+  - bundle: k8s-loki-healthcheck
+    skills: [k8s-loki-health]
+    status: ported
+    ported: [k8s-loki-health]
+    note: "per-workload target (the matched StatefulSet or Deployment, using its own selector), every pod rather than the first pod of a hard-coded app.kubernetes.io/component=single-binary label (which never matched a simple-scalable or distributed install, so the ring task always passed there); HTTP through the API server's pod proxy instead of kubectl exec wget | jq (exec denial, an empty pod name, a wget failure or the HTML ring page all produced empty stdout that the ring task read as healthy); the ring is read as JSON with the distributor and compactor rings of Loki 3 and unserved rings recorded as facts; a /ready reply that is not the ready text is an error, never ready"
+    tasks:
+      "Check Loki Ring API for Unhealthy Shards": "k8s-loki-health/ring (members by state, token count and heartbeat age per ring; the classic 'state != ACTIVE' test is notActiveCount)"
+      "Check Loki API Ready": k8s-loki-health/ready
+  - bundle: k8s-seaweedfs-healthcheck
+    skills: [k8s-seaweedfs-health]
+    status: ported
+    ported: [k8s-seaweedfs-health]
+    note: "HTTP goes through the API server's pod proxy (kubectl get --raw .../pods/<scheme>:<pod>:<port>/proxy/...; RBAC pods/proxy), not kubectl exec wget in the pod: no sh/wget/aws needed in the image, and the proxy hides the body of a non-2xx answer, so a failure is an error and never a healthy read. The classic task order and thresholds are facts + settings now; no severities. Classic defects not reproduced: workload discovery turned a failed or forbidden list into an empty list (|| echo items []) and every SLI/task scored it healthy; the Warning-events jq lacked -r so every workload always raised an issue; pods matched by name prefix; ImagePullBackOff was not noticed; volume capacity read .DiskUsages[] and percent_free while the volume server answers DiskStatuses, so the disk check could never fire on a 200 (an unknown schema is an error now); layout, read-only and disk parsing used 2>/dev/null || true / || echo 0 so an unparsable body raised nothing; GC, capacity and bucket-usage checks skipped silently when a fetch failed; the S3 probe tagged read-only created a bucket, always uploaded an EMPTY body (cat > file in an exec without -i), put the secret key on the in-pod command line and raised an issue on deployments with no S3; list-seaweedfs-resources needed cluster-scoped namespaces get; every task wrapped its issues file in TRY json.loads EXCEPT issue_list = [] so a crashed script was a pass"
+    tasks:
+      "List SeaweedFS Resources": "k8s-seaweedfs-health/cluster-status (the release's StatefulSets, Deployments and pods with their roles; Services and PVCs are not listed: kubernetes:k8s-pvc-health/usage for the data claims; no cluster-scoped namespaces get)"
+      "Check SeaweedFS Workload Replica Health": "k8s-seaweedfs-health/cluster-status (desired against ready, every container's state and restarts incl. init containers; Warning events are kubernetes:k8s-namespace-health/warning-events on the namespace)"
+      "Check SeaweedFS Master Cluster Status": "k8s-seaweedfs-health/cluster-status (healthz, leader, raft peers per master pod, all master pods rather than the first)"
+      "Check SeaweedFS Volume Slot Availability": "k8s-seaweedfs-health/volumes (slots: max, free, used, per data node, against the minFreeVolumeSlots setting)"
+      "Check SeaweedFS Volume Server Disk Capacity": "k8s-seaweedfs-health/volumes (disk from DiskStatuses against minFreeDiskPercent, read-only volumes from /vol/status, per-node full slots)"
+      "Check SeaweedFS Writable Volume Layout": "k8s-seaweedfs-health/volumes (layouts: writable volumes per collection / replication / TTL / disk type; read-only volumes listed in volumes)"
+      "Check SeaweedFS Filer and Component Connectivity": "k8s-seaweedfs-health/filer-status (filer healthz and root entry; each volume pod against the master's data nodes by pod IP). The classic regex for stale/offline strings over the whole /dir/status payload is dropped: a heuristic; the filer-to-master link is not readable over HTTP"
+      "Verify SeaweedFS S3 Gateway Operations": "k8s-seaweedfs-health/s3-check (write task, dryRun: PUT/GET/DELETE of a probe object in an existing bucket (it never creates or deletes one; an absent bucket skips) through the pod proxy WITHOUT credentials: it never reads Secrets, so a gateway that requires credentials makes the task skipped with that reason; an open gateway is reported as anonymousWrite). The ListBuckets part is buckets (anonymous list). No aws CLI, no key on a command line"
+      "Check SeaweedFS Volume Configuration": "dropped: audits Helm-rendered command-line flags of container[0] against opinions (-max < 10, peers count, single master with peers) and flags charts that configure through env or files. The facts it needed are in cluster-status (master peers against StatefulSet replicas, images) and volumes (slots, replication per layout)"
+      "Check SeaweedFS Garbage Collection and Compaction Signals": "k8s-seaweedfs-health/volumes (compactionCandidates: volumes whose DeletedByteCount reaches garbageThreshold of their size, from /vol/status). The Prometheus counter checks (pick_for_write errors, disk write errors, noWriteOrDelete) are dropped: cumulative since process start with fixed thresholds, so they only ever worsen until a restart, and the metrics port is off unless -metricsPort is set"
+      "Check SeaweedFS Capacity Projection": "k8s-seaweedfs-health/volumes (slot and disk utilisation as facts). The time-to-full projection is dropped: it compared with a snapshot file kept on the runner between runs, which a task run does not have, and extrapolated a two-point rate"
+      "Check SeaweedFS Known Version Issues": "dropped: matches the helm.sh/chart label against a curated static catalog of known issues, which is advice that goes stale, not a fact about this cluster (its filter was 2>/dev/null || true, so a malformed row matched nothing). The images are in cluster-status and the server Version in volumes"
+      "Check SeaweedFS Bucket Quota and Usage": "k8s-seaweedfs-health/buckets (usedBytes per bucket from the master, quota state/limit/percent from the filer entry, extended attribute names, anonymous list result), without weed shell text scraping. Always-on 'N buckets healthy' status issue dropped"
+  - bundle: k8s-artifactory-health
+    skills: [k8s-artifactory-health]
+    status: ported
+    ported: [k8s-artifactory-health]
+    note: "per-workload target (StatefulSet or Deployment, using its own selector), every pod and every Service that selects it, rather than `kubectl exec statefulset/NAME` (pod-0 only, needs pods/exec and curl in the image, and an exec denial, a missing curl and an unhealthy app all read as an endpoint failure); HTTP through the API server's pod and Service proxy with the chart's declared ports (http-internal 8081 for liveness and readiness, http 8082 for the router; the classic hard-coded localhost:8091 is the `port` input); the 'OK' substring test is an exact OK, a 503 is a fact (ok false) and any other reply is an error, never ok; the router health document (state per service) is read too, and the router's own /router/api/v1/system/liveness and /readiness (the chart's probes; anonymous); liveness and readiness accept the bare OK or a JSON document whose code is OK, a pod's 404 is ok false with a reason and an all-404 run is not_found; an endpoint that wants credentials is authRequired with a permission_denied error and the task is skipped when all of them do (no credential is sent: the classic TODO topology check is not ported, it needs a generic connection, misc plugin M4); LABELS and EXPECTED_AVAILABILITY were imported and unused"
+    tasks:
+      "Check Artifactory Liveness and Readiness Endpoints": "k8s-artifactory-health/health (liveness and readiness per pod and per Service, plus /router/api/v1/system/health and the router's liveness and readiness; the classic 'OK' substring test is ok true, a non-OK reply is ok false (503) or an error)"
+  - bundle: k8s-jenkins-healthcheck
+    skills: [k8s-jenkins-health]
+    status: ported
+    ported: [k8s-jenkins-health]
+    note: "per-workload target (StatefulSet or Deployment, using its own selector), every pod, HTTP through the API server's pod proxy instead of `kubectl exec statefulset/NAME -- curl` (pod-0 only, needs pods/exec and curl in the image; an exec denial, a curl failure or an auth error all left stdout empty and the queue task read that as healthy); no credential is sent, the classic put JENKINS_SA_TOKEN on the exec command line. Where anonymous read is off the queue and computer endpoints answer 403: that is a permission_denied error with the hint that an API token needs a generic connection (misc plugin, M4), and the task is skipped when every endpoint asked answers so, never an empty queue. The classic 'Stuck' substring test fired for every blocked item (the jq printed 'Stuck: <bool>' for each); stuck is now Jenkins's own stuck flag (listed whatever the item's age) plus the blocked or buildable items older than input stuckAfter (default 30m, inQueueSince against the run's time), with the stuck/blocked flag counts kept separate. Jenkins behind an SSO realm redirects anonymous requests, so the skill's facts are limited there (/login that is an IdP page is ssoRedirect: likely, ok null)"
+    tasks:
+      "Query The Jenkins Kubernetes Workload HTTP Endpoint in Kubernetes StatefulSet": "k8s-jenkins-health/http-status (/login per pod: a 200 with the Jenkins page footer is ok, 503 and 404 are ok false, a login page without the footer is ssoRedirect likely, any other 200 is an error; plus the Jenkins version from that footer, else from the image tag). The URL prefix, port and scheme come from the readiness probe unless given. The classic second command, an authenticated /api/json dump into the report, asserts nothing and needs a token: dropped (a generic connection, misc plugin M4)"
+      "Query For Stuck Jenkins Jobs in Kubernetes Statefulset Workload": "k8s-jenkins-health/queue (queue items Jenkins flags stuck, and blocked or buildable ones waiting longer than stuckAfter, with their why text and task url; Jenkins's stuck/blocked flag counts and discoverable count; and offline executors from /computer/api/json). Anonymous read only: with it off the task reports permission_denied and the M4 note, or is skipped"
+  - bundle: k8s-otelcollector
+    skills: [k8s-otelcollector-health]
+    status: ported
+    ported: [k8s-otelcollector-health]
+    note: "the collector's own metrics are read through the API server's pod proxy (kubectl get --raw .../pods/<pod>:8888/proxy/metrics, RBAC pods/proxy) instead of kubectl exec curl in a bastion workload: no curl in the image, no WORKLOAD_SERVICE/WORKLOAD_NAME bastion inputs, every pod of the workload is read (the classic logs read service/<name>, which is ONE backing pod). Classic defects not reproduced: the queue script had no return-code check, so empty metrics, a failed exec or a timeout gave exit 0 and 'healthy'; it compared the raw text with [ -gt ] and the test errored silently for floats and exponent notation (5e+02, 500.0), leaving rv 0; the 500 threshold was hard-coded, not relative to the queue capacity; both log tasks piped kubectl logs into grep with no pipefail so a denied or failed logs call was an empty string and exit 0, and the runbook gated on returncode > 0 which also read a timeout (-1) as healthy"
+    tasks:
+      "Query Collector Queued Spans": "k8s-otelcollector-health/exporter-queue (queues: otelcol_exporter_queue_size against queue_capacity per exporter and data type, utilisation against the queueUtilizationPercent setting instead of 500 queued items; the metrics are parsed, with the older and newer names)"
+      "Check OpenTelemetry Collector Logs For Errors": "k8s-workload-logs/error-patterns (target the collector workload; the grep for the lowercase word error over a single backing pod is replaced by that skill's pattern search over the workload's pods; the collector's own counters are in exporter-queue)"
+      "Query OpenTelemetry Logs For Dropped Spans": "k8s-otelcollector-health/exporter-queue (counters: exporter send_failed and enqueue_failed, receiver refused, processor dropped and refused per data type, from the collector's metrics: cumulative counts with their uptime instead of grepping the word dropped in the last 60 minutes of logs, which also matched 'dropped: 0' lines)"
+  - bundle: k8s-jaeger-http-query
+    skills: [k8s-jaeger-health]
+    status: ported
+    ported: [k8s-jaeger-health]
+    note: "per-workload target (the matched Deployment or StatefulSet, using its own selector) instead of the first service found by label; HTTP through the API server's pod proxy instead of a port-forward that slept 5s and was never checked (a dead forward gave no services, no traces and no issues, and 'service not found' exited 1 into a runbook that only parses the recommendation text); every service is queried, not the first matching one; LOOKBACK was imported but never passed to the script (lookback= blank): `since` (default 1h, microsecond start/end from the run's reference time) is passed; Jaeger's tag search is exact match, so instead of one unfiltered limit=1000 fetch the task runs two passes: every service is asked once for tags error=true (OpenTelemetry marks a 5xx server span as an error whatever the code, so 507 or 599 are found without listing them), then, in the remaining time budget, for each listed 4xx code (default 400, 401, 403, 404, 429; OpenTelemetry does not flag a 4xx) on both status attributes (http.status_code and http.response.status_code); every span with a status of 400 to 599 in any returned trace is counted, not only 400/401/403/404/500 (the classic loop reused the previous iteration's issue text for other codes); coverage is stated, not implied (5xx via error=true plus whatever a returned trace carries, 4xx only for the listed codes; limitReached, complete, servicesNotQueried and the query pod's start time and restarts say how much was seen); outbound client spans are counted apart from server spans; the URL path is http.route or the raw path with ids, ;params and the query removed; 2xx, 3xx and spans without a status are not counted, rather than every non-200 (the classic filter `!= 200` counted 201/204/301); a reply that is not Jaeger query JSON is an error, never no errors; no tag value but status code, operation, service and URL path (ids and query string removed) is returned"
+    tasks:
+      "Query Traces in Jaeger for Unhealthy HTTP Response Codes": k8s-jaeger-health/http-errors
+  - bundle: k8s-litellm-proxy-health
+    skills: [k8s-litellm-health]
+    status: ported
+    ported: [k8s-litellm-health]
+    note: "unauthenticated health endpoints only; master-key reads (secrets, printenv) are not ported. Per-workload target (the matched Deployment or StatefulSet, using its own selector) and every pod, instead of one Service reached through a kubectl port-forward whose failure aborted the script under set -e before any issues file was written (runbook.robot read the missing file as an empty issue list: a dead port-forward, a denied pods/portforward and a missing PROXY_BASE_URL all read as healthy); HTTP through the API server's pod proxy, no port-forward, no exec. A reply that is not LiteLLM's (HTML, JSON without status, a missing path) is an error, never healthy or an empty result; 503 is ready/alive false, and a readiness 503 gets a cause from liveness (verified against LiteLLM 1.102.1: liveness answers 503 only during a graceful shutdown, readiness also while a configured database is not connected, so readiness 503 with liveness 200 is db_unreachable_likely and 503 on both is draining); a 404 on one of the two liveness spellings is a served-false fact. Pods not asked (not Running, past the 10-pod cap) are counted and reported, not silently left out. The service task counts endpoints once per pod (dual-stack slices) and reports targetPortMatches against the main container's port as well as exposesPort (the Service side only). Readiness reports the db state as a fact: classic treated only the literal 'Not connected' as unhealthy (a valid no-database setup raised a sev-3 issue) and any other value, including a missing db field, passed. Recent LiteLLM answers only status and db publicly (allow_public_health_readiness_details exposes cache, litellm_version and success_callbacks), so those are null unless the proxy exposes them. The service task reads EndpointSlices, not the deprecated Endpoints, and a forbidden read is reported instead of becoming 'zero ready endpoints'; it is a third task (own RBAC: services and endpointslices, no pods/proxy) rather than part of readiness"
+    tasks:
+      "Check LiteLLM Liveness Endpoint for Proxy": k8s-litellm-health/liveness
+      "Check LiteLLM Readiness and Dependencies for Proxy": k8s-litellm-health/readiness
+      "Verify Kubernetes Service Reachability Context": k8s-litellm-health/service
+      "List Configured Models and Routes for LiteLLM Proxy": "dropped: needs the master key: a generic/bearer connection in the misc plugin (M4)"
+      "Check Optional Deep Model Health for LiteLLM Proxy": "dropped: needs the master key: a generic/bearer connection in the misc plugin (M4); the deep /health also makes the proxy call its upstream LLM providers (cost)"
+      "Check External Integration Service Health for LiteLLM Proxy": "dropped: needs the master key: a generic/bearer connection in the misc plugin (M4)"
+      "Resolve LiteLLM Master Key": "dropped: a secret read (Secrets, pod env, printenv through exec): not ported, no V13 skill reads the key"
+  - { bundle: k8s-litellm-spend-governance, skills: [], status: planned, plugin: misc,
+      note: "needs the LiteLLM master key: misc plugin skill on a generic/bearer connection (D72), M4" }
+
+# --- aws (M3, plan Appendix C): classic bundles -> skills of the aws plugin ----------------------------------
+aws:
+  - bundle: aws-lambda-health
+    skills: [aws-lambda-health]
+    status: ported
+    ported: [aws-lambda-health]
+    pilot: true
+    note: "classic ran region-wide for an SLX bound to one function, never checked an exit code (a log-tail failure or AccessDenied printed to stderr and the loop went on), matched the substring ERROR in whatever stdout held (including function names) and passed when the call failed; re-derived per function (aws/lambda-function), every call classified from the CLI's error code, the target read first so a missing function is not_found and not idle, metrics reported with datapoint counts, logs with caps, scrub and a truncated flag. The SLI (pushes 0 when stdout contains ERROR) is not ported: it carried the same false pass; function-metrics errorRateAboveThreshold is the data it should have used"
+    tasks:
+      "List Lambda Versions and Runtimes in Account Region": "aws-lambda-health/function-config (one function: runtime, version, state and last update status; the region-wide listing is aws-base/discover)"
+      "Analyze AWS Lambda Invocation Errors in Account Region": "aws-lambda-health/function-errors (the function's own log group, since/errorPattern; classic tailed 24h of every function)"
+      "Monitor AWS Lambda Performance Metrics in Account Region": "aws-lambda-health/function-metrics (Duration, Errors, Throttles, Invocations and ConcurrentExecutions over since, default 1h, with thresholds as booleans; a window with no Invocations is idle and its errors, throttles and booleans are null, never healthy)"
+  - { bundle: aws-cloudwatch-overused-ec2, skills: [aws-ec2-health], status: planned, note: "in progress: draft runwhen-plugins#58 (reviewed; review fixes local); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: aws-sqs-dlq-investigation, skills: [aws-sqs-health], status: planned, note: "built and reviewed, not yet opened (stacked on #58); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: aws-eks-health, skills: [aws-eks-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: aws-elasticache-redis-health, skills: [aws-elasticache-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: aws-account-cost-health, skills: [aws-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+azure:
+  # --- pilot (M3) ---------------------------------------------------------------------------------------------
+  # Azure skills target one resource (azure/subscription -> azure/resourcegroup -> the resource, D51); the classic
+  # resource-group scope is the set of targets discovery lists, not a task input. Tests are recorded against the az stub (tests/stub/README.md).
+  - bundle: azure-kv-health
+    skills: [azure-kv-health]
+    status: ported
+    ported: [azure-kv-health]
+    pilot: true
+    note: "per-vault target (azure/keyvault) instead of a resource-group loop. Classic false-passes not reproduced: a failed `az keyvault list`/metrics/`az rest` call became an empty loop or 'N/A' and no issue (availability, configuration, performance, resource health); availability judged only the last hourly point; null soft-delete read as misconfigured; the SLI scored a JSON load failure as healthy. Resource Health no longer registers Microsoft.ResourceHealth (a write in a read task): an unregistered provider is a dependency error. The log-analytics extension is not installed on the fly: the query goes through `az rest` to the Log Analytics API."
+    tasks:
+      "Check Key Vault Resource Health": azure-kv-health/resource-health
+      "Check Key Vault Availability": azure-kv-health/availability
+      "Check Key Vault Configuration": azure-kv-health/configuration
+      "Check Expiring Key Vault Items": azure-kv-health/expiring-items
+      "Check Key Vault Logs for Issues": azure-kv-health/audit-failures
+      "Check Key Vault Performance Metrics": azure-kv-health/performance
+  - bundle: azure-aks-triage
+    skills: [azure-aks-health]
+    status: ported
+    ported: [azure-aks-health]
+    note: "per-cluster target (azure/aks-cluster, under the resource group) and the ARM/control-plane side only: pods, nodes as Kubernetes sees them and events belong to the kubernetes plugin (D72). Classic false-passes not reproduced: a failed `az aks show` became an empty issues file and exit 0 (activities), or an empty provisioning state reported as a sev-1 'Provisioning Failure' (configuration health); `az monitor activity-log list | jq` without pipefail and invalid JSON replaced by `{\"issues\": []}` read a failed list as no failures; `az aks get-versions` failing printed 'Proceeding with version display only' and wrote no issue, and `cat ... 2>/dev/null || echo '{\"issues\": []}'` hid a missing result file: every failed call is a classified error (permission_denied, not_found, rate_limited...) and the run fails or is partial, never empty; the autoscaling check tested `.enableAutoScaling == null` and missed an explicit false (autoscaleEnabled is true only when the pool says true, the bounds are null without it); the version judgement was a function of the live get-versions list and stays one (minorSupported is membership in what AKS offers now, no pinned end-of-support table, and no date is invented); Resource Health registered the Microsoft.ResourceHealth provider when missing (a write in a read task): an unregistered provider is a dependency error; the activity log was filtered on the cluster's resource id only, which misses node pool operations (filed under the pool's own id): it is read per resource group (az applies one resource filter at a time) and the cluster and anything under it kept, ids compared without case, and a read that hit the scan limit says so (scanCut) instead of implying no failures; the classic raised an auth issue from stdout substrings ('Authentication failed') and ignored every other exit code: the exit code decides and az's ERROR lines classify; the sev-1 'Service Principal Credentials Expired' raised for any secret-import failure is the connection's concern, not a task's. The cluster's Kubernetes version, power state and node pools are typed facts: a Stopped cluster is `running: false`, not a failure, and Azure Monitor intervals without a value are counted, never read as 0%."
+    tasks:
+      "Check for Resource Health Issues Affecting AKS Cluster": azure-aks-health/resource-health
+      "Check Configuration Health of AKS Cluster": "azure-aks-health/cluster-status (provisioning and power state, access, network and diagnostic settings) and azure-aks-health/node-pools (each pool's state and autoscaler bounds)"
+      "Check Network Configuration of AKS Cluster": "dropped: asserts nothing (report-only dump) and reads the subnet, NSG, route table and firewall of other Azure resources (a network skill's types); the cluster's own network profile (plugin, mode, policy, outbound type, load balancer SKU) is in azure-aks-health/cluster-status"
+      "Fetch Activities for AKS Cluster": "azure-aks-health/activity-failures (failed operations only, which is what the classic Critical/Error severities were derived from; warnings and the caller are not read)"
+      "Check Kubernetes Version Support for AKS Cluster": azure-aks-health/version-support
+      "Analyze AKS Cluster Cost Optimization Opportunities": "dropped: a cost analysis over the node resource group (VMSS, disks) with a built-in price table and failed metrics read as 0% utilization; cost is a different skill (azure-cost, wave 3) and the node-level facts are node-pools and node-metrics"
+  - { bundle: azure-vm-os-health, skills: [azure-vm-health], status: planned, note: "in progress: draft runwhen-plugins#61 (review fixes partial, parked on a WIP branch); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-vmss-triage, skills: [azure-vm-health], status: planned, note: "in progress: draft runwhen-plugins#61; paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-appservice-webapp-health, skills: [azure-appservice-health], status: planned, note: "built and reviewed, not yet opened (stacked on #61); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-appservice-functionapp-health, skills: [azure-appservice-health], status: planned, note: "built, not yet opened; paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-appservice-plan-health, skills: [azure-appservice-health], status: planned, note: "built, not yet opened; paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-appservice-webapp-ops, skills: [azure-appservice-health], status: planned, note: "built, not yet opened; paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-acr-health, skills: [azure-acr-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-acr-image-sync, skills: [azure-acr-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-appgateway-health, skills: [azure-network-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-loadbalancer-triage, skills: [azure-network-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-apim-health, skills: [azure-apim-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-servicebus-health, skills: [azure-servicebus-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-adf-health, skills: [azure-adf-health], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-aks-cost-optimization, skills: [azure-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-appservice-cost-optimization, skills: [azure-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-databricks-cost-optimization, skills: [azure-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-storage-cost-optimization, skills: [azure-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-subscription-cost-report, skills: [azure-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-vm-cost-optimization, skills: [azure-cost], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-devops-organization-health, skills: [], status: planned, plugin: misc, note: "Azure DevOps is its own platform with a PAT: generic connection in the misc plugin (D72); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-devops-project-health, skills: [], status: planned, plugin: misc, note: "Azure DevOps is its own platform with a PAT: generic connection in the misc plugin (D72); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: azure-devops-repository-health, skills: [], status: planned, plugin: misc, note: "Azure DevOps is its own platform with a PAT: generic connection in the misc plugin (D72); paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+# --- gcp (M3; lane F plan, Appendix C). The four bundles of the 94-bundle baseline; the 27 other
+# gcp bundles on main are out of scope unless Samir widens it. Skills are stub-recorded (C5).
+gcp:
+  - bundle: gcp-bucket-health
+    skills: [gcp-bucket-health]
+    status: partial
+    ported: [gcp-bucket-health]
+    pilot: true
+    note: "`gcloud storage` only (no gsutil or bq: not in the image), `gcloud storage buckets list --raw` (full bucket resources, reused for bucket-config and the ACL half of public-access) and `describe --raw` for a bucket target, `get-iam-policy` per bucket under a time budget, with `--format=json`, `--billing-project` on every call and the ambient credentials neutralised; PROJECT_IDS comma list replaced by the target (a gcp/project: its buckets, the first maxItems; or one gcp/bucket). Classic defects not reproduced: `gsutil ls -p ... 2>/dev/null | sed` meant a denied or failed listing was 'no buckets, no problems' (bucket_size.sh, check_security.sh, bucket_details.sh, bucket_ops_costs.sh): a failed list now fails the task with the classified code; `gsutil du ... 2>/dev/null || true` and `${size_bytes:-0}` turned a failed size read into 0 TB, and 'No size data found' skipped buckets silently: a du that fails or prints no total is an error, never zero bytes (and the old `{size}  gs://b/` parse failed on every bucket of 1 TB and up, where gcloud runs the size into the URL), and buckets without a Monitoring series are listed, not zero; `get-iam-policy ... 2>/dev/null || echo '{}'` and `gsutil acl get ... 2>/dev/null || echo '[]'` made a permission error read 'not publicly accessible': an unreadable policy is publicGrant null with a scoped error (partial); the policy was read only with uniform access on and the ACL only without it, so a legacy bucket with a public IAM binding passed: IAM is always read, ACLs only count without uniform access; a describe failure printed 'Error fetching settings' and the bucket was skipped: it is an error scoped to the bucket; conditional bindings (allAuthenticatedUsers until a date) were treated as unconditional or missed: reported with conditional: true; the default object ACL was not read: publicViaDefaultObjectAcl; public access prevention was not read: blockedByPrevention; PUBLIC_ACCESS_BUCKET_THRESHOLD above 0 suppressed every finding and issues were raised from the count: the count and overThreshold are plain facts, the per-bucket grants always listed; the reports were read from files left by earlier runs: nothing is written to disk. The utilization threshold is in TiB (1024^4 bytes, what the classic script computed and called TB)."
+    tasks:
+      "Fetch GCP Bucket Storage Utilization": "gcp-bucket-health/bucket-size (Cloud Monitoring storage/v2/total_bytes, one timeSeries.list per project through curl, summed over object types and reported per type; the token comes from gcloud auth print-access-token into a 0600 header file, never on the command line, as the classic bundle did. Classic skipped buckets with no series without saying so: here they are counted in notMeasured and named in an error, and a single bucket target falls back to gcloud storage du, which walks every object and is never the method for a project)"
+      "Add GCP Bucket Storage Configuration to Report": "gcp-bucket-health/bucket-config (typed settings facts: the classic task asserted nothing and dumped each describe JSON)"
+      "Check GCP Bucket Security Configuration": "gcp-bucket-health/public-access (the encryption half of the doc comment is in bucket-config as cmek and kmsKey; the risky-role check the classic doc promised never existed)"
+      "Fetch GCP Bucket Storage Operations Rate": "dropped for the pilot: a request-count query (PromQL api_request_count in the classic bundle) is not ported; the Monitoring REST read of bucket-size (gcp_bucket_health/monitoring.py: token header file, curl through ctx.run, pagination, classified failures) is the pattern to add it with"
+  - bundle: gcp-cloud-function-health
+    skills: [gcp-functions-health]
+    status: partial
+    ported: [gcp-functions-health]
+    note: "partial: IAM invokers (the public-invoker check) and the Cloud Run Ready/traffic check are not ported (the task scope was state, latest build, error logs and metrics). New child types gcp/region (under gcp/project) and gcp/cloud-function (under the region): the same function id can exist in two regions, so the region is part of a function's identity as in the aws plugin, and tasks read it from the target's path; gcp-base/discover lists the project's functions (state included) as the project-level view the classic 'List Unhealthy Cloud Functions' gave, one partition per region, each type read on its own. Both generations through `gcloud functions list` (no --gen2 there; --v2 not used) and `describe` (generation found by gcloud), with --billing-project on every call and the ambient credentials neutralised; the gen2 Cloud Run service name is a fact (runService). Classic defects not reproduced: the list/describe/builds/logging/IAM calls used `2>/dev/null || echo '[]'` / `|| echo '{}'` and the runbook ignored the script's exit status, so a denied, throttled or failed `gcloud functions list` read 'No Cloud Functions found' and every later check passed (fetch_function_config.sh, check_function_iam.sh, check_gen2_run_health.sh, check_function_builds.sh, check_function_scaling.sh): any failed call is now the task's classified error (`permission_denied`, `dependency`, `rate_limited`, ...), and a list that skipped regions (gcloud exits 0 and warns) is `unreachable` and fails those regions' discover partitions, not 'no such function'; the jq predicate `.state != \"ACTIVE\" or .status != \"ACTIVE\"` is true whenever either field is absent (gen1 has no .state, gen2 no .status), so every function was a deployment problem: the state is the generation's own field (state or status) and null when absent, never ACTIVE and never a failure; `--filter=\"state!=ACTIVE OR status!=ACTIVE\"` had the same gap in 'List Unhealthy Cloud Functions' and was a gcloud client filter whose behaviour on the field a generation lacks is unverified: no filter, the state is reported for every function; `gcloud builds list --filter=status=FAILURE --limit=20` was project-wide and unbounded in age, so one old failed build of any workload kept the issue open: the build is the function's own latest build (buildConfig.build / buildName) with its status and times; a describe failure produced an empty service account that read as 'uses the default SA' (a false alarm) and an empty maxInstanceCount as 'no cap': a failed read is an error, serviceAccount null means the default account only when the read worked; the Cloud Run service name was assumed equal to the function name: it is read from serviceConfig.service; error logs were searched only for functions already unhealthy, with a 14-day window and unquoted names in shell commands: any function, a `since` input (default 1h, at most 14d) as an explicit timestamp window in the filter, names validated before they enter the filter, entries scrubbed and cut to 1024 characters, a structured payload never dumped; function names were interpolated into shell commands unquoted; environment variables and secret references are never returned (only counted)."
+    tasks:
+      "List Unhealthy Cloud Functions": "gcp-functions-health/function-state (one function's state and state messages) and gcp-base/discover (the project's functions with their state; no healthy/unhealthy filter)"
+      "Get Error Logs for Unhealthy Cloud Functions": "gcp-functions-health/function-errors (gcloud logging read with a filter on the function's own log resource, severity>=ERROR, newest first, scrubbed and capped)"
+      "Fetch Cloud Function Configurations": "gcp-functions-health/function-state (serviceAccount, runtime, memory, instance limits, ingress, VPC connector, trigger as facts; the classic 'default service account' judgement is the caller's, serviceAccount null means the default one)"
+      "Check Cloud Function IAM Policies": "dropped: public invokers (functions get-iam-policy, run.invoker on the 2nd gen service) are outside this skill's scope (state, latest build, error logs, metrics); candidate for a later function-access task"
+      "Check Gen2 Cloud Run Service Health": "gcp-functions-health/function-state (runService and revision) and function-metrics (the service's request_count by response class and request_latencies); the Cloud Run Ready condition and traffic split (gcloud run services describe) are not read"
+      "Check for Failed Cloud Function Builds": "gcp-functions-health/function-state (build: the status of the function's latest build from Cloud Build; the project-wide list of failed builds is not ported)"
+      "Check Cloud Function Scaling and Timeout Configuration": "gcp-functions-health/function-state (timeoutSeconds, maxInstances, minInstances, trigger kind as facts; HTTP_TIMEOUT_WARN_SECONDS is dropped, the caller judges) and function-metrics (latencyNearTimeout against the function's timeout)"
+  - { bundle: gcp-vertex-modelgarden-health, skills: [], status: planned, note: "gcp-vertex-health; paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: gcp-project-cost-health, skills: [], status: planned, note: "gcp-cost; paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+
+# --- misc (M4): generic-connection skills. Not started: paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4.
+misc:
+  - { bundle: curl-gmp-kong-ingress-inspection, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: curl-gmp-nginx-ingress-inspection, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: curl-http-ok, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: dns-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: gcloud-log-inspection, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: gh-actions-artifact-analysis, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: gh-actions-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: gh-repo-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: gke-cluster-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: jenkins-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: mailgun-sending-domain-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: openrouter-spend-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: terraform-cloud-workspace-lock-check, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }
+  - { bundle: vercel-project-health, skills: [], status: planned, note: "paused by Samir 2026-11-04 after k8s parity; azure/aws/gcp/misc waves and CNT-4 resume after M4" }

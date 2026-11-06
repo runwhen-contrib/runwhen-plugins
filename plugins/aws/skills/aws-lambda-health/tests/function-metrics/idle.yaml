@@ -1,0 +1,240 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: aws/accounts/123456789012/regions/eu-west-1/lambda-functions/report-batch
+now: '2026-11-04T02:13:58.728Z'
+calls:
+- argv:
+  - aws
+  - lambda
+  - get-function-configuration
+  - --function-name
+  - arn:aws:lambda:eu-west-1:123456789012:function:report-batch
+  - --query
+  - '{FunctionName: FunctionName, FunctionArn: FunctionArn, Runtime: Runtime, PackageType: PackageType,
+    Handler: Handler, MemorySize: MemorySize, Timeout: Timeout, EphemeralStorageMb: EphemeralStorage.Size,
+    Architectures: Architectures, State: State, StateReasonCode: StateReasonCode, StateReason: StateReason,
+    LastUpdateStatus: LastUpdateStatus, LastUpdateStatusReasonCode: LastUpdateStatusReasonCode, LastUpdateStatusReason:
+    LastUpdateStatusReason, LastModified: LastModified, CodeSize: CodeSize, Version: Version, LayerCount:
+    length(Layers || `[]`), SubnetCount: length(VpcConfig.SubnetIds || `[]`), SecurityGroupCount: length(VpcConfig.SecurityGroupIds
+    || `[]`), DeadLetterTargetArn: DeadLetterConfig.TargetArn, TracingMode: TracingConfig.Mode, LogGroup:
+    LoggingConfig.LogGroup, LogFormat: LoggingConfig.LogFormat, EnvironmentErrorCode: Environment.Error.ErrorCode,
+    EnvironmentErrorMessage: Environment.Error.Message}'
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "FunctionName": "report-batch",
+        "FunctionArn": "arn:aws:lambda:eu-west-1:123456789012:function:report-batch",
+        "Runtime": "python3.12",
+        "PackageType": "Zip",
+        "Handler": "app.handler",
+        "MemorySize": 512,
+        "Timeout": 300,
+        "EphemeralStorageMb": 512,
+        "Architectures": [
+            "arm64"
+        ],
+        "State": "Active",
+        "StateReasonCode": null,
+        "StateReason": null,
+        "LastUpdateStatus": "Successful",
+        "LastUpdateStatusReasonCode": null,
+        "LastUpdateStatusReason": null,
+        "LastModified": "2026-10-28T09:14:03.000+0000",
+        "CodeSize": 4821337,
+        "Version": "$LATEST",
+        "LayerCount": 1,
+        "SubnetCount": 0,
+        "SecurityGroupCount": 0,
+        "DeadLetterTargetArn": null,
+        "TracingMode": "PassThrough",
+        "LogGroup": "/aws/lambda/report-batch",
+        "LogFormat": "Text",
+        "EnvironmentErrorCode": null,
+        "EnvironmentErrorMessage": null
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Invocations
+  - --dimensions
+  - Name=FunctionName,Value=report-batch
+  - --start-time
+  - '2026-11-04T01:13:58Z'
+  - --end-time
+  - '2026-11-04T02:13:58Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Invocations",
+        "Datapoints": []
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Errors
+  - --dimensions
+  - Name=FunctionName,Value=report-batch
+  - --start-time
+  - '2026-11-04T01:13:58Z'
+  - --end-time
+  - '2026-11-04T02:13:58Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Errors",
+        "Datapoints": []
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Throttles
+  - --dimensions
+  - Name=FunctionName,Value=report-batch
+  - --start-time
+  - '2026-11-04T01:13:58Z'
+  - --end-time
+  - '2026-11-04T02:13:58Z'
+  - --period
+  - '300'
+  - --statistics
+  - Sum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Throttles",
+        "Datapoints": []
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - Duration
+  - --dimensions
+  - Name=FunctionName,Value=report-batch
+  - --start-time
+  - '2026-11-04T01:13:58Z'
+  - --end-time
+  - '2026-11-04T02:13:58Z'
+  - --period
+  - '300'
+  - --statistics
+  - Average
+  - Maximum
+  - SampleCount
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "Duration",
+        "Datapoints": []
+    }
+  stderr: ''
+- argv:
+  - aws
+  - cloudwatch
+  - get-metric-statistics
+  - --namespace
+  - AWS/Lambda
+  - --metric-name
+  - ConcurrentExecutions
+  - --dimensions
+  - Name=FunctionName,Value=report-batch
+  - --start-time
+  - '2026-11-04T01:13:58Z'
+  - --end-time
+  - '2026-11-04T02:13:58Z'
+  - --period
+  - '300'
+  - --statistics
+  - Maximum
+  - --region
+  - eu-west-1
+  - --output
+  - json
+  - --no-cli-pager
+  rc: 0
+  stdout: |
+    {
+        "Label": "ConcurrentExecutions",
+        "Datapoints": []
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    metrics:
+      hasData: false
+      idle: true
+      invocations: 0
+      errors: null
+      throttles: null
+      errorRate: null
+      errorRateAboveThreshold: null
+      throttlesAboveThreshold: null
+      durationNearTimeout: null
+      concurrentExecutionsMax: null
+      datapoints:
+        Invocations: 0
+        Errors: 0
+        Throttles: 0
+        Duration: 0
+        ConcurrentExecutions: 0
+      duration:
+        averageMs: null
+        maxMs: null
+        sampleCount: 0

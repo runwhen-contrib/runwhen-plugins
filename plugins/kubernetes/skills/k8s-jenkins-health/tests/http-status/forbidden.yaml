@@ -1,0 +1,25 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-jenkins/statefulsets/jenkins-stuck
+now: '2026-11-04T01:58:03.496Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-jenkins
+  - get
+  - statefulsets.apps
+  - jenkins-stuck
+  - -o
+  - jsonpath={"@\n"}{"s:kind="}{.kind}{"\n"}{"s:metadata.name="}{.metadata.name}{"\n"}{"s:metadata.namespace="}{.metadata.namespace}{"\n"}{"j:spec.replicas="}{.spec.replicas}{"\n"}{"j:spec.selector="}{.spec.selector}{"\n"}{"j:spec.template.metadata.labels="}{.spec.template.metadata.labels}{"\n"}{"j:status.readyReplicas="}{.status.readyReplicas}{"\n"}
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): statefulsets.apps "jenkins-stuck" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "statefulsets" in API group "apps" in the namespace "rw-jenkins"
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

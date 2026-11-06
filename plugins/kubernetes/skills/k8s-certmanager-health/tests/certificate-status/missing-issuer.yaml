@@ -1,0 +1,74 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-certs/certificates/orphan-cert
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - certificates.cert-manager.io
+  - orphan-cert
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "cert-manager.io/v1",
+        "kind": "Certificate",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"cert-manager.io/v1\",\"kind\":\"Certificate\",\"metadata\":{\"annotations\":{},\"name\":\"orphan-cert\",\"namespace\":\"rw-certs\"},\"spec\":{\"dnsNames\":[\"orphan.rw.example\"],\"issuerRef\":{\"kind\":\"Issuer\",\"name\":\"missing-issuer\"},\"secretName\":\"orphan-cert-tls\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:49:12Z",
+            "generation": 1,
+            "name": "orphan-cert",
+            "namespace": "rw-certs",
+            "resourceVersion": "14838",
+            "uid": "7cf4d66e-d755-4a9d-9bf4-4f3fb9d65bbc"
+        },
+        "spec": {
+            "dnsNames": [
+                "orphan.rw.example"
+            ],
+            "issuerRef": {
+                "kind": "Issuer",
+                "name": "missing-issuer"
+            },
+            "secretName": "orphan-cert-tls"
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T19:49:12Z",
+                    "message": "Referenced Issuer not found",
+                    "observedGeneration": 1,
+                    "reason": "Pending",
+                    "status": "False",
+                    "type": "Ready"
+                }
+            ]
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-certs
+  - get
+  - issuers.cert-manager.io
+  - missing-issuer
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (NotFound): issuers.cert-manager.io "missing-issuer" not found
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    certificate:
+      ready: {status: 'False', reason: Pending, message: Referenced Issuer not found}
+    issuer: {name: missing-issuer, kind: Issuer, lookedUp: true, exists: false, ready: null, readyCondition: null}

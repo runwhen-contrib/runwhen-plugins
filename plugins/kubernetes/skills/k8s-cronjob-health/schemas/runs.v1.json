@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jobs the CronJob started within the window",
+  "description": "Newest first. pods is null when the pods could not be listed.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "succeeded",
+          "failed",
+          "active"
+        ]
+      },
+      "scheduledTime": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "startTime": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "completionTime": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "finishedAt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "durationSeconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "runningSeconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "suspended": {
+        "type": "boolean"
+      },
+      "activePods": {
+        "type": "integer"
+      },
+      "succeededPods": {
+        "type": "integer"
+      },
+      "failedPods": {
+        "type": "integer"
+      },
+      "backoffLimit": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "failureReason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "failureMessage": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "pods": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "phase": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "containers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "init": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "waitingReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "restartCount": {
+                    "type": "integer"
+                  },
+                  "lastTermination": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "exitCode": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "signal": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "reason",
+                          "exitCode",
+                          "signal",
+                          "finishedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "init",
+                  "state",
+                  "waitingReason",
+                  "restartCount",
+                  "lastTermination"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "containersTruncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "name",
+            "phase",
+            "containers",
+            "containersTruncated"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name",
+      "status",
+      "scheduledTime",
+      "startTime",
+      "completionTime",
+      "finishedAt",
+      "durationSeconds",
+      "runningSeconds",
+      "suspended",
+      "activePods",
+      "succeededPods",
+      "failedPods",
+      "backoffLimit",
+      "failureReason",
+      "failureMessage",
+      "pods",
+      "truncated"
+    ],
+    "additionalProperties": false
+  }
+}

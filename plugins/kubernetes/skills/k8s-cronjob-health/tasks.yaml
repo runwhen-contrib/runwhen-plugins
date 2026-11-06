@@ -1,0 +1,65 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    min: 1
+    description: Most entries any list output returns (most relevant first)
+  lateGraceSeconds:
+    type: integer
+    default: 60
+    min: 0
+    description: >-
+      How many seconds after a scheduled time the CronJob controller may still be
+      starting that Job before the fire counts as missed in schedule-health.
+tasks:
+  - name: schedule-health
+    title: CronJob schedule
+    description: >-
+      The CronJob's schedule, time zone, suspension, concurrency policy and
+      starting deadline, its lastScheduleTime and lastSuccessfulTime, the most
+      recent time the schedule should have fired (cron parsed here, honouring the
+      time zone), how many scheduled fires after lastScheduleTime were never
+      started and whether that happened within the look-back window, whether the
+      starting deadline has already passed for the latest one, the Jobs listed as
+      active and whether a Forbid policy is blocking new runs, and the CronJob's
+      events (JobAlreadyActive, MissSchedule, ...) without the routine per-Job ones.
+    script: scripts/schedule_health.py
+    tags: [cronjob, schedule]
+    readOnly: true
+    permissions:
+      - { apiGroups: [batch], resources: [cronjobs], verbs: [get] }
+      - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+      - { apiGroups: [""], resources: [events], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 1h, description: "Look-back window for missedSince and for the CronJob's events (applied to when an event was last seen)" }
+    outputs:
+      schedule: { schema: ./schemas/schedule.v1.json, description: "Schedule, suspension and last-run fields with the evaluated expectations" }
+      activeJobs: { schema: ./schemas/active-jobs.v1.json, description: "Jobs in status.active with their start time and pod counts" }
+      events: { schema: ./schemas/cronjob-events.v1.json, description: "Events about the CronJob (not the routine per-Job ones), newest first" }
+
+  - name: recent-runs
+    title: Recent CronJob runs
+    description: >-
+      The Jobs this CronJob owns (by ownerReference) that started within the
+      look-back window: for each its status (succeeded, failed or active), scheduled
+      and start time, completion time and duration, the Failed condition's reason
+      and message, pod counts, and how each of its pods' containers last ended
+      (termination reason and exit code, waiting reason). Totals include the Jobs
+      outside the window.
+    script: scripts/recent_runs.py
+    tags: [cronjob, jobs]
+    readOnly: true
+    permissions:
+      - { apiGroups: [batch], resources: [cronjobs], verbs: [get] }
+      - { apiGroups: [batch], resources: [jobs], verbs: [list] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+    inputs:
+      since: { type: duration, default: 24h, description: "Look-back window, applied to when each Job started" }
+    outputs:
+      runs: { schema: ./schemas/runs.v1.json, description: "Jobs started within the window, newest first" }
+      counts: { schema: ./schemas/run-counts.v1.json, description: "Run totals; owned and latestStatus cover the Jobs outside the window too" }

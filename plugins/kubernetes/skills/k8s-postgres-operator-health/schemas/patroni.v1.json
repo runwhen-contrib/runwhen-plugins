@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Patroni members",
+  "description": "From patronictl list -f json run in one member pod. No leader (leaderPresent false), a member that is not running or streaming and an unknown lag are facts. Everything is null when there was no member pod to ask (queried null).",
+  "type": "object",
+  "properties": {
+    "queried": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pod": {
+              "type": [
+                "string"
+              ]
+            },
+            "container": {
+              "type": [
+                "string"
+              ]
+            }
+          },
+          "required": [
+            "pod",
+            "container"
+          ]
+        }
+      ]
+    },
+    "cluster": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "memberCount": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "leaderPresent": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "leader": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "leaderRunning": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "timelines": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": [
+          "integer"
+        ]
+      }
+    },
+    "timelineMismatch": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "maxLagMb": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "lagThresholdMb": {
+      "type": [
+        "number"
+      ]
+    },
+    "notRunning": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "aboveLagThreshold": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "truncated": {
+      "type": [
+        "boolean"
+      ]
+    },
+    "members": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "leader": {
+            "type": [
+              "boolean"
+            ]
+          },
+          "running": {
+            "type": [
+              "boolean"
+            ]
+          },
+          "timeline": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lagMb": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lagUnknown": {
+            "type": [
+              "boolean"
+            ]
+          },
+          "lagAboveThreshold": {
+            "type": [
+              "boolean"
+            ]
+          },
+          "pendingRestart": {
+            "type": [
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "host",
+          "role",
+          "state",
+          "leader",
+          "running",
+          "timeline",
+          "lagMb",
+          "lagUnknown",
+          "lagAboveThreshold",
+          "pendingRestart"
+        ]
+      }
+    }
+  },
+  "required": [
+    "queried",
+    "cluster",
+    "memberCount",
+    "leaderPresent",
+    "leader",
+    "leaderRunning",
+    "timelines",
+    "timelineMismatch",
+    "maxLagMb",
+    "lagThresholdMb",
+    "notRunning",
+    "aboveLagThreshold",
+    "truncated",
+    "members"
+  ]
+}

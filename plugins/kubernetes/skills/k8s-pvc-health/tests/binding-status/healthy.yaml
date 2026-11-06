@@ -1,0 +1,198 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-healthy/persistentvolumeclaims/data
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - persistentvolumeclaims
+  - data
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"name\":\"data\",\"namespace\":\"rw-healthy\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}\n",
+                "pv.kubernetes.io/bind-completed": "yes",
+                "pv.kubernetes.io/bound-by-controller": "yes",
+                "volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
+                "volume.kubernetes.io/selected-node": "rw-plugins-control-plane",
+                "volume.kubernetes.io/storage-provisioner": "rancher.io/local-path"
+            },
+            "creationTimestamp": "2026-11-03T17:33:01Z",
+            "finalizers": [
+                "kubernetes.io/pvc-protection"
+            ],
+            "name": "data",
+            "namespace": "rw-healthy",
+            "resourceVersion": "715",
+            "uid": "9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+        },
+        "spec": {
+            "accessModes": [
+                "ReadWriteOnce"
+            ],
+            "resources": {
+                "requests": {
+                    "storage": "100Mi"
+                }
+            },
+            "storageClassName": "standard",
+            "volumeMode": "Filesystem",
+            "volumeName": "pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+        },
+        "status": {
+            "accessModes": [
+                "ReadWriteOnce"
+            ],
+            "capacity": {
+                "storage": "100Mi"
+            },
+            "conditions": [
+                {
+                    "lastProbeTime": null,
+                    "lastTransitionTime": "2026-11-03T17:33:09Z",
+                    "message": "A pod is currently referencing this PVC",
+                    "reason": "PodUsingPVC",
+                    "status": "False",
+                    "type": "Unused"
+                }
+            ],
+            "phase": "Bound"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - storageclass
+  - standard
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "storage.k8s.io/v1",
+        "kind": "StorageClass",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"storage.k8s.io/v1\",\"kind\":\"StorageClass\",\"metadata\":{\"annotations\":{\"storageclass.kubernetes.io/is-default-class\":\"true\"},\"name\":\"standard\"},\"provisioner\":\"rancher.io/local-path\",\"reclaimPolicy\":\"Delete\",\"volumeBindingMode\":\"WaitForFirstConsumer\"}\n",
+                "storageclass.kubernetes.io/is-default-class": "true"
+            },
+            "creationTimestamp": "2026-11-03T17:32:41Z",
+            "name": "standard",
+            "resourceVersion": "319",
+            "uid": "c86e2dbe-fa2e-4b11-a3da-664e27e02f30"
+        },
+        "provisioner": "rancher.io/local-path",
+        "reclaimPolicy": "Delete",
+        "volumeBindingMode": "WaitForFirstConsumer"
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - persistentvolume
+  - pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "PersistentVolume",
+        "metadata": {
+            "annotations": {
+                "local.path.provisioner/selected-node": "rw-plugins-control-plane",
+                "pv.kubernetes.io/provisioned-by": "rancher.io/local-path"
+            },
+            "creationTimestamp": "2026-11-03T17:33:09Z",
+            "finalizers": [
+                "kubernetes.io/pv-protection"
+            ],
+            "name": "pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee",
+            "resourceVersion": "710",
+            "uid": "541b4922-3eb9-4fa8-9bf0-cf5e9d0130e4"
+        },
+        "spec": {
+            "accessModes": [
+                "ReadWriteOnce"
+            ],
+            "capacity": {
+                "storage": "100Mi"
+            },
+            "claimRef": {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "name": "data",
+                "namespace": "rw-healthy",
+                "resourceVersion": "567",
+                "uid": "9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+            },
+            "hostPath": {
+                "path": "/var/local-path-provisioner/pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee_rw-healthy_data",
+                "type": "DirectoryOrCreate"
+            },
+            "nodeAffinity": {
+                "required": {
+                    "nodeSelectorTerms": [
+                        {
+                            "matchExpressions": [
+                                {
+                                    "key": "kubernetes.io/hostname",
+                                    "operator": "In",
+                                    "values": [
+                                        "rw-plugins-control-plane"
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "persistentVolumeReclaimPolicy": "Delete",
+            "storageClassName": "standard",
+            "volumeMode": "Filesystem"
+        },
+        "status": {
+            "lastPhaseTransitionTime": "2026-11-03T17:33:09Z",
+            "phase": "Bound"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-healthy
+  - get
+  - events
+  - --field-selector
+  - involvedObject.kind=PersistentVolumeClaim,involvedObject.name=data,involvedObject.uid=9a220631-0e66-46d2-9391-bc2fa7cf72ee
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    claim: {phase: Bound, capacity: {boundBelowRequested: false}}
+    storageClass: {name: standard, exists: true}
+    volume: {exists: true, claimRefMatches: true, terminating: false}
+    events: []

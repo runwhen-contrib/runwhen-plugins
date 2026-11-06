@@ -1,0 +1,296 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-broken/deployments/stuck-rollout
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - deployments.apps
+  - stuck-rollout
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "annotations": {
+                "deployment.kubernetes.io/revision": "2",
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"stuck-rollout\",\"namespace\":\"rw-broken\"},\"spec\":{\"progressDeadlineSeconds\":30,\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"stuck-rollout\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"stuck-rollout\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:alpine\",\"name\":\"app\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"8Mi\"}}}]}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:33:04Z",
+            "generation": 2,
+            "name": "stuck-rollout",
+            "namespace": "rw-broken",
+            "resourceVersion": "1019",
+            "uid": "c2191383-6e64-4fa5-8466-3c6b1d5c8bcb"
+        },
+        "spec": {
+            "progressDeadlineSeconds": 30,
+            "replicas": 1,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "stuck-rollout"
+                }
+            },
+            "strategy": {
+                "rollingUpdate": {
+                    "maxSurge": "25%",
+                    "maxUnavailable": "25%"
+                },
+                "type": "RollingUpdate"
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "stuck-rollout"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "image": "nginx:does-not-exist-0.0.0",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "app",
+                            "resources": {
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 30
+                }
+            }
+        },
+        "status": {
+            "availableReplicas": 1,
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T17:33:26Z",
+                    "lastUpdateTime": "2026-11-03T17:33:26Z",
+                    "message": "Deployment has minimum availability.",
+                    "reason": "MinimumReplicasAvailable",
+                    "status": "True",
+                    "type": "Available"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T17:33:57Z",
+                    "lastUpdateTime": "2026-11-03T17:33:57Z",
+                    "message": "ReplicaSet \"stuck-rollout-6587d4dd99\" has timed out progressing.",
+                    "reason": "ProgressDeadlineExceeded",
+                    "status": "False",
+                    "type": "Progressing"
+                }
+            ],
+            "observedGeneration": 2,
+            "readyReplicas": 1,
+            "replicas": 2,
+            "terminatingReplicas": 0,
+            "unavailableReplicas": 1,
+            "updatedReplicas": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-broken
+  - get
+  - replicasets.apps
+  - -l
+  - app=stuck-rollout
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/desired-replicas": "1",
+                        "deployment.kubernetes.io/max-replicas": "2",
+                        "deployment.kubernetes.io/revision": "2"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:26Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "stuck-rollout",
+                        "pod-template-hash": "6587d4dd99"
+                    },
+                    "name": "stuck-rollout-6587d4dd99",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Deployment",
+                            "name": "stuck-rollout",
+                            "uid": "c2191383-6e64-4fa5-8466-3c6b1d5c8bcb"
+                        }
+                    ],
+                    "resourceVersion": "884",
+                    "uid": "89ee5467-12e5-435e-9df6-00fb7d5e9bca"
+                },
+                "spec": {
+                    "replicas": 1,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "stuck-rollout",
+                            "pod-template-hash": "6587d4dd99"
+                        }
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "stuck-rollout",
+                                "pod-template-hash": "6587d4dd99"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "nginx:does-not-exist-0.0.0",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "app",
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "1m",
+                                            "memory": "8Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "fullyLabeledReplicas": 1,
+                    "observedGeneration": 1,
+                    "replicas": 1,
+                    "terminatingReplicas": 0
+                }
+            },
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/desired-replicas": "1",
+                        "deployment.kubernetes.io/max-replicas": "2",
+                        "deployment.kubernetes.io/revision": "1"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:04Z",
+                    "generation": 1,
+                    "labels": {
+                        "app": "stuck-rollout",
+                        "pod-template-hash": "65dc6dd5d6"
+                    },
+                    "name": "stuck-rollout-65dc6dd5d6",
+                    "namespace": "rw-broken",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Deployment",
+                            "name": "stuck-rollout",
+                            "uid": "c2191383-6e64-4fa5-8466-3c6b1d5c8bcb"
+                        }
+                    ],
+                    "resourceVersion": "872",
+                    "uid": "6b48def5-be6b-4caa-be0e-5351db0b3912"
+                },
+                "spec": {
+                    "replicas": 1,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "stuck-rollout",
+                            "pod-template-hash": "65dc6dd5d6"
+                        }
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "stuck-rollout",
+                                "pod-template-hash": "65dc6dd5d6"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "nginx:alpine",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "app",
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "1m",
+                                            "memory": "8Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "availableReplicas": 1,
+                    "fullyLabeledReplicas": 1,
+                    "observedGeneration": 1,
+                    "readyReplicas": 1,
+                    "replicas": 1,
+                    "terminatingReplicas": 0
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    rollout:
+      kind: Deployment
+      name: stuck-rollout
+      desired: 1
+      replicas: 2
+      ready: 1
+      updated: 1
+      unavailable: 1
+      generationObserved: true
+      progressDeadlineExceeded: true

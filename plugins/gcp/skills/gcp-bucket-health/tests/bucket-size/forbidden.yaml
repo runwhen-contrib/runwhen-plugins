@@ -1,0 +1,27 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: gcp/projects/shop-prod-1234
+now: '2026-11-04T02:13:53.429Z'
+calls:
+- argv:
+  - gcloud
+  - storage
+  - buckets
+  - list
+  - --project=shop-prod-1234
+  - --raw
+  - --billing-project=shop-prod-1234
+  - --format=json
+  - --quiet
+  rc: 1
+  stdout: |
+    []
+  stderr: |
+    ERROR: (gcloud.storage.buckets.list) HTTPError 403: rw-reader@shop-prod-1234.iam.gserviceaccount.com does not have storage.buckets.list access to the Google Cloud project. Permission 'storage.buckets.list' denied on resource (or it may not exist).
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

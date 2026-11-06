@@ -1,0 +1,665 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-pgop/postgresqls/acid-zalando
+inputs:
+  member: acid-zalando-1
+dryRun: true
+now: '2026-11-03T22:05:32.218Z'
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - postgresqls.acid.zalan.do
+  - acid-zalando
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "acid.zalan.do/v1",
+        "kind": "postgresql",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"acid.zalan.do/v1\",\"kind\":\"postgresql\",\"metadata\":{\"annotations\":{},\"name\":\"acid-zalando\",\"namespace\":\"rw-pgop\"},\"spec\":{\"numberOfInstances\":2,\"postgresql\":{\"version\":\"16\"},\"teamId\":\"acid\",\"volume\":{\"size\":\"1Gi\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:33:39Z",
+            "generation": 1,
+            "name": "acid-zalando",
+            "namespace": "rw-pgop",
+            "resourceVersion": "31850",
+            "uid": "3ebb76ca-e7f2-4e68-a7d2-13e6c2f74c33"
+        },
+        "spec": {
+            "numberOfInstances": 2,
+            "postgresql": {
+                "version": "16"
+            },
+            "teamId": "acid",
+            "volume": {
+                "size": "1Gi"
+            }
+        },
+        "status": {
+            "PostgresClusterStatus": "Running"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - get
+  - pods
+  - -l
+  - application=spilo,cluster-name=acid-zalando
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"application\":\"spilo\",\"cluster-name\":\"acid-zalando\",\"spilo-role\":\"master\"},\"name\":\"acid-zalando-0\",\"namespace\":\"rw-pgop\"},\"spec\":{\"containers\":[{\"envFrom\":[{\"configMapRef\":{\"name\":\"pg-trust\"}}],\"image\":\"postgres:16-alpine\",\"name\":\"postgres\",\"readinessProbe\":{\"exec\":{\"command\":[\"pg_isready\",\"-U\",\"postgres\"]},\"periodSeconds\":3},\"resources\":{\"limits\":{\"memory\":\"192Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"48Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/usr/local/bin/patronictl\",\"name\":\"stub\",\"subPath\":\"patronictl\"},{\"mountPath\":\"/etc/patroni-stub\",\"name\":\"members\"}]}],\"terminationGracePeriodSeconds\":1,\"volumes\":[{\"configMap\":{\"defaultMode\":493,\"name\":\"patronictl-stub\"},\"name\":\"stub\"},{\"configMap\":{\"name\":\"patroni-acid-zalando\"},\"name\":\"members\"}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:50:41Z",
+                    "generation": 1,
+                    "labels": {
+                        "application": "spilo",
+                        "cluster-name": "acid-zalando",
+                        "spilo-role": "master"
+                    },
+                    "name": "acid-zalando-0",
+                    "namespace": "rw-pgop",
+                    "resourceVersion": "35060",
+                    "uid": "e3cc988e-181b-4b05-bb21-871ba36f4537"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "envFrom": [
+                                {
+                                    "configMapRef": {
+                                        "name": "pg-trust"
+                                    }
+                                }
+                            ],
+                            "image": "postgres:16-alpine",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "postgres",
+                            "readinessProbe": {
+                                "exec": {
+                                    "command": [
+                                        "pg_isready",
+                                        "-U",
+                                        "postgres"
+                                    ]
+                                },
+                                "failureThreshold": 3,
+                                "periodSeconds": 3,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub",
+                                    "subPath": "patronictl"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-xznrs",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 1,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 493,
+                                "name": "patronictl-stub"
+                            },
+                            "name": "stub"
+                        },
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "patroni-acid-zalando"
+                            },
+                            "name": "members"
+                        },
+                        {
+                            "name": "kube-api-access-xznrs",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "memory": "48Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:45Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:45Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "memory": "48Mi"
+                            },
+                            "containerID": "containerd://a6973a214b13243c59d6f6b51a74fb98bec4ee5c4bc48c6897e2002ad95c26cd",
+                            "image": "docker.io/library/postgres:16-alpine",
+                            "imageID": "docker.io/library/postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab",
+                            "lastState": {},
+                            "name": "postgres",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "192Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "memory": "48Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T21:50:42Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-xznrs",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.121",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.121"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "192Mi"
+                        },
+                        "requests": {
+                            "memory": "48Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T21:50:41Z"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"application\":\"spilo\",\"cluster-name\":\"acid-zalando\",\"spilo-role\":\"replica\"},\"name\":\"acid-zalando-1\",\"namespace\":\"rw-pgop\"},\"spec\":{\"containers\":[{\"command\":[\"sleep\",\"infinity\"],\"image\":\"postgres:16-alpine\",\"name\":\"postgres\",\"resources\":{\"limits\":{\"memory\":\"32Mi\"},\"requests\":{\"cpu\":\"1m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/usr/local/bin/patronictl\",\"name\":\"stub\",\"subPath\":\"patronictl\"},{\"mountPath\":\"/etc/patroni-stub\",\"name\":\"members\"}]}],\"terminationGracePeriodSeconds\":1,\"volumes\":[{\"configMap\":{\"defaultMode\":493,\"name\":\"patronictl-stub\"},\"name\":\"stub\"},{\"configMap\":{\"name\":\"patroni-acid-zalando\"},\"name\":\"members\"}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:50:41Z",
+                    "generation": 1,
+                    "labels": {
+                        "application": "spilo",
+                        "cluster-name": "acid-zalando",
+                        "spilo-role": "replica"
+                    },
+                    "name": "acid-zalando-1",
+                    "namespace": "rw-pgop",
+                    "resourceVersion": "35235",
+                    "uid": "db5fac16-9511-4ba1-a8ea-36abc6c70af3"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sleep",
+                                "infinity"
+                            ],
+                            "image": "postgres:16-alpine",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "postgres",
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub",
+                                    "subPath": "patronictl"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-ndlwf",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "terminationGracePeriodSeconds": 1,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "configMap": {
+                                "defaultMode": 493,
+                                "name": "patronictl-stub"
+                            },
+                            "name": "stub"
+                        },
+                        {
+                            "configMap": {
+                                "defaultMode": 420,
+                                "name": "patroni-acid-zalando"
+                            },
+                            "name": "members"
+                        },
+                        {
+                            "name": "kube-api-access-ndlwf",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "1m",
+                        "memory": "4Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:42Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:50:41Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "1m",
+                                "memory": "4Mi"
+                            },
+                            "containerID": "containerd://b35730b4524a0e39ad5c6222a7690a372eedbb584b9228a8b01cddd38c2b6a24",
+                            "image": "docker.io/library/postgres:16-alpine",
+                            "imageID": "docker.io/library/postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab",
+                            "lastState": {},
+                            "name": "postgres",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "memory": "32Mi"
+                                },
+                                "requests": {
+                                    "cpu": "1m",
+                                    "memory": "4Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T21:50:42Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        6,
+                                        10,
+                                        11,
+                                        20,
+                                        26,
+                                        27
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/usr/local/bin/patronictl",
+                                    "name": "stub"
+                                },
+                                {
+                                    "mountPath": "/etc/patroni-stub",
+                                    "name": "members"
+                                },
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-ndlwf",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.122",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.122"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "32Mi"
+                        },
+                        "requests": {
+                            "memory": "4Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T21:50:41Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-pgop
+  - exec
+  - acid-zalando-0
+  - -c
+  - postgres
+  - --
+  - patronictl
+  - list
+  - -f
+  - json
+  rc: 0
+  stdout: |
+    [{"Cluster": "acid-zalando", "Member": "acid-zalando-0", "Host": "10.244.0.54", "Role": "Leader", "State": "running", "TL": 7, "Pending restart": "*"},
+     {"Cluster": "acid-zalando", "Member": "acid-zalando-1", "Host": "10.244.0.55", "Role": "Replica", "State": "streaming", "TL": 7, "Lag in MB": 0, "Pending restart": "*"}]
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target:
+      kind: postgresql
+      operator: zalando
+      patroniCluster: acid-zalando
+      gitopsManaged: false
+    reinit:
+      applied: false
+      wouldRun: true
+      member: acid-zalando-1
+      leader: acid-zalando-0
+      ranIn:
+        container: postgres

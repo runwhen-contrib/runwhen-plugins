@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The latest status.history entry and how many entries are kept (Argo CD keeps only spec.revisionHistoryLimit, default 10)",
+  "type": "object",
+  "properties": {
+    "historyCount": {
+      "type": "integer"
+    },
+    "entry": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "revision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 50
+        },
+        "deployedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "deployStartedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "automated": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "repoURL": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "chart": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              },
+              "targetRevision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              }
+            },
+            "required": [
+              "repoURL",
+              "path",
+              "chart",
+              "targetRevision"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 50
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "revisions",
+        "deployedAt",
+        "deployStartedAt",
+        "automated",
+        "sources"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "historyCount",
+    "entry"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Log events of a Lambda function that match the error pattern",
+  "type": "object",
+  "properties": {
+    "logGroup": {"type": "string", "description": "The log group searched: the function's configured one, which several functions can share (then matches of other functions appear; the stream name says whose), else /aws/lambda/<name>"},
+    "logGroupFound": {"type": ["boolean", "null"], "description": "false: the log group does not exist (the function was never invoked, or it was deleted); null: it could not be read (a scoped permission_denied error); true otherwise"},
+    "window": {
+      "type": "object",
+      "properties": {"start": {"type": "string"}, "end": {"type": "string"}},
+      "required": ["start", "end"],
+      "additionalProperties": false
+    },
+    "pattern": {"type": "string", "description": "The filter pattern that was searched"},
+    "events": {
+      "type": "array",
+      "maxItems": 1000,
+      "description": "Oldest first (CloudWatch returns the earliest matches of the window first), at most maxLogEvents",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": {"type": "string", "description": "UTC, millisecond precision"},
+          "logStream": {"type": ["string", "null"]},
+          "message": {"type": "string", "maxLength": 1024, "description": "The log text, scrubbed of credentials, cut to 1024 characters"},
+          "truncated": {"type": "boolean"}
+        },
+        "required": ["timestamp", "logStream", "message", "truncated"],
+        "additionalProperties": false
+      }
+    },
+    "matched": {"type": "integer", "description": "Events in this list"},
+    "truncated": {"type": "boolean", "description": "The list is cut: more events matched than it holds (the newest are not shown; narrow since), or a later page timed out after these matched (a timeout error scoped logs)"},
+    "messagesTruncated": {"type": "boolean", "description": "Some message passed 1024 characters and was cut"}
+  },
+  "required": ["logGroup", "logGroupFound", "window", "pattern", "events", "matched", "truncated", "messagesTruncated"],
+  "additionalProperties": false
+}

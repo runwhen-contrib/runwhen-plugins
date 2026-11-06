@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PodDisruptionBudgets with no disruptions allowed",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "selector": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "minAvailable": {
+        "type": [
+          "integer",
+          "string",
+          "null"
+        ]
+      },
+      "maxUnavailable": {
+        "type": [
+          "integer",
+          "string",
+          "null"
+        ]
+      },
+      "disruptionsAllowed": {
+        "const": 0
+      },
+      "currentHealthy": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "desiredHealthy": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "expectedPods": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "selects": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "Deployment",
+                "StatefulSet"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name",
+      "selector",
+      "minAvailable",
+      "maxUnavailable",
+      "disruptionsAllowed",
+      "currentHealthy",
+      "desiredHealthy",
+      "expectedPods",
+      "selects",
+      "truncated"
+    ],
+    "additionalProperties": false
+  }
+}

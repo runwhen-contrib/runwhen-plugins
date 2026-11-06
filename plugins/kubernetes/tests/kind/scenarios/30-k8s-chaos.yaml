@@ -1,0 +1,234 @@
+# k8s-chaos scenarios, applied by up.sh. Everything lives in rw-chaos: the tasks are
+# destructive and real runs only ever target this namespace.
+#   web      Deployment, 3 replicas, busybox httpd, memory limit 64Mi, Service web
+#   db       StatefulSet, 2 replicas, memory limit 64Mi and ephemeral-storage limit 50Mi, headless Service db
+#   nolimit  Deployment, 1 replica, no resource limits (oomkill-pod must refuse), Service nolimit
+#   nosh     Deployment, 1 replica of the pause image (no shell, no dd) with a memory limit, Service nosh
+#   shared-a, shared-b  two Deployments whose pods both carry tier=shared, and the Service shared that selects
+#            them both (mangle-service on shared-a must refuse: the Service is shared with shared-b)
+#   stuck    Deployment, 1 replica, and the Service stuck as a run that died left it: its selector is mangled
+#            and the annotation runwhen.com/chaos-original-spec holds the original (mangle-service recover)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-chaos
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: rw-chaos
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app: web}
+  template:
+    metadata:
+      labels: {app: web}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: httpd
+          image: busybox:1.36
+          command: [sh, -c, "mkdir -p /www && echo ok > /www/index.html && exec httpd -f -p 8080 -h /www"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /, port: 8080}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: rw-chaos
+spec:
+  selector: {app: web}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: rw-chaos
+spec:
+  replicas: 2
+  serviceName: db
+  selector:
+    matchLabels: {app: db}
+  template:
+    metadata:
+      labels: {app: db}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+          readinessProbe:
+            exec: {command: ["true"]}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 5m, memory: 8Mi, ephemeral-storage: 10Mi}
+            limits: {memory: 64Mi, ephemeral-storage: 50Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: rw-chaos
+spec:
+  clusterIP: None
+  selector: {app: db}
+  ports:
+    - {name: tcp, port: 5432}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nolimit
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: nolimit}
+  template:
+    metadata:
+      labels: {app: nolimit}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nolimit
+  namespace: rw-chaos
+spec:
+  selector: {app: nolimit}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nosh
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: nosh}
+  template:
+    metadata:
+      labels: {app: nosh}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
+            limits: {memory: 32Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nosh
+  namespace: rw-chaos
+spec:
+  selector: {app: nosh}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shared-a
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: shared-a}
+  template:
+    metadata:
+      labels: {app: shared-a, tier: shared}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+          resources:
+            requests: {cpu: 1m, memory: 2Mi}
+            limits: {memory: 32Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shared-b
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: shared-b}
+  template:
+    metadata:
+      labels: {app: shared-b, tier: shared}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+          resources:
+            requests: {cpu: 1m, memory: 2Mi}
+            limits: {memory: 32Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shared
+  namespace: rw-chaos
+spec:
+  selector: {tier: shared}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stuck
+  namespace: rw-chaos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: stuck}
+  template:
+    metadata:
+      labels: {app: stuck}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: main
+          image: busybox:1.36
+          command: [sh, -c, "exec sleep 360000"]
+---
+# the Service as a mangle that died left it: selector replaced, original recorded
+apiVersion: v1
+kind: Service
+metadata:
+  name: stuck
+  namespace: rw-chaos
+  annotations:
+    runwhen.com/chaos-original-spec: '{"ports":[{"name":"http","port":80,"protocol":"TCP","targetPort":8080}],"selector":{"app":"stuck"}}'
+spec:
+  selector: {app: rw-chaos-none}
+  ports:
+    - {name: http, port: 80, protocol: TCP, targetPort: 8080}

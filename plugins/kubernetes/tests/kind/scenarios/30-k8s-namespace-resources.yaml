@@ -1,0 +1,156 @@
+# k8s-namespace-resources scenarios, applied by up.sh. Everything lives in its own
+# namespace, rw-nsres. The VPA instances and their statuses (what a controller
+# would write) are created by 30-k8s-namespace-resources.sh, once the CRD is
+# Established. rw-healthy and rw-broken are not touched.
+#
+#   sized          Deployment: app has requests+limits; init container init-wait has
+#                  requests and no limits
+#   unsized        Deployment: busybox (no tag) with no resources at all
+#   requests-only  Pod: image pinned by digest, requests and no limits
+#   bad-image      Deployment: image that does not exist (ImagePullBackOff)
+#   reader         ServiceAccount with a Role (get/list pods, get configmaps)
+#   VPAs           on a synthetic VerticalPodAutoscaler CRD (no VPA controller, no
+#                  upstream manifests): sized, unsized, rollout (unsupported target)
+#   no metrics     kind has no metrics.k8s.io, so resource-usage fails `dependency` here
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rw-nsres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sized
+  namespace: rw-nsres
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: sized}
+  template:
+    metadata:
+      labels: {app: sized}
+    spec:
+      initContainers:
+        - name: init-wait
+          image: busybox:1.36
+          command: [sh, -c, "true"]
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
+      containers:
+        - name: app
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests: {cpu: 10m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unsized
+  namespace: rw-nsres
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: unsized}
+  template:
+    metadata:
+      labels: {app: unsized}
+    spec:
+      containers:
+        - name: main
+          image: busybox
+          command: [sh, -c, "sleep 36000"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: requests-only
+  namespace: rw-nsres
+spec:
+  containers:
+    - name: pinned
+      image: busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      command: [sh, -c, "sleep 36000"]
+      resources:
+        requests: {cpu: 1m, memory: 1Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-image
+  namespace: rw-nsres
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: bad-image}
+  template:
+    metadata:
+      labels: {app: bad-image}
+    spec:
+      containers:
+        - name: app
+          image: busybox:does-not-exist-0.0.0
+          resources:
+            requests: {cpu: 1m, memory: 1Mi}
+            limits: {cpu: 10m, memory: 8Mi}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reader
+  namespace: rw-nsres
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reader
+  namespace: rw-nsres
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reader
+  namespace: rw-nsres
+subjects:
+  - kind: ServiceAccount
+    name: reader
+    namespace: rw-nsres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: reader
+---
+# Synthetic CRD for the real VerticalPodAutoscaler type (no controller).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: verticalpodautoscalers.autoscaling.k8s.io
+  annotations:
+    # autoscaling.k8s.io is a protected group: the API server wants an approval link.
+    api-approved.kubernetes.io: "https://github.com/kubernetes/kubernetes/pull/63797"
+spec:
+  group: autoscaling.k8s.io
+  names:
+    kind: VerticalPodAutoscaler
+    listKind: VerticalPodAutoscalerList
+    plural: verticalpodautoscalers
+    singular: verticalpodautoscaler
+    shortNames: [vpa]
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

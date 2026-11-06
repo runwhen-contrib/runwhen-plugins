@@ -1,0 +1,69 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: kubernetes@1
+defaults:
+  credentials: kubernetes/kubeconfig
+  timeout: 60s
+settings:
+  maxItems:
+    type: integer
+    default: 200
+    description: Most pods (ready) or rings (ring) a list output returns
+  ringPaths:
+    type: "string[]"
+    default: [/ring, /distributor/ring, /compactor/ring]
+    description: Ring pages the ring task asks for. /ring is the ingester ring; the others are Loki 3's distributor and compactor rings. Plain absolute paths only; add /ruler/ring, /indexgateway/ring or /query-scheduler/ring where those components run
+tasks:
+  - name: ready
+    title: Loki ready
+    description: >-
+      GET /ready on each running pod of the StatefulSet or Deployment, through the API
+      server's pod proxy (no exec, no port-forward). 200 with the text "ready" is ready,
+      503 is not ready (Loki answers 503 while an ingester waits out its minimum ready
+      duration or its ring membership is not usable; its body is the reason and is returned
+      in body); any other reply (an HTML page, a 404, a
+      timeout) is an error and the pod's ready is null, never true. A pod that is not
+      Running is listed and not asked. Inputs port (default: the container port named
+      http-metrics, http, else 3100) and scheme (http or https).
+    script: scripts/ready.py
+    timeout: 120s
+    tags: [loki, ready, readiness]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Loki HTTP port; by default the pod's container port named http-metrics or http, else 3100" }
+      scheme: { type: string, default: http, description: "http or https" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      ready: { schema: ./schemas/ready.v1.json, description: "Per pod: the /ready answer (ready true or false, HTTP status) and the workload's replica counts" }
+
+  - name: ring
+    title: Hash rings
+    description: >-
+      The members of each Loki ring in ringPaths (default /ring, /distributor/ring and
+      /compactor/ring, which is how Loki 3 single-binary and microservices expose the
+      ingester, distributor and compactor rings): per ring the members by state
+      (ACTIVE, LEAVING, UNHEALTHY, JOINING, PENDING), each member's address, zone, token
+      count, registration time and last heartbeat with its age. It asks for JSON
+      (Accept) and reports each ring's format (json, or html for a Loki that ignores
+      Accept). A non-ring reply is an error, never an empty ring. A path every asked pod
+      answers 404 for is reported served false (a component not run there); a ring no
+      pod could be read for is served null with an error. Pods are asked in name order
+      until one serves the path; the view is that pod's. Heartbeat ages use the
+      ring page's own now, else the run's reference time; an unparseable timestamp is an
+      error. No ring served by any pod is a dependency error (partial). After 100 seconds
+      the pods or paths not yet asked get a timeout error.
+    script: scripts/ring.py
+    timeout: 120s
+    tags: [loki, ring, ingester, distributor, compactor]
+    readOnly: true
+    inputs:
+      port: { type: integer, required: false, min: 1, max: 65535, description: "Loki HTTP port; by default the pod's container port named http-metrics or http, else 3100" }
+      scheme: { type: string, default: http, description: "http or https" }
+    permissions:
+      - { apiGroups: [apps], resources: [statefulsets, deployments], verbs: [get] }
+      - { apiGroups: [""], resources: [pods], verbs: [list] }
+      - { apiGroups: [""], resources: [pods/proxy], verbs: [get] }
+    outputs:
+      rings: { schema: ./schemas/rings.v1.json, description: "Per ring path: members by state with token count and heartbeat age; served false for a ring the pods do not serve" }

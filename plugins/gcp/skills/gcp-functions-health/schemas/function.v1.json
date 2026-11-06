@@ -1,0 +1,366 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A Cloud Function's state, configuration and latest build",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The function id"
+    },
+    "region": {
+      "type": "string"
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "enum": [
+        1,
+        2,
+        null
+      ],
+      "description": "1 or 2; null when the row says neither"
+    },
+    "state": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "2nd gen `state` (ACTIVE, FAILED, DEPLOYING, DELETING, STATE_UNSPECIFIED, UNKNOWN) or 1st gen `status` (ACTIVE, OFFLINE, DEPLOY_IN_PROGRESS, DELETE_IN_PROGRESS, CLOUD_FUNCTION_STATUS_UNSPECIFIED, UNKNOWN), as Google reports it; the UNSPECIFIED and UNKNOWN values mean Google did not say; null when the row carries neither (never read as ACTIVE)"
+    },
+    "stateMessages": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "2nd gen only: the conditions behind the state",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "message": {
+            "type": "string",
+            "description": "Scrubbed, at most 1024 characters",
+            "maxLength": 1024
+          },
+          "messageTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "severity",
+          "type",
+          "message",
+          "messageTruncated"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "stateMessageCount": {
+      "type": "integer",
+      "description": "How many state messages the function has (stateMessages holds the first 50)"
+    },
+    "runtime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "entryPoint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "trigger": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "http",
+            "event",
+            null
+          ]
+        },
+        "eventType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The HTTP endpoint, for an http trigger",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "kind",
+        "eventType",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "updateTime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "When the function last changed (a deployment, a configuration change), RFC 3339",
+      "maxLength": 1024
+    },
+    "versionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "1st gen: the deployed version number",
+      "maxLength": 1024
+    },
+    "revision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "2nd gen: the latest Cloud Run revision of the function's service",
+      "maxLength": 1024
+    },
+    "runService": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "2nd gen: the name of the Cloud Run service that backs the function; null for 1st gen",
+      "maxLength": 1024
+    },
+    "timeoutSeconds": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "memory": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "As Google states it: 2nd gen `availableMemory` (e.g. 256M, 512Mi); 1st gen availableMemoryMb written as `<n>M`",
+      "maxLength": 1024
+    },
+    "cpu": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "2nd gen availableCpu",
+      "maxLength": 1024
+    },
+    "minInstances": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "maxInstances": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "null: no explicit cap is set (the product default applies)"
+    },
+    "maxRequestConcurrency": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "2nd gen: requests one instance serves at once"
+    },
+    "ingress": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "vpcConnector": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1024
+    },
+    "serviceAccount": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The service account e-mail the function runs as; null: the default one",
+      "maxLength": 1024
+    },
+    "environmentVariableCount": {
+      "type": "integer",
+      "description": "How many runtime environment variables are set; their names and values are never returned"
+    },
+    "secretReferenceCount": {
+      "type": "integer",
+      "description": "How many Secret Manager references (variables and volumes) are set; never their names or values"
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      },
+      "maxProperties": 50,
+      "propertyNames": {
+        "maxLength": 128
+      }
+    },
+    "deployment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "The build of the latest deployment the function names; null when it names none",
+      "properties": {
+        "buildId": {
+          "type": "string"
+        },
+        "buildLocation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "buildId",
+        "buildLocation"
+      ],
+      "additionalProperties": false
+    },
+    "build": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Cloud Build's record of that build; null when the function names none or the build could not be read (then an error scoped `build` says why)",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "description": "QUEUED, WORKING, SUCCESS, FAILURE, INTERNAL_ERROR, TIMEOUT, CANCELLED, EXPIRED"
+        },
+        "statusDetail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "createTime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startTime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finishTime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failureType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failureDetail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Scrubbed, at most 1024 characters",
+          "maxLength": 1024
+        },
+        "logUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "statusDetail",
+        "createTime",
+        "startTime",
+        "finishTime",
+        "failureType",
+        "failureDetail",
+        "logUrl"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "name",
+    "region",
+    "generation",
+    "state",
+    "stateMessages",
+    "stateMessageCount",
+    "runtime",
+    "entryPoint",
+    "trigger",
+    "updateTime",
+    "versionId",
+    "revision",
+    "runService",
+    "timeoutSeconds",
+    "memory",
+    "cpu",
+    "minInstances",
+    "maxInstances",
+    "maxRequestConcurrency",
+    "ingress",
+    "vpcConnector",
+    "serviceAccount",
+    "environmentVariableCount",
+    "secretReferenceCount",
+    "labels",
+    "deployment",
+    "build"
+  ],
+  "additionalProperties": false
+}

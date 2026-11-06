@@ -1,0 +1,47 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+inputs:
+  command: get pods -n rw-broken -o wide
+calls:
+- argv:
+  - kubectl
+  - get
+  - pods
+  - --namespace=rw-broken
+  - --output=wide
+  rc: 0
+  stdout: |
+    NAME                             READY   STATUS             RESTARTS         AGE    IP            NODE                       NOMINATED NODE   READINESS GATES
+    bad-image-866577b69d-llmzv       0/1     ImagePullBackOff   0                138m   10.244.0.12   rw-plugins-control-plane   <none>           <none>
+    bad-probe-776cdc668b-l46vv       0/1     Running            0                138m   10.244.0.11   rw-plugins-control-plane   <none>           <none>
+    bad-probe-7d4c55fd64-c9ms7       0/1     Running            0                62m    10.244.0.45   rw-plugins-control-plane   <none>           <none>
+    broken-sts-0                     0/1     CrashLoopBackOff   31 (3m27s ago)   138m   10.244.0.15   rw-plugins-control-plane   <none>           <none>
+    crashloop-77d67d4789-f6rbl       0/1     CrashLoopBackOff   31 (3m48s ago)   138m   10.244.0.10   rw-plugins-control-plane   <none>           <none>
+    fails-24pcc                      0/1     Error              0                138m   10.244.0.14   rw-plugins-control-plane   <none>           <none>
+    fails-gfpjh                      0/1     Error              0                137m   10.244.0.20   rw-plugins-control-plane   <none>           <none>
+    no-pdb-6b666bb7ff-88qhb          1/1     Running            0                85m    10.244.0.24   rw-plugins-control-plane   <none>           <none>
+    no-pdb-6b666bb7ff-dq7zm          1/1     Running            0                86m    10.244.0.23   rw-plugins-control-plane   <none>           <none>
+    noisy-7cc85fc74-bzrdb            2/2     Running            0                85m    10.244.0.25   rw-plugins-control-plane   <none>           <none>
+    oom-d84c6594b-fwg7x              0/1     CrashLoopBackOff   31 (2m58s ago)   138m   10.244.0.13   rw-plugins-control-plane   <none>           <none>
+    still-running-l2nr9              1/1     Running            0                86m    10.244.0.21   rw-plugins-control-plane   <none>           <none>
+    stuck-rollout-5cdb587744-fdq2n   0/1     ImagePullBackOff   0                34m    10.244.0.49   rw-plugins-control-plane   <none>           <none>
+    stuck-rollout-65dc6dd5d6-mrd84   1/1     Running            0                138m   10.244.0.16   rw-plugins-control-plane   <none>           <none>
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    run:
+      argv:
+      - kubectl
+      - get
+      - pods
+      - --namespace=rw-broken
+      - --output=wide
+      lines: 15
+      truncated: false
+      redactions: 0
+      stderr: ''
+      stderrTruncated: false

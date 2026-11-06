@@ -1,0 +1,1861 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind
+settings:
+  namespaces:
+  - rw-healthy
+now: '2026-11-03T21:40:52.534Z'
+calls:
+- argv:
+  - kubectl
+  - get
+  - --raw
+  - /version
+  rc: 0
+  stdout: |-
+    {
+      "major": "1",
+      "minor": "37",
+      "emulationMajor": "1",
+      "emulationMinor": "37",
+      "minCompatibilityMajor": "1",
+      "minCompatibilityMinor": "36",
+      "gitVersion": "v1.37.0",
+      "gitCommit": "f54c212e3a2f75d674b717a9b29052b20b60aefc",
+      "gitTreeState": "clean",
+      "buildDate": "2026-08-26T10:44:25Z",
+      "goVersion": "go1.26.6",
+      "compiler": "gc",
+      "platform": "linux/arm64"
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - config
+  - view
+  - --minify
+  - -o
+  - jsonpath={.clusters[0].cluster.server}
+  rc: 0
+  stdout: https://127.0.0.1:58167
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - kube-system
+  - -o
+  - jsonpath={.metadata.uid}
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces "kube-system" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "namespaces" in API group "" in the namespace "kube-system"
+- argv:
+  - kubectl
+  - api-resources
+  - --verbs=list
+  - -o
+  - wide
+  rc: 0
+  stdout: "NAME                                SHORTNAMES   APIVERSION                               \
+    \   NAMESPACED   KIND                               VERBS                                        \
+    \                CATEGORIES\ncomponentstatuses                   cs           v1                 \
+    \                         false        ComponentStatus                    get,list               \
+    \                                      \nconfigmaps                          cm           v1     \
+    \                                     true         ConfigMap                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nendpoints                           ep           v1                                        \
+    \  true         Endpoints                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nevents                              ev           v1                                        \
+    \  true         Event                              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nlimitranges                         limits       v1                                        \
+    \  true         LimitRange                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nnamespaces                          ns           v1                                        \
+    \  false        Namespace                          create,delete,get,list,patch,update,watch     \
+    \               \nnodes                               no           v1                            \
+    \              false        Node                               create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npersistentvolumeclaims              pvc          v1                                        \
+    \  true         PersistentVolumeClaim              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npersistentvolumes                   pv           v1                                        \
+    \  false        PersistentVolume                   create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npods                                po           v1                                        \
+    \  true         Pod                                create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\npodtemplates                                     v1                                     \
+    \     true         PodTemplate                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nreplicationcontrollers              rc           v1                                        \
+    \  true         ReplicationController              create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nresourcequotas                      quota        v1                                     \
+    \     true         ResourceQuota                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nsecrets                                          v1                                        \
+    \  true         Secret                             create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nserviceaccounts                     sa           v1                                        \
+    \  true         ServiceAccount                     create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nservices                            svc          v1                                        \
+    \  true         Service                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\npostgresqls                         pg           acid.zalan.do/v1                       \
+    \     true         postgresql                         delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nmutatingadmissionpolicies                        admissionregistration.k8s.io/v1           \
+    \  false        MutatingAdmissionPolicy            create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nmutatingadmissionpolicybindings                  admissionregistration.k8s.io/v1\
+    \             false        MutatingAdmissionPolicyBinding     create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nmutatingwebhookconfigurations                    admissionregistration.k8s.io/v1\
+    \             false        MutatingWebhookConfiguration       create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nvalidatingadmissionpolicies                      admissionregistration.k8s.io/v1\
+    \             false        ValidatingAdmissionPolicy          create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nvalidatingadmissionpolicybindings                admissionregistration.k8s.io/v1\
+    \             false        ValidatingAdmissionPolicyBinding   create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\nvalidatingwebhookconfigurations                  admissionregistration.k8s.io/v1\
+    \             false        ValidatingWebhookConfiguration     create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\ncustomresourcedefinitions           crd,crds     apiextensions.k8s.io/v1     \
+    \                false        CustomResourceDefinition           create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\napiservices                                      apiregistration.k8s.io/v1   \
+    \                false        APIService                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   api-extensions\ncontrollerrevisions                              apps/v1                     \
+    \                true         ControllerRevision                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ndaemonsets                          ds           apps/v1                                   \
+    \  true         DaemonSet                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\ndeployments                         deploy       apps/v1                                \
+    \     true         Deployment                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nreplicasets                         rs           apps/v1                                \
+    \     true         ReplicaSet                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nstatefulsets                        sts          apps/v1                                \
+    \     true         StatefulSet                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\napplications                        app,apps     argoproj.io/v1alpha1                   \
+    \     true         Application                        delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nhorizontalpodautoscalers            hpa          autoscaling/v2                            \
+    \  true         HorizontalPodAutoscaler            create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\nverticalpodautoscalers              vpa          autoscaling.k8s.io/v1                  \
+    \     true         VerticalPodAutoscaler              delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ncronjobs                            cj           batch/v1                                  \
+    \  true         CronJob                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\njobs                                             batch/v1                               \
+    \     true         Job                                create,delete,deletecollection,get,list,patch,update,watch\
+    \   all\ncertificaterequests                              cert-manager.io/v1                     \
+    \     true         CertificateRequest                 delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ncertificates                                     cert-manager.io/v1                        \
+    \  true         Certificate                        delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nclusterissuers                                   cert-manager.io/v1                        \
+    \  false        ClusterIssuer                      delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nissuers                                          cert-manager.io/v1                        \
+    \  true         Issuer                             delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ncertificatesigningrequests          csr          certificates.k8s.io/v1                    \
+    \  false        CertificateSigningRequest          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nclustertrustbundles                              certificates.k8s.io/v1                    \
+    \  false        ClusterTrustBundle                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npodcertificaterequests                           certificates.k8s.io/v1                    \
+    \  true         PodCertificateRequest              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nleases                                           coordination.k8s.io/v1                    \
+    \  true         Lease                              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nendpointslices                                   discovery.k8s.io/v1                       \
+    \  true         EndpointSlice                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nevents                              ev           events.k8s.io/v1                          \
+    \  true         Event                              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nflowschemas                                      flowcontrol.apiserver.k8s.io/v1           \
+    \  false        FlowSchema                         create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nprioritylevelconfigurations                      flowcontrol.apiserver.k8s.io/v1           \
+    \  false        PriorityLevelConfiguration         create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nhelmreleases                        hr           helm.toolkit.fluxcd.io/v2                 \
+    \  true         HelmRelease                        delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nec2nodeclasses                                   karpenter.k8s.aws/v1                      \
+    \  false        EC2NodeClass                       delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nnodeclaims                                       karpenter.sh/v1                           \
+    \  false        NodeClaim                          delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nnodepools                                        karpenter.sh/v1                           \
+    \  false        NodePool                           delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nkustomizations                      ks           kustomize.toolkit.fluxcd.io/v1            \
+    \  true         Kustomization                      delete,deletecollection,get,list,patch,create,update,watch\
+    \   \ningressclasses                                   networking.k8s.io/v1                      \
+    \  false        IngressClass                       create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ningresses                           ing          networking.k8s.io/v1                      \
+    \  true         Ingress                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nipaddresses                         ip           networking.k8s.io/v1                      \
+    \  false        IPAddress                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nnetworkpolicies                     netpol       networking.k8s.io/v1                      \
+    \  true         NetworkPolicy                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nservicecidrs                                     networking.k8s.io/v1                      \
+    \  false        ServiceCIDR                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nruntimeclasses                                   node.k8s.io/v1                            \
+    \  false        RuntimeClass                       create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npoddisruptionbudgets                pdb          policy/v1                                 \
+    \  true         PodDisruptionBudget                create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npostgresclusters                                 postgres-operator.crunchydata.com/v1beta1 \
+    \  true         PostgresCluster                    delete,deletecollection,get,list,patch,create,update,watch\
+    \   \nclusterrolebindings                              rbac.authorization.k8s.io/v1              \
+    \  false        ClusterRoleBinding                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nclusterroles                                     rbac.authorization.k8s.io/v1              \
+    \  false        ClusterRole                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nrolebindings                                     rbac.authorization.k8s.io/v1              \
+    \  true         RoleBinding                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nroles                                            rbac.authorization.k8s.io/v1              \
+    \  true         Role                               create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ndeviceclasses                                    resource.k8s.io/v1                        \
+    \  false        DeviceClass                        create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ndevicetaintrules                                 resource.k8s.io/v1                        \
+    \  false        DeviceTaintRule                    create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nresourceclaims                                   resource.k8s.io/v1                        \
+    \  true         ResourceClaim                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nresourceclaimtemplates                           resource.k8s.io/v1                        \
+    \  true         ResourceClaimTemplate              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nresourceslices                                   resource.k8s.io/v1                        \
+    \  false        ResourceSlice                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \npriorityclasses                     pc           scheduling.k8s.io/v1                      \
+    \  false        PriorityClass                      create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ncsidrivers                                       storage.k8s.io/v1                         \
+    \  false        CSIDriver                          create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ncsinodes                                         storage.k8s.io/v1                         \
+    \  false        CSINode                            create,delete,deletecollection,get,list,patch,update,watch\
+    \   \ncsistoragecapacities                             storage.k8s.io/v1                         \
+    \  true         CSIStorageCapacity                 create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nstorageclasses                      sc           storage.k8s.io/v1                         \
+    \  false        StorageClass                       create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nvolumeattachments                                storage.k8s.io/v1                         \
+    \  false        VolumeAttachment                   create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nvolumeattributesclasses             vac          storage.k8s.io/v1                         \
+    \  false        VolumeAttributesClass              create,delete,deletecollection,get,list,patch,update,watch\
+    \   \nstorageversionmigrations                         storagemigration.k8s.io/v1                \
+    \  false        StorageVersionMigration            create,delete,deletecollection,get,list,patch,update,watch\
+    \   \n"
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"annotations\":{},\"name\":\"rw-healthy\"}}\n"
+            },
+            "creationTimestamp": "2026-11-03T17:32:59Z",
+            "labels": {
+                "kubernetes.io/metadata.name": "rw-healthy"
+            },
+            "name": "rw-healthy",
+            "resourceVersion": "470",
+            "uid": "e2ade858-37c5-4ac3-b42d-5f97a029291b"
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - services
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"ports\":[{\"port\":80,\"targetPort\":80}],\"selector\":{\"app\":\"web\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "485",
+                    "uid": "7933aec9-247b-4b7d-8303-0c6f93b4ca7c"
+                },
+                "spec": {
+                    "clusterIP": "10.96.69.240",
+                    "clusterIPs": [
+                        "10.96.69.240"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 80
+                        }
+                    ],
+                    "selector": {
+                        "app": "web"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - configmaps
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "data": {
+                    "LOG_LEVEL": "info"
+                },
+                "kind": "ConfigMap",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"LOG_LEVEL\":\"info\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"app-config\",\"namespace\":\"rw-healthy\"}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "name": "app-config",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "477",
+                    "uid": "1ee4ac26-7cf9-4be6-a99c-8445e52d7d32"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "data": {
+                    "ca.crt": "-----BEGIN CERTIFICATE-----\nMIIDBTCCAe2gAwIBAgIIeinlGzdezjcwDQYJKoZIhvcNAQELBQAwFTETMBEGA1UE\nAxMKa3ViZXJuZXRlczAeFw0yNjExMDMxNzI3MjlaFw0zNjEwMzExNzMyMjlaMBUx\nEzARBgNVBAMTCmt1YmVybmV0ZXMwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK\nAoIBAQC1qkQ6tFGrga8bbdO4ms8SDkTcZPVA9ApgiiwUEONjryhKOB4+DtaOSQpv\nmiMba6EtoOZHs3jxGV36OMWMuVpbrslJmOIbwfVSu4E9GqQRyGjkUQ5hSi6oX8TG\nijr94LLHJTfOkchFc3omrZighRi4KCVZ3bzPMcCf0xjZiNBtCpfeX5pyWfz/YFgO\nJG4l5VD/P1bamnh+FPJWS+60/DvhUX3GoZx6SAFt/682sOIHxX8P7C8V0YYs8Gc4\nQIHWj/EW44iQ05GXxTxsSwAJX9q+Gt6yqG7R9F/uYsVkwHpioCz4a1CIDNUUSzkg\nzMcLKkPgmZ3eH2HJ6Fv6bQ0n7ROpAgMBAAGjWTBXMA4GA1UdDwEB/wQEAwICpDAP\nBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSoEXvZyu65dIzw1yfAF/FQxjMT/zAV\nBgNVHREEDjAMggprdWJlcm5ldGVzMA0GCSqGSIb3DQEBCwUAA4IBAQBPHpIOADXd\naZqTj84HGDiP/1kJBz7OHoWCVJbUtffFeSqDgJc/XAIzh4DTxSzmam2VvXVBz4yC\nWE/9WedOEDmc9M96gSD4n2YwKCyPMOYaYkBSPbrj6t/srSoL4qlGj0GoPw2c4MSS\nOYyoKUmhWLLX2MObDSXCxrxYUmjzRiojCE2Lg90Vv76wcgaqb6PmyiNjPGn/sZR6\npDCFFEp2n0T2zITo5kCaP25KUsEfVdyhGhSUvByHGWmvozRRbQB+yoCrCzVzW36B\nGXpiRqmODkrM5n80fP8UsudYwoQNtl3flLmmwwUeWoghDvoKmkzvG10xiV1aer8Q\nPNNbUcflK5W5\n-----END CERTIFICATE-----\n"
+                },
+                "kind": "ConfigMap",
+                "metadata": {
+                    "annotations": {
+                        "kubernetes.io/description": "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
+                    },
+                    "creationTimestamp": "2026-11-03T17:32:59Z",
+                    "name": "kube-root-ca.crt",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "471",
+                    "uid": "d8c82f3a-0699-411d-86e3-ee2254e70ee2"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - serviceaccounts
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "ServiceAccount",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T17:32:59Z",
+                    "name": "default",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "472",
+                    "uid": "f23b6bd9-3714-4739-a0d3-35a8a7ffb2d1"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "ServiceAccount",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"ServiceAccount\",\"metadata\":{\"annotations\":{},\"name\":\"rw-viewer\",\"namespace\":\"rw-healthy\"}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:04Z",
+                    "name": "rw-viewer",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "657",
+                    "uid": "8641d172-4b6d-4c6a-8275-60f08d21acb4"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - persistentvolumeclaims
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"name\":\"data\",\"namespace\":\"rw-healthy\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}\n",
+                        "pv.kubernetes.io/bind-completed": "yes",
+                        "pv.kubernetes.io/bound-by-controller": "yes",
+                        "volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
+                        "volume.kubernetes.io/selected-node": "rw-plugins-control-plane",
+                        "volume.kubernetes.io/storage-provisioner": "rancher.io/local-path"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:01Z",
+                    "finalizers": [
+                        "kubernetes.io/pvc-protection"
+                    ],
+                    "name": "data",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "715",
+                    "uid": "9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+                },
+                "spec": {
+                    "accessModes": [
+                        "ReadWriteOnce"
+                    ],
+                    "resources": {
+                        "requests": {
+                            "storage": "100Mi"
+                        }
+                    },
+                    "storageClassName": "standard",
+                    "volumeMode": "Filesystem",
+                    "volumeName": "pvc-9a220631-0e66-46d2-9391-bc2fa7cf72ee"
+                },
+                "status": {
+                    "accessModes": [
+                        "ReadWriteOnce"
+                    ],
+                    "capacity": {
+                        "storage": "100Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T17:33:09Z",
+                            "message": "A pod is currently referencing this PVC",
+                            "reason": "PodUsingPVC",
+                            "status": "False",
+                            "type": "Unused"
+                        }
+                    ],
+                    "phase": "Bound"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "annotations": {
+                        "pv.kubernetes.io/bind-completed": "yes",
+                        "pv.kubernetes.io/bound-by-controller": "yes",
+                        "volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
+                        "volume.kubernetes.io/selected-node": "rw-plugins-control-plane",
+                        "volume.kubernetes.io/storage-provisioner": "rancher.io/local-path"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:01Z",
+                    "finalizers": [
+                        "kubernetes.io/pvc-protection"
+                    ],
+                    "labels": {
+                        "app": "db"
+                    },
+                    "name": "data-db-0",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "8851",
+                    "uid": "268e336f-b128-419d-800d-077e03d562f1"
+                },
+                "spec": {
+                    "accessModes": [
+                        "ReadWriteOnce"
+                    ],
+                    "resources": {
+                        "requests": {
+                            "storage": "100Mi"
+                        }
+                    },
+                    "storageClassName": "standard",
+                    "volumeMode": "Filesystem",
+                    "volumeName": "pvc-268e336f-b128-419d-800d-077e03d562f1"
+                },
+                "status": {
+                    "accessModes": [
+                        "ReadWriteOnce"
+                    ],
+                    "capacity": {
+                        "storage": "100Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:48:23Z",
+                            "message": "A pod is currently referencing this PVC",
+                            "reason": "PodUsingPVC",
+                            "status": "False",
+                            "type": "Unused"
+                        }
+                    ],
+                    "phase": "Bound"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"annotations\":{},\"name\":\"df-data\",\"namespace\":\"rw-healthy\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}\n",
+                        "pv.kubernetes.io/bind-completed": "yes",
+                        "pv.kubernetes.io/bound-by-controller": "yes",
+                        "volume.beta.kubernetes.io/storage-provisioner": "rancher.io/local-path",
+                        "volume.kubernetes.io/selected-node": "rw-plugins-control-plane",
+                        "volume.kubernetes.io/storage-provisioner": "rancher.io/local-path"
+                    },
+                    "creationTimestamp": "2026-11-03T18:42:11Z",
+                    "finalizers": [
+                        "kubernetes.io/pvc-protection"
+                    ],
+                    "name": "df-data",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "7496",
+                    "uid": "a477d8c7-c7d5-4b37-834b-fba1c69392bf"
+                },
+                "spec": {
+                    "accessModes": [
+                        "ReadWriteOnce"
+                    ],
+                    "resources": {
+                        "requests": {
+                            "storage": "100Mi"
+                        }
+                    },
+                    "storageClassName": "standard",
+                    "volumeMode": "Filesystem",
+                    "volumeName": "pvc-a477d8c7-c7d5-4b37-834b-fba1c69392bf"
+                },
+                "status": {
+                    "accessModes": [
+                        "ReadWriteOnce"
+                    ],
+                    "capacity": {
+                        "storage": "100Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T18:42:18Z",
+                            "message": "A pod is currently referencing this PVC",
+                            "reason": "PodUsingPVC",
+                            "status": "False",
+                            "type": "Unused"
+                        }
+                    ],
+                    "phase": "Bound"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - replicationcontrollers
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - limitranges
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - resourcequotas
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "ResourceQuota",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"ResourceQuota\",\"metadata\":{\"annotations\":{},\"name\":\"roomy\",\"namespace\":\"rw-healthy\"},\"spec\":{\"hard\":{\"pods\":\"50\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T18:24:51Z",
+                    "name": "roomy",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9165",
+                    "uid": "63a112d8-9ac5-4829-81ea-1e5825c90671"
+                },
+                "spec": {
+                    "hard": {
+                        "pods": "50"
+                    }
+                },
+                "status": {
+                    "hard": {
+                        "pods": "50"
+                    },
+                    "used": {
+                        "pods": "6"
+                    }
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - nodes
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodes is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodes" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - persistentvolumes
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): persistentvolumes is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "persistentvolumes" in API group "" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - deployments.apps
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/revision": "1",
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"data-user\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"data-user\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"data-user\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"name\":\"pause\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"1Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}],\"volumes\":[{\"name\":\"data\",\"persistentVolumeClaim\":{\"claimName\":\"data\"}}]}}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:02Z",
+                    "generation": 1,
+                    "name": "data-user",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "892",
+                    "uid": "df9618f5-9816-420b-b212-2cacb11adcc4"
+                },
+                "spec": {
+                    "progressDeadlineSeconds": 600,
+                    "replicas": 1,
+                    "revisionHistoryLimit": 10,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "data-user"
+                        }
+                    },
+                    "strategy": {
+                        "rollingUpdate": {
+                            "maxSurge": "25%",
+                            "maxUnavailable": "25%"
+                        },
+                        "type": "RollingUpdate"
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "data-user"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "registry.k8s.io/pause:3.9",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "pause",
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "1m",
+                                            "memory": "1Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File",
+                                    "volumeMounts": [
+                                        {
+                                            "mountPath": "/data",
+                                            "name": "data"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30,
+                            "volumes": [
+                                {
+                                    "name": "data",
+                                    "persistentVolumeClaim": {
+                                        "claimName": "data"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "status": {
+                    "availableReplicas": 1,
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T17:33:26Z",
+                            "lastUpdateTime": "2026-11-03T17:33:26Z",
+                            "message": "Deployment has minimum availability.",
+                            "reason": "MinimumReplicasAvailable",
+                            "status": "True",
+                            "type": "Available"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T17:33:02Z",
+                            "lastUpdateTime": "2026-11-03T17:33:26Z",
+                            "message": "ReplicaSet \"data-user-644b99cfbb\" has successfully progressed.",
+                            "reason": "NewReplicaSetAvailable",
+                            "status": "True",
+                            "type": "Progressing"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "readyReplicas": 1,
+                    "replicas": 1,
+                    "terminatingReplicas": 0,
+                    "updatedReplicas": 1
+                }
+            },
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "annotations": {
+                        "deployment.kubernetes.io/revision": "8",
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"web\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"web\"}},\"spec\":{\"containers\":[{\"image\":\"nginx:alpine\",\"livenessProbe\":{\"httpGet\":{\"path\":\"/\",\"port\":80},\"periodSeconds\":10},\"name\":\"nginx\",\"ports\":[{\"containerPort\":80}],\"readinessProbe\":{\"httpGet\":{\"path\":\"/\",\"port\":80},\"periodSeconds\":5},\"resources\":{\"limits\":{\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"5m\",\"memory\":\"8Mi\"}}}]}}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "generation": 13,
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9167",
+                    "uid": "757486e0-aa1c-47a2-b8f2-d282ecd9ba0e"
+                },
+                "spec": {
+                    "progressDeadlineSeconds": 600,
+                    "replicas": 2,
+                    "revisionHistoryLimit": 10,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "web"
+                        }
+                    },
+                    "strategy": {
+                        "rollingUpdate": {
+                            "maxSurge": "25%",
+                            "maxUnavailable": "25%"
+                        },
+                        "type": "RollingUpdate"
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "web"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "nginx:alpine",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "livenessProbe": {
+                                        "failureThreshold": 3,
+                                        "httpGet": {
+                                            "path": "/",
+                                            "port": 80,
+                                            "scheme": "HTTP"
+                                        },
+                                        "periodSeconds": 10,
+                                        "successThreshold": 1,
+                                        "timeoutSeconds": 1
+                                    },
+                                    "name": "nginx",
+                                    "ports": [
+                                        {
+                                            "containerPort": 80,
+                                            "protocol": "TCP"
+                                        }
+                                    ],
+                                    "readinessProbe": {
+                                        "failureThreshold": 3,
+                                        "httpGet": {
+                                            "path": "/",
+                                            "port": 80,
+                                            "scheme": "HTTP"
+                                        },
+                                        "periodSeconds": 5,
+                                        "successThreshold": 1,
+                                        "timeoutSeconds": 1
+                                    },
+                                    "resources": {
+                                        "limits": {
+                                            "memory": "64Mi"
+                                        },
+                                        "requests": {
+                                            "cpu": "5m",
+                                            "memory": "8Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    }
+                },
+                "status": {
+                    "availableReplicas": 2,
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T18:48:16Z",
+                            "lastUpdateTime": "2026-11-03T18:48:16Z",
+                            "message": "Deployment has minimum availability.",
+                            "reason": "MinimumReplicasAvailable",
+                            "status": "True",
+                            "type": "Available"
+                        },
+                        {
+                            "lastTransitionTime": "2026-11-03T17:33:00Z",
+                            "lastUpdateTime": "2026-11-03T18:50:16Z",
+                            "message": "ReplicaSet \"web-868f7b7477\" has successfully progressed.",
+                            "reason": "NewReplicaSetAvailable",
+                            "status": "True",
+                            "type": "Progressing"
+                        }
+                    ],
+                    "observedGeneration": 13,
+                    "readyReplicas": 2,
+                    "replicas": 2,
+                    "terminatingReplicas": 0,
+                    "updatedReplicas": 2
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - statefulsets.apps
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "StatefulSet",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-healthy\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"sleep 1000000\"],\"image\":\"busybox:1.36\",\"name\":\"db\",\"resources\":{\"requests\":{\"cpu\":\"5m\",\"memory\":\"4Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/data\",\"name\":\"data\"}]}]}},\"volumeClaimTemplates\":[{\"metadata\":{\"name\":\"data\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"resources\":{\"requests\":{\"storage\":\"100Mi\"}},\"storageClassName\":\"standard\"}}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "generation": 5,
+                    "name": "db",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9196",
+                    "uid": "4dd9e015-5f93-4b09-b9fd-51ad4f9d3d3d"
+                },
+                "spec": {
+                    "persistentVolumeClaimRetentionPolicy": {
+                        "whenDeleted": "Retain",
+                        "whenScaled": "Retain"
+                    },
+                    "podManagementPolicy": "OrderedReady",
+                    "replicas": 1,
+                    "revisionHistoryLimit": 10,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "db"
+                        }
+                    },
+                    "serviceName": "db",
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "db"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "command": [
+                                        "sh",
+                                        "-c",
+                                        "sleep 1000000"
+                                    ],
+                                    "image": "busybox:1.36",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "db",
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "5m",
+                                            "memory": "4Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File",
+                                    "volumeMounts": [
+                                        {
+                                            "mountPath": "/data",
+                                            "name": "data"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    },
+                    "updateStrategy": {
+                        "rollingUpdate": {
+                            "maxUnavailable": 1,
+                            "partition": 0
+                        },
+                        "type": "RollingUpdate"
+                    },
+                    "volumeClaimTemplates": [
+                        {
+                            "apiVersion": "v1",
+                            "kind": "PersistentVolumeClaim",
+                            "metadata": {
+                                "name": "data"
+                            },
+                            "spec": {
+                                "accessModes": [
+                                    "ReadWriteOnce"
+                                ],
+                                "resources": {
+                                    "requests": {
+                                        "storage": "100Mi"
+                                    }
+                                },
+                                "storageClassName": "standard",
+                                "volumeMode": "Filesystem"
+                            },
+                            "status": {
+                                "phase": "Pending"
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "availableReplicas": 1,
+                    "collisionCount": 0,
+                    "currentReplicas": 1,
+                    "currentRevision": "db-7b55f8bdd",
+                    "observedGeneration": 5,
+                    "readyReplicas": 1,
+                    "replicas": 1,
+                    "updateRevision": "db-7b55f8bdd",
+                    "updatedReplicas": 1
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - daemonsets.apps
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "DaemonSet",
+                "metadata": {
+                    "annotations": {
+                        "deprecated.daemonset.template.generation": "5",
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"DaemonSet\",\"metadata\":{\"annotations\":{},\"name\":\"agent\",\"namespace\":\"rw-healthy\"},\"spec\":{\"selector\":{\"matchLabels\":{\"app\":\"agent\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"agent\"}},\"spec\":{\"containers\":[{\"image\":\"registry.k8s.io/pause:3.9\",\"name\":\"pause\",\"resources\":{\"requests\":{\"cpu\":\"1m\",\"memory\":\"1Mi\"}}}]}}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:01Z",
+                    "generation": 5,
+                    "name": "agent",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9197",
+                    "uid": "8363e1e6-e1e3-46ff-a59a-345444bdf91b"
+                },
+                "spec": {
+                    "revisionHistoryLimit": 10,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "agent"
+                        }
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "agent"
+                            }
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "image": "registry.k8s.io/pause:3.9",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "name": "pause",
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "1m",
+                                            "memory": "1Mi"
+                                        }
+                                    },
+                                    "terminationMessagePath": "/dev/termination-log",
+                                    "terminationMessagePolicy": "File"
+                                }
+                            ],
+                            "dnsPolicy": "ClusterFirst",
+                            "restartPolicy": "Always",
+                            "schedulerName": "default-scheduler",
+                            "securityContext": {},
+                            "terminationGracePeriodSeconds": 30
+                        }
+                    },
+                    "updateStrategy": {
+                        "rollingUpdate": {
+                            "maxSurge": 0,
+                            "maxUnavailable": 1
+                        },
+                        "type": "RollingUpdate"
+                    }
+                },
+                "status": {
+                    "currentNumberScheduled": 1,
+                    "desiredNumberScheduled": 1,
+                    "numberAvailable": 1,
+                    "numberMisscheduled": 0,
+                    "numberReady": 1,
+                    "observedGeneration": 5,
+                    "updatedNumberScheduled": 1
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - jobs.batch
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - cronjobs.batch
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - ingresses.networking.k8s.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "networking.k8s.io/v1",
+                "kind": "Ingress",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"networking.k8s.io/v1\",\"kind\":\"Ingress\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"rules\":[{\"host\":\"web.rw-healthy.local\",\"http\":{\"paths\":[{\"backend\":{\"service\":{\"name\":\"web\",\"port\":{\"number\":80}}},\"path\":\"/\",\"pathType\":\"Prefix\"}]}}]}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T17:33:00Z",
+                    "generation": 1,
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "499",
+                    "uid": "01e72069-124f-4ec9-9571-25eb7d9e0f3d"
+                },
+                "spec": {
+                    "rules": [
+                        {
+                            "host": "web.rw-healthy.local",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "backend": {
+                                            "service": {
+                                                "name": "web",
+                                                "port": {
+                                                    "number": 80
+                                                }
+                                            }
+                                        },
+                                        "path": "/",
+                                        "pathType": "Prefix"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - networkpolicies.networking.k8s.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - ingressclasses.networking.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): ingressclasses.networking.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "ingressclasses" in API group "networking.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - roles.rbac.authorization.k8s.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): roles.rbac.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "roles" in API group "rbac.authorization.k8s.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - rolebindings.rbac.authorization.k8s.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): rolebindings.rbac.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "rolebindings" in API group "rbac.authorization.k8s.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - clusterroles.rbac.authorization.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): clusterroles.rbac.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "clusterroles" in API group "rbac.authorization.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - clusterrolebindings.rbac.authorization.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): clusterrolebindings.rbac.authorization.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "clusterrolebindings" in API group "rbac.authorization.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - storageclasses.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): storageclasses.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "storageclasses" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - volumeattachments.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): volumeattachments.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "volumeattachments" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - csidrivers.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): csidrivers.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "csidrivers" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - csinodes.storage.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): csinodes.storage.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "csinodes" in API group "storage.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - poddisruptionbudgets.policy
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "policy/v1",
+                "kind": "PodDisruptionBudget",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"policy/v1\",\"kind\":\"PodDisruptionBudget\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-healthy\"},\"spec\":{\"minAvailable\":1,\"selector\":{\"matchLabels\":{\"app\":\"web\"}}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T18:24:51Z",
+                    "generation": 1,
+                    "name": "web",
+                    "namespace": "rw-healthy",
+                    "resourceVersion": "9181",
+                    "uid": "4f4486e9-40cf-4356-9734-30650fc85191"
+                },
+                "spec": {
+                    "minAvailable": 1,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "web"
+                        }
+                    }
+                },
+                "status": {
+                    "conditions": [
+                        {
+                            "lastTransitionTime": "2026-11-03T18:48:16Z",
+                            "message": "",
+                            "observedGeneration": 1,
+                            "reason": "SufficientPods",
+                            "status": "True",
+                            "type": "DisruptionAllowed"
+                        }
+                    ],
+                    "currentHealthy": 2,
+                    "desiredHealthy": 1,
+                    "disruptionsAllowed": 1,
+                    "expectedPods": 2,
+                    "observedGeneration": 1
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - horizontalpodautoscalers.autoscaling
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - get
+  - priorityclasses.scheduling.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): priorityclasses.scheduling.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "priorityclasses" in API group "scheduling.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - validatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): validatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "validatingwebhookconfigurations" in API group "admissionregistration.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - mutatingwebhookconfigurations.admissionregistration.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): mutatingwebhookconfigurations.admissionregistration.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "mutatingwebhookconfigurations" in API group "admissionregistration.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - runtimeclasses.node.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): runtimeclasses.node.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "runtimeclasses" in API group "node.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - customresourcedefinitions.apiextensions.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): customresourcedefinitions.apiextensions.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "customresourcedefinitions" in API group "apiextensions.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - certificatesigningrequests.certificates.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): certificatesigningrequests.certificates.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "certificatesigningrequests" in API group "certificates.k8s.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - helmreleases.helm.toolkit.fluxcd.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): helmreleases.helm.toolkit.fluxcd.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "helmreleases" in API group "helm.toolkit.fluxcd.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - kustomizations.kustomize.toolkit.fluxcd.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): kustomizations.kustomize.toolkit.fluxcd.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "kustomizations" in API group "kustomize.toolkit.fluxcd.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - applications.argoproj.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): applications.argoproj.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "applications" in API group "argoproj.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - certificates.cert-manager.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): certificates.cert-manager.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "certificates" in API group "cert-manager.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - issuers.cert-manager.io
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): issuers.cert-manager.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "issuers" in API group "cert-manager.io" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - clusterissuers.cert-manager.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): clusterissuers.cert-manager.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "clusterissuers" in API group "cert-manager.io" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - nodepools.karpenter.sh
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodepools.karpenter.sh is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodepools" in API group "karpenter.sh" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - nodeclaims.karpenter.sh
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): nodeclaims.karpenter.sh is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "nodeclaims" in API group "karpenter.sh" at the cluster scope
+- argv:
+  - kubectl
+  - get
+  - postgresclusters.postgres-operator.crunchydata.com
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): postgresclusters.postgres-operator.crunchydata.com is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "postgresclusters" in API group "postgres-operator.crunchydata.com" in the namespace "rw-healthy"
+- argv:
+  - kubectl
+  - get
+  - postgresqls.acid.zalan.do
+  - --namespace
+  - rw-healthy
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): postgresqls.acid.zalan.do is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "postgresqls" in API group "acid.zalan.do" in the namespace "rw-healthy"
+expect:
+  status: partial
+  errorCodes:
+  - permission_denied
+  outputs:
+    summary:
+      counts: {cluster: 1, namespace: 1, deployment: 2, statefulset: 1, daemonset: 1, service: 1, configmap: 2, ingress: 1}
+      partitions: {complete: 16, failed: 0, forbidden: 27, excluded: 6}
+      errors:
+        $contains:
+        - {code: permission_denied, scope: node}
+        - {code: permission_denied, scope: role}
+  artifacts:
+    sync:
+      contains:
+      - '"type":"role","status":"forbidden","parentPath":"kubernetes/clusters/kind/namespaces/rw-healthy"'

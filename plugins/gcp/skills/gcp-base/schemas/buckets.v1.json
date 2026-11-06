@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "The project's Cloud Storage buckets",
+  "type": "object",
+  "properties": {
+    "read": {
+      "type": "boolean",
+      "description": "false: the bucket list could not be read (an error scoped `buckets` says why); items is then empty and total/omitted are null - not a project without buckets"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bucket's location, e.g. US-CENTRAL1 or US"
+          },
+          "locationType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "region, dual-region or multi-region"
+          },
+          "storageClass": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The default storage class, e.g. STANDARD"
+          },
+          "created": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "timeCreated, RFC 3339"
+          }
+        },
+        "required": [
+          "name",
+          "location",
+          "locationType",
+          "storageClass",
+          "created"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "total": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Buckets found"
+    },
+    "omitted": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Buckets left out of items by maxItems"
+    }
+  },
+  "required": [
+    "read",
+    "items",
+    "total",
+    "omitted"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,42 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-nsres
+calls:
+- argv:
+  - kubectl
+  - get
+  - namespaces
+  - rw-nsres
+  - -o
+  - json
+  rc: 1
+  stdout: ''
+  stderr: |
+    Error from server (Forbidden): namespaces "rw-nsres" is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot get resource "namespaces" in API group "" in the namespace "rw-nsres"
+- argv:
+  - kubectl
+  - -n
+  - rw-nsres
+  - get
+  - verticalpodautoscalers.autoscaling.k8s.io
+  - -o
+  - json
+  rc: 1
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: |
+    Error from server (Forbidden): verticalpodautoscalers.autoscaling.k8s.io is forbidden: User "system:serviceaccount:rw-healthy:rw-viewer" cannot list resource "verticalpodautoscalers" in API group "autoscaling.k8s.io" in the namespace "rw-nsres"
+expect:
+  status: failed
+  errorCodes:
+  - permission_denied

@@ -1,0 +1,1393 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole; `{$contains: [..]}` and
+# `{$containsWhere: {..}}` look inside a list). `expect.artifacts` does the same for
+# artifact files. `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-chaos/statefulsets/db
+inputs:
+  mode: port
+  revertAfter: 1s
+now: '2026-11-03T22:03:13.709Z'
+calls:
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - statefulsets.apps
+  - db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"StatefulSet\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-chaos\"},\"spec\":{\"replicas\":2,\"selector\":{\"matchLabels\":{\"app\":\"db\"}},\"serviceName\":\"db\",\"template\":{\"metadata\":{\"labels\":{\"app\":\"db\"}},\"spec\":{\"containers\":[{\"command\":[\"sh\",\"-c\",\"exec sleep 360000\"],\"image\":\"busybox:1.36\",\"name\":\"main\",\"readinessProbe\":{\"exec\":{\"command\":[\"true\"]},\"periodSeconds\":2},\"resources\":{\"limits\":{\"ephemeral-storage\":\"50Mi\",\"memory\":\"64Mi\"},\"requests\":{\"cpu\":\"5m\",\"ephemeral-storage\":\"10Mi\",\"memory\":\"8Mi\"}}}],\"terminationGracePeriodSeconds\":2}}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:35:51Z",
+            "generation": 1,
+            "name": "db",
+            "namespace": "rw-chaos",
+            "resourceVersion": "37034",
+            "uid": "caace585-4045-45b1-9772-20df8903e20f"
+        },
+        "spec": {
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Retain",
+                "whenScaled": "Retain"
+            },
+            "podManagementPolicy": "OrderedReady",
+            "replicas": 2,
+            "revisionHistoryLimit": 10,
+            "selector": {
+                "matchLabels": {
+                    "app": "db"
+                }
+            },
+            "serviceName": "db",
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "db"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "exec sleep 360000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "main",
+                            "readinessProbe": {
+                                "exec": {
+                                    "command": [
+                                        "true"
+                                    ]
+                                },
+                                "failureThreshold": 3,
+                                "periodSeconds": 2,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "ephemeral-storage": "50Mi",
+                                    "memory": "64Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "ephemeral-storage": "10Mi",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File"
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "terminationGracePeriodSeconds": 2
+                }
+            },
+            "updateStrategy": {
+                "rollingUpdate": {
+                    "maxUnavailable": 1,
+                    "partition": 0
+                },
+                "type": "RollingUpdate"
+            }
+        },
+        "status": {
+            "availableReplicas": 2,
+            "collisionCount": 0,
+            "currentReplicas": 2,
+            "currentRevision": "db-64dcf95664",
+            "observedGeneration": 1,
+            "readyReplicas": 2,
+            "replicas": 2,
+            "updateRevision": "db-64dcf95664",
+            "updatedReplicas": 2
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-chaos\"},\"spec\":{\"clusterIP\":\"None\",\"ports\":[{\"name\":\"tcp\",\"port\":5432}],\"selector\":{\"app\":\"db\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "db",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "32462",
+                    "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+                },
+                "spec": {
+                    "clusterIP": "None",
+                    "clusterIPs": [
+                        "None"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "tcp",
+                            "port": 5432,
+                            "protocol": "TCP",
+                            "targetPort": 5432
+                        }
+                    ],
+                    "selector": {
+                        "app": "db"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"nolimit\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"nolimit\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "nolimit",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "32481",
+                    "uid": "b3c1f4e1-21b1-4980-90bb-e9d05b84da22"
+                },
+                "spec": {
+                    "clusterIP": "10.96.37.109",
+                    "clusterIPs": [
+                        "10.96.37.109"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "nolimit"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"nosh\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"nosh\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "nosh",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "32496",
+                    "uid": "ac99b24b-0d1d-410d-b31a-05c2f6e4a3b0"
+                },
+                "spec": {
+                    "clusterIP": "10.96.141.174",
+                    "clusterIPs": [
+                        "10.96.141.174"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "nosh"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"shared\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"tier\":\"shared\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:58:36Z",
+                    "name": "shared",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "36250",
+                    "uid": "174f849c-8e0f-4d9f-b61a-9a6fafd5bf72"
+                },
+                "spec": {
+                    "clusterIP": "10.96.30.3",
+                    "clusterIPs": [
+                        "10.96.30.3"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "tier": "shared"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{\"runwhen.com/chaos-original-spec\":\"{\\\"ports\\\":[{\\\"name\\\":\\\"http\\\",\\\"port\\\":80,\\\"protocol\\\":\\\"TCP\\\",\\\"targetPort\\\":8080}],\\\"selector\\\":{\\\"app\\\":\\\"stuck\\\"}}\"},\"name\":\"stuck\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"rw-chaos-none\"}}}\n",
+                        "runwhen.com/chaos-original-spec": "{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"stuck\"}}"
+                    },
+                    "creationTimestamp": "2026-11-03T21:58:36Z",
+                    "name": "stuck",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "36274",
+                    "uid": "6e8b6716-752e-481e-be30-fd0a00fd6017"
+                },
+                "spec": {
+                    "clusterIP": "10.96.71.132",
+                    "clusterIPs": [
+                        "10.96.71.132"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "rw-chaos-none"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"web\",\"namespace\":\"rw-chaos\"},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"targetPort\":8080}],\"selector\":{\"app\":\"web\"}}}\n"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "name": "web",
+                    "namespace": "rw-chaos",
+                    "resourceVersion": "36432",
+                    "uid": "126a5a2d-ebaf-480a-b1a0-238564d62b56"
+                },
+                "spec": {
+                    "clusterIP": "10.96.193.1",
+                    "clusterIPs": [
+                        "10.96.193.1"
+                    ],
+                    "internalTrafficPolicy": "Cluster",
+                    "ipFamilies": [
+                        "IPv4"
+                    ],
+                    "ipFamilyPolicy": "SingleStack",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                            "protocol": "TCP",
+                            "targetPort": 8080
+                        }
+                    ],
+                    "selector": {
+                        "app": "web"
+                    },
+                    "sessionAffinity": "None",
+                    "type": "ClusterIP"
+                },
+                "status": {
+                    "loadBalancer": {}
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - pods
+  - -l
+  - app=db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "generateName": "db-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "db",
+                        "apps.kubernetes.io/pod-index": "0",
+                        "controller-revision-hash": "db-64dcf95664",
+                        "statefulset.kubernetes.io/pod-name": "db-0"
+                    },
+                    "name": "db-0",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "db",
+                            "uid": "caace585-4045-45b1-9772-20df8903e20f"
+                        }
+                    ],
+                    "resourceVersion": "34383",
+                    "uid": "61d80145-a810-4936-9dd9-7bb5b6059b01"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "exec sleep 360000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "main",
+                            "readinessProbe": {
+                                "exec": {
+                                    "command": [
+                                        "true"
+                                    ]
+                                },
+                                "failureThreshold": 3,
+                                "periodSeconds": 2,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "ephemeral-storage": "50Mi",
+                                    "memory": "64Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "ephemeral-storage": "10Mi",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-64vpd",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "db-0",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "db",
+                    "terminationGracePeriodSeconds": 2,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-64vpd",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "ephemeral-storage": "10Mi",
+                        "memory": "8Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:35:52Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:35:51Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:47:39Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:47:39Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T21:35:51Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "ephemeral-storage": "10Mi",
+                                "memory": "8Mi"
+                            },
+                            "containerID": "containerd://8043f27e02d86b5aa56577c598020f817c41490dac3753fdeaf1c8c5d7719a53",
+                            "image": "docker.io/library/busybox:1.36",
+                            "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+                            "lastState": {
+                                "terminated": {
+                                    "containerID": "containerd://7b3abb805301103f4941bdddaa7be6c33b5010fdd0b65c0dba1df78a9533cc88",
+                                    "exitCode": 137,
+                                    "finishedAt": "2026-11-03T21:47:32Z",
+                                    "reason": "Error",
+                                    "startedAt": "2026-11-03T21:35:52Z"
+                                }
+                            },
+                            "name": "main",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "ephemeral-storage": "50Mi",
+                                    "memory": "64Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "ephemeral-storage": "10Mi",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "restartCount": 1,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T21:47:37Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        10
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-64vpd",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.77",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.77"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "memory": "64Mi"
+                        },
+                        "requests": {
+                            "memory": "8Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T21:35:51Z"
+                }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Pod",
+                "metadata": {
+                    "creationTimestamp": "2026-11-03T22:03:07Z",
+                    "generateName": "db-",
+                    "generation": 1,
+                    "labels": {
+                        "app": "db",
+                        "apps.kubernetes.io/pod-index": "1",
+                        "controller-revision-hash": "db-64dcf95664",
+                        "statefulset.kubernetes.io/pod-name": "db-1"
+                    },
+                    "name": "db-1",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "StatefulSet",
+                            "name": "db",
+                            "uid": "caace585-4045-45b1-9772-20df8903e20f"
+                        }
+                    ],
+                    "resourceVersion": "37033",
+                    "uid": "761a30f5-eded-4c1b-80df-a1937712b1e2"
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "command": [
+                                "sh",
+                                "-c",
+                                "exec sleep 360000"
+                            ],
+                            "image": "busybox:1.36",
+                            "imagePullPolicy": "IfNotPresent",
+                            "name": "main",
+                            "readinessProbe": {
+                                "exec": {
+                                    "command": [
+                                        "true"
+                                    ]
+                                },
+                                "failureThreshold": 3,
+                                "periodSeconds": 2,
+                                "successThreshold": 1,
+                                "timeoutSeconds": 1
+                            },
+                            "resources": {
+                                "limits": {
+                                    "ephemeral-storage": "50Mi",
+                                    "memory": "64Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "ephemeral-storage": "10Mi",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "terminationMessagePath": "/dev/termination-log",
+                            "terminationMessagePolicy": "File",
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-bcztd",
+                                    "readOnly": true
+                                }
+                            ]
+                        }
+                    ],
+                    "dnsPolicy": "ClusterFirst",
+                    "enableServiceLinks": true,
+                    "hostname": "db-1",
+                    "nodeName": "rw-plugins-control-plane",
+                    "preemptionPolicy": "PreemptLowerPriority",
+                    "priority": 0,
+                    "restartPolicy": "Always",
+                    "schedulerName": "default-scheduler",
+                    "securityContext": {},
+                    "serviceAccount": "default",
+                    "serviceAccountName": "default",
+                    "subdomain": "db",
+                    "terminationGracePeriodSeconds": 2,
+                    "tolerations": [
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/not-ready",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        },
+                        {
+                            "effect": "NoExecute",
+                            "key": "node.kubernetes.io/unreachable",
+                            "operator": "Exists",
+                            "tolerationSeconds": 300
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "kube-api-access-bcztd",
+                            "projected": {
+                                "defaultMode": 420,
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "expirationSeconds": 3607,
+                                            "path": "token"
+                                        }
+                                    },
+                                    {
+                                        "configMap": {
+                                            "items": [
+                                                {
+                                                    "key": "ca.crt",
+                                                    "path": "ca.crt"
+                                                }
+                                            ],
+                                            "name": "kube-root-ca.crt"
+                                        }
+                                    },
+                                    {
+                                        "downwardAPI": {
+                                            "items": [
+                                                {
+                                                    "fieldRef": {
+                                                        "apiVersion": "v1",
+                                                        "fieldPath": "metadata.namespace"
+                                                    },
+                                                    "path": "namespace"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "status": {
+                    "allocatedResources": {
+                        "cpu": "5m",
+                        "ephemeral-storage": "10Mi",
+                        "memory": "8Mi"
+                    },
+                    "conditions": [
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:03:08Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodReadyToStartContainers"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:03:07Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Initialized"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:03:08Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "Ready"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:03:08Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "ContainersReady"
+                        },
+                        {
+                            "lastProbeTime": null,
+                            "lastTransitionTime": "2026-11-03T22:03:07Z",
+                            "observedGeneration": 1,
+                            "status": "True",
+                            "type": "PodScheduled"
+                        }
+                    ],
+                    "containerStatuses": [
+                        {
+                            "allocatedResources": {
+                                "cpu": "5m",
+                                "ephemeral-storage": "10Mi",
+                                "memory": "8Mi"
+                            },
+                            "containerID": "containerd://76ebeb3e0597cd07c5cc0c1e7ebeeb9d84ed878194441f77db72ce28f28785bd",
+                            "image": "docker.io/library/busybox:1.36",
+                            "imageID": "docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+                            "lastState": {},
+                            "name": "main",
+                            "ready": true,
+                            "resources": {
+                                "limits": {
+                                    "ephemeral-storage": "50Mi",
+                                    "memory": "64Mi"
+                                },
+                                "requests": {
+                                    "cpu": "5m",
+                                    "ephemeral-storage": "10Mi",
+                                    "memory": "8Mi"
+                                }
+                            },
+                            "restartCount": 0,
+                            "started": true,
+                            "state": {
+                                "running": {
+                                    "startedAt": "2026-11-03T22:03:08Z"
+                                }
+                            },
+                            "user": {
+                                "linux": {
+                                    "gid": 0,
+                                    "supplementalGroups": [
+                                        0,
+                                        10
+                                    ],
+                                    "uid": 0
+                                }
+                            },
+                            "volumeMounts": [
+                                {
+                                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                                    "name": "kube-api-access-bcztd",
+                                    "readOnly": true,
+                                    "recursiveReadOnly": "Disabled"
+                                }
+                            ]
+                        }
+                    ],
+                    "hostIP": "172.19.0.2",
+                    "hostIPs": [
+                        {
+                            "ip": "172.19.0.2"
+                        }
+                    ],
+                    "observedGeneration": 1,
+                    "phase": "Running",
+                    "podIP": "10.244.0.153",
+                    "podIPs": [
+                        {
+                            "ip": "10.244.0.153"
+                        }
+                    ],
+                    "qosClass": "Burstable",
+                    "resources": {
+                        "limits": {
+                            "ephemeral-storage": "50Mi",
+                            "memory": "64Mi"
+                        },
+                        "requests": {
+                            "cpu": "5m",
+                            "ephemeral-storage": "10Mi",
+                            "memory": "8Mi"
+                        }
+                    },
+                    "startTime": "2026-11-03T22:03:07Z"
+                }
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.77"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "hostname": "db-0",
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "db-0",
+                            "namespace": "rw-chaos",
+                            "uid": "61d80145-a810-4936-9dd9-7bb5b6059b01"
+                        }
+                    },
+                    {
+                        "addresses": [
+                            "10.244.0.153"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "hostname": "db-1",
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "db-1",
+                            "namespace": "rw-chaos",
+                            "uid": "761a30f5-eded-4c1b-80df-a1937712b1e2"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T22:03:08Z"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "generateName": "db-",
+                    "generation": 13,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "db",
+                        "service.kubernetes.io/headless": ""
+                    },
+                    "name": "db-nnwpc",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "db",
+                            "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+                        }
+                    ],
+                    "resourceVersion": "37035",
+                    "uid": "4f7799b8-2e51-4f6b-9537-446da122ccaf"
+                },
+                "ports": [
+                    {
+                        "name": "tcp",
+                        "port": 5432,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - patch
+  - service
+  - db
+  - --type=merge
+  - -p
+  - '{"metadata":{"annotations":{"runwhen.com/chaos-original-spec":"{\"ports\":[{\"name\":\"tcp\",\"port\":5432,\"protocol\":\"TCP\",\"targetPort\":5432}],\"selector\":{\"app\":\"db\"}}"},"resourceVersion":"32462"},"spec":{"ports":[{"name":"tcp","port":9999,"protocol":"TCP","targetPort":5432}]}}'
+  - -o
+  - name
+  rc: 0
+  stdout: |
+    service/db
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.77"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "hostname": "db-0",
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "db-0",
+                            "namespace": "rw-chaos",
+                            "uid": "61d80145-a810-4936-9dd9-7bb5b6059b01"
+                        }
+                    },
+                    {
+                        "addresses": [
+                            "10.244.0.153"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "hostname": "db-1",
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "db-1",
+                            "namespace": "rw-chaos",
+                            "uid": "761a30f5-eded-4c1b-80df-a1937712b1e2"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T22:03:08Z"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "generateName": "db-",
+                    "generation": 13,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "db",
+                        "service.kubernetes.io/headless": ""
+                    },
+                    "name": "db-nnwpc",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "db",
+                            "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+                        }
+                    ],
+                    "resourceVersion": "37035",
+                    "uid": "4f7799b8-2e51-4f6b-9537-446da122ccaf"
+                },
+                "ports": [
+                    {
+                        "name": "tcp",
+                        "port": 5432,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-chaos\"},\"spec\":{\"clusterIP\":\"None\",\"ports\":[{\"name\":\"tcp\",\"port\":5432}],\"selector\":{\"app\":\"db\"}}}\n",
+                "runwhen.com/chaos-original-spec": "{\"ports\":[{\"name\":\"tcp\",\"port\":5432,\"protocol\":\"TCP\",\"targetPort\":5432}],\"selector\":{\"app\":\"db\"}}"
+            },
+            "creationTimestamp": "2026-11-03T21:35:51Z",
+            "name": "db",
+            "namespace": "rw-chaos",
+            "resourceVersion": "37054",
+            "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+        },
+        "spec": {
+            "clusterIP": "None",
+            "clusterIPs": [
+                "None"
+            ],
+            "internalTrafficPolicy": "Cluster",
+            "ipFamilies": [
+                "IPv4"
+            ],
+            "ipFamilyPolicy": "SingleStack",
+            "ports": [
+                {
+                    "name": "tcp",
+                    "port": 9999,
+                    "protocol": "TCP",
+                    "targetPort": 5432
+                }
+            ],
+            "selector": {
+                "app": "db"
+            },
+            "sessionAffinity": "None",
+            "type": "ClusterIP"
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - patch
+  - service
+  - db
+  - --type=merge
+  - -p
+  - '{"metadata":{"resourceVersion":"37054","annotations":{"runwhen.com/chaos-original-spec":null}},"spec":{"ports":[{"name":"tcp","port":5432,"protocol":"TCP","targetPort":5432}]}}'
+  - -o
+  - name
+  rc: 0
+  stdout: |
+    service/db
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - services
+  - db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{},\"name\":\"db\",\"namespace\":\"rw-chaos\"},\"spec\":{\"clusterIP\":\"None\",\"ports\":[{\"name\":\"tcp\",\"port\":5432}],\"selector\":{\"app\":\"db\"}}}\n"
+            },
+            "creationTimestamp": "2026-11-03T21:35:51Z",
+            "name": "db",
+            "namespace": "rw-chaos",
+            "resourceVersion": "37059",
+            "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+        },
+        "spec": {
+            "clusterIP": "None",
+            "clusterIPs": [
+                "None"
+            ],
+            "internalTrafficPolicy": "Cluster",
+            "ipFamilies": [
+                "IPv4"
+            ],
+            "ipFamilyPolicy": "SingleStack",
+            "ports": [
+                {
+                    "name": "tcp",
+                    "port": 5432,
+                    "protocol": "TCP",
+                    "targetPort": 5432
+                }
+            ],
+            "selector": {
+                "app": "db"
+            },
+            "sessionAffinity": "None",
+            "type": "ClusterIP"
+        },
+        "status": {
+            "loadBalancer": {}
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - --request-timeout=30s
+  - -n
+  - rw-chaos
+  - get
+  - endpointslices.discovery.k8s.io
+  - -l
+  - kubernetes.io/service-name=db
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "v1",
+        "items": [
+            {
+                "addressType": "IPv4",
+                "apiVersion": "discovery.k8s.io/v1",
+                "endpoints": [
+                    {
+                        "addresses": [
+                            "10.244.0.77"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "hostname": "db-0",
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "db-0",
+                            "namespace": "rw-chaos",
+                            "uid": "61d80145-a810-4936-9dd9-7bb5b6059b01"
+                        }
+                    },
+                    {
+                        "addresses": [
+                            "10.244.0.153"
+                        ],
+                        "conditions": {
+                            "ready": true,
+                            "serving": true,
+                            "terminating": false
+                        },
+                        "hostname": "db-1",
+                        "nodeName": "rw-plugins-control-plane",
+                        "targetRef": {
+                            "kind": "Pod",
+                            "name": "db-1",
+                            "namespace": "rw-chaos",
+                            "uid": "761a30f5-eded-4c1b-80df-a1937712b1e2"
+                        }
+                    }
+                ],
+                "kind": "EndpointSlice",
+                "metadata": {
+                    "annotations": {
+                        "endpoints.kubernetes.io/last-change-trigger-time": "2026-11-03T22:03:08Z"
+                    },
+                    "creationTimestamp": "2026-11-03T21:35:51Z",
+                    "generateName": "db-",
+                    "generation": 13,
+                    "labels": {
+                        "endpointslice.kubernetes.io/managed-by": "endpointslice-controller.k8s.io",
+                        "kubernetes.io/service-name": "db",
+                        "service.kubernetes.io/headless": ""
+                    },
+                    "name": "db-nnwpc",
+                    "namespace": "rw-chaos",
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "v1",
+                            "blockOwnerDeletion": true,
+                            "controller": true,
+                            "kind": "Service",
+                            "name": "db",
+                            "uid": "a1255ddf-2589-4fb5-acdc-4b0410047b97"
+                        }
+                    ],
+                    "resourceVersion": "37035",
+                    "uid": "4f7799b8-2e51-4f6b-9537-446da122ccaf"
+                },
+                "ports": [
+                    {
+                        "name": "tcp",
+                        "port": 5432,
+                        "protocol": "TCP"
+                    }
+                ]
+            }
+        ],
+        "kind": "List",
+        "metadata": {
+            "resourceVersion": ""
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    target: {"scope": "workload", "kind": "StatefulSet", "name": "db", "desiredReplicas": 2}
+    mangle: {"applied": true, "mode": "port", "serviceCount": 1, "services": {"$containsWhere": {"name": "db", "change": {"field": "spec.ports[0].port", "from": 5432, "to": 9999}, "endpointsDropped": false, "restore": {"attempted": true, "restored": true, "verified": true}}}}

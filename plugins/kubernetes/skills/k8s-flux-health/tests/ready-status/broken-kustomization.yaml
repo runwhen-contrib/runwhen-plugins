@@ -1,0 +1,164 @@
+# Recorded by `rwtask test --record`. Review it before committing: `calls` holds what the
+# tools printed. `expect.outputs` is left for you to add -- `outputs: {name: value}` is a
+# subset match (a dict by key, a list or a scalar whole); `rwtask test` replays this file.
+resource: kubernetes/clusters/kind/namespaces/rw-flux/kustomizations/apps-broken
+calls:
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - kustomizations.kustomize.toolkit.fluxcd.io
+  - apps-broken
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps-broken\",\"namespace\":\"rw-flux\"},\"spec\":{\"dependsOn\":[{\"name\":\"apps-ok\"},{\"name\":\"infra\",\"namespace\":\"rw-flux-other\"}],\"interval\":\"10m\",\"path\":\"./apps/broken\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"fleet\",\"namespace\":\"flux-system\"},\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 1,
+            "name": "apps-broken",
+            "namespace": "rw-flux",
+            "resourceVersion": "14614",
+            "uid": "d2dabf5f-d4ac-49c8-8032-dd8e7238f076"
+        },
+        "spec": {
+            "dependsOn": [
+                {
+                    "name": "apps-ok"
+                },
+                {
+                    "name": "infra",
+                    "namespace": "rw-flux-other"
+                }
+            ],
+            "interval": "10m",
+            "path": "./apps/broken",
+            "prune": true,
+            "sourceRef": {
+                "kind": "GitRepository",
+                "name": "fleet",
+                "namespace": "flux-system"
+            },
+            "suspend": false
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:05:00Z",
+                    "message": "kustomize build failed: accumulating resources: missing kustomization file",
+                    "observedGeneration": 1,
+                    "reason": "BuildFailed",
+                    "status": "False",
+                    "type": "Ready"
+                },
+                {
+                    "lastTransitionTime": "2026-11-03T20:05:00Z",
+                    "message": "kustomize build failed: accumulating resources: missing kustomization file",
+                    "observedGeneration": 1,
+                    "reason": "BuildFailed",
+                    "status": "True",
+                    "type": "Stalled"
+                }
+            ],
+            "lastAppliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "lastAttemptedRevision": "main@sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "lastHandledReconcileAt": "2026-11-03T20:05:00Z",
+            "observedGeneration": 1
+        }
+    }
+  stderr: ''
+- argv:
+  - kubectl
+  - -n
+  - rw-flux
+  - get
+  - kustomizations.kustomize.toolkit.fluxcd.io
+  - apps-ok
+  - -o
+  - json
+  rc: 0
+  stdout: |
+    {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {
+            "annotations": {
+                "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"kustomize.toolkit.fluxcd.io/v1\",\"kind\":\"Kustomization\",\"metadata\":{\"annotations\":{},\"name\":\"apps-ok\",\"namespace\":\"rw-flux\"},\"spec\":{\"interval\":\"10m\",\"path\":\"./apps\",\"prune\":true,\"sourceRef\":{\"kind\":\"GitRepository\",\"name\":\"fleet\"},\"suspend\":false}}\n"
+            },
+            "creationTimestamp": "2026-11-03T19:47:32Z",
+            "generation": 3,
+            "name": "apps-ok",
+            "namespace": "rw-flux",
+            "resourceVersion": "15564",
+            "uid": "6d4577e8-dfb3-435e-b875-7cd318292ae0"
+        },
+        "spec": {
+            "interval": "10m",
+            "path": "./apps",
+            "prune": true,
+            "sourceRef": {
+                "kind": "GitRepository",
+                "name": "fleet"
+            },
+            "suspend": false
+        },
+        "status": {
+            "conditions": [
+                {
+                    "lastTransitionTime": "2026-11-03T20:00:00Z",
+                    "message": "Applied revision: main@sha1:aaaaaaaa",
+                    "observedGeneration": 1,
+                    "reason": "ReconciliationSucceeded",
+                    "status": "True",
+                    "type": "Ready"
+                }
+            ],
+            "inventory": {
+                "entries": [
+                    {
+                        "id": "rw-flux_cfg__ConfigMap",
+                        "v": "v1"
+                    },
+                    {
+                        "id": "rw-flux_app_apps_Deployment",
+                        "v": "v1"
+                    }
+                ]
+            },
+            "lastAppliedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "lastAttemptedRevision": "main@sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "lastHandledReconcileAt": "2026-11-03T20:00:00Z",
+            "observedGeneration": 1
+        }
+    }
+  stderr: ''
+expect:
+  status: ok
+  errorCodes: []
+  outputs:
+    state:
+      kind: Kustomization
+      ready: 'False'
+      readyReason: BuildFailed
+      stalled: 'True'
+      reconciling: null
+      suspended: false
+    revisions:
+      revisionsDiffer: true
+      neverApplied: false
+      kustomization:
+        path: ./apps/broken
+        source:
+          kind: GitRepository
+          name: fleet
+          namespace: flux-system
+    dependencies:
+      count: 2
+      truncated: false
