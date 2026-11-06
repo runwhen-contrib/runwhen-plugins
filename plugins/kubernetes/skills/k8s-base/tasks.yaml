@@ -81,8 +81,6 @@ tasks:
     permissions:
       - { apiGroups: [authorization.k8s.io], resources: [selfsubjectaccessreviews, selfsubjectrulesreviews], verbs: [create] }
       - { nonResourceURLs: [/api, /apis], verbs: [get] }                                           # kubectl api-resources: which kinds are cluster-scoped
-      - { apiGroups: [""], resources: [namespaces], verbs: [list] }                                # the namespaces to probe when none are given
-      - { apiGroups: [""], resources: [namespaces], resourceNames: [kube-system], verbs: [get] }   # its uid, the cluster's canonical key
     settings:
       maxReviews: { type: integer, default: 3000, description: "Access and rules reviews one run may create; a rule that does not fit is unverified, never dropped" }
       maxNamespaces: { type: integer, default: 500, description: "Namespaces probed one by one for the rules not granted cluster-wide; beyond this the rest are not probed and the run is partial" }

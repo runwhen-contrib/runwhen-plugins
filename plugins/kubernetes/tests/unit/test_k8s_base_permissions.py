@@ -3,6 +3,7 @@ evaluation (wildcards, resourceNames, subresources, groups), the verdicts, and t
 against a fake cluster that answers `kubectl create -f <reviews>` from a small RBAC model.
 Nothing here calls a cluster."""
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -590,6 +591,41 @@ def test_identity_that_cannot_list_namespaces_gets_cluster_wide_verdicts_and_a_s
     assert validate("rw.access.v1", access) == []
 
 
+@pytest.mark.parametrize(("namespaces", "expected"), [([], "unverified"), (["a"], "partial")])
+def test_forbidden_namespace_helpers_preserve_honest_verdicts_without_raw_secrets(
+    namespaces, expected, capsys
+):
+    secret = "synthetic-namespace-helper-secret"
+
+    class ForbiddenHelpers(Cluster):
+        def run(self, argv, **kwargs):
+            result = super().run(argv, **kwargs)
+            if result.returncode and argv[1:3] == ["get", "namespaces"]:
+                result.stderr += f" token={secret}"
+            return result
+
+    cluster = ForbiddenHelpers(
+        [(None, res("", "pods", ["get"])), ("a", res("", "secrets", ["get"]))],
+        list_namespaces=False,
+        read_uid=None,
+    )
+    ctx, access = run(cluster, [res("", "pods", ["get"]), res("", "secrets", ["get"])], namespaces)
+    assert verdicts(access) == ["granted", expected]
+    assert "root" not in access
+    if namespaces:
+        assert access["rules"][1]["scope"] == ["a"]
+        assert ctx.errors == []
+    else:
+        assert "cannot be listed" in access["rules"][1]["evidence"]
+        assert [(e["code"], e["scope"]) for e in ctx.errors] == [
+            ("permission_denied", "namespaces")
+        ]
+    assert validate("rw.access.v1", access) == []
+    captured = capsys.readouterr()
+    output = json.dumps({"access": access, "errors": ctx.errors}) + captured.out + captured.err
+    assert secret not in output
+
+
 def test_named_namespaces_work_even_if_the_identity_cannot_list_them():
     cluster = Cluster([("a", res("", "secrets", ["get"]))], list_namespaces=False)
     ctx, access = run(cluster, [res("", "secrets", ["get"])], ["a"])
@@ -783,7 +819,7 @@ def needs(argv, items):
     raise AssertionError(argv)
 
 
-def test_declared_permissions_cover_every_call_the_task_makes():
+def test_declared_permissions_cover_required_probes_without_optional_namespace_reads():
     cluster = Cluster([("a", res("", "pods", ["get"]))], incomplete=["a"])
     run(cluster, [res("", "pods", ["get"])], [])
     needed = set()
@@ -801,10 +837,32 @@ def test_declared_permissions_cover_every_call_the_task_makes():
         for url in rule.get("nonResourceURLs", [])
         for v in rule["verbs"]
     }
-    assert needed == declared  # nothing declared that is not used either
-    assert ("", "namespaces", "get") in declared
-    kube_system_rule = [r for r in task()["permissions"] if r.get("resourceNames")]
-    assert kube_system_rule[0]["resourceNames"] == ["kube-system"]
+    optional = {("", "namespaces", "get"), ("", "namespaces", "list")}
+    assert needed - optional == declared
+    assert not declared & optional
+    assert len(task()["permissions"]) == 2
+
+
+def test_compiled_checker_prerequisites_are_minimal_and_discovery_permissions_unchanged():
+    from runwhen_capability.plugin.compile import compile_tree
+    from runwhen_capability.plugin.tree import load_dir
+
+    compiled = compile_tree(load_dir(PLUGIN))
+    tasks = {t["name"]: t for t in compiled["tasks"] if t["skill"] == "k8s-base"}
+    expected = [
+        res("authorization.k8s.io", "selfsubjectaccessreviews", ["create"]),
+    ]
+    expected[0]["resources"].append("selfsubjectrulesreviews")
+    expected.append({"nonResourceURLs": ["/api", "/apis"], "verbs": ["get"]})
+    assert tasks["check-permissions"]["permissions"] == [
+        {"hash": permission_hash(rule), "rule": rule} for rule in expected
+    ]
+    discovery = [entry["rule"] for entry in tasks["discover"]["permissions"]]
+    assert len(discovery) == 25
+    # The complete discovery prerequisite set from the M4 0.4.0 package.
+    assert hashlib.sha256(json.dumps(discovery, sort_keys=True).encode()).hexdigest() == (
+        "70866c205d414e3202e0c09e81b08d07fb4b7c1f19c0ed7996eeb8ff063d8ca5"
+    )
 
 
 def test_declared_permissions_validate_against_the_rbac_rule_schema():
