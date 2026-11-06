@@ -421,6 +421,39 @@ def test_a_named_namespace_that_cannot_be_read_has_an_error_and_no_stub_item():
     assert validate("rw.discovery.v1", doc) == []
 
 
+def test_namespace_view_discovers_children_despite_forbidden_namespace_and_cluster_reads():
+    cluster_types = [t[0] for t in TYPES if t[1] == "cluster" and t[0] != "namespace"]
+    cluster = Cluster(
+        forbidden=["a", *cluster_types],
+        kube_system=False,
+        objects={"deployment": [obj("web", "a"), obj("outside", "b")]},
+        drop=("certificate", "nodepool", "nodeclaim"),
+    )
+    env, doc, errors = run(cluster, {"namespaces": ["a"]})
+    assert env["status"] == "partial"
+    scopes = {(e["code"], e["scope"]) for e in errors}
+    assert {
+        ("permission_denied", "namespace/kube-system"),
+        ("permission_denied", "namespace/a"),
+        ("permission_denied", "node"),
+    } <= scopes
+    assert "root" not in env["outputs"]["summary"]
+    assert items_of(doc, "namespace") == []
+    assert parts(doc, "namespace")[0]["status"] == "excluded"
+    assert parts(doc, "node")[0]["status"] == "forbidden"
+    assert [i["identity"]["chain"][-1]["name"] for i in items_of(doc, "deployment")] == ["web"]
+    assert parts(doc, "deployment") == [
+        {
+            "type": "deployment",
+            "status": "complete",
+            "parentPath": "kubernetes/clusters/kind/namespaces/a",
+            "count": 1,
+        }
+    ]
+    assert not any("--all-namespaces" in c for c in cluster.calls)
+    assert validate("rw.discovery.v1", doc) == []
+
+
 def test_a_named_namespace_that_does_not_exist_is_an_error_and_is_skipped():
     env, doc, errors = run(basic(), {"namespaces": ["a", "nope"]})
     assert env["status"] == "partial"
@@ -636,25 +669,22 @@ def declared():
 
 
 @pytest.mark.parametrize("settings", [{}, {"namespaces": ["a"]}, {"namespaces": ["a", "nope"]}])
-def test_declared_permissions_cover_every_kubectl_call(settings):
+def test_required_permissions_cover_api_prerequisites_not_optional_object_reads(settings):
     cluster = basic()
     run(cluster, settings)
     needed = set()
     for argv in cluster.calls:
         needed |= rbac_needs(argv)
-    assert needed and not needed - declared(), sorted(needed - declared())
+    mandatory = {need for need in needed if need[0] == "url"}
+    assert mandatory == declared()
+    assert needed - mandatory  # optional object reads are still attempted
 
 
-def test_permissions_are_one_group_per_rule_list_per_type_one_get_on_namespaces_and_exclude_secrets():
-    for rule in TASK["permissions"]:
-        if "apiGroups" in rule:
-            assert len(rule["apiGroups"]) == 1 and rule["verbs"] in (["list"], ["get"])
-    names = {(g, r) for g, r, _ in declared() if g != "url"}
-    assert ("", "secrets") not in names and ("", "pods") not in names
-    served = {(t[3], t[2]) for t in TYPES if t[0] != "secret"}
-    assert names == served
-    gets = {(g, r) for g, r, v in declared() if v == "get" and g != "url"}
-    assert gets == {("", "namespaces")}
+def test_discovery_requires_only_version_and_api_discovery():
+    assert TASK["permissions"] == [
+        {"nonResourceURLs": ["/version"], "verbs": ["get"]},
+        {"nonResourceURLs": ["/api", "/api/*", "/apis", "/apis/*"], "verbs": ["get"]},
+    ]
 
 
 def test_the_entry_point_is_declared_next_to_the_others():
