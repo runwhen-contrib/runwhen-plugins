@@ -63,7 +63,8 @@ tasks:
       - { apiGroups: [scheduling.k8s.io], resources: [priorityclasses], verbs: [list] }
       - { apiGroups: [storage.k8s.io], resources: [csidrivers, csinodes, storageclasses, volumeattachments], verbs: [list] }
     settings:
-      namespaces: { type: "string[]", default: [], description: "Namespaces to cover. Empty: every namespace the identity can list. Naming namespaces narrows the run: the namespace partition is then never complete, so nothing outside them is swept; a named namespace that cannot be read still gets a stub item so its children have a parent" }
+      namespaces: { type: "string[]", default: [], description: "Namespaces to cover. Empty: every namespace the identity can list. Naming namespaces narrows the run: the namespace partition is then never complete, so nothing outside them is swept; explicit names take precedence over excludeNamespaces" }
+      excludeNamespaces: { type: "string[]", default: [], description: "Exact namespace names to omit when namespaces is empty. No glob or regex matching. A nonempty namespaces list takes precedence. The namespace partition is never complete when exclusions narrow the scope, preserving resources outside coverage" }
       maxItems: { type: integer, default: 2000, min: 1, max: 100000, description: "Most objects of one type in one partition (a namespace, or the cluster). A longer list is cut and its partition is failed, never complete, so nothing is swept for it" }
       deadline: { type: duration, default: 480s, description: "How long the enumeration may run (1s to 570s; the task's timeout is 600s). Once passed no further list is started, every type not yet listed is a failed partition with a scoped timeout error, and the sync is still pushed and committed" }
       maxStringBytes: { type: integer, default: 4096, min: 64, max: 1048576, description: "Longest string kept in a document; longer ones are cut (and scrubbed of credential shapes)" }

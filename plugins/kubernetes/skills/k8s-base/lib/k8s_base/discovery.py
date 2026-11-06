@@ -9,7 +9,7 @@ whole enumeration: once past, no list is started, every type not yet listed is a
 partition with a scoped `timeout` error, and the caller still pushes and commits.
 
 Partitions are what papi sweeps by: only `complete` ones. So a partition is complete only when the
-list was read in full; a narrowed scope (the `namespaces` setting), a forbidden or failed list and
+list was read in full; a narrowed namespace scope (`namespaces` or `excludeNamespaces`), a forbidden or failed list and
 a list cut at maxItems are never complete.
 """
 
@@ -174,12 +174,21 @@ class Run:
     """One discovery run: collects items (root first, then namespaces, then the rest) and partitions."""
 
     def __init__(
-        self, ctx, scope_path, cluster, namespaces, max_items, max_string, deadline_at=None
+        self,
+        ctx,
+        scope_path,
+        cluster,
+        namespaces,
+        max_items,
+        max_string,
+        deadline_at=None,
+        exclude_namespaces=None,
     ):
         self.ctx = ctx
         self.scope = scope_path
         self.cluster = cluster
         self.requested = namespaces
+        self.excluded = set(exclude_namespaces or []) if not namespaces else set()
         self.max_items = max_items
         self.max_string = max_string
         self.deadline_at = deadline_at
@@ -255,13 +264,21 @@ class Run:
             )
             return []
         objs = [o for o in listed if (o.get("metadata") or {}).get("name")]
+        objs = [o for o in objs if o["metadata"]["name"] not in self.excluded]
         objs, cut_at = self._cap(objs)
         self._add_namespaces(objs)
-        self.partitions.append(
-            dd.partition("namespace", "failed", self.scope, reason=cut_at)
-            if cut_at
-            else dd.partition("namespace", "complete", self.scope, len(objs))
-        )
+        if cut_at:
+            partition = dd.partition("namespace", "failed", self.scope, reason=cut_at)
+        elif self.excluded:
+            partition = dd.partition(
+                "namespace",
+                "excluded",
+                self.scope,
+                reason="the excludeNamespaces setting narrows the scope",
+            )
+        else:
+            partition = dd.partition("namespace", "complete", self.scope, len(objs))
+        self.partitions.append(partition)
         return sorted(o["metadata"]["name"] for o in objs)
 
     def _requested_namespaces(self):
@@ -317,7 +334,7 @@ class Run:
 
     def namespaced(self, type_name, plural, group, kind, namespaces):
         arg = resource_arg(plural, group)
-        if not self.requested:
+        if not self.requested and not self.excluded:
             try:
                 objs = list_items(self.ctx, ["get", arg, "--all-namespaces", "-o", "json"])
             except RwError as exc:
@@ -368,7 +385,16 @@ class Run:
         self.partitions.append(dd.partition(type_name, status, parent_path, reason=exc.message))
 
 
-def discover(ctx, scope_path, cluster, namespaces, max_items, max_string, deadline_s=None):
+def discover(
+    ctx,
+    scope_path,
+    cluster,
+    namespaces,
+    max_items,
+    max_string,
+    deadline_s=None,
+    exclude_namespaces=None,
+):
     """Run the whole enumeration. Returns (run, root uid, duration ms)."""
     started = _now()
     server, version = cluster_facts(ctx)
@@ -376,7 +402,16 @@ def discover(ctx, scope_path, cluster, namespaces, max_items, max_string, deadli
     served, failed_groups = api_resources(ctx)
 
     deadline_at = None if deadline_s is None else started + deadline_s
-    run = Run(ctx, scope_path, cluster, namespaces, max_items, max_string, deadline_at)
+    run = Run(
+        ctx,
+        scope_path,
+        cluster,
+        namespaces,
+        max_items,
+        max_string,
+        deadline_at,
+        exclude_namespaces,
+    )
     run.cluster_item(server, version, uid)
     ns_list = run.namespaces(served)
     for type_name, parent, plural, group, kind in TYPES:
