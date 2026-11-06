@@ -22,7 +22,7 @@ with `zoneinfo`), and `gke-gcloud-auth-plugin` (the kubernetes plugin's `gke` au
 kubeconfig that runs it) from Google's pinned Cloud SDK component tarball, checked against the sha256
 Google publishes. `oc`, `helm`, `flux` and `argocd` are left out on purpose.
 
-`FROM` is pinned by the base's multi-arch index digest (`v13-plugins-d1c7d04`). To move the base,
+`FROM` is pinned by the base's multi-arch index digest (`v13-plugins-m3-7c8bcb2`). To move the base,
 re-resolve it:
 
 ```
@@ -43,7 +43,7 @@ python ci/check_runtime.py validate --allow-placeholder
 
 ## aws
 
-Same base pin as `kubernetes` (`v13-plugins-d1c7d04`), plus the AWS CLI v2 and nothing else: the
+Same base pin as `kubernetes` (`v13-plugins-m3-7c8bcb2`), plus the AWS CLI v2 and nothing else: the
 Dockerfile downloads `awscli-exe-linux-<arch>-<version>.zip` from `awscli.amazonaws.com` at the
 pinned version, checks it against the sha256 recorded in the Dockerfile (one per architecture),
 installs it to `/usr/local/aws-cli` and removes `unzip` again. To move the CLI, change `AWSCLI_VERSION` and both

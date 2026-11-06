@@ -620,7 +620,15 @@ def test_a_compiled_auth_plan_for_each_method_fits_the_auth_plan_schema(method):
 
 def test_the_types_are_a_subscription_root_a_resource_group_and_the_key_vault_below_it():
     types = yaml.safe_load((INTEGRATION / "types.yaml").read_text())["types"]
-    assert set(types) == {"subscription", "resourcegroup", "keyvault"}
+    # the skills' own types (aks-cluster, ...) are checked by their skills' tests; every one sits
+    # below the resource group and has a plural of its own
+    assert {"subscription", "resourcegroup", "keyvault"} <= set(types)
+    assert all(
+        types[t]["parent"] == "resourcegroup"
+        for t in types
+        if t not in ("subscription", "resourcegroup")
+    )
+    assert len({spec["plural"] for spec in types.values()}) == len(types)
     assert types["subscription"]["root"] is True
     # rootKey names a connection input, and the canonical key is the same id (C3)
     assert types["subscription"]["rootKey"] == "subscriptionId"
@@ -629,7 +637,11 @@ def test_the_types_are_a_subscription_root_a_resource_group_and_the_key_vault_be
         assert types["subscription"]["rootKey"] in method["inputs"]
     assert types["resourcegroup"]["parent"] == "subscription"
     assert types["keyvault"]["parent"] == "resourcegroup"
-    assert [types[t]["plural"] for t in types] == ["subscriptions", "resourcegroups", "keyvaults"]
+    assert [types[t]["plural"] for t in list(types)[:3]] == [
+        "subscriptions",
+        "resourcegroups",
+        "keyvaults",
+    ]
 
 
 def test_the_permission_schema_takes_actions_and_data_actions():

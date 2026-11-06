@@ -13,7 +13,7 @@ from gcp_base.sync import SyncClient, load_credential
 def main(ctx):
     deadline = deadline_from(time.monotonic())
     st = read_settings(ctx.settings)
-    outputs, sync = discover(ctx, st.max_items, st.command_timeout)
+    outputs, sync = discover(ctx, st.max_items, st.command_timeout, deadline)
     # an artifact output is a file under $RW_OUT; the script returns no value for it
     out_dir = os.environ.get("RW_OUT")
     if not out_dir:

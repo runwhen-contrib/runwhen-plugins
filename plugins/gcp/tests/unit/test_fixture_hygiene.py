@@ -102,7 +102,11 @@ def bucket_names_in(stdout):
 
 
 def test_the_scan_covers_fixtures_of_both_skills_and_the_stub_data():
-    assert {p.parents[2].name for p in fixtures()} == {"gcp-base", "gcp-bucket-health"}
+    assert {p.parents[2].name for p in fixtures()} == {
+        "gcp-base",
+        "gcp-bucket-health",
+        "gcp-functions-health",
+    }
     assert len(fixtures()) >= 20 and len(stub_files()) >= 50
 
 
@@ -184,6 +188,7 @@ BASE_SCENARIOS = {"healthy", "broken", "forbidden", "throttled", "api-disabled"}
 REQUIRED = {
     "gcp-base": BASE_SCENARIOS | {"unauthenticated", "project-denied"},
     "gcp-bucket-health": BASE_SCENARIOS | {"not-found"},
+    "gcp-functions-health": BASE_SCENARIOS | {"not-found"},
 }
 
 
@@ -216,6 +221,16 @@ EXPECTED = {
     "partial-throttled": ("partial", ["rate_limited"]),
     "monitoring-disabled": ("failed", ["dependency"]),
     "du-fallback": ("ok", []),
+    "build-denied": ("partial", ["permission_denied"]),
+    "idle": ("ok", []),
+    "partial-metrics": ("partial", ["rate_limited"]),
+    "leaky": ("ok", []),
+    "functions-deleted": ("ok", []),
+    "buckets-denied": ("partial", ["permission_denied"]),
+    "functions-denied": ("partial", ["permission_denied"]),
+    "functions-disabled": ("partial", ["dependency"]),
+    "functions-unreachable": ("partial", ["unreachable"]),
+    "functions-split": ("ok", []),
     "healthy": ("ok", []),
     "broken": ("ok", []),
 }
@@ -224,7 +239,9 @@ EXPECTED = {
 @pytest.mark.parametrize("path", fixtures(), ids=relative)
 def test_each_fixture_expects_what_its_name_says_and_asserts_its_outputs(path):
     doc = yaml.safe_load(path.read_text())
-    name = path.stem.removesuffix("-bucket")
+    name = path.stem
+    for suffix in ("-bucket", "-gen1", "-no-region"):  # a second fixture of the same scenario
+        name = name.removesuffix(suffix)
     status, error_codes = EXPECTED[name]
     assert doc["expect"]["status"] == status and doc["expect"]["errorCodes"] == error_codes
     if status in ("ok", "partial"):
@@ -235,7 +252,8 @@ def test_each_fixture_expects_what_its_name_says_and_asserts_its_outputs(path):
 READ_ONLY_GCLOUD = {
     ("storage", "buckets", "list"), ("storage", "buckets", "describe"),
     ("storage", "buckets", "get-iam-policy"), ("storage", "du"), ("projects", "describe"),
-    ("auth", "print-access-token"),
+    ("auth", "print-access-token"), ("functions", "list"), ("functions", "describe"), ("functions", "regions", "list"),
+    ("builds", "describe"), ("logging", "read"),
 }  # fmt: skip
 
 
@@ -257,7 +275,8 @@ def test_every_recorded_call_is_a_read_only_call_against_the_stub_projects(path)
         else:
             assert argv[0] == "gcloud" and argv[-1] == "--quiet", argv
             assert any(tuple(argv[1 : 1 + n]) in READ_ONLY_GCLOUD for n in (2, 3)), argv
-            assert f"--billing-project={doc['resource'].split('/')[2]}" in argv
+            if argv[1:3] != ["auth", "print-access-token"]:  # a function target pays nothing there
+                assert f"--billing-project={doc['resource'].split('/')[2]}" in argv
             assert not any(a.startswith(("--impersonate", "--access-token")) for a in argv)
         for arg in argv:
             if arg.startswith("--project="):
@@ -274,3 +293,49 @@ def test_the_recorded_error_messages_name_no_server_of_the_capture():
             and "BaseHTTP" not in text
             and "CLOUDSDK_AUTH_ACCESS_TOKEN" not in text
         ), path
+
+
+# ---- canaries: synthetic secrets that prove a task returns none ---------------------------------
+CANARY = "RWCANARY"
+CANARY_HOMES = {"functions-leaky"}  # the one stub scenario whose answers hold them
+
+
+def canary_files():
+    return sorted(
+        p for p in PLUGIN.rglob("*") if p.is_file() and CANARY in p.read_text(errors="ignore")
+    )
+
+
+def test_canaries_are_only_where_they_are_allowed():
+    """In the leaky stub scenario, in the leaky fixtures' recorded stdout, and in the code that
+    makes or checks them (the capture script, the unit tests); nowhere in a skill's code, schemas
+    or docs, in any other scenario or fixture, or in a fixture's `expect`."""
+    found = canary_files()
+    assert any(p.parent.name == "functions-leaky" for p in found), (
+        "the leaky scenario has no canary"
+    )
+    for path in found:
+        rel = path.relative_to(PLUGIN)
+        parts = rel.parts
+        if parts[:3] == ("tests", "stub", "scenarios"):
+            assert parts[3] in CANARY_HOMES, f"{rel}: a canary outside {sorted(CANARY_HOMES)}"
+        elif parts[:3] == ("tests", "stub", "capture") or parts[:2] == ("tests", "unit"):
+            continue
+        elif parts[0] == "skills" and "tests" in parts and path.suffix == ".yaml":
+            assert path.stem == "leaky", f"{rel}: a canary in a fixture that is not a leaky one"
+            doc = yaml.safe_load(path.read_text())
+            assert CANARY not in json.dumps(doc["expect"]), f"{rel}: a canary in expect"
+            assert CANARY not in json.dumps(
+                {k: v for k, v in doc.items() if k not in ("calls", "expect")}
+            )
+            for call in doc["calls"]:
+                assert CANARY not in json.dumps(call["argv"]), f"{rel}: a canary in an argv"
+        else:
+            raise AssertionError(f"{rel}: a canary where none may be")
+
+
+def test_the_leaky_fixtures_exist_and_are_the_only_ones_with_canaries():
+    leaky = sorted(p.relative_to(PLUGIN).as_posix() for p in fixtures() if p.stem == "leaky")
+    assert leaky, "no leaky fixture"
+    holding = {p.relative_to(PLUGIN).as_posix() for p in canary_files() if p.stem == "leaky"}
+    assert holding == set(leaky)

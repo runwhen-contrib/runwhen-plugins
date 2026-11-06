@@ -1,0 +1,58 @@
+{
+  "buildConfig": {
+    "build": "projects/123456789012/locations/us-central1/builds/a1b2c3d4-0000-4000-8000-000000000003",
+    "dockerRegistry": "ARTIFACT_REGISTRY",
+    "entryPoint": "handler",
+    "environmentVariables": {
+      "BUILD_FLAVOUR": "release"
+    },
+    "runtime": "python312"
+  },
+  "environment": "GEN_2",
+  "labels": {
+    "deployment-tool": "console",
+    "team": "web"
+  },
+  "name": "projects/shop-prod-1234/locations/us-central1/functions/checkout",
+  "serviceConfig": {
+    "allTrafficOnLatestRevision": true,
+    "availableCpu": "1",
+    "availableMemory": "512Mi",
+    "environmentVariables": {
+      "LOG_EXECUTION_ID": "true",
+      "LOG_LEVEL": "info"
+    },
+    "ingressSettings": "ALLOW_ALL",
+    "maxInstanceCount": 20,
+    "maxInstanceRequestConcurrency": 80,
+    "minInstanceCount": 0,
+    "revision": "checkout-00002-pkq",
+    "secretEnvironmentVariables": [
+      {
+        "key": "STRIPE_KEY",
+        "projectId": "shop-prod-1234",
+        "secret": "stripe-key",
+        "version": "latest"
+      }
+    ],
+    "service": "projects/shop-prod-1234/locations/us-central1/services/checkout",
+    "serviceAccountEmail": "orders@shop-prod-1234.iam.gserviceaccount.com",
+    "timeoutSeconds": 60,
+    "uri": "https://checkout-k3j2h1g0fa-uc.a.run.app"
+  },
+  "state": "FAILED",
+  "stateMessages": [
+    {
+      "message": "Build failed with status: FAILURE and message: ModuleNotFoundError: No module named 'stripe_client'. Check the build logs.",
+      "severity": "ERROR",
+      "type": "BuildFailed"
+    },
+    {
+      "message": "Revision 'checkout-00003-abc' is not ready and cannot serve traffic.",
+      "severity": "WARNING",
+      "type": "CloudRunService"
+    }
+  ],
+  "updateTime": "2026-10-30T14:02:11.123456Z",
+  "url": "https://us-central1-shop-prod-1234.cloudfunctions.net/checkout"
+}
