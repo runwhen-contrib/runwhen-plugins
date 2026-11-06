@@ -3,7 +3,6 @@ evaluation (wildcards, resourceNames, subresources, groups), the verdicts, and t
 against a fake cluster that answers `kubectl create -f <reviews>` from a small RBAC model.
 Nothing here calls a cluster."""
 
-import hashlib
 import importlib.util
 import json
 import os
@@ -843,7 +842,7 @@ def test_declared_permissions_cover_required_probes_without_optional_namespace_r
     assert len(task()["permissions"]) == 2
 
 
-def test_compiled_checker_prerequisites_are_minimal_and_discovery_permissions_unchanged():
+def test_compiled_discovery_is_best_effort_while_checker_and_kubectl_stay_strict():
     from runwhen_capability.plugin.compile import compile_tree
     from runwhen_capability.plugin.tree import load_dir
 
@@ -858,11 +857,17 @@ def test_compiled_checker_prerequisites_are_minimal_and_discovery_permissions_un
         {"hash": permission_hash(rule), "rule": rule} for rule in expected
     ]
     discovery = [entry["rule"] for entry in tasks["discover"]["permissions"]]
-    assert len(discovery) == 25
-    # The complete discovery prerequisite set from the M4 0.4.0 package.
-    assert hashlib.sha256(json.dumps(discovery, sort_keys=True).encode()).hexdigest() == (
-        "70866c205d414e3202e0c09e81b08d07fb4b7c1f19c0ed7996eeb8ff063d8ca5"
-    )
+    assert discovery == [
+        {"nonResourceURLs": ["/version"], "verbs": ["get"]},
+        {"nonResourceURLs": ["/api", "/api/*", "/apis", "/apis/*"], "verbs": ["get"]},
+    ]
+    ordinary = [
+        {"apiGroups": ["*"], "resources": ["*"], "verbs": ["get", "list", "watch"]},
+        {"nonResourceURLs": ["/api", "/apis"], "verbs": ["get"]},
+    ]
+    assert tasks["kubectl"]["permissions"] == [
+        {"hash": permission_hash(rule), "rule": rule} for rule in ordinary
+    ]
 
 
 def test_declared_permissions_validate_against_the_rbac_rule_schema():
