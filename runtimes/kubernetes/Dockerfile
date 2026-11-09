@@ -7,11 +7,13 @@
 # spec.timeZone is resolved with zoneinfo) and gke-gcloud-auth-plugin (the `gke` auth method).
 # oc, helm, flux and argocd are deliberately absent.
 #
-# FROM is pinned by the multi-arch INDEX digest of tag v13-plugins-m3-7c8bcb2, resolved with
-#   docker buildx imagetools inspect ghcr.io/runwhen-contrib/rw-tasks-codecollection:v13-plugins-m3-7c8bcb2
-# on 2026-11-05 (runwhen-capability b18be9c: contracts-v7). Re-resolve and bump it (and
+# FROM is pinned by the multi-arch INDEX digest of tag v13-plugins-m4-adfa879, resolved with
+#   docker buildx imagetools inspect ghcr.io/runwhen-contrib/rw-tasks-codecollection:v13-plugins-m4-adfa879
+# on 2026-11-09 (runwhen-capability 734646f: runwhen-capability#48, which stops a script auth
+# plan's plugin archive being unpacked into the executor's 1Mi credentials tmpfs -- it made
+# `gke` auth fail with `[Errno 28] No space left on device`). Re-resolve and bump it (and
 # runtime.yaml's version) when the SDK pin moves.
-ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:f2e1de09241d731c9e49fe04c75d9da1cb839f7dc7197a9c627bf07f61851a09
+ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:9f3273027b51da860a18e75252d15fd398010df2c5fb67de3a32f4861ed7cc19
 FROM ${BASE_IMAGE}
 
 # The base is Debian (trixie) with apt, so git and tzdata come from the distribution. They are
