@@ -29,7 +29,8 @@ property as unset), CLOUDSDK_CORE_ACCOUNT blank, CLOUDSDK_CORE_CHECK_GCE_METADAT
 metadata-server fallback to a pod identity the connection did not choose) and its own empty
 CLOUDSDK_CONFIG under ctx.workdir (no account, property or token cache of an earlier run or of the
 image). For the cloud-identity marker the metadata server IS the credential: the file override is
-blanked, the metadata check is on, and gcloud finds the pod's identity by itself.
+blanked, the metadata check is on, and the account is set to the marker's serviceAccountEmail -- under an empty
+CLOUDSDK_CONFIG gcloud would otherwise list that identity but leave it inactive.
 
 Every call also carries `--billing-project=<the target's project>`: user-project billing and quota
 go to the project being inspected, not to whichever project the credential belongs to (this needs
@@ -97,18 +98,24 @@ def _camel(snake):
     return head + "".join(p.title() for p in rest)
 
 
-def is_marker(environ=None):
-    """Whether the credential file is the cloud-identity marker (no key: use the metadata
-    server). An unset, unreadable or other file is not."""
+def marker_doc(environ=None):
+    """The cloud-identity marker the credential file holds, or None: no key, use the metadata
+    server. An unset, unreadable or other file is not a marker."""
     path = (os.environ if environ is None else environ).get(CREDENTIAL_ENV)
     if not path:
-        return False
+        return None
     try:
         with open(path, "rb") as handle:
             doc = json.loads(handle.read(MAX_CREDENTIAL_BYTES))
     except (OSError, ValueError):
-        return False  # gcloud reports an unreadable credential in its own words
-    return isinstance(doc, dict) and doc.get("type") == MARKER_TYPE
+        return None  # gcloud reports an unreadable credential in its own words
+    return doc if isinstance(doc, dict) and doc.get("type") == MARKER_TYPE else None
+
+
+def is_marker(environ=None):
+    """Whether the credential file is the cloud-identity marker (no key: use the metadata
+    server). An unset, unreadable or other file is not."""
+    return marker_doc(environ) is not None
 
 
 def config_dir(ctx):
@@ -129,7 +136,7 @@ def config_dir(ctx):
 def gcloud_env(ctx, environ=None):
     """The environment overrides for a gcloud child (merged over the parent's by ctx.run): the
     ambient credential sources neutralised, see the module docstring."""
-    marker = is_marker(environ)
+    marker = marker_doc(environ)
     env = {
         ACCESS_TOKEN_ENV: "",
         ACCESS_TOKEN_FILE_ENV: "",
@@ -139,6 +146,15 @@ def gcloud_env(ctx, environ=None):
     }
     if marker:
         env[CREDENTIAL_ENV] = ""
+        # The marker's credential is the pod's own identity, which gcloud reaches through the
+        # metadata server. Under an empty CLOUDSDK_CONFIG gcloud LISTS that identity but leaves it
+        # inactive (`gcloud auth list` shows it without a `*`), so every call fails as "you do not
+        # currently have an active account selected". Naming it as the account is what activates it,
+        # and the marker carries the email for exactly this. A marker with no email keeps the blank
+        # account: gcloud may still pick the metadata identity up on its own.
+        email = marker.get("serviceAccountEmail")
+        if isinstance(email, str) and email:
+            env[ACCOUNT_ENV] = email
     return env
 
 

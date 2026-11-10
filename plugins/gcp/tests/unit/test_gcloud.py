@@ -265,7 +265,7 @@ def test_no_usable_credential_file_is_neutralised_like_a_key(tmp_path, credentia
     assert env["CLOUDSDK_CORE_CHECK_GCE_METADATA"] == "false"
 
 
-def test_the_cloud_identity_marker_blanks_the_file_and_leaves_the_metadata_server_on(tmp_path):
+def test_the_marker_blanks_the_file_names_the_account_and_leaves_the_metadata_server_on(tmp_path):
     env = gcloud.gcloud_env(
         Ctx(workdir=tmp_path), {gcloud.CREDENTIAL_ENV: str(marker_file(tmp_path))}
     )
@@ -274,7 +274,18 @@ def test_the_cloud_identity_marker_blanks_the_file_and_leaves_the_metadata_serve
         **BLANKED,
         gcloud.CREDENTIAL_ENV: "",
         "CLOUDSDK_CORE_CHECK_GCE_METADATA": "true",  # the metadata server IS the credential
+        # Named, or gcloud lists that identity under a fresh CLOUDSDK_CONFIG and leaves it INACTIVE:
+        # every call then fails as "you do not currently have an active account selected".
+        "CLOUDSDK_CORE_ACCOUNT": "a@b.c",
     }
+
+
+def test_a_marker_without_an_email_keeps_the_account_blank(tmp_path):
+    marker = tmp_path / "adc.json"
+    marker.write_text(json.dumps({"type": gcloud.MARKER_TYPE}))
+    env = gcloud.gcloud_env(Ctx(workdir=tmp_path), {gcloud.CREDENTIAL_ENV: str(marker)})
+    assert env["CLOUDSDK_CORE_CHECK_GCE_METADATA"] == "true"
+    assert env["CLOUDSDK_CORE_ACCOUNT"] == ""
 
 
 def test_a_run_gets_one_fresh_config_dir_and_every_run_a_new_one(tmp_path):
@@ -291,9 +302,8 @@ def test_every_gcloud_call_runs_with_the_neutralised_environment(tmp_path, monke
     gcloud.gcloud_text(ctx, "auth", "print-access-token")
     for call in ctx.calls:
         assert call["env"]["CLOUDSDK_CORE_CHECK_GCE_METADATA"] == "true"
-        assert (
-            call["env"][gcloud.CREDENTIAL_ENV] == "" and call["env"]["CLOUDSDK_CORE_ACCOUNT"] == ""
-        )
+        assert call["env"][gcloud.CREDENTIAL_ENV] == ""
+        assert call["env"]["CLOUDSDK_CORE_ACCOUNT"] == "a@b.c"  # the marker's own service account
     monkeypatch.delenv(gcloud.CREDENTIAL_ENV)
     other = ctx_for(tmp_path, done("[]"))
     gcloud.gcloud_json(other, "x")
