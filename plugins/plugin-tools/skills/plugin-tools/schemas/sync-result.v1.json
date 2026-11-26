@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plugins.runwhen.com/schemas/sync-result/v1.json",
+  "title": "plugins.runwhen.com/sync-result/v1",
+  "description": "The result of plugin-tools sync (sourceId) and validate-upload (uploadId). Capped at 1 MiB; `more` is true when the run stopped before everything was done.",
+  "type": "object",
+  "properties": {
+    "apiVersion": { "const": "plugins.runwhen.com/sync-result/v1" },
+    "sourceId": { "type": "string" },
+    "uploadId": { "type": "string" },
+    "listedAt": { "type": "string", "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ$" },
+    "toolsVersion": { "type": "string", "pattern": "^plugin-tools@\\d+\\.\\d+\\.\\d+" },
+    "versions": { "type": "array", "items": { "$ref": "#/$defs/version" } },
+    "rejected": { "type": "array", "items": { "$ref": "#/$defs/rejected" } },
+    "runtimes": { "type": "array", "items": { "$ref": "#/$defs/runtime" } },
+    "more": { "type": "boolean" }
+  },
+  "required": ["apiVersion", "listedAt", "toolsVersion", "versions", "rejected", "runtimes", "more"],
+  "oneOf": [{ "required": ["sourceId"] }, { "required": ["uploadId"] }],
+  "additionalProperties": false,
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "version": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "tag": { "type": ["string", "null"] },
+        "commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+        "archive": {
+          "type": "object",
+          "properties": {
+            "sha256": { "$ref": "#/$defs/sha" },
+            "size": { "type": "integer", "minimum": 1 },
+            "files": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["sha256", "size", "files"],
+          "additionalProperties": false
+        },
+        "artifact": { "type": "string", "pattern": "^archive([1-9]|1[0-9]|20)$", "description": "The run artifact (output name) holding the archive bytes" },
+        "compiled": { "type": "object" },
+        "requires": { "type": "object" },
+        "runtimes": { "type": "array", "items": { "type": "string" } },
+        "sdkVersion": { "type": "string" }
+      },
+      "required": ["name", "version", "tag", "commit", "archive", "artifact", "compiled", "requires", "runtimes", "sdkVersion"],
+      "additionalProperties": false
+    },
+    "rejected": {
+      "type": "object",
+      "properties": {
+        "tag": { "type": ["string", "null"] },
+        "commit": { "type": ["string", "null"] },
+        "code": { "type": "string" },
+        "message": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["tag", "commit", "code", "message"],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "major": { "type": "integer", "minimum": 0 },
+        "version": { "type": "string" },
+        "image": { "type": "string" },
+        "digests": { "type": "object", "additionalProperties": { "$ref": "#/$defs/sha" } },
+        "tools": { "type": "object", "additionalProperties": { "type": "string" } }
+      },
+      "required": ["name", "major", "version", "image", "digests", "tools"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,122 @@
+apiVersion: runwhen.com/tasks/v1
+runtime: universal@1          # universal@1 ships git 2.x and the runwhen-capability SDK; no runtime of its own
+tasks:
+  - name: sync
+    title: Sync plugin versions from a git source
+    description: >-
+      Lists the tags of a git repository, keeps the plugin tags that match tagPattern and are not
+      already known, newest first and at most maxVersions of them, and for each fetches the tagged
+      commit, reads its tree, validates and compiles the plugin with the SDK, checks the tag against
+      plugin.yaml's name and version, builds the deterministic archive, and writes it
+      to an artifact slot (archive1..archive20, filled in order; the host uploads them after the task
+      exits). Returns the manifest (plugins.runwhen.com/sync-result/v1): the
+      versions built, the tags rejected with a code, the runtime images tagged runtimes/<name>/v<version>,
+      and whether more remain. The git credential reaches git only through GIT_ASKPASS; every git
+      call runs with hooks off, https only and a private HOME. Read-only: it writes nothing to the
+      repository and registers nothing itself.
+    script: scripts/sync.py
+    tags: [plugin-registry, sync, git]
+    readOnly: true
+    idempotent: true
+    timeout: 900s
+    resources: { memory: 1Gi }
+    credentials: git/https-token        # the source's org connection (git/github-app is defined but unused)
+    inputs:
+      source:
+        type: object
+        description: "The git source: id, url (https, no userinfo), tagPattern (default {name}/v{version}), path (default plugins/{name}) and plugin (single-plugin repositories, with a tagPattern that has no {name})"
+        schema:
+          type: object
+          additionalProperties: false
+          required: [id, url]
+          properties:
+            id: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" }
+            url: { type: string, minLength: 1, maxLength: 2048 }
+            tagPattern: { type: string, minLength: 1, maxLength: 256 }
+            path: { type: string, maxLength: 512 }
+            plugin: { type: [string, "null"], pattern: "^[a-z][a-z0-9-]{0,62}$" }
+      known:
+        type: object[]
+        required: false
+        schema:
+          type: object
+          additionalProperties: false
+          required: [tag, commit]
+          properties:
+            tag: { type: string, minLength: 1, maxLength: 512 }
+            commit: { type: string, pattern: "^[0-9a-f]{40}$" }
+            sha256: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+        description: "Versions already registered: a tag listed here at the same commit is skipped"
+      maxVersions: { type: integer, default: 20, min: 1, description: "Most plugin tags built per run; there are 20 archive slots, so a larger value is clamped to 20. `more` says whether the next run has to continue" }
+      limits:
+        type: object
+        required: false
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            archiveBytes: { type: integer, minimum: 1, maximum: 67108864 }
+            files: { type: integer, minimum: 1, maximum: 10000 }
+            fileBytes: { type: integer, minimum: 1, maximum: 16777216 }
+        description: "Archive limits for this run; each can only lower the defaults (64 MiB, 10000 files, 16 MiB per file)"
+    outputs:
+      manifest: { schema: ./schemas/sync-result.v1.json, description: "The sync result, capped at 1 MiB: versions (with compiled documents and archive sha256), rejected tags, runtimes and more" }
+      archive1: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive1" }
+      archive2: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive2" }
+      archive3: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive3" }
+      archive4: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive4" }
+      archive5: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive5" }
+      archive6: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive6" }
+      archive7: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive7" }
+      archive8: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive8" }
+      archive9: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive9" }
+      archive10: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive10" }
+      archive11: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive11" }
+      archive12: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive12" }
+      archive13: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive13" }
+      archive14: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive14" }
+      archive15: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive15" }
+      archive16: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive16" }
+      archive17: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive17" }
+      archive18: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive18" }
+      archive19: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive19" }
+      archive20: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive20" }
+  - name: validate-upload
+    title: Validate an uploaded plugin or bundle (not runnable yet)
+    description: >-
+      NOT RUNNABLE YET: a task script has no way to read the uploaded bytes (they are only reachable
+      through the runner relay), so the task fails with a dependency error. The validate and build code
+      exists and is tested with bytes fed directly. Intended behaviour: reads an org admin's offline upload through the runner relay (one plugin as a tar or tar.gz,
+      or a multi-plugin bundle in the snapshot tar format), validates and compiles each plugin
+      exactly as sync does, builds the deterministic archive, writes it to an artifact slot, and returns the
+      same manifest with uploadId in place of sourceId. Read-only: it registers nothing itself.
+    script: scripts/validate_upload.py
+    tags: [plugin-registry, upload]
+    readOnly: true
+    idempotent: true
+    timeout: 900s
+    resources: { memory: 2Gi }
+    inputs:
+      uploadId: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", description: "The upload to read; the lease names it, any other id is refused" }
+    outputs:
+      manifest: { schema: ./schemas/sync-result.v1.json, description: "The same result as sync, with uploadId in place of sourceId and no tag or commit on a version" }
+      archive1: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive1" }
+      archive2: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive2" }
+      archive3: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive3" }
+      archive4: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive4" }
+      archive5: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive5" }
+      archive6: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive6" }
+      archive7: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive7" }
+      archive8: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive8" }
+      archive9: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive9" }
+      archive10: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive10" }
+      archive11: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive11" }
+      archive12: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive12" }
+      archive13: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive13" }
+      archive14: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive14" }
+      archive15: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive15" }
+      archive16: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive16" }
+      archive17: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive17" }
+      archive18: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive18" }
+      archive19: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive19" }
+      archive20: { artifact: { contentType: application/x-tar, maxSize: 64Mi }, description: "Archive of the version whose manifest entry says artifact: archive20" }
