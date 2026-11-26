@@ -1,6 +1,6 @@
 """Auth script for the `service-principal` method of the azure integration (D67, CONTRACTS F7).
 
-Runs in the executor, inside the azure@1 runtime, before the task script. It signs the az CLI in
+Runs in the executor, inside the universal@1 runtime, before the task script. It signs the az CLI in
 as the service principal and leaves the session in a directory the task then uses:
 
     az login --service-principal -u <clientId> -p @<reference file> --tenant <tenantId> --allow-no-subscriptions

@@ -3,7 +3,7 @@
 #
 #   plugins/azure/tests/stub/capture/capture_aks.sh
 #
-# Runs capture_aks.py inside the azure@1 runtime image with no network (`docker build` it first as
+# Runs capture_aks.py inside the universal@1 runtime image with no network (`docker build` it first as
 # rwp-runtime-azure:dev, or name another image in AZURE_RUNTIME_IMAGE): the real az, with its sign-in
 # and its HTTP replaced by fake_az.py, against the ARM bodies of aks_world.py. Then splice_aks.py
 # copies the stdout files into tests/stub/scenarios/<scenario>/ and the calls into each calls.yaml.

@@ -804,7 +804,7 @@ def test_every_declared_permission_is_a_valid_azure_permission():
 
 def test_the_skill_is_read_only_and_declares_the_azure_runtime_and_credential():
     d = doc()
-    assert d["runtime"] == "azure@1" and d["defaults"]["credentials"] == "azure/cli"
+    assert d["runtime"] == "universal@1" and d["defaults"]["credentials"] == "azure/cli"
     assert set(TASKS) == {t["name"] for t in d["tasks"]}
     assert all(t["readOnly"] is True for t in d["tasks"])
     for name, spec in d["settings"].items():

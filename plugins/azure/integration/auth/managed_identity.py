@@ -1,6 +1,6 @@
 """Auth script for the `managed-identity` method of the azure integration (D67, CONTRACTS F7).
 
-Runs in the executor, inside the azure@1 runtime, before the task script. The managed identity of
+Runs in the executor, inside the universal@1 runtime, before the task script. The managed identity of
 the pod or node is ambient (the reference is a `cloud-identity`: nothing to read), so this signs
 the az CLI in with it and leaves the session in a directory the task then uses:
 

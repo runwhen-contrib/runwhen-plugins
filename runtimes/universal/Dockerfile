@@ -8,8 +8,7 @@
 #   gcloud (without bq, gsutil and its bundled python), and hash-pinned python libraries.
 # Every downloaded binary is pinned by version and by sha256 per architecture (amd64, arm64).
 #
-# FROM is the multi-arch INDEX digest of tag v13-plugins-m4-adfa879, the same pin as
-# runtimes/kubernetes (see runtimes/README.md for how to re-resolve it).
+# FROM is the multi-arch INDEX digest of tag v13-plugins-m4-adfa879 (see runtimes/README.md for how to re-resolve it).
 ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:9f3273027b51da860a18e75252d15fd398010df2c5fb67de3a32f4861ed7cc19
 FROM ${BASE_IMAGE}
 

@@ -28,9 +28,9 @@ D_ATT = "sha256:" + "d" * 64
 
 def spec(**over) -> dict:
     doc = {
-        "name": "kubernetes",
+        "name": "universal",
         "version": "1.0.0",
-        "image": "ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes",
+        "image": "ghcr.io/runwhen-contrib/runwhen-plugins-runtime-universal",
         "digests": {"index": D_INDEX, "linux/amd64": D_AMD, "linux/arm64": D_ARM},
         "tools": {"kubectl": "1.37.1", "jq": "1.7.1"},
         "description": "x",
@@ -40,7 +40,7 @@ def spec(**over) -> dict:
 
 
 def write(tmp_path: Path, doc) -> Path:
-    d = tmp_path / "runtimes" / "kubernetes"
+    d = tmp_path / "runtimes" / "universal"
     d.mkdir(parents=True, exist_ok=True)
     (d / "runtime.yaml").write_text(yaml.safe_dump(doc))
     return d
@@ -64,13 +64,13 @@ RAW_DIGEST = "sha256:" + hashlib.sha256(RAW).hexdigest()
 
 def test_valid(tmp_path):
     d = write(tmp_path, spec())
-    assert load_runtime(d / "runtime.yaml")["name"] == "kubernetes"
+    assert load_runtime(d / "runtime.yaml")["name"] == "universal"
 
 
 def test_shipped_runtime_yaml_is_valid_apart_from_the_placeholder():
-    d = Path(__file__).resolve().parents[2] / "runtimes" / "kubernetes"
+    d = Path(__file__).resolve().parents[2] / "runtimes" / "universal"
     doc = load_runtime(d / "runtime.yaml", allow_placeholder=True)
-    assert parse_tag(f"runtimes/{doc['name']}/v{doc['version']}") == ("kubernetes", doc["version"])
+    assert parse_tag(f"runtimes/{doc['name']}/v{doc['version']}") == ("universal", doc["version"])
 
 
 def test_placeholder_refused_unless_allowed(tmp_path):
@@ -132,18 +132,18 @@ def test_missing_file(tmp_path):
 
 
 def test_parse_tag():
-    assert parse_tag("runtimes/kubernetes/v1.2.3") == ("kubernetes", "1.2.3")
-    assert parse_tag("runtimes/kubernetes/v1.2.3-rc.1") == ("kubernetes", "1.2.3-rc.1")
+    assert parse_tag("runtimes/universal/v1.2.3") == ("universal", "1.2.3")
+    assert parse_tag("runtimes/universal/v1.2.3-rc.1") == ("universal", "1.2.3-rc.1")
 
 
 @pytest.mark.parametrize(
     "tag",
     [
-        "kubernetes/v1.0.0",
-        "runtimes/kubernetes/1.0.0",
-        "runtimes/kubernetes/v1.0",
+        "universal/v1.0.0",
+        "runtimes/universal/1.0.0",
+        "runtimes/universal/v1.0",
         "runtimes/K/v1.0.0",
-        "runtimes/kubernetes/v1.0.0+build.5",
+        "runtimes/universal/v1.0.0+build.5",
     ],
 )
 def test_parse_tag_rejects_malformed(tag):
@@ -153,13 +153,13 @@ def test_parse_tag_rejects_malformed(tag):
 
 def test_check_tag_ok(tmp_path):
     d = write(tmp_path, spec())
-    check_tag("runtimes/kubernetes/v1.0.0", d)
+    check_tag("runtimes/universal/v1.0.0", d)
 
 
 def test_check_tag_version_mismatch(tmp_path):
     d = write(tmp_path, spec())
     with pytest.raises(ValueError, match="1.0.1"):
-        check_tag("runtimes/kubernetes/v1.0.1", d)
+        check_tag("runtimes/universal/v1.0.1", d)
 
 
 def test_check_tag_name_mismatch(tmp_path):
@@ -171,7 +171,7 @@ def test_check_tag_name_mismatch(tmp_path):
 def test_check_tag_refuses_placeholder(tmp_path):
     d = write(tmp_path, spec(digests={"index": PLACEHOLDER_DIGEST}))
     with pytest.raises(ValueError, match="placeholder"):
-        check_tag("runtimes/kubernetes/v1.0.0", d)
+        check_tag("runtimes/universal/v1.0.0", d)
 
 
 def test_digests_from_index_skips_attestations():
@@ -219,7 +219,7 @@ def test_check_compare_ok(tmp_path):
         return RAW
 
     check_compare(d, inspect)
-    assert seen == [f"ghcr.io/runwhen-contrib/runwhen-plugins-runtime-kubernetes@{RAW_DIGEST}"]
+    assert seen == [f"ghcr.io/runwhen-contrib/runwhen-plugins-runtime-universal@{RAW_DIGEST}"]
 
 
 def test_check_compare_missing_platform_digest(tmp_path):
@@ -258,6 +258,6 @@ def test_format_digests_round_trips_through_yaml():
 def test_main_validate_and_tag(tmp_path, capsys):
     d = write(tmp_path, spec())
     assert main(["x", "validate", "--runtime-dir", str(d)]) == 0
-    assert main(["x", "tag", "runtimes/kubernetes/v1.0.0", "--repo-root", str(tmp_path)]) == 0
-    assert main(["x", "tag", "runtimes/kubernetes/v2.0.0", "--repo-root", str(tmp_path)]) == 1
+    assert main(["x", "tag", "runtimes/universal/v1.0.0", "--repo-root", str(tmp_path)]) == 0
+    assert main(["x", "tag", "runtimes/universal/v2.0.0", "--repo-root", str(tmp_path)]) == 1
     assert "2.0.0" in capsys.readouterr().err

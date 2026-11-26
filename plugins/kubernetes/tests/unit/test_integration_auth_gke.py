@@ -33,7 +33,7 @@ ENUM = {
 PLUGIN = Path(__file__).parents[2]
 INTEGRATION = PLUGIN / "integration"
 SCRIPT = INTEGRATION / "auth" / "gke.py"
-RUNTIME = Path(__file__).parents[4] / "runtimes" / "kubernetes"
+RUNTIME = Path(__file__).parents[4] / "runtimes" / "universal"
 
 TOKEN = "ya29.FAKE-ACCESS-TOKEN-0123456789"
 KEY_SECRET = "-----BEGIN PRIVATE KEY-----FAKEKEYMATERIAL-----END PRIVATE KEY-----"

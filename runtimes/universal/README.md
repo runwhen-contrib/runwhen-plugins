@@ -6,8 +6,8 @@ digest. Image: `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-universal`.
 
 ## What is in it
 
-Built on the rw-task base from `runwhen-contrib/rw-tasks-codecollection` (the same pin as
-`runtimes/kubernetes`): python 3.12, the `runwhen-capability` SDK with `google-re2`, `kubectl`,
+Built on the rw-task base from `runwhen-contrib/rw-tasks-codecollection` (the pin in `BASE_IMAGE`,
+see Dockerfile): python 3.12, the `runwhen-capability` SDK with `google-re2`, `kubectl`,
 `yq`, `jq`, `curl`, `psql`, `redis-cli`, and the non-root `runwhen` user. This runtime adds:
 
 | Added | How it is pinned |

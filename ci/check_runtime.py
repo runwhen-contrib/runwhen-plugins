@@ -215,7 +215,7 @@ def main(argv: list[str]) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_dir(sp: argparse.ArgumentParser) -> None:
-        sp.add_argument("--runtime-dir", type=Path, default=root / "runtimes" / "kubernetes")
+        sp.add_argument("--runtime-dir", type=Path, default=root / "runtimes" / "universal")
 
     v = sub.add_parser("validate")
     add_dir(v)

@@ -1,6 +1,6 @@
 """Capture the azure-aks-health stub answers from the pinned az CLI (plan Appendix C7).
 
-Runs inside the `azure@1` image, offline:
+Runs inside the `universal@1` image, offline:
 
     docker run --rm --network none -v "$PWD/capture:/capture:ro" -v "$OUT:/out" \
         --entrypoint /opt/az/bin/python rwp-runtime-azure:dev -I /capture/capture_aks.py /out

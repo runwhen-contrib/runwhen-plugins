@@ -476,7 +476,7 @@ def test_the_root_declares_the_key_discover_reports():
 def test_discover_declares_the_sync_credential_beside_the_connection():
     task = next(t for t in tasks_doc()["tasks"] if t["name"] == "discover")
     assert task["credentials"] == ["aws/sdk", "runwhen/sync"] and task["readOnly"] is True
-    assert tasks_doc()["runtime"] == "aws@1"
+    assert tasks_doc()["runtime"] == "universal@1"
     assert tasks_doc()["defaults"]["credentials"] == "aws/sdk"
 
 

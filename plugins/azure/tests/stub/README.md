@@ -78,7 +78,7 @@ commands of both skills for one target vault.
 Canned CLI output must come from the pinned CLI, not from memory (plan Appendix C7).
 
 - `keyvault-show-*`, `keyvault-list-*`, `group-list.json` and `cloud-show.json` are rendered by the
-  pinned az 2.92.0 itself: `capture/render.py` runs inside the `azure@1` image (`--network none`),
+  pinned az 2.92.0 itself: `capture/render.py` runs inside the `universal@1` image (`--network none`),
   feeds the ARM REST body Microsoft documents into the azure-mgmt model az uses, and prints it
   through az's own serialization (unset fields are `null`, a private endpoint connection's state
   sits on the connection, `resourceGroup` is added, keys are sorted). `az cloud show` is run as is.
@@ -119,7 +119,7 @@ scenario's other files, and their calls sit in a marked block at the top of each
 | `group-forbidden` | (discover) | the cluster listings of all three groups succeed while `rg-orders-dev`'s vaults are refused: a group's two partitions are independent |
 
 **These answers are the pinned az's own, not typed.** `capture/capture_aks.sh` runs the real az 2.92.0
-inside the `azure@1` image with `--network none` (`capture/fake_az.py` replaces only sign-in and the HTTP
+inside the `universal@1` image with `--network none` (`capture/fake_az.py` replaces only sign-in and the HTTP
 layer), against the ARM REST bodies Microsoft documents for each operation (`capture/aks_world.py`: the
 reference page is each call's `source`). So the key spellings (`enableRbac`, `authorizedIpRanges`,
 `typePropertiesType`, `dnsServiceIp`), the nulls, the added `resourceGroup`, the sorted keys, the
