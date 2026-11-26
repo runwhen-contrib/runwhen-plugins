@@ -1,0 +1,50 @@
+# source: DESIGN.md 2.3 "Inputs": the git credential comes through the connection's credential type,
+# as for any task. Two types, because a git source is reached either with a token someone created
+# (a personal or deploy token) or with a GitHub App installation token the platform mints.
+apiVersion: runwhen.com/integration/v1
+platform: git
+title: Git repository
+description: A git repository that holds plugin source (tags of plugins and runtimes), reached over https with a token.
+docs: https://docs.runwhen.com/integrations/git
+
+# --- what tools read ---------------------------------------------------------------------------
+# Both types materialize the same two variables, GIT_TOKEN and GIT_USERNAME (optional; the task
+# answers `x-access-token`, the form GitHub-style hosts accept, when it is absent). A task never
+# puts them in a URL or argv: plugin_tools/credentials.py hands them to git through GIT_ASKPASS
+# for the calls that contact the remote. Only the username is non-secret; the token is redacted.
+credentialTypes:
+  git/https-token:
+    title: Git https token
+    description: "A token (personal access, deploy or fine-grained) and an optional user name, presented to git through GIT_ASKPASS."
+    materialize:
+      env: [GIT_USERNAME, GIT_TOKEN]
+      nonSecret: [GIT_USERNAME]
+  git/github-app:
+    title: GitHub App installation token
+    description: "A GitHub App installation token minted by the platform for the run, presented to git through GIT_ASKPASS as the user x-access-token."
+    content: github-app-token
+    materialize:
+      env: [GIT_TOKEN]
+
+# --- how a credential reference becomes one of those types -------------------------------------
+authMethods:
+  token:
+    title: Token
+    description: "A token from a Secret, Vault or a file; the reference supplies the token (key token, GIT_TOKEN or value), the input supplies the optional user name."
+    produces: git/https-token
+    accepts: [k8s-secret, vault, file]
+    script: auth/https-token.py
+    inputs:
+      username: { type: string, required: false, description: "User name git sends with the token (GIT_USERNAME); x-access-token when empty" }
+  github-app:
+    title: GitHub App
+    description: "An installation token the platform mints for the run (the runner side holds the App's key); the reference is that token under the key GIT_TOKEN."
+    produces: git/github-app
+    accepts: [github-app-token]
+    native: passthrough
+
+# --- what a task may declare and a connection verifies ------------------------------------------
+# Both tasks are read-only and declare no permission: network to the git host and the runner relay
+# only, no write to the repository.
+permissions:
+  schema: ./schemas/git-permission.json
