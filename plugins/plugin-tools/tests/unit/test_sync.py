@@ -149,16 +149,13 @@ def test_manifest_cap_sets_more_and_stops_before_uploading(repo, run_dir, spool,
     for v in ("0.1.0", "0.2.0", "0.3.0"):
         _publish(repo, "kube", v)
     one = _sync(repo, run_dir, spool, max_versions=1)
-    size_of_one = len(json.dumps(one, separators=(",", ":"), ensure_ascii=False).encode())
+    size_of_one = len(json.dumps(one, separators=(",", ":")).encode())
     spool.stored.clear()
     # a cap that holds one version (and the skeleton) but not two
     monkeypatch.setattr(result, "MAX_MANIFEST_BYTES", size_of_one + 200)
     capped = _sync(repo, run_dir, spool)
     assert _tags(capped) == ["kube/v0.3.0"] and capped["more"] is True
-    assert (
-        len(json.dumps(capped, separators=(",", ":"), ensure_ascii=False).encode())
-        <= size_of_one + 200
-    )
+    assert len(json.dumps(capped, separators=(",", ":")).encode()) <= size_of_one + 200
     assert len(spool.stored) == 1  # the version that did not fit was not uploaded
 
 
@@ -174,6 +171,17 @@ def test_manifest_refuses_to_emit_over_the_cap(monkeypatch):
     big = {"tag": "x" * 100, "commit": None, "code": "c", "message": "m"}
     monkeypatch.setattr(result, "MAX_MANIFEST_BYTES", 250)
     assert m.add("rejected", big) is False and m.more is True and m.doc["rejected"] == []
+
+
+def test_the_cap_counts_non_ascii_as_it_is_sent(monkeypatch):
+    # The SDK sends the result with non-ASCII escaped: "…" is 6 bytes on the wire, not 3.
+    m = result.Manifest(tools_version=TOOLS_VERSION, listed_at=LISTED_AT, source_id="t")
+    item = {"tag": None, "commit": None, "code": "c", "message": "…" * 100}
+    wire = len(json.dumps({**m.doc, "rejected": [item]}, separators=(",", ":")).encode())
+    monkeypatch.setattr(result, "MAX_MANIFEST_BYTES", wire - 1)
+    assert m.add("rejected", item) is False
+    monkeypatch.setattr(result, "MAX_MANIFEST_BYTES", wire)
+    assert m.add("rejected", item) is True
 
 
 def test_tag_that_disagrees_with_plugin_yaml_is_rejected_not_uploaded(repo, run_dir, spool):

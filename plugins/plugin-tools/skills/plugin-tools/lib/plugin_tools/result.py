@@ -1,4 +1,4 @@
-"""The sync/validate-upload result: schema `plugins.runwhen.com/sync-result/v1` (DESIGN 2.3).
+"""The sync/validate-upload result: schema `plugins.runwhen.com/sync-result/v1`.
 
 The result is capped at 1 MiB. `Manifest` serialises exactly what the task would emit, so the cap
 is checked on the real bytes: an item that would push it over is not added, `more` is set, and
@@ -15,7 +15,10 @@ MAX_MESSAGE_CHARS = 500
 
 
 def _size(doc: dict) -> int:
-    return len(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    # Measured as the SDK sends the result: compact JSON with non-ASCII escaped (`\uXXXX`), which
+    # is never smaller than the UTF-8 form. Measuring UTF-8 would let a manifest with non-ASCII text
+    # pass here and still be over the cap on the wire.
+    return len(json.dumps(doc, separators=(",", ":")).encode("ascii"))
 
 
 def now_string(now: datetime) -> str:
