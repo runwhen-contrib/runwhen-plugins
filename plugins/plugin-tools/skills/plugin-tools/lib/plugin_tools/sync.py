@@ -1,5 +1,5 @@
-"""The `sync` task (DESIGN 2.3): list a git source's tags, build what is new, upload by hash,
-return the manifest.
+"""The `sync` task: list a git source's tags, build what is new, write each archive to an
+artifact slot, return the manifest.
 
     1. `git ls-remote --tags`
     2. filter by `tagPattern`, minus `known`, newest first, capped at `maxVersions`

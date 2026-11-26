@@ -1,6 +1,6 @@
 """`python -m plugin_tools.cli snapshot export`: build the release snapshot from this repo's tags.
 
-For CI to bake the release snapshot image (DESIGN 2.9) without a running registry:
+For CI to bake the release snapshot image without a running registry:
 
     PYTHONPATH=plugins/plugin-tools/skills/plugin-tools/lib \\
       python -m plugin_tools.cli snapshot export --tags all \\

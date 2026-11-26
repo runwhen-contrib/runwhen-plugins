@@ -1,4 +1,5 @@
-"""Reading a multi-plugin bundle: the registry's snapshot tar format (docs/archive.md section 6).
+"""Reading a multi-plugin bundle: the registry's snapshot tar format (the SDK's archive.md
+section 6).
 
     snapshot.json                         the manifest: plugins [{name, version, sha256, size}]
     index/<name>/<version>.json           index entries (ignored here: untrusted, rebuilt from the tree)

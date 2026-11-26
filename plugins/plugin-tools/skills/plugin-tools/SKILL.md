@@ -3,8 +3,8 @@ name: plugin-tools
 description: >-
   The plugin registry's tooling, run by the platform on the platform runner. sync lists a git
   source's plugin tags, validates and compiles each new version with the SDK, builds its
-  deterministic archive, uploads it by hash and returns a manifest of versions, rejections and
-  runtime images. validate-upload does the same for an org admin's offline upload (one plugin or a
+  deterministic archive, writes it to an artifact slot and returns a manifest of versions,
+  rejections and runtime images. validate-upload does the same for an org admin's offline upload (one plugin or a
   multi-plugin bundle). Not for workspace troubleshooting.
 runwhen:
   tags: [plugin-registry, git]

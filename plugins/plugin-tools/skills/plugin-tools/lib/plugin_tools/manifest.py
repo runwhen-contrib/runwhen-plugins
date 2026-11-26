@@ -1,4 +1,4 @@
-"""plugin.yaml and the plugin layout (docs/archive.md section 3a, rule budget of section 4).
+"""plugin.yaml and the plugin layout (the SDK's archive.md section 3a, rule budget of section 4).
 
 Ported unchanged from the plugin registry's `manifest.py`.
 """

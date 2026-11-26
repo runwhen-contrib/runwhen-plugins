@@ -1,4 +1,4 @@
-"""The one place a git process is started (S-D4, DESIGN 2.3 "Hardening, on every git call").
+"""The one place a git process is started: the hardening every git call of a run gets.
 
 Every git call of a run goes through `GitRunner`, which applies, to each of them:
 
@@ -13,7 +13,7 @@ Every git call of a run goes through `GitRunner`, which applies, to each of them
 - a timeout, and scrubbing of every secret from what git said before it is raised or logged.
 
 A run owns one `HOME` and one work directory; `RunDir` creates them and removes them at the end
-(pods are reused under D118, so nothing may outlive the run).
+(executor pods are reused between runs, so nothing may outlive the run).
 
 Test-only: `file://` is blocked by `protocol.allow=never`. A test that needs a local repository
 passes `test_allow_protocols=("file",)` to `GitRunner`, which adds `-c protocol.<name>.allow=always`

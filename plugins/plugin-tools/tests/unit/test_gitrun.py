@@ -1,4 +1,4 @@
-"""The hardening helper (S-D4): the exact -c flags and environment of every git call."""
+"""The hardening helper: the exact -c flags and environment of every git call."""
 
 import subprocess
 

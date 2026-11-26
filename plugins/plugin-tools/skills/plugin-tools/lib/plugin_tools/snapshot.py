@@ -1,4 +1,5 @@
-"""Building the release snapshot: the registry's air-gap snapshot format (docs/archive.md section 6).
+"""Building the release snapshot: the registry's air-gap snapshot format (the SDK's archive.md
+section 6).
 
 Ported from the export side of the registry's `snapshot.py`. The registry exported from its
 database; this builds the same bytes from prepared plugin versions (`prepare.Prepared`) read out of

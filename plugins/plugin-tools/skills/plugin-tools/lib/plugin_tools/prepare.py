@@ -1,4 +1,4 @@
-"""Validate, compile and archive one plugin tree: steps 3 and 4 of the sync task (DESIGN 2.3).
+"""Validate, compile and archive one plugin tree: steps 3 and 4 of the sync task (`sync.py`).
 
 Ported from the registry's `Ingestor.prepare` (`ingest.py`), without the database, the blob store
 and the ownership and version-conflict checks: those are papi's now. A bad plugin comes back as
@@ -39,7 +39,7 @@ from plugin_tools.semver import parse_semver
 
 log = logging.getLogger(__name__)
 
-# The codes a rejection carries in the sync manifest (DESIGN 2.3). The archive layer still speaks
+# The codes a rejection carries in the sync manifest. The archive layer still speaks
 # its own E_INVALID_PLUGIN (archive.md, the registry's tests); `reject_code` maps it.
 E_PLUGIN_INVALID = "E_PLUGIN_INVALID"
 

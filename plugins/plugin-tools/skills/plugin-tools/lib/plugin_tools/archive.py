@@ -1,4 +1,5 @@
-"""Deterministic plugin archive (docs/archive.md section 2-5).
+"""Deterministic plugin archive (sections 2-5 of the SDK's archive contract,
+`runwhen_capability/contracts/_data/archive.md`, called archive.md below).
 
 Ported from the plugin registry's `archive.py`; the one addition is `Limits`, so a sync task's
 `limits` input can lower the 64 MiB / 10 000 files / 16 MiB caps for one run.
