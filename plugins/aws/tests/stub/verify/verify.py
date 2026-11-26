@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the canned CLI output of the stub scenarios against the real, pinned aws CLI (plan C7).
 
-Runs INSIDE the aws@1 runtime image (see verify.sh). For each call of each scenario it starts a
+Runs INSIDE the universal@1 runtime image (see verify.sh). For each call of each scenario it starts a
 fake HTTP endpoint that answers the way the AWS API does (the service's own wire protocol), runs the
 real `aws` against it with `--endpoint-url`, and compares what the CLI printed with the canned
 file. A canned file is a CLI output after the skill's `--query`, so the fake serves the API response

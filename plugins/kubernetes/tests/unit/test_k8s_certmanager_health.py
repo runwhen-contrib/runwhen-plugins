@@ -388,6 +388,9 @@ class FakeCtx:
         self.messages = []
         self.calls = []
 
+    def now(self):
+        return NOW  # the fixtures were captured at NOW; the wall clock would age them past notAfter
+
     def error(self, code, message, scope=None, hint=None, details=None):
         self.errors.append({"code": code, "scope": scope})
         self.messages.append(message)

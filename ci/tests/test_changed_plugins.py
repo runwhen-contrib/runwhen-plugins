@@ -24,7 +24,7 @@ def test_ci_tooling_change_selects_all_plugins():
 
 
 def test_runtime_change_selects_nothing():
-    assert changed_plugins(["runtimes/kubernetes/Dockerfile"], ALL) == []
+    assert changed_plugins(["runtimes/universal/Dockerfile"], ALL) == []
 
 
 def test_readme_selects_nothing():

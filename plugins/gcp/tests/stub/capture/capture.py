@@ -2,7 +2,7 @@
 gcloud of the pinned runtime image.
 
 Run it through capture.sh, never directly on a workstation: it runs inside
-`rwp-runtime-gcp:dev` with `--network none`. It starts a local HTTP server that speaks the REST
+`rwp-runtime-universal:dev` with `--network none`. It starts a local HTTP server that speaks the REST
 shapes of the Cloud Storage JSON API and Resource Manager v1 (the world below: invented project,
 buckets and members), points gcloud at it with CLOUDSDK_API_ENDPOINT_OVERRIDES_*, runs each
 command the plugin issues and stores what gcloud really printed: its JSON formatting, its

@@ -229,7 +229,7 @@ def test_the_session_tasks_declare_the_role_that_unmasks_other_sessions(skill, n
 def test_the_session_tasks_are_read_only_and_declare_the_shared_settings(skill, name):
     doc = settings_doc(skill)
     assert task(name, skill)["readOnly"] is True
-    assert doc["runtime"] == "kubernetes@1" and doc["defaults"]["credentials"] == "postgres/libpq"
+    assert doc["runtime"] == "universal@1" and doc["defaults"]["credentials"] == "postgres/libpq"
     assert doc["settings"]["maxItems"]["default"] == 200
     for key in ("connectTimeout", "statementTimeout"):
         assert doc["settings"][key]["type"] == "duration"

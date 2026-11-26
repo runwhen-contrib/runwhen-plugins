@@ -740,7 +740,7 @@ def test_discovers_timeout_covers_its_az_calls_and_its_push():
 def test_discover_declares_the_connection_and_the_sync_credential_and_reads_only():
     doc = yaml.safe_load((SKILLS / "azure-base" / "tasks.yaml").read_text())
     task = next(t for t in doc["tasks"] if t["name"] == "discover")
-    assert doc["runtime"] == "azure@1" and doc["defaults"]["credentials"] == "azure/cli"
+    assert doc["runtime"] == "universal@1" and doc["defaults"]["credentials"] == "azure/cli"
     assert task["credentials"] == ["azure/cli", "runwhen/sync"]
     assert task["readOnly"] is True
     assert {k: v["default"] for k, v in doc["settings"].items()} == {

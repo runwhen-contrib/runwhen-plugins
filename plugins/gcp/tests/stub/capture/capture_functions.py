@@ -3,7 +3,7 @@ stub for gcp-functions-health and for the functions half of gcp-base/discover, p
 REAL gcloud of the pinned runtime image.
 
 Run it through capture_functions.sh, never directly on a workstation: it runs inside
-`rwp-runtime-gcp:dev` with `--network none`. It starts a local HTTP server that speaks the REST
+`rwp-runtime-universal:dev` with `--network none`. It starts a local HTTP server that speaks the REST
 shapes of Cloud Functions v1 and v2, Cloud Build v1 and Cloud Logging v2 (the world below: invented
 project, functions, builds and log entries), points gcloud at it with
 CLOUDSDK_API_ENDPOINT_OVERRIDES_*, runs each command the plugin issues and stores what gcloud

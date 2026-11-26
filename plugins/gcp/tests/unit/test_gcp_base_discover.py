@@ -719,7 +719,7 @@ def test_discover_declares_the_sync_credential_the_permissions_and_a_budget():
 
     doc = yaml.safe_load((SKILL / "tasks.yaml").read_text())
     task = next(t for t in doc["tasks"] if t["name"] == "discover")
-    assert doc["runtime"] == "gcp@1" and doc["defaults"]["credentials"] == "gcp/adc"
+    assert doc["runtime"] == "universal@1" and doc["defaults"]["credentials"] == "gcp/adc"
     assert task["credentials"] == ["gcp/adc", "runwhen/sync"] and task["readOnly"] is True
     assert task["permissions"] == [
         {"permission": "storage.buckets.list"},

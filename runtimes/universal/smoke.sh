@@ -50,7 +50,7 @@ expect yq v4.53.6 "$(yq --version)"
 expect jq jq-1.7 "$(jq --version)"
 expect curl 8.14.1 "$(curl --version | head -n 1)"
 expect git 2.47.3 "$(git --version)"
-expect psql 17.11 "$(psql --version)"
+expect psql 17.12 "$(psql --version)"
 expect redis-cli 8.0.2 "$(redis-cli --version)"
 expect python 3.12.14 "$(python3 --version)"
 # The kubernetes plugin's `gke` auth method (kubeconfig exec entry); a static binary, so no gcloud.
@@ -86,9 +86,10 @@ python3 - <<'PY'
 import importlib.metadata as md
 
 import boto3, dateutil, jmespath, kubernetes, re2, requests, runwhen_capability, yaml  # noqa: F401,E401
+from runwhen_capability.serve import resolve_concurrency  # noqa: F401  (0.6.0: parallel runs per pod)
 
 want = {
-    "runwhen-capability": "0.4.0",
+    "runwhen-capability": "0.6.0",
     "requests": "2.34.2",
     "PyYAML": "6.0.3",
     "jmespath": "1.1.0",

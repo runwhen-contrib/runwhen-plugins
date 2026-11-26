@@ -805,7 +805,7 @@ def tasks_doc():
 
 def test_the_tasks_are_read_only_aws_tasks_with_the_credential_and_defaults():
     doc = tasks_doc()
-    assert doc["runtime"] == "aws@1" and doc["defaults"]["credentials"] == "aws/sdk"
+    assert doc["runtime"] == "universal@1" and doc["defaults"]["credentials"] == "aws/sdk"
     assert doc["settings"]["maxItems"]["default"] == 200
     assert [t["name"] for t in doc["tasks"]] == [
         "function-config",

@@ -12,7 +12,7 @@ The scripts may read no variable but those of the auth-script contract; the seco
 strict environment that fails the test on any other RW_* name.
 
 The fake `az` records its argv and the environment it saw, and reads `-p @<file>` the way the real
-CLI does (verified against az 2.92.0 in the azure@1 image: the file's content, minus its trailing
+CLI does (verified against az 2.92.0 in the universal@1 image: the file's content, minus its trailing
 newline, is the value). Its stderr texts are what az 2.92.0 printed in that image or read from its
 source (the `account set` refusal and "No subscriptions found" are from `_profile.py`), or what
 Microsoft documents for the AADSTS code."""

@@ -142,11 +142,11 @@ def test_the_root_declares_the_key_discover_reports():
 @pytest.mark.parametrize("skill", all_skills())
 def test_every_task_is_read_only_runs_in_the_gcp_runtime_and_declares_the_shared_settings(skill):
     doc = tasks_doc(skill)
-    assert doc["runtime"] == "gcp@1" and doc["defaults"]["credentials"] == "gcp/adc"
+    assert doc["runtime"] == "universal@1" and doc["defaults"]["credentials"] == "gcp/adc"
     assert doc["settings"]["maxItems"]["default"] == 200
     assert doc["settings"]["commandTimeout"]["type"] == "duration"
-    runtime = yaml.safe_load((PLUGIN.parents[1] / "runtimes" / "gcp" / "runtime.yaml").read_text())
-    assert runtime["name"] == "gcp" and re.fullmatch(r"1\.\d+\.\d+", runtime["version"])
+    runtime = yaml.safe_load((PLUGIN.parents[1] / "runtimes" / "universal" / "runtime.yaml").read_text())
+    assert runtime["name"] == "universal" and re.fullmatch(r"1\.\d+\.\d+", runtime["version"])
     for task in doc["tasks"]:
         assert task["readOnly"] is True
 
