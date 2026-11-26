@@ -3,7 +3,7 @@
 Runs inside the `universal@1` image, offline:
 
     docker run --rm --network none -v "$PWD/capture:/capture:ro" -v "$OUT:/out" \
-        --entrypoint /opt/az/bin/python rwp-runtime-azure:dev -I /capture/capture_aks.py /out
+        --entrypoint /opt/az/bin/python rwp-runtime-universal:dev -I /capture/capture_aks.py /out
 
 or through `capture_aks.sh`, which also splices the result into the scenarios.
 

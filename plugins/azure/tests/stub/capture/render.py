@@ -9,7 +9,7 @@ az adds `resourceGroup`; keys are sorted). So the shapes of the commands the ski
 (`indent=2, sort_keys=True`). `az cloud show` is simply run.
 
     docker run --rm --network none -v "$PWD/capture:/capture:ro" -v "$OUT:/out" \
-        --entrypoint /opt/az/bin/python rwp-runtime-azure:dev -I /capture/render.py /out
+        --entrypoint /opt/az/bin/python rwp-runtime-universal:dev -I /capture/render.py /out
 
 Writes keyvault-show-<name>.json, keyvault-list-<group>.json, group-list.json and cloud-show.json
 into /out. Needs no network and no login. REST references:

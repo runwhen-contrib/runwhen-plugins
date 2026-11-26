@@ -127,7 +127,7 @@ googlecloudsdk/...`, or the curl behaviour). Every value is one line of **JSON**
 
 Canned output is **not typed from memory** (a hand-typed `du` line once hid a parse failure on every
 bucket of 1 TB and up). `capture/capture.sh` regenerates `scenarios/*` by running the **real gcloud
-592.0.0 of the runtime image** (`rwp-runtime-gcp:dev`, built from `runtimes/gcp`) with
+592.0.0 of the runtime image** (`rwp-runtime-universal:dev`, built from `runtimes/universal`) with
 `--network none` against a local fake of the Cloud Storage and Resource Manager REST APIs
 (`CLOUDSDK_API_ENDPOINT_OVERRIDES_*`), so the JSON formatting, the timestamp rendering
 (`2025-03-14T09:21:05.123000+00:00`), the `du` padding (`'{size:<13}{url}'`: a 13-digit size runs

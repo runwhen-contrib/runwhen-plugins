@@ -76,7 +76,7 @@ us-east-1; the function of the health skill is `orders-api` in eu-west-1.
 ## Where the canned output comes from (plan C7)
 
 Canned output is the pinned CLI's, not typed from memory. `verify/verify.sh` runs aws CLI
-**2.39.3** in the runtime image (`rwp-runtime-aws:dev`, as uid 65532 on a read-only root, no network
+**2.39.3** in the runtime image (`rwp-runtime-universal:dev`, as uid 65532 on a read-only root, no network
 but loopback) against a fake HTTP endpoint that answers in each service's own wire protocol
 (Lambda rest-json, Logs json 1.1, CloudWatch json 1.0, STS query, EC2 ec2), once for every call of
 every scenario. It turns each canned file back into the API response its `--query` projection comes
