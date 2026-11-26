@@ -10,7 +10,7 @@ independently with its own `<plugin>/vX.Y.Z` tag.
 
 ```
 plugins/
-  <plugin>/                  kubernetes, postgres, azure, aws, gcp, misc
+  <plugin>/                  kubernetes, postgres, azure, aws, gcp, misc, plugin-tools
     plugin.yaml              name, version, description, requires
     integration/             data only: types, facets, dependencies, schemas
     skills/
