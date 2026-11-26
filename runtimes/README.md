@@ -11,6 +11,7 @@ runtime: a `Dockerfile` and a `runtime.yaml` that the plugin registry reads (tag
 | `aws` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-aws` | `aws` plugin tasks |
 | `azure` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-azure` | `azure` plugin tasks |
 | `gcp` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-gcp` | `gcp` plugin tasks |
+| `universal` | `ghcr.io/runwhen-contrib/runwhen-plugins-runtime-universal` | every skill: kubectl, helm, oc, flux, argocd, aws, az, gcloud and common python libraries (see [universal/README.md](universal/README.md)) |
 
 ## kubernetes
 
