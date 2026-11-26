@@ -212,7 +212,7 @@ ENV CLOUDSDK_PYTHON=python3 \
 # The base labels itself as the rw-task skill host. A catalog scan reads those labels off the image,
 # so blank the ones that would make this image look like rw-task (a label cannot be removed in a
 # child image, only emptied) and say what it is. RUNTIME_VERSION equals runtime.yaml's version
-# (ci/tests/test_check_runtime.py checks it).
+# (ci/tests/test_universal_runtime.py checks it).
 ARG RUNTIME_VERSION=1.0.0
 LABEL io.runwhen.capability="" \
       io.runwhen.sbom="" \

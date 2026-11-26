@@ -91,17 +91,29 @@ jobs:
           cache-to: type=gha,mode=max,scope=runtime-universal-${{ matrix.platform }}
       - name: Smoke
         run: docker run --rm -i --platform "${{ matrix.platform }}" --entrypoint sh runtime-universal:smoke -s < runtimes/universal/smoke.sh
-      - name: "Image size budget (amd64, 3.0 GiB unpacked)"
+      - name: "Image size budget (amd64, 1.2 GiB compressed, 3.0 GiB unpacked)"
         if: matrix.platform == 'linux/amd64'
         run: |
           set -euo pipefail
-          size="$(docker image inspect runtime-universal:smoke --format '{{.Size}}')"
-          budget=$((3 * 1024 * 1024 * 1024))
-          echo "unpacked size: ${size} bytes (budget ${budget})"
-          if [ "${size}" -gt "${budget}" ]; then
-            echo "::error::runtime-universal is ${size} bytes unpacked, over the ${budget} byte (3.0 GiB) budget" >&2
-            exit 1
+          # Not `docker image inspect .Size`: on the runner's containerd image store that is the
+          # packed content size, not the unpacked one. Unpacked is the bytes on the root filesystem;
+          # compressed is the image's layers as gzip (a little over the registry size on a classic
+          # store, which saves layers uncompressed).
+          unpacked="$(docker run --rm --user 0 --entrypoint du runtime-universal:smoke -sxb / | cut -f1)"
+          compressed="$(docker save runtime-universal:smoke | gzip -1 | wc -c)"
+          unpacked_budget=$((3 * 1024 * 1024 * 1024))
+          compressed_budget=$((12 * 1024 * 1024 * 1024 / 10))
+          echo "unpacked: ${unpacked} bytes (budget ${unpacked_budget}); compressed: ${compressed} bytes (budget ${compressed_budget})"
+          over=0
+          if [ "${unpacked}" -gt "${unpacked_budget}" ]; then
+            echo "::error::runtime-universal is ${unpacked} bytes unpacked, over the ${unpacked_budget} byte (3.0 GiB) budget" >&2
+            over=1
           fi
+          if [ "${compressed}" -gt "${compressed_budget}" ]; then
+            echo "::error::runtime-universal is ${compressed} bytes compressed, over the ${compressed_budget} byte (1.2 GiB) budget" >&2
+            over=1
+          fi
+          [ "${over}" = 0 ]
       - name: Smoke as the runner executes it (uid 65532, read-only root)
         run: docker run --rm -i --platform "${{ matrix.platform }}" --user 65532 --read-only --tmpfs /work:rw,mode=1777 --entrypoint sh runtime-universal:smoke -s < runtimes/universal/smoke.sh
 

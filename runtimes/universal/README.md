@@ -36,9 +36,8 @@ move the SDK, move `BASE_IMAGE`, `SDK_VERSION` and `runtime.yaml` `tools.runwhen
 ## Size budget
 
 Compressed 1.2 GiB (the registry layers), unpacked 3.0 GiB on amd64. The `smoke` job in
-`runtime-universal.yml` fails if `docker image inspect` reports more than 3.0 GiB. The gcloud and
-az CLIs are most of it. Check the compressed size by hand when adding a tool
-(`docker buildx imagetools inspect` on the pushed tag).
+`runtime-universal.yml` fails above either: unpacked is `du` of the image's root filesystem,
+compressed is `docker save | gzip`. The gcloud and az CLIs are most of it.
 
 ## Version and digest
 
@@ -75,6 +74,6 @@ A workspace can run its own image (an admin registers it in the plugin registry'
    `docker run --rm -i --entrypoint sh <your image> -s < runtimes/universal/smoke.sh`. It is the
    conformance check.
 7. Push to a registry your org trusts. The platform pulls only from the registries in the org policy
-   (`orgPolicy.trustedRegistries`) and checks that on every task run.
+   (`orgPolicy.trustedRuntimeRegistries`) and checks that on every task run.
 
 The platform does not read the `FROM` line or the label yet; the trusted registry is the control.
