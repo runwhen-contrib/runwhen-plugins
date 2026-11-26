@@ -50,7 +50,7 @@ expect yq v4.53.6 "$(yq --version)"
 expect jq jq-1.7 "$(jq --version)"
 expect curl 8.14.1 "$(curl --version | head -n 1)"
 expect git 2.47.3 "$(git --version)"
-expect psql 17.11 "$(psql --version)"
+expect psql 17.12 "$(psql --version)"
 expect redis-cli 8.0.2 "$(redis-cli --version)"
 expect python 3.12.14 "$(python3 --version)"
 # The kubernetes plugin's `gke` auth method (kubeconfig exec entry); a static binary, so no gcloud.
