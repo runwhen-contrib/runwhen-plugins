@@ -9,7 +9,7 @@ from plugin_tools.relay import (
     RelayError,
     relay_from_ctx,
 )
-from relayfake import DISPATCH, REQUEST_ID, TOKEN
+from relayfake import DISPATCH, REQUEST_ID, SENDS_DISPATCH, TOKEN
 from runwhen_capability.rwerrors import RwError
 
 DATA = b"archive bytes " * 100
@@ -46,7 +46,9 @@ def test_put_carries_the_sdk_auth_headers(relay):
 
     client.session.put = put
     PluginRelay(client).put_archive(SHA, DATA)
-    assert seen["Authorization"] == f"Bearer {TOKEN}" and seen["X-RW-Dispatch"] == DISPATCH
+    assert seen["Authorization"] == f"Bearer {TOKEN}"
+    if SENDS_DISPATCH:
+        assert seen["X-RW-Dispatch"] == DISPATCH
     assert seen["Content-Type"] == "application/x-tar"
 
 

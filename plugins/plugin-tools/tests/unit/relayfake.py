@@ -7,6 +7,7 @@ real ones. Loopback only: no network.
 """
 
 import hashlib
+import inspect
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,9 @@ from runwhen_capability.relay import RelayClient
 REQUEST_ID = "req1"
 TOKEN = "relay-token"
 DISPATCH = "42"
+# `X-RW-Dispatch` (SDK >= 0.5) is checked only when the installed RelayClient can send it: the SDK
+# CI pins (0.4.x) has none.
+SENDS_DISPATCH = "dispatch" in inspect.signature(RelayClient.__init__).parameters
 
 
 class FakeRelay:
@@ -43,9 +47,8 @@ class FakeRelay:
                 self.wfile.write(data)
 
             def _auth(self):
-                ok = (
-                    self.headers.get("Authorization") == f"Bearer {TOKEN}"
-                    and self.headers.get("X-RW-Dispatch") == DISPATCH
+                ok = self.headers.get("Authorization") == f"Bearer {TOKEN}" and (
+                    not SENDS_DISPATCH or self.headers.get("X-RW-Dispatch") == DISPATCH
                 )
                 if not ok:
                     self._json(401, {"code": "E_UNAUTHORIZED"})
@@ -106,9 +109,8 @@ class FakeRelay:
         self.server.server_close()
 
     def client(self) -> RelayClient:
-        return RelayClient(
-            self.url, None, REQUEST_ID, requests.Session(), token=TOKEN, dispatch=DISPATCH
-        )
+        extra = {"dispatch": DISPATCH} if SENDS_DISPATCH else {}
+        return RelayClient(self.url, None, REQUEST_ID, requests.Session(), token=TOKEN, **extra)
 
     def shas(self) -> list[str]:
         return sorted(self.stored)
