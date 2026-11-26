@@ -8,14 +8,14 @@
 #   gcloud (without bq, gsutil and its bundled python), and hash-pinned python libraries.
 # Every downloaded binary is pinned by version and by sha256 per architecture (amd64, arm64).
 #
-# FROM is the multi-arch INDEX digest of tag v13-plugins-m4-adfa879 (see runtimes/README.md for how to re-resolve it).
-ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:9f3273027b51da860a18e75252d15fd398010df2c5fb67de3a32f4861ed7cc19
+# FROM is the multi-arch INDEX digest of tag pin-runwhen-capability-0.6.0-9f0c30a (rw-tasks-codecollection#12; see runtimes/README.md for how to re-resolve it).
+ARG BASE_IMAGE=ghcr.io/runwhen-contrib/rw-tasks-codecollection@sha256:87efd07293b4dec83fcb6c95130ac2e60d59adc34ac86d75633eb4945c9395e7
 FROM ${BASE_IMAGE}
 
 # The SDK comes with the base, so this ARG is a check, not an install: the build fails if the base
 # ships another runwhen-capability version than the one this runtime says it carries (runtime.yaml
 # tools.runwhen-capability). Moving the SDK means moving BASE_IMAGE and this value together.
-ARG SDK_VERSION=0.4.0
+ARG SDK_VERSION=0.6.0
 ARG TARGETARCH
 
 # The base is Debian (trixie) with apt, so git and tzdata come from the distribution. They are not

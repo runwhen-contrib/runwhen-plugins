@@ -86,9 +86,10 @@ python3 - <<'PY'
 import importlib.metadata as md
 
 import boto3, dateutil, jmespath, kubernetes, re2, requests, runwhen_capability, yaml  # noqa: F401,E401
+from runwhen_capability.serve import resolve_concurrency  # noqa: F401  (0.6.0: parallel runs per pod)
 
 want = {
-    "runwhen-capability": "0.4.0",
+    "runwhen-capability": "0.6.0",
     "requests": "2.34.2",
     "PyYAML": "6.0.3",
     "jmespath": "1.1.0",
