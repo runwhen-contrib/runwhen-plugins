@@ -53,3 +53,17 @@ def test_integration_defines_the_two_credential_types_and_the_repository_type():
 def test_the_token_is_never_in_a_task_declaration_or_a_url():
     for path in (SKILL / "tasks.yaml", PLUGIN / "integration" / "integration.yaml"):
         assert not re.search(r"https://[^\s/]*:[^\s/]*@", path.read_text())
+
+
+def test_artifact_slots_are_declared_for_both_tasks():
+    doc = yaml.safe_load((SKILL / "tasks.yaml").read_text())
+    want = {f"archive{i}" for i in range(1, 21)}
+    for task in doc["tasks"]:
+        slots = {k for k, v in task["outputs"].items() if "artifact" in v}
+        assert slots == want
+        assert all(
+            task["outputs"][k]["artifact"]["contentType"] == "application/x-tar" for k in want
+        )
+    sync = doc["tasks"][0]
+    assert sync["credentials"] == "git/https-token"
+    assert "NOT RUNNABLE YET" in doc["tasks"][1]["description"]

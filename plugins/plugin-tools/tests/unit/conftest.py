@@ -8,13 +8,13 @@ PLUGIN = Path(__file__).parents[2]
 LIB = PLUGIN / "skills" / "plugin-tools" / "lib"
 # At run time a skill's lib/ is on sys.path (CAP-12); its package is named after the skill.
 sys.path.insert(0, str(LIB))
-sys.path.insert(0, str(Path(__file__).parent))  # gitrepo, fixtures, relayfake
+sys.path.insert(0, str(Path(__file__).parent))  # gitrepo, fixtures
 
 # The unit tests read local repositories over file://, which GitRunner refuses unless this is set
 # (see plugin_tools/gitrun.py, "Test-only"). The executor never sets it.
 os.environ["PLUGIN_TOOLS_ALLOW_TEST_PROTOCOLS"] = "1"
 
-# The git and relay helpers are imported where they are used, so a test of the archive layer does
+# The git helpers are imported where they are used, so a test of the archive layer does
 # not need them.
 
 
@@ -56,9 +56,16 @@ def source(repo, run_dir):
 
 
 @pytest.fixture
-def relay():
-    from relayfake import FakeRelay
+def spool(tmp_path):
+    """An artifact spool in a scratch $RW_OUT; `.stored` maps sha256:<hex> to the bytes written."""
+    from plugin_tools.spool import ArtifactSpool
 
-    fake = FakeRelay().start()
-    yield fake
-    fake.stop()
+    class TestSpool(ArtifactSpool):
+        @property
+        def stored(self):
+            return {
+                "sha256:" + sha: (self.out_dir / name).read_bytes()
+                for sha, name in self._by_sha.items()
+            }
+
+    return TestSpool(tmp_path / "rw-out")

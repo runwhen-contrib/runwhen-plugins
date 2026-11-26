@@ -1,17 +1,16 @@
 """The `validate-upload` task: an org admin's offline upload, validated and built like a git tag.
 
-The bytes arrive through the relay (`GET plugin-uploads/{uploadId}`, size and sha checked by the
-runner while it streams). Accepted: a single plugin as a tar or tar.gz (plugin.yaml at its root),
+The bytes would arrive through the relay (`GET plugin-uploads/{uploadId}`), which a script cannot
+reach: THE TASK IS NOT RUNNABLE YET (scripts/validate_upload.py says so). This module takes the
+bytes directly, which is how the tests drive it. Accepted: a single plugin as a tar or tar.gz (plugin.yaml at its root),
 or a multi-plugin bundle in the registry's snapshot tar format (`bundle.py`). Each plugin goes
-through the same `prepare` as a sync tag (validate, compile, deterministic archive), is uploaded by
-hash, and comes back in the same manifest as sync's, with `uploadId` in place of `sourceId`.
+through the same `prepare` as a sync tag (validate, compile, deterministic archive), is written to an
+artifact slot, and comes back in the same manifest as sync's, with `uploadId` in place of `sourceId`.
 A plugin that does not validate is `rejected`; a bundle or tar that cannot be read at all is one
 rejection naming the upload.
 """
 
 import logging
-
-from runwhen_capability.rwerrors import RwError
 
 from plugin_tools import TOOLS_VERSION
 from plugin_tools.archive import (
@@ -24,9 +23,8 @@ from plugin_tools.archive import (
 from plugin_tools.bundle import is_bundle, read_bundle
 from plugin_tools.manifest import PLUGIN_YAML, parse_plugin_yaml
 from plugin_tools.prepare import E_PLUGIN_INVALID, Prepared, Rejected, prepare, reject_code
-from plugin_tools.relay import E_ARCHIVE_CAP, RelayError
 from plugin_tools.result import Manifest, rejected_item, version_item
-from plugin_tools.sync import Uploader, _relay_code
+from plugin_tools.spool import ArtifactSpool
 from plugin_tools.tree_input import maybe_gunzip, read_tree_tar
 
 log = logging.getLogger(__name__)
@@ -41,7 +39,7 @@ UPLOAD_LABEL = "upload"
 def run_validate(
     upload_id: str,
     data: bytes,
-    uploader: Uploader,
+    spool: ArtifactSpool,
     *,
     listed_at: str,
     limits: Limits = DEFAULT_LIMITS,
@@ -57,25 +55,23 @@ def run_validate(
     del data
 
     if is_bundle(tar):
-        _validate_bundle(manifest, tar, uploader, limits)
+        _validate_bundle(manifest, tar, spool, limits)
     else:
-        _validate_single(manifest, tar, uploader, limits)
+        _validate_single(manifest, tar, spool, limits)
     return manifest.finish()
 
 
-def _publish(manifest: Manifest, uploader: Uploader, prepared: Prepared, label: str) -> bool:
-    """Upload and add one version. False when the run must stop (cap or manifest full)."""
-    item = version_item(prepared, tag=None, commit=None)
+def _publish(manifest: Manifest, spool: ArtifactSpool, prepared: Prepared, label: str) -> bool:
+    """Write and add one version. False when the run must stop (slots or manifest full)."""
+    artifact = spool.name_for(prepared)
+    if artifact is None:
+        manifest.set_more()
+        return False
+    item = version_item(prepared, tag=None, commit=None, artifact=artifact)
     if not manifest.fits("versions", item):
         manifest.set_more()
         return False
-    try:
-        uploader.put(prepared)
-    except RelayError as exc:
-        if exc.code == E_ARCHIVE_CAP:
-            manifest.set_more()
-            return False
-        raise RwError(_relay_code(exc), exc.message, scope=label) from None
+    spool.put(prepared)
     manifest.add("versions", item)
     return True
 
@@ -84,7 +80,7 @@ def _reject(manifest: Manifest, label: str | None, code: str, message: str) -> b
     return manifest.add("rejected", rejected_item(code, message, tag=label, commit=None))
 
 
-def _validate_single(manifest: Manifest, tar: bytes, uploader: Uploader, limits: Limits) -> None:
+def _validate_single(manifest: Manifest, tar: bytes, spool: ArtifactSpool, limits: Limits) -> None:
     try:
         files = read_tree_tar(tar, limits)
     except ArchiveError as exc:
@@ -94,7 +90,7 @@ def _validate_single(manifest: Manifest, tar: bytes, uploader: Uploader, limits:
     if isinstance(result, Rejected):
         _reject(manifest, _label_of(files), result.code, result.detail)
         return
-    _publish(manifest, uploader, result, f"{result.name}/v{result.version}")
+    _publish(manifest, spool, result, f"{result.name}/v{result.version}")
 
 
 def _label_of(files) -> str | None:
@@ -109,7 +105,7 @@ def _label_of(files) -> str | None:
     return f"{m.name}/v{m.version}"
 
 
-def _validate_bundle(manifest: Manifest, tar: bytes, uploader: Uploader, limits: Limits) -> None:
+def _validate_bundle(manifest: Manifest, tar: bytes, spool: ArtifactSpool, limits: Limits) -> None:
     try:
         listed, blobs = read_bundle(tar)
     except ArchiveError as exc:
@@ -144,5 +140,5 @@ def _validate_bundle(manifest: Manifest, tar: bytes, uploader: Uploader, limits:
             if not _reject(manifest, label, result.code, result.detail):
                 return
             continue
-        if not _publish(manifest, uploader, result, label):
+        if not _publish(manifest, spool, result, label):
             return

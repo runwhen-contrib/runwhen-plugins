@@ -13,7 +13,7 @@ runwhen:
 ## When to use
 
 The platform runs these itself: `sync` on a schedule and on a push event for every enabled plugin
-source, `validate-upload` when an org admin uploads a plugin. They are org-scope tasks on the
+source, `validate-upload` (NOT RUNNABLE YET, see the README) when an org admin uploads a plugin. They are org-scope tasks on the
 platform runner; nothing in a workspace calls them.
 
 ## What they do
@@ -24,8 +24,8 @@ Both turn a plugin file tree into a manifest entry and an uploaded archive:
    SDK's compiler and check the compiled document's schema;
 2. check that the tag (or the upload's listing) agrees with `plugin.yaml`'s name and version;
 3. build the deterministic ustar and take its `sha256:<hex>`;
-4. upload it by hash through the runner relay (`PUT plugin-archives/{sha}`; an archive papi already
-   stores is not sent again).
+4. write it to an artifact slot, `archive1`..`archive20` in order (output names must be declared, so
+   they are fixed); the host uploads the artifacts when the task exits.
 
 The manifest (`plugins.runwhen.com/sync-result/v1`) is capped at 1 MiB. When the next version would
 not fit, or `maxVersions` is reached, `more` is `true` and the next run continues; tags registered

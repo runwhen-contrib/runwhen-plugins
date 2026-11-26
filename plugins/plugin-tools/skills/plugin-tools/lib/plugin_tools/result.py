@@ -85,7 +85,7 @@ def rejected_item(code: str, message: str, *, tag: str | None, commit: str | Non
     return {"tag": tag, "commit": commit, "code": code, "message": short(message)}
 
 
-def version_item(prepared, *, tag: str | None, commit: str | None) -> dict:
+def version_item(prepared, *, tag: str | None, commit: str | None, artifact: str) -> dict:
     return {
         "name": prepared.name,
         "version": prepared.version,
@@ -96,6 +96,7 @@ def version_item(prepared, *, tag: str | None, commit: str | None) -> dict:
             "size": prepared.size,
             "files": prepared.files,
         },
+        "artifact": artifact,
         "compiled": prepared.compiled,
         "requires": prepared.requires,
         "runtimes": prepared.runtimes,

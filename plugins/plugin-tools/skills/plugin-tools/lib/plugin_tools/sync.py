@@ -6,17 +6,17 @@ return the manifest.
     3. per tag: fetch --depth 1, read the tree, normalize, parse plugin.yaml, validate + compile
        (the SDK), check the tag against plugin.yaml's name and version
     4. build the deterministic ustar and take its sha256
-    5. upload by hash through the relay
+    5. write the archive to an artifact slot (`archive1`..`archive20`, spool.py); the host uploads it
     6. return the manifest (1 MiB cap: `more` instead of a larger result)
 
 A tag the plugin author got wrong is a `rejected` entry and the run goes on. What the run cannot
-do at all (list the tags, the relay) fails the task with a structured error: the platform then has
+do at all (list the tags) fails the task with a structured error: the platform then has
 no manifest to register and the next run retries.
 """
 
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,16 +32,16 @@ from plugin_tools.gitsource import (
     SourceSpec,
     TagRef,
 )
-from plugin_tools.prepare import E_PLUGIN_INVALID, Prepared, Rejected, prepare, reject_code
-from plugin_tools.relay import E_ARCHIVE_CAP, PluginRelay, RelayError
+from plugin_tools.prepare import E_PLUGIN_INVALID, Rejected, prepare, reject_code
 from plugin_tools.result import Manifest, rejected_item, runtime_item, version_item
 from plugin_tools.runtimes import RuntimeInvalid
 from plugin_tools.semver import parse_semver, version_key
+from plugin_tools.spool import SLOTS, ArtifactSpool
 
 log = logging.getLogger(__name__)
 
 DEFAULT_MAX_VERSIONS = 20
-MAX_MAX_VERSIONS = 200
+MAX_MAX_VERSIONS = SLOTS  # one artifact slot per version; a larger request is clamped
 MAX_KNOWN = 100_000
 _SHA_REF = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -102,9 +102,9 @@ def parse_known(raw: Sequence | None) -> set[tuple[str, str]]:
 def parse_max_versions(raw: Any) -> int:
     if raw is None:
         return DEFAULT_MAX_VERSIONS
-    if not isinstance(raw, int) or isinstance(raw, bool) or not 1 <= raw <= MAX_MAX_VERSIONS:
-        raise InputInvalid(f"maxVersions must be an integer from 1 to {MAX_MAX_VERSIONS}")
-    return raw
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 1:
+        raise InputInvalid("maxVersions must be an integer of at least 1")
+    return min(raw, MAX_MAX_VERSIONS)
 
 
 _AUTH_HINTS = (
@@ -184,29 +184,16 @@ class SyncRequest:
         return cls(spec, parse_known(known), parse_max_versions(max_versions), parse_limits(limits))
 
 
-class Uploader:
-    """What `sync` needs of the relay: upload an archive by hash. `PluginRelay` is the real one."""
-
-    def __init__(self, relay: PluginRelay) -> None:
-        self.relay = relay
-
-    def put(self, prepared: Prepared) -> str:
-        """Upload; returns "exists" or "stored". E_ARCHIVE_CAP is raised as RelayError."""
-        out = self.relay.put_archive(prepared.sha256_ref, prepared.archive)
-        return "exists" if out.get("exists") is True else "stored"
-
-
 def run_sync(
     request: SyncRequest,
     git: GitSource,
-    uploader: "Uploader | Callable[[Prepared], Any]",
+    spool: ArtifactSpool,
     *,
     listed_at: str,
 ) -> dict:
-    """Steps 1-6. `git` is a `GitSource` on a hardened runner; `uploader` has `put(prepared)`."""
+    """Steps 1-6. `git` is a `GitSource` on a hardened runner; `spool` takes the built archives."""
     spec = request.source
     manifest = Manifest(tools_version=TOOLS_VERSION, listed_at=listed_at, source_id=spec.id)
-    put = uploader.put if hasattr(uploader, "put") else uploader
 
     # 1. ls-remote
     try:
@@ -234,7 +221,7 @@ def run_sync(
         if built >= request.max_versions:
             manifest.set_more()  # the rest is for the next run
             break
-        outcome = _sync_tag(git, put, manifest, request, tag)
+        outcome = _sync_tag(git, spool, manifest, request, tag)
         if outcome == "stop":
             manifest.set_more()  # this tag, and any after it, are for the next run
             break
@@ -263,8 +250,8 @@ def _reject(manifest: Manifest, tag: TagRef, code: str, message: str) -> bool:
     return manifest.add("rejected", rejected_item(code, message, tag=tag.tag, commit=tag.commit))
 
 
-def _sync_tag(git, put, manifest: Manifest, request: SyncRequest, tag: TagRef) -> str:
-    """ "built", "rejected", or "stop" (the manifest is full or the run's archive cap is reached)."""
+def _sync_tag(git, spool, manifest: Manifest, request: SyncRequest, tag: TagRef) -> str:
+    """ "built", "rejected", or "stop" (the manifest is full or the artifact slots are)."""
     limits = request.limits
     try:
         parse_semver(tag.version)
@@ -289,23 +276,13 @@ def _sync_tag(git, put, manifest: Manifest, request: SyncRequest, tag: TagRef) -
     if isinstance(result, Rejected):
         return "rejected" if _reject(manifest, tag, result.code, result.detail) else "stop"
 
-    item = version_item(result, tag=tag.tag, commit=tag.commit)
-    # The cap is checked before the upload: an archive nobody can register is not worth sending.
+    artifact = spool.name_for(result)
+    if artifact is None:
+        return "stop"  # all slots are used
+    item = version_item(result, tag=tag.tag, commit=tag.commit, artifact=artifact)
+    # The cap is checked before the write: an archive nobody can register is not worth keeping.
     if not manifest.fits("versions", item):
         return "stop"
-    try:
-        put(result)
-    except RelayError as exc:
-        if exc.code == E_ARCHIVE_CAP:
-            return "stop"
-        raise RwError(_relay_code(exc), exc.message, scope=tag.tag) from None
+    spool.put(result)
     manifest.add("versions", item)
     return "built"
-
-
-def _relay_code(exc: RelayError) -> str:
-    if exc.code == "E_HASH_MISMATCH":
-        return "internal"
-    if exc.status in (401, 403):
-        return "permission_denied"
-    return "dependency"
